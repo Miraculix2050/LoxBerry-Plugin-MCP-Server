@@ -1,5 +1,11 @@
 # Analysefragen: Support und Grenzen
 
+Energy & solar PR 4 ergänzt bestätigte Wetterquellenbindungen und optionale
+deklarierte PV-Parameter. Dieser Kontext allein liefert solar-20–22 noch nicht:
+Strukturierte Wetterhistorie, numerische Strahlungssemantik und Vergleichsmethode
+bleiben erforderlich. Bestehende Wetterstatistiken und Zustände behalten ihre
+tatsächliche Abdeckung und Semantik.
+
 Die ursprünglichen 25 Fragen bleiben im versionierten Abnahmekatalog erhalten. Zwei später ergänzte KNX-Fälle sind getrennte Erweiterungen. Stand: Analysis foundation PR 1–8, 11. Oktober 2026. Die Labels beschreiben den belegten Antwortumfang, keine vollständige Geräteabdeckung oder 75 unabhängige KI-Läufe.
 
 Unterstützt: begrenzter vorhandener Leseworkflow. Bedingt: benötigte Quelle, Bedeutung, Zuordnung und Abdeckung müssen vorliegen. Nicht verfügbar: benötigte Funktion gehört zu offenen externen Arbeitspaketen. Experimentell: Beratung benötigt zusätzliche Nutzerevidenz und fachliche Prüfung. Gen. 2/Compact bleiben experimentell ohne passende Geräteabnahme.

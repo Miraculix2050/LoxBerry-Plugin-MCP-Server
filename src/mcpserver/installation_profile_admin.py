@@ -13,23 +13,25 @@ from pydantic import ValidationError
 from mcpserver.admin_errors import AdminError
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.installation_profile import (
-    BindingInput,
+    BINDING_INPUT,
+    WEATHER_FIELDS,
     ProfileError,
+    ProfileSources,
     ProfileStore,
     installation_identity,
     project_profile,
-    visible_controls,
 )
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 
 
-def _context(config: PluginConfig) -> tuple[str, dict[str, Any]]:
+def _context(config: PluginConfig) -> tuple[str, ProfileSources]:
     from mcpserver.event_history_admin import _monitor
 
     structure = asyncio.run(asyncio.wait_for(_monitor(config).visible_structure(), timeout=30))
-    return installation_identity(
+    installation = installation_identity(
         MiniserverEndpoint.parse(config.loxone_endpoint).origin, structure
-    ), visible_controls(structure)
+    )
+    return installation, ProfileSources.from_structure(installation, structure)
 
 
 def dispatch_profile(
@@ -53,7 +55,13 @@ def dispatch_profile(
     if not data.is_absolute() or not config.loxone_endpoint:
         raise AdminError("Profile is unavailable", code="temporarily_unavailable")
     try:
-        installation, controls = _context(config)
+        installation, context = _context(config)
+        sources_context = (
+            context
+            if isinstance(context, ProfileSources)
+            else ProfileSources(installation, context)
+        )
+        controls = sources_context.controls
         store = ProfileStore(data / "installation-profile.json")
         if action == "profile_page":
             if set(payload) - {"offset", "limit"}:
@@ -67,10 +75,21 @@ def dispatch_profile(
             ):
                 raise ProfileError("profile_request_invalid")
             result = project_profile(
-                store.read(installation), installation, controls, offset=offset, limit=limit
+                store.read(installation), installation, sources_context, offset=offset, limit=limit
             )
             # Bound selection data separately; exact IDs can also come from Explorer.
             sources = []
+            for mode, uuid in sorted(sources_context.weather):
+                for field in WEATHER_FIELDS:
+                    sources.append(
+                        {
+                            "source_kind": "weather",
+                            "source_id": uuid,
+                            "mode": mode,
+                            "field": field,
+                            "source_name": field,
+                        }
+                    )
             for control in sorted(controls.values(), key=lambda item: item.uuid):
                 for name, uuid in control.state_uuids:
                     sources.append(
@@ -120,15 +139,14 @@ def dispatch_profile(
             if action == "profile_put":
                 if set(payload) != {"installation", "revision", "confirm", "binding"}:
                     raise ProfileError("profile_request_invalid")
-                binding = BindingInput.model_validate(payload["binding"])
-                control = controls.get(binding.control_uuid)
-                if control is None:
+                binding = BINDING_INPUT.validate_python(payload["binding"])
+                if not sources_context.authorized(binding):
                     raise ProfileError("profile_source_not_visible")
                 document = store.put(
                     installation,
                     revision,
                     binding,
-                    control,
+                    sources_context,
                     origin="local_admin",
                     actor_ref=hashlib.sha256(b"local_admin").hexdigest(),
                 )
@@ -141,7 +159,7 @@ def dispatch_profile(
                 ):
                     raise ProfileError("profile_request_invalid")
                 document = store.delete(installation, revision, binding_id)
-            return project_profile(document, installation, controls)
+            return project_profile(document, installation, sources_context)
 
         return config_store.transaction(mutate)
     except (ProfileError, ValidationError) as exc:

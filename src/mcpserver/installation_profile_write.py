@@ -14,11 +14,11 @@ from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.installation_profile import (
-    BindingInput,
+    ProfileBindingInput,
     ProfileError,
+    ProfileSources,
     ProfileStore,
     installation_identity,
-    visible_controls,
 )
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.runtime import LoxoneRuntime
@@ -96,7 +96,7 @@ class ProfileWriteRuntime:
         access: StoredAccessToken,
         revision: int,
         *,
-        binding: BindingInput | None = None,
+        binding: ProfileBindingInput | None = None,
         binding_id: str | None = None,
     ) -> dict[str, Any]:
         if self._pending is not None and not self._pending.done():
@@ -129,7 +129,7 @@ class ProfileWriteRuntime:
         self,
         access: StoredAccessToken,
         revision: int,
-        binding: BindingInput | None,
+        binding: ProfileBindingInput | None,
         binding_id: str | None,
         deadline: float,
     ) -> dict[str, Any]:
@@ -155,7 +155,7 @@ class ProfileWriteRuntime:
         if fresh_access != access:
             raise PermissionError("Profile mutation is not authorized")
         installation = installation_identity(self.runtime.endpoint.origin, snapshot.structure)
-        controls = visible_controls(snapshot.structure)
+        sources = ProfileSources.from_structure(installation, snapshot.structure)
 
         def mutate(current: PluginConfig, _save: object) -> dict[str, Any]:
             # PermissionError/TimeoutError inherit OSError, which the configuration
@@ -179,11 +179,10 @@ class ProfileWriteRuntime:
                     if binding_id is None or item.binding_id == binding_id
                 ]
             )
-            if any(item.control_uuid not in controls for item in affected):
+            if any(not sources.authorized(item) for item in affected):
                 raise ProfileError("permission_denied")
             if binding is not None:
-                control = controls.get(binding.control_uuid)
-                if control is None:
+                if not sources.authorized(binding):
                     raise ProfileError("permission_denied")
                 if time.monotonic() >= deadline:
                     raise ProfileError("profile_deadline_expired")
@@ -191,7 +190,7 @@ class ProfileWriteRuntime:
                     installation,
                     revision,
                     binding,
-                    control,
+                    sources,
                     origin="mcp_user_confirmed",
                     actor_ref=profile_binding(self.auth, access),
                     deadline=deadline,

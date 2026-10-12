@@ -15,6 +15,7 @@
  data-permission-enabled="<TMPL_VAR PROFILE.PERMISSION_ENABLED ESCAPE=HTML>"
  data-permission-disabled="<TMPL_VAR PROFILE.PERMISSION_DISABLED ESCAPE=HTML>"
  data-truncated="<TMPL_VAR PROFILE.TRUNCATED ESCAPE=HTML>"
+ data-pv-range-error="<TMPL_VAR PROFILE.PV_RANGE_ERROR ESCAPE=HTML>"
  data-empty="<TMPL_VAR PROFILE.EMPTY ESCAPE=HTML>"
  data-draft="<TMPL_VAR PROFILE.DRAFT ESCAPE=HTML>"
  data-confirmed="<TMPL_VAR PROFILE.CONFIRMED ESCAPE=HTML>"
@@ -49,9 +50,16 @@
     <p id="profile-source-notice"></p>
     <details id="profile-exact"><summary><TMPL_VAR PROFILE.EXACT_IDS></summary>
      <label class="mcp-field"><span><TMPL_VAR PROFILE.CONTROL_ID></span><input id="profile-control" maxlength="128" required></label>
-     <label class="mcp-field"><span><TMPL_VAR PROFILE.SOURCE_KIND></span><select id="profile-kind"><option value="state"><TMPL_VAR PROFILE.STATE></option><option value="statistic"><TMPL_VAR PROFILE.STATISTIC></option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR PROFILE.SOURCE_KIND></span><select id="profile-kind"><option value="state"><TMPL_VAR PROFILE.STATE></option><option value="statistic"><TMPL_VAR PROFILE.STATISTIC></option><option value="weather"><TMPL_VAR PROFILE.WEATHER></option></select></label>
      <label class="mcp-field"><span><TMPL_VAR PROFILE.SOURCE_ID></span><input id="profile-source-id" maxlength="128" required></label>
     </details>
+    <fieldset id="profile-weather-fields" hidden disabled>
+     <label class="mcp-field"><span><TMPL_VAR PROFILE.WEATHER_MODE></span><select id="profile-weather-mode"><option value="actual"><TMPL_VAR PROFILE.WEATHER_ACTUAL></option><option value="forecast"><TMPL_VAR PROFILE.WEATHER_FORECAST></option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR PROFILE.WEATHER_FIELD></span><select id="profile-weather-field">
+      <option value="weather_type"><TMPL_VAR PROFILE.WEATHER_TYPE></option><option value="wind_direction"><TMPL_VAR PROFILE.WIND_DIRECTION></option><option value="solar_radiation"><TMPL_VAR PROFILE.SOLAR_RADIATION></option><option value="relative_humidity"><TMPL_VAR PROFILE.RELATIVE_HUMIDITY></option><option value="temperature"><TMPL_VAR PROFILE.TEMPERATURE></option><option value="perceived_temperature"><TMPL_VAR PROFILE.PERCEIVED_TEMPERATURE></option><option value="dew_point"><TMPL_VAR PROFILE.DEW_POINT></option><option value="precipitation"><TMPL_VAR PROFILE.PRECIPITATION></option><option value="wind_speed"><TMPL_VAR PROFILE.WIND_SPEED></option><option value="barometric_pressure"><TMPL_VAR PROFILE.BAROMETRIC_PRESSURE></option>
+     </select></label>
+     <p class="mcp-help"><TMPL_VAR PROFILE.WEATHER_HELP></p>
+    </fieldset>
     <label class="mcp-field"><span><TMPL_VAR PROFILE.ROLE></span><select id="profile-role">
      <option value="production"><TMPL_VAR PROFILE.PRODUCTION></option>
      <option value="grid_import"><TMPL_VAR PROFILE.GRID_IMPORT></option>
@@ -67,16 +75,39 @@
      <option value="door_contact"><TMPL_VAR PROFILE.DOOR_CONTACT></option>
      <option value="window_contact"><TMPL_VAR PROFILE.WINDOW_CONTACT></option>
      <option value="lighting_intent"><TMPL_VAR PROFILE.LIGHTING_INTENT></option>
+     <option value="weather_context"><TMPL_VAR PROFILE.WEATHER></option>
     </select></label>
     <label class="mcp-field"><span><TMPL_VAR PROFILE.BOUNDARY></span><input id="profile-boundary" maxlength="128"></label>
     <label class="mcp-field"><span><TMPL_VAR PROFILE.DIRECTION></span><select id="profile-direction"><option value=""><TMPL_VAR PROFILE.UNKNOWN></option><option value="import"><TMPL_VAR PROFILE.GRID_IMPORT></option><option value="export"><TMPL_VAR PROFILE.GRID_EXPORT></option><option value="charge"><TMPL_VAR PROFILE.STORAGE_CHARGE></option><option value="discharge"><TMPL_VAR PROFILE.STORAGE_DISCHARGE></option></select></label>
     <label class="mcp-field"><span><TMPL_VAR PROFILE.RATIONALE></span><input id="profile-rationale" maxlength="256"></label>
+    <section id="profile-pv-section">
+     <label><input type="checkbox" id="profile-pv-enabled"><TMPL_VAR PROFILE.PV_PARAMETERS></label>
+     <fieldset id="profile-pv-fields" disabled>
+      <p class="mcp-help"><TMPL_VAR PROFILE.PV_HELP></p>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_CAPACITY></span><input id="profile-pv-capacity" type="number" min="0" max="1000000" step="any" data-positive></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_LATITUDE></span><input id="profile-pv-latitude" type="number" min="-90" max="90" step="any"></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_LONGITUDE></span><input id="profile-pv-longitude" type="number" min="-180" max="180" step="any"></label>
+      <div id="profile-pv-arrays"></div>
+      <button type="button" class="lb-button" id="profile-pv-add-array"><TMPL_VAR PROFILE.PV_ADD_ARRAY></button>
+     </fieldset>
+    </section>
     <label><input type="checkbox" id="profile-confirmed"><TMPL_VAR PROFILE.CONFIRM_ROLE></label>
     <p class="mcp-help"><TMPL_VAR PROFILE.CONFIRM_HELP></p>
     <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR PROFILE.SAVE></button><button class="lb-button" type="button" id="profile-new"><TMPL_VAR PROFILE.NEW></button></div>
    </fieldset>
   </form>
  </section>
+ <template id="profile-pv-array-template">
+  <fieldset>
+   <legend><TMPL_VAR PROFILE.PV_ARRAY></legend>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_ARRAY_ID></span><input data-key="array_id" maxlength="64" pattern="[A-Za-z0-9_-]{1,64}" required></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_CAPACITY></span><input data-key="installed_kwp" type="number" min="0" max="1000000" step="any" data-positive></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_AZIMUTH></span><input data-key="azimuth_degrees" type="number" min="0" max="360" step="any" data-exclusive-max="360"></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_TILT></span><input data-key="tilt_degrees" type="number" min="0" max="90" step="any"></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.PV_SHADING></span><input data-key="shading" maxlength="256"></label>
+   <button type="button" class="lb-button" data-remove><TMPL_VAR PROFILE.PV_REMOVE_ARRAY></button>
+  </fieldset>
+ </template>
  <dialog class="mcp-dialog" id="profile-confirm" aria-labelledby="profile-confirm-title" aria-describedby="profile-confirm-message">
   <h2 id="profile-confirm-title"><TMPL_VAR PROFILE.CONFIRM_TITLE></h2>
   <p id="profile-confirm-message"></p>
@@ -86,4 +117,4 @@
   </form>
  </dialog>
 </main>
-<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v3" defer></script>
+<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v4" defer></script>

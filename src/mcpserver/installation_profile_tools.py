@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -11,17 +12,19 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from mcpserver.installation_profile import (
-    BindingInput,
+    ProfileBindingInput,
     ProfileError,
+    ProfileSources,
     ProfileStore,
+    PVParameters,
+    WeatherField,
     installation_identity,
     project_profile,
-    visible_controls,
 )
 from mcpserver.installation_profile_write import ProfileWriteRuntime
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeAuthorizationError, RuntimeUnavailable
 from mcpserver.persistence import PersistenceUncertain
-from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result, _snapshot
+from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result
 
 
 class ProfileBindingData(BaseModel):
@@ -42,12 +45,34 @@ class ProfileBindingData(BaseModel):
     semantic_status: Literal["not_resolved"] = "not_resolved"
     semantic_reference: str | None = None
     measurement_boundary_origin: Literal["user_declared"] = "user_declared"
+    pv_parameters: PVParameters | None = None
+    pv_parameters_usable: bool = False
+
+
+class WeatherProfileBindingData(BaseModel):
+    binding_id: str
+    role: Literal["weather_context"]
+    source_kind: Literal["weather"]
+    weather_state_uuid: str
+    mode: Literal["actual", "forecast"]
+    field: WeatherField
+    rationale: str
+    confirmed: bool
+    confirmation_origin: str | None
+    status: Literal["confirmed", "draft", "needs_review"]
+    fact_origin: Literal["user_declared"]
+    semantic_status: Literal["not_resolved"]
+    semantic_reference: str | None
+    source_format: str | None
+    unit: None = None
+    history_status: Literal["unavailable"]
+    value_origin: Literal["current_source_value", "forecast"]
 
 
 class ProfileData(BaseModel):
     status: Literal["available", "installation_changed"]
     revision: int
-    bindings: Annotated[list[ProfileBindingData], Field(max_length=100)]
+    bindings: Annotated[list[ProfileBindingData | WeatherProfileBindingData], Field(max_length=100)]
     next_offset: int | None
 
 
@@ -68,7 +93,7 @@ def register_profile_write_tools(server: FastMCP, runtime: ProfileWriteRuntime |
     from mcpserver.tools import _access
 
     async def change(
-        revision: int, confirm: bool, binding: BindingInput | None, binding_id: str | None
+        revision: int, confirm: bool, binding: ProfileBindingInput | None, binding_id: str | None
     ) -> ProfileMutationEnvelope:
         access = None
         tool = (
@@ -123,7 +148,7 @@ def register_profile_write_tools(server: FastMCP, runtime: ProfileWriteRuntime |
         structured_output=True,
     )
     async def save_installation_profile(
-        binding: BindingInput,
+        binding: ProfileBindingInput,
         expected_revision: Annotated[int, Field(strict=True, ge=0, lt=2**31 - 1)],
         confirm: Annotated[bool, Field(strict=True)] = False,
     ) -> ProfileMutationEnvelope:
@@ -169,24 +194,32 @@ def register_profile_read_tool(
         try:
             if runtime is None or path is None:
                 raise RuntimeUnavailable("Profile storage is not configured")
-            _access, snapshot = await _snapshot(runtime, fresh_visibility=True)
-            installation = installation_identity(runtime.endpoint.origin, snapshot.structure)
-            document = await asyncio.to_thread(ProfileStore(path).read, installation)
-            result = project_profile(
-                document,
-                installation,
-                visible_controls(snapshot.structure),
-                offset=offset,
-                limit=limit,
-            )
-            return _result(
-                ProfileEnvelope,
-                result,
-                warnings=[
-                    "Profile roles and boundaries are user declarations; "
-                    "technical semantics must be resolved independently."
-                ],
-            )
+            from mcpserver.tools import _access
+
+            async with runtime.snapshot_context(_access(), fresh_visibility=True) as snapshot:
+                installation = installation_identity(runtime.endpoint.origin, snapshot.structure)
+                document = await asyncio.to_thread(ProfileStore(path).read, installation)
+                result = project_profile(
+                    document,
+                    installation,
+                    ProfileSources.from_structure(installation, snapshot.structure),
+                    offset=offset,
+                    limit=limit,
+                )
+                envelope = _result(
+                    ProfileEnvelope,
+                    result,
+                    warnings=[
+                        "Profile roles and boundaries are user declarations; "
+                        "technical semantics must be resolved independently."
+                    ],
+                )
+                encoded = json.dumps(envelope.model_dump(), ensure_ascii=False).encode("utf-8")
+                if len(encoded) > 65536:
+                    envelope = _error(
+                        ProfileEnvelope, "response_too_large", "Request a smaller profile page"
+                    )
+            return envelope
         except RuntimeAuthorizationError:
             return _error(ProfileEnvelope, "permission_denied", "Profile access is not authorized")
         except PermissionError:

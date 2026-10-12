@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Extend confirmed installation profiles with exact structured weather bindings
+  and optional user-declared PV parameters. Read-migrate profile v1 without
+  persistence, retain separate source visibility, confirmation and unknown units;
+  v2 writes require a prior profile backup for rollback to older code (#439).
+
 - Add an opt-in, freshly administrator-authorized Energy Manager context view,
   generation-specific native load decoding and explicit capability gaps. Keep
   source metadata separate from cached observations and legacy descriptions (#436).

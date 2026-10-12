@@ -3,6 +3,14 @@
 Rules extend the existing pure state resolver. A control name, category,
 user-declared profile role or adjacent state never authorizes a decoder.
 
+Structured weather profile bindings use `installation_weather.raw_fields.v1` as
+a provenance/fingerprint rule only. Their exact advertised actual/forecast UUID
+and selected field are checked in the caller's fresh structure; only that field's
+documented presentation format participates. This rule verifies neither numeric
+units nor solar-radiation encoding, and cannot fully identify provider/station/site
+changes. PV geometry/capacity/shading remain explicitly confirmed user declarations
+attached to a production source; they never become technical decoder evidence.
+
 Primary source: [Loxone Structure File 17.1](https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf),
 dated 2026-08-06, 168 pages, SHA-256
 `97bbc5ec79c8479c0f2f561a55780a764a518fe420d11fd2fc26979fc41e5f23`.
