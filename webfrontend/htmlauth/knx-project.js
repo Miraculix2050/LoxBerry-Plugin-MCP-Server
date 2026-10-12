@@ -31,6 +31,7 @@
     frame = null;
     page.dispatchEvent(new CustomEvent('knx-project-state'));
     elements.rows.replaceChildren();
+    elements.rows.dataset.emptyMessage = label('notRun');
     elements.summary.textContent = '';
     elements.count.textContent = '';
     elements['coverage-data'].textContent = '';
@@ -101,8 +102,7 @@
   const auth = window.McpExplorerAuth.create({core, state, explorerState, label,
     clearOriginWarning: () => { elements['origin-warning'].hidden = true; },
     renderConnection: () => { scheduleExpiry(); controls(); },
-    revokeAndClear: clearSession,
-    requestedScopes: ['loxone:read'], clientName: 'LoxBerry KNX project comparison'});
+    revokeAndClear: clearSession});
   const mcp = window.McpExplorerClient.create({core, state, explorerState, label,
     accessToken: auth.accessToken, fetchWithTimeout: auth.fetchWithTimeout,
     addTranscript: () => { /* This page does not retain transport payloads. */ }});
@@ -123,6 +123,7 @@
     const node = document.createElement(tag); node.textContent = value; parent.append(node); return node;
   };
   const render = (envelope, summary, count) => {
+    elements.rows.dataset.emptyMessage = ui.dataset.noMatches;
     const data = envelope.data;
     elements.rows.replaceChildren();
     for (const finding of data.findings) {
@@ -267,8 +268,8 @@
   elements.disconnect.addEventListener('click', () => void run(async () => {
     const oauth = state.oauth;
     clearSession();
-    if (oauth) await auth.explorerSession(oauth.metadata, {action: 'revoke'});
     if (channel) channel.postMessage('logout');
+    if (oauth) await auth.explorerSession(oauth.metadata, {action: 'logout'});
     message(label('disconnected'));
   }));
   page.addEventListener('knx-state', () => {

@@ -15,7 +15,7 @@ const page=w.document.getElementById('knx-page');
 const ui=w.document.getElementById('knx-project-section');
 Object.assign(page.dataset,{unknown:'Unknown',empty:'Empty',sources:'Sources',description:'Description',importSource:'ETS'});
 Object.assign(ui.dataset,{error:'Error',connected:'Connected',disconnected:'Disconnected',targetChanged:'Stale',
-  restoringSession:'Restoring session',
+  restoringSession:'Restoring session',noMatches:'No matches',
   scopeGranted:'Granted',scopeNotGranted:'Not granted',
   common:'Common',importOnly:'Import only',observedProjectOnly:'Project only',
   namesDiffer:'Naming deviation',
@@ -58,14 +58,16 @@ w.McpExplorerClient={create(){return{initialize:async()=>[],callTool:async(name,
   if(mode==='restricted')return{structuredContent:{ok:false,data:{error:'permission_denied'}}};
   if(mode==='denied')return{structuredContent:{ok:false,
     data:{error:'unauthenticated',message:'Fresh access denied'}}};
-  return{structuredContent:envelope()};
+  const data=envelope();if(mode==='empty')data.data.findings=[];
+  return{structuredContent:data};
 }};}};
 const el=id=>w.document.getElementById('knx-project-'+id);
 const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
 const click=async(id)=>{el(id).click();await settle();};
 (async()=>{
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx-project.js','utf8'));
-  assert.equal(authOptions.requestedScopes.join(' '),'loxone:read');
+  assert.equal(authOptions.requestedScopes,undefined);
+  assert.equal(authOptions.clientName,undefined);
   assert.equal(el('loading').hidden,false);
   assert.equal(el('loading').getAttribute('aria-hidden'),'true');
   assert.equal(el('status').getAttribute('role'),'status');
@@ -130,7 +132,10 @@ const click=async(id)=>{el(id).click();await settle();};
   saved={target:'other',revision:1};page.dispatchEvent(new w.CustomEvent('knx-state'));
   pendingResolve({structuredContent:envelope()});await settle();
   assert.equal(el('rows').children.length,0);assert.match(el('status').textContent,/Stale/);
-  saved={target:'binding',revision:1};mode='denied';await click('run');
+  saved={target:'binding',revision:1};mode='empty';await click('run');
+  assert.equal(el('rows').children.length,0);
+  assert.equal(el('rows').dataset.emptyMessage,'No matches');
+  mode='denied';await click('run');
   assert.equal(el('rows').children.length,0);assert.equal(el('run').disabled,true);
   assert.equal(el('connect').disabled,false);
   assert.match(el('status').textContent,/Fresh access denied/);

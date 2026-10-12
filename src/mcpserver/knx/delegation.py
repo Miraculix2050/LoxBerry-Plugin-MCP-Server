@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE, READ_SCOPE
 from mcpserver.config import PluginConfig
 from mcpserver.explorer_bindings import active_explorer_binding
 from mcpserver.loxone.endpoint import MiniserverEndpoint
+
+if TYPE_CHECKING:
+    from mcpserver.auth.provider import StoredAccessToken
 
 
 def read_binding_id(config: PluginConfig, auth_store: Any, family: dict[str, Any]) -> str:

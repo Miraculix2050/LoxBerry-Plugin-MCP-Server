@@ -83,8 +83,8 @@
     busy = true; section.setAttribute('aria-busy', 'true');
     loading.hidden = false; announcement.textContent = announcement.dataset.loading;
     section.querySelectorAll('button').forEach((button) => { button.disabled = true; });
-    try { await operation(); }
-    catch (_) { status.textContent = section.dataset.failed; selected = null; values.textContent = ''; more.hidden = true; }
+    try { await operation(); section.dataset.loadFailed = 'false'; }
+    catch (_) { section.dataset.loadFailed = 'true'; status.textContent = section.dataset.failed; selected = null; values.textContent = ''; more.hidden = true; }
     finally {
       loading.hidden = true; announcement.textContent = '';
       busy = false; section.removeAttribute('aria-busy');
@@ -96,6 +96,7 @@
       draft_revision: draft.draft_revision, offset});
     selected = {...data.draft, next_offset: data.next_offset};
     values.textContent = '';
+    values.dataset.emptyMessage = section.dataset.noChanges;
     for (const [index, item] of data.changes.entries()) {
       const row = document.createElement('tr');
       for (const value of [item.identity, `${item.field} / ${item.operation}`, item.destination,
@@ -127,6 +128,7 @@
   const reload = async () => {
     const data = await api('knx_correction_page', target ? {target} : {});
     target = data.target; selected = null; list.textContent = ''; values.textContent = '';
+    values.dataset.emptyMessage = section.dataset.selectDraft;
     more.hidden = true; status.textContent = '';
     for (const draft of data.drafts) {
       const row = document.createElement('tr');

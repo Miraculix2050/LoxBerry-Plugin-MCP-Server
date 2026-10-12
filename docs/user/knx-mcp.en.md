@@ -24,6 +24,29 @@ Admins can refresh candidates and revoke approvals there. Explorer approvals use
 the configured inactivity lifetime. A target change cannot reuse another target's
 approval. Disabling access retains approvals but blocks reads.
 
+The KNX Admin read/draft badges display saved enablement, not unsaved checkbox
+edits. Visible tabs refresh these policies every ten seconds and when returning
+to the tab. External changes update the badge while retaining local edits and
+their original conflict revision; unavailable status is shown explicitly.
+The address-label badge counts saved unique address-format/prefix combinations,
+including imported labels, counting a manual/imported pair only once.
+
+Project comparison shares the browser OAuth session with MCP Tool Explorer.
+Sign-in offers the same optional scopes; required Loxone read access is selected,
+while additional permissions need explicit selection. Disconnect signs out all
+connected Explorer/KNX tabs. Logout errors remain visible; refresh cannot restore
+a successfully disconnected session. Local file comparison needs no OAuth login.
+
+Forms and buttons adapt to narrow mobile views; wide tables remain horizontally
+scrollable within their container.
+Empty tables retain their headers, a subtle blank area and a contextual note
+outside the table. Discard controls require pending files, drafts or results.
+XML correction export requires a current project comparison with eligible
+entries, an explicit selection and a successful preview. The experimental
+checkbox confirms one download; it is not a saved enablement setting.
+
+Delegation actions requested during a status refresh run in order; further input is disabled once the first action is queued. An existing XML preview can still be discarded with **Cancel** after logout or an invalidated project comparison. The action remains disabled while requests are running. Even after a failed load or preview response, discarding also removes comparison or XML drafts that may have been saved on the server. A failed discard preserves the state for another attempt.
+
 Start with `view="summary"`, then narrow literal `query`, `source`,
 `deviations_only` or exact `address` before fetching entries (default 50, maximum
 100). Addresses accept no `:0`/`:1`. Summary hydrates no address rows and has no

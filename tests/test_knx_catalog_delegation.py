@@ -1,6 +1,10 @@
 """Local KNX delegation is independent from project and diagnostics scopes."""
 
+import os
+import subprocess
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -159,3 +163,82 @@ def test_knx_read_rechecks_current_family_before_cached_or_worker_results(delega
     store.mutate(lambda document: document["families"]["family"].update(change))
     with pytest.raises(PermissionError):
         authorize_read(config, store, access, now=100)
+
+
+def test_admin_delegation_reader_does_not_import_mcp_server_stack():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import mcpserver.knx.read_admin; "
+            "assert 'mcpserver.auth.provider' not in sys.modules; "
+            "assert 'mcp.server.fastmcp' not in sys.modules",
+        ],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("kind", ["read", "drafts"])
+def test_read_page_snapshot_cost_is_constant_and_fresh(tmp_path, kind):
+    from mcpserver.knx.read_admin import (
+        DRAFT_POLICY,
+        READ_POLICY,
+        dispatch,
+        policy_revision,
+        snapshot,
+    )
+
+    class CountingStore(AtomicJsonAuthStore):
+        reads = 0
+
+        def snapshot(self):
+            self.reads += 1
+            return super().snapshot()
+
+    auth = CountingStore(tmp_path / "auth.json")
+    families = {
+        f"family-{index}": {
+            "client_id": "client",
+            "identity_id": f"identity-{index}",
+            "miniserver_id": "miniserver",
+            "client_kind": "tool_explorer",
+            "explorer_origin": "https://public.example",
+            "scope": f"{READ_SCOPE} {LOXBERRY_KNX_READ_SCOPE} {LOXBERRY_KNX_DRAFTS_SCOPE}",
+            "expires_at": 4102444800,
+            "revoked": False,
+        }
+        for index in range(128)
+    }
+    auth.mutate(lambda document: document["families"].update(families))
+    config = replace(PluginConfig.defaults(), loxone_endpoint="https://first.example")
+    policy = READ_POLICY if kind == "read" else DRAFT_POLICY
+    target = "https://first.example"
+    expected = snapshot(config, auth, target, policy)
+    assert len(expected["bindings"]) == 128
+    assert auth.reads > 128
+    auth.reads = 0
+    actual = dispatch(f"knx_{kind}_page", {}, config, lambda value: None, auth, target, policy)
+    assert actual == expected  # Every binding and pseudonym retains its released identity.
+    assert auth.reads == 1
+
+    auth.mutate(lambda document: document["families"]["family-0"].update(revoked=True))
+    auth.reads = 0
+    refreshed = dispatch(f"knx_{kind}_page", {}, config, lambda value: None, auth, target, policy)
+    assert len(refreshed["bindings"]) == 127
+    assert auth.reads == 1  # A later request must see revocation, not a cached view.
+
+    auth.reads = 0
+    dispatch(
+        f"knx_{kind}_enable",
+        {"enabled": False, "policy_revision": policy_revision(config, target, policy)},
+        config,
+        lambda value: None,
+        auth,
+        target,
+        policy,
+    )
+    assert auth.reads > 1  # Mutations continue to use the original live-store path.

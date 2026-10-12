@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from dataclasses import replace
@@ -88,7 +89,11 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.match(w.document.getElementById('knx-confirm-message').textContent, /aaaaaaaa/);
   dialog.close('cancel'); await tick();
   assert.deepEqual(calls.map(call => call.action), ['knx_read_page']);
+  const unsaved = w.document.getElementById('knx-read-enabled');
+  unsaved.checked = true; unsaved.dispatchEvent(new w.Event('change'));
   rows.querySelector('button').click(); await tick(); dialog.close('continue'); await tick();
+  assert.equal(unsaved.checked, true);
+  assert.equal(w.document.getElementById('knx-read-badge').dataset.kind, 'inactive');
   assert.equal(calls.at(-1).action, 'knx_read_grant');
   assert.equal(state.enabled, false);
   const enabled = w.document.getElementById('knx-read-enabled');
@@ -229,6 +234,8 @@ const record = {address_id: 2563, address: '1/2/3', address_format: 'three_level
   effective: {name: 'Additional'}, overrides: {name: 'Additional'}, imported: {}};
 let state = {target: 'target', revision: 1, taxonomy_revision: 'labels', offset: 0,
   total: 1, items: [record],
+  imported_labels: [{address_format: 'three_level', prefix: '1/2', label: 'Imported'},
+    {address_format: 'two_level', prefix: '1/2', label: 'Different format'}],
   taxonomy: [{address_format: 'three_level', prefix: '1/2', label: 'Saved'}]};
 w.confirm = () => { throw new Error('Native browser dialogs are forbidden'); };
 w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -253,7 +260,19 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(w.document.getElementById('knx-count').textContent, '1\u20131 / 1');
   const labels = w.document.getElementById('knx-taxonomy-entries');
   const form = w.document.getElementById('knx-record-form');
+  assert.equal(w.document.getElementById('knx-label-badge').textContent, '2');
+  state.items = []; state.total = 0; w.MCPKnx.render(state); await tick();
+  const body = w.document.getElementById('knx-addresses');
+  const wrapper = body.closest('.mcp-table-wrap'), note = wrapper.nextElementSibling;
+  assert.equal(body.children.length, 0); assert.equal(wrapper.dataset.empty, 'true');
+  assert.equal(note.hidden, false); assert.equal(note.closest('table'), null);
+  w.document.getElementById('knx-page').setAttribute('aria-busy', 'true'); await tick();
+  assert.equal(note.hidden, true);
+  w.document.getElementById('knx-page').removeAttribute('aria-busy');
+  state.items = [record]; state.total = 1; w.MCPKnx.render(state); await tick();
+  assert.equal(wrapper.dataset.empty, 'false'); assert.equal(note.hidden, true);
   labels.value = '3:1/2=Unsaved'; labels.dispatchEvent(new w.Event('input', {bubbles: true}));
+  assert.equal(w.document.getElementById('knx-label-badge').textContent, '2');
   form.elements.namedItem('address').value = '1/2/4';
   form.elements.namedItem('name').value = 'New additional name';
   form.dispatchEvent(new w.Event('submit', {bubbles: true, cancelable: true}));
@@ -336,3 +355,34 @@ def test_admin_preview_reports_source_changes_without_writing(
     document["schema_version"] = True
     with pytest.raises(AdminError):
         dispatch_knx("knx_preview", {"target": state["target"], "document": document}, config)
+
+
+def test_polling_logs_omit_successes_but_keep_failures_and_mutations():
+    perl = shutil.which("perl")
+    if perl is None:
+        pytest.skip("Perl is required to execute the native logging predicate")
+    source = (Path(__file__).resolve().parents[1] / "webfrontend/htmlauth/knx.cgi").read_text(
+        encoding="utf-8"
+    )
+    predicate = re.search(r"my \$quiet_read = ([^;]+);", source)
+    assert predicate is not None
+    actions = ["knx_page", "knx_read_page", "knx_drafts_page", "knx_read_enable", "knx_read_grant"]
+    code = (
+        "use strict; use warnings; "
+        + "for my $action (qw("
+        + " ".join(actions)
+        + ")) { "
+        + "for my $success (0, 1) { my $q = {action => $action}; "
+        + "my $result = {ok => $success}; my $quiet_read = "
+        + predicate.group(1)
+        + "; "
+        + 'print "$action:$success:" . ($quiet_read ? 0 : 1) . "\\n"; }}'
+    )
+    result = subprocess.run([perl, "-e", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    expected = [
+        f"{action}:{success}:{int(not (success and action in actions[:3]))}"
+        for action in actions
+        for success in (0, 1)
+    ]
+    assert result.stdout.splitlines() == expected

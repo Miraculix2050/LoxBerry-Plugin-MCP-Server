@@ -5,6 +5,19 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show persisted KNX read/draft enablement and unique label counts in section
+  badges. Refresh delegation state in visible tabs without replacing unsaved
+  edits; fix shared Explorer login/logout and provide prerequisite-aware
+  comparison/export controls and clear empty-table presentation (#497). Preserve
+  foreground actions queued during polling and allow discarding retained XML
+  previews after the comparison becomes invalid, including potentially persisted
+  comparison/XML drafts after lost or malformed responses. Keep the full MCP
+  server stack out of KNX Admin reader imports to avoid long configuration-lock
+  holds during frequent status refreshes. Use one fresh authorization snapshot
+  per delegation-page request and omit successful polling reads from INFO logs
+  while retaining failures and mutation audit records. Bound mobile form grids,
+  file inputs and buttons to their cards, including at 400 px width.
+
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without
   persistence, retain separate source visibility, confirmation and unknown units;

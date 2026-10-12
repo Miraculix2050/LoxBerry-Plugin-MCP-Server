@@ -5,6 +5,7 @@
   const core = window.MCPKnx;
   const mode = document.getElementById('knx-compare-mode');
   const inputs = {left: null, right: null};
+  let retainedDrafts = false;
   let frame = null;
   const node = (tag, text) => {
     const element = document.createElement(tag);
@@ -17,11 +18,16 @@
   const stale = () => [inputs.right, mode.value === 'file' ? inputs.left : null, frame]
     .some(value => value && !matches(value));
   const controls = () => {
+    const blocked = page.getAttribute('aria-busy') === 'true';
+    const selectedFiles = ['left', 'right'].some(side =>
+      document.getElementById(`knx-compare-${side}-file`).files.length > 0);
+    document.getElementById('knx-compare-clear').disabled = blocked
+      || !(selectedFiles || retainedDrafts || inputs.left || inputs.right || frame);
     document.getElementById('knx-compare-left-controls').hidden = mode.value !== 'file';
-    document.getElementById('knx-compare-run').disabled = !core.snapshot() || stale()
+    document.getElementById('knx-compare-run').disabled = blocked || !core.snapshot() || stale()
       || !inputs.right || (mode.value === 'file' && !inputs.left);
-    document.getElementById('knx-compare-previous').disabled = !frame || stale() || frame.offset === 0;
-    document.getElementById('knx-compare-next').disabled = !frame || stale() || !frame.has_more;
+    document.getElementById('knx-compare-previous').disabled = blocked || !frame || stale() || frame.offset === 0;
+    document.getElementById('knx-compare-next').disabled = blocked || !frame || stale() || !frame.has_more;
     document.getElementById('knx-compare-stale').textContent = stale() ? ui.dataset.stale : '';
   };
   const labels = () => ({name: page.dataset.name, description: page.dataset.description,
@@ -43,6 +49,7 @@
   };
   const render = () => {
     const rows = document.getElementById('knx-compare-rows'); rows.replaceChildren();
+    rows.dataset.emptyMessage = frame ? ui.dataset.empty : ui.dataset.notRun;
     const summary = document.getElementById('knx-compare-summary');
     const count = document.getElementById('knx-compare-count');
     const scope = document.getElementById('knx-compare-scope');
@@ -94,12 +101,15 @@
     const load = document.getElementById(prefix + 'load');
     load.addEventListener('click', () => void core.run(async () => {
       const state = core.snapshot();
-      const response = await core.api('knx_compare_load', {target: state.target, side,
+      const payload = {target: state.target, side,
         file: await encode(document.getElementById(prefix + 'file').files[0]),
         file_format: document.getElementById(prefix + 'format').value,
         encoding: document.getElementById(prefix + 'encoding').value,
         address_format: document.getElementById(prefix + 'style').value || null,
-        complete_export: document.getElementById(prefix + 'complete').checked});
+        complete_export: document.getElementById(prefix + 'complete').checked};
+      // A lost response cannot prove that the server did not persist a draft.
+      retainedDrafts = true;
+      const response = await core.api('knx_compare_load', payload);
       if (!matches(response) || core.snapshot().target !== state.target
           || core.snapshot().revision !== state.revision
           || core.snapshot().taxonomy_revision !== state.taxonomy_revision) throw new Error('knx_revision_conflict');
@@ -133,7 +143,8 @@
   document.getElementById('knx-compare-next').addEventListener('click', () => compare(frame.offset + 50));
   mode.addEventListener('change', () => { frame = null; render(); });
   document.getElementById('knx-compare-clear').addEventListener('click', () => void core.run(async () => {
-    await core.api('knx_compare_discard', {target: core.snapshot().target});
+    if (retainedDrafts) await core.api('knx_compare_discard', {target: core.snapshot().target});
+    retainedDrafts = false;
     for (const side of ['left', 'right']) {
       inputs[side] = null; document.getElementById(`knx-compare-${side}-info`).textContent = '';
       document.getElementById(`knx-compare-${side}-file`).value = '';

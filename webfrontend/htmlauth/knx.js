@@ -1,6 +1,28 @@
 (() => {
   'use strict';
   const page = document.getElementById('knx-page');
+  // Empty presentation stays outside tbody so counts and row consumers remain exact.
+  const emptyNotes = new Map();
+  const updateEmptyTables = () => {
+    for (const body of page.querySelectorAll('tbody[data-empty-message]')) {
+      const wrapper = body.closest('.mcp-table-wrap');
+      if (!wrapper) continue;
+      let note = emptyNotes.get(body);
+      if (!note) {
+        note = document.createElement('p'); note.className = 'mcp-help mcp-knx-empty-note';
+        wrapper.after(note); emptyNotes.set(body, note);
+      }
+      const card = body.closest('.mcp-card');
+      const suppressed = body.closest('[aria-busy="true"], [data-load-failed="true"]')
+        || card?.querySelector('.mcp-status[data-kind="error"]');
+      const empty = body.children.length === 0 && !suppressed;
+      wrapper.dataset.empty = String(empty); note.hidden = !empty;
+      if (note.textContent !== body.dataset.emptyMessage) note.textContent = body.dataset.emptyMessage;
+    }
+  };
+  new MutationObserver(updateEmptyTables).observe(page, {subtree: true, childList: true,
+    attributes: true, attributeFilter: ['aria-busy', 'data-load-failed', 'data-empty-message', 'data-kind']});
+  updateEmptyTables();
   const status = document.getElementById('knx-status');
   const form = document.getElementById('knx-record-form');
   const labels = document.getElementById('knx-taxonomy-form');
@@ -75,8 +97,8 @@
     busy = true;
     page.setAttribute('aria-busy', 'true');
     page.querySelectorAll('fieldset, button, input, select, textarea').forEach((e) => { e.disabled = true; });
-    try { await operation(); }
-    catch (error) { message(`${explanation(error.message)} (${error.message})`); }
+    try { await operation(); page.dataset.loadFailed = 'false'; }
+    catch (error) { page.dataset.loadFailed = 'true'; message(`${explanation(error.message)} (${error.message})`); }
     finally {
       busy = false;
       page.removeAttribute('aria-busy');
@@ -145,6 +167,10 @@
     const badge = document.getElementById('knx-address-badge');
     badge.textContent = String(data.total);
     badge.hidden = false;
+    const labelBadge = document.getElementById('knx-label-badge');
+    labelBadge.textContent = String(new Set([...data.taxonomy, ...(data.imported_labels || [])]
+      .map(e => `${e.address_format}:${e.prefix}`)).size);
+    labelBadge.hidden = false;
     const filters = data.filters || {query: '', source: 'all', deviations_only: false};
     document.getElementById('knx-search-query').value = filters.query;
     document.getElementById('knx-search-source').value = filters.source;
