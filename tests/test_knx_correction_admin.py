@@ -203,7 +203,8 @@ const dom = new JSDOM(html, {url: 'https://local.example/knx.cgi', runScripts: '
 const w = dom.window;
 for (const name of ['confirm','prompt','alert']) w[name] = () => {throw Error('Native dialog');};
 const section = w.document.getElementById('knx-corrections');
-Object.assign(section.dataset, {accepted:'Accept', rejected:'Reject', proposed:'Reset',
+Object.assign(section.dataset, {accepted:'Accepted', rejected:'Rejected', proposed:'Proposed',
+  accept:'Accept', reject:'Reject', reset:'Reset', valueLabel:'Proposed target',
   edit:'Edit', saveEdit:'Save', operation:'Operation', set:'Set', remove:'Remove'});
 const draft = {draft_id:'a'.repeat(48), draft_revision:1, expires_at:2000000000,
   change_count:1, catalog_revision:5, manual_revision:'c'.repeat(64)};
@@ -244,6 +245,8 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
   row=w.document.querySelector('#knx-corrections-values tr');
   row.querySelector('details summary').click();await tick();await tick();
   const textarea=row.querySelector('textarea');
+  assert.equal(textarea.parentElement.textContent,'Proposed target');
+  assert.equal(textarea.closest('form').className,'mcp-form');
   assert.equal(textarea.value,full); // Never save a truncated projection.
   assert.equal(calls.at(-1).payload.detail,true);
   textarea.value='';

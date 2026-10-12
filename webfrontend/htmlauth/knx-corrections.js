@@ -48,8 +48,9 @@
     const complete = data.changes[0];
     if (!complete || complete.change_id !== item.change_id) throw new Error('correction_changed');
     container.textContent = '';
-    const form = document.createElement('form');
+    const form = document.createElement('form'); form.className = 'mcp-form';
     const operationLabel = document.createElement('label');
+    operationLabel.className = 'mcp-field';
     operationLabel.textContent = section.dataset.operation;
     const operation = document.createElement('select');
     for (const [value, text] of [['set', section.dataset.set],
@@ -58,7 +59,8 @@
       operation.append(option);
     }
     operation.value = complete.operation; operationLabel.append(operation);
-    const valueLabel = document.createElement('label'); valueLabel.textContent = section.dataset.proposed;
+    const valueLabel = document.createElement('label'); valueLabel.className = 'mcp-field';
+    valueLabel.textContent = section.dataset.valueLabel;
     const value = document.createElement('textarea'); value.rows = 3;
     value.maxLength = item.field === 'description' ? 4096 : item.field === 'label' ? 80 : 255;
     value.value = complete.proposed.state === 'missing' ? '' : complete.proposed.value;
@@ -102,7 +104,9 @@
       const actions = document.createElement('td');
       if (!data.catalog_stale && !data.manual_stale) {
         for (const decision of ['accepted', 'rejected', 'proposed']) {
-          actions.append(button(section.dataset[decision], () => mutation('knx_correction_review',
+          const text = {accepted: section.dataset.accept, rejected: section.dataset.reject,
+            proposed: section.dataset.reset}[decision];
+          actions.append(button(text, () => mutation('knx_correction_review',
             {decisions: [{change_id: item.change_id, decision}]})));
         }
         const edit = document.createElement('details');
