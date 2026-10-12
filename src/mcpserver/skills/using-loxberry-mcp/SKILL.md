@@ -370,6 +370,25 @@ by the sensor-only V1 analyzer. No live actor writes or hardware support are imp
    fields are not synthetic statistic/state selectors. Check `report_applicability`
    and `report_limitations`; missing self-consumption/storage/residual components
    remain unknown.
+   For native EnergyManager/EnergyManager2 context, use the opt-in
+   `loxone_describe_control(view="energy_context")` on one exact visible manager.
+   This plugin disclosure policy requires a freshly verified Loxone administrator
+   and rejects hidden diagnosis. It is not a claimed Loxone permission rule.
+   Check generation, advertised/missing capabilities, metadata status and each
+   cached state's observation quality separately. Gen-1 fresh names/minOnTime
+   are not joined to old cached load IDs; zero minOnTime means no trigger, not
+   confirmed flexibility. Gen-2 editing locks concern MinSoc/MaxSpwr parameters,
+   not general load locks. `hasActual` may be digital feedback; false means a
+   manager assumption, not measured load power. Load pwr/ppwr units and priority
+   direction remain unknown. Only documented Gen-2 global powers have kW and
+   Ssoc/MinSoc have percent; preserve unknown signs and physical boundaries.
+   Output activation is not a measured physical cycle. Gen-1 activeUntil timezone
+   is unknown; Gen-2 minimumActiveUntil uses documented UTC seconds since 2009.
+   Do not infer historical locks, schedule loads, follow internal load UUIDs as
+   authorized controls or reconstruct the manager algorithm. Detailed cached
+   loads are also decoded through the existing semantic surfaces only after the
+   same fresh administrator check. Raw/legacy reads retain their existing contract.
+   Source-shape fixtures do not prove device or firmware compatibility.
    For reference-only selection, hidden diagnosis, or servers without this tool,
    call `loxone_describe_control(view="state_refs")` to get
    complete normalized state-name/UUID references from the freshly loaded

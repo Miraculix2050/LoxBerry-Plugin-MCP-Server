@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add an opt-in, freshly administrator-authorized Energy Manager context view,
+  generation-specific native load decoding and explicit capability gaps. Keep
+  source metadata separate from cached observations and legacy descriptions (#436).
+
 - Show localized KNX loading hints in the affected section headings on initial
   page load and data refresh, including collapsed cards. Distinguish pending
   OAuth session restoration from disconnected state and clear loading hints

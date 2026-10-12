@@ -29,6 +29,18 @@ Unknown units remain unknown. Generic analog format strings and arbitrary
 quality remains separate from semantic evidence, and historical coverage is not
 inferred from current state readability.
 
+## Energy Manager generation contracts (#436)
+
+The [separate native-energy matrix](native-energy-results.md#energy-manager-context)
+uses official Structure File 17.1 pp.61–63. Gen-1 load metadata and cached IDs
+are not temporally joined. Gen-2 documented global kW/percent units do not supply
+load pwr/ppwr units, signs, measurement boundaries or meter proof. Parameter edit
+locks do not establish general load locks; activation does not prove a physical
+cycle. Cached detailed load decoding requires fresh visible Loxone administration.
+Generation-specific rulesets version new source references; unchanged existing
+families retain their released fingerprints. Source-shape fixtures do not prove
+device/firmware compatibility. No historic load-lock or PV-forecast source is added.
+
 ## Counter and series evidence (prepared before PR 5 decoding)
 
 | Exact source | Proven fields | Source/version | Limit |

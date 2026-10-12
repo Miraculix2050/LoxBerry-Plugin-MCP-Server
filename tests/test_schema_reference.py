@@ -182,7 +182,13 @@ def test_describe_schema_publishes_minimal_state_refs_contract() -> None:
     )
     view = describe["inputSchema"]["properties"]["view"]
     assert view["default"] == "full"
-    assert view["enum"] == ["full", "history_targets", "operation_targets", "state_refs"]
+    assert view["enum"] == [
+        "full",
+        "history_targets",
+        "operation_targets",
+        "state_refs",
+        "energy_context",
+    ]
     definitions = describe["outputSchema"]["$defs"]
     state_refs = definitions["ControlStateRefsData"]
     fields = {"uuid", "name", "type", "visibility", "view", "states"}

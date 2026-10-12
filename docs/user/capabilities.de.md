@@ -553,6 +553,24 @@ liefert keine Werte für gestern. Fehlende Eigenverbrauchs-, Speicher- oder
 Restlastkomponenten bleiben unbekannt. `report_applicability` und
 `report_limitations` nennen die Eignung und Grenzen der nativen Komponenten.
 
+Nativer Energiemanager-Kontext ist über
+`loxone_describe_control(view="energy_context")` für einen frisch sichtbaren
+Baustein und einen frisch bestätigten Loxone-Administrator verfügbar.
+Versteckte Bausteine sind ausgeschlossen. Generation 1 und Generation 2 behalten
+getrennte Listen belegter Fähigkeiten und fehlender Nachweise. Andere Familien
+bleiben nicht unterstützt; der dokumentierte Vertrag allein belegt keine
+Gerätekompatibilität.
+
+Generation 1 liefert deklarierte Lastmetadaten getrennt von zwischengespeicherten
+Lastzuständen; Namen belegen keine Zuordnung. Eine Mindestlaufzeit von null
+bedeutet, dass der dokumentierte Trigger nicht verfügbar ist. Generation 2
+trennt Parametersperren zum Bearbeiten von Lastbedingungen. Ihre dokumentierten
+globalen Leistungszustände verwenden kW, SOC-Zustände Prozent; Einheiten der
+Lastleistung und die Richtung der Priorität bleiben unbekannt. `hasActual`
+belegt keinen Leistungszähler, und native Aktivierung belegt keinen physischen
+Verbrauchszyklus. Aktualität wird getrennt ausgewiesen. Nativer Regelalgorithmus
+und historische Sperren werden nicht rekonstruiert.
+
 Beispiel für zwischengespeicherte States:
 
 ```json

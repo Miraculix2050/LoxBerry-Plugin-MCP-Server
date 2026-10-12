@@ -505,6 +505,22 @@ yesterday's values. Missing self-consumption, storage or residual-load component
 remain unknown. `report_applicability` and `report_limitations` describe native
 component suitability and limits.
 
+Native Energy Manager context is available through
+`loxone_describe_control(view="energy_context")` for one freshly visible control
+and a freshly verified Loxone administrator. Hidden controls are excluded.
+Generation 1 and generation 2 retain separate capability and missing-evidence
+lists. Other families remain unsupported; the documented contract alone does not
+establish device compatibility.
+
+Generation 1 exposes declared load metadata separately from cached load states;
+names do not establish an association. A zero minimum on-time means the documented
+trigger is unavailable. Generation 2 exposes parameter editing locks separately
+from load constraints. Its documented global power states use kW and SOC states
+use percent; load power units and priority direction remain unknown. `hasActual`
+does not prove a power meter, and native activation does not prove a physical
+consumption cycle. Freshness is reported independently. No native scheduling
+algorithm or historical constraints are reconstructed.
+
 Cached-state example:
 
 ```json
