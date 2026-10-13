@@ -134,3 +134,80 @@ const settle=async()=>{for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r)
         ["node", "-e", script, prefix], capture_output=True, text=True, timeout=30
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_knx_section_cards_preserve_reload_state_without_extra_requests():
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const source=fs.readFileSync('webfrontend/htmlauth/knx.js','utf8');
+const key='mcpserver.knx.sections.v1', admin='mcpserver.admin.sections.v2';
+const saved=new Map([[admin,'{"help":false}']]);
+const setOpen=async(view,id,open)=>{
+  const card=view.card(id);if(card.open===open)return;
+  const toggled=new Promise(resolve=>card.addEventListener('toggle',resolve,{once:true}));
+  card.open=open;await toggled;
+};
+const make=(mode='normal',url='https://local.example/knx.cgi')=>{
+  const dom=new JSDOM(html,{url,runScripts:'outside-only'}),w=dom.window;
+  let requests=0,errors=0;
+  w.addEventListener('error',()=>errors++);
+  Object.defineProperty(w,'localStorage',{get:()=>{
+    if(mode==='blocked')throw Error('storage blocked');
+    return {getItem:k=>saved.get(k)??null,setItem:(k,v)=>{
+      if(mode==='write-blocked')throw Error('write blocked');
+      saved.set(k,v);
+    }};
+  }});
+  w.fetch=()=>{requests++;return new Promise(()=>{});};
+  w.eval(source);
+  return {dom,w,card:id=>w.document.getElementById(id),requests:()=>requests,errors:()=>errors};
+};
+(async()=>{
+  let view=make();
+  const ids=[...view.w.document.querySelectorAll('details[data-persist-collapse]')].map(e=>e.id);
+  assert.equal(ids.length,9);assert.equal(new Set(ids).size,9);
+  assert(ids.includes('knx-import-section'));
+  assert(ids.every(id=>view.card(id).open));
+  const requests=view.requests();
+  for(const id of ['knx-read-delegation','knx-label-section',
+    'knx-address-section','knx-import-section'])
+    await setOpen(view,id,false);
+  assert.equal(view.requests(),requests);
+  const state=JSON.parse(saved.get(key));
+  assert.deepEqual(Object.keys(state).sort(),ids.sort());
+  assert(Object.values(state).every(v=>typeof v==='boolean'));
+  view.dom.window.close();
+  view=make('normal','https://local.example/knx.cgi?lang=en');
+  for(const id of ['knx-read-delegation','knx-label-section',
+    'knx-address-section','knx-import-section'])
+    assert.equal(view.card(id).open,false);
+  assert.equal(view.card('knx-project-section').open,true);
+  await setOpen(view,'knx-import-section',true);view.dom.window.close();
+  view=make();
+  assert.equal(view.card('knx-address-section').open,false);
+  assert.equal(view.card('knx-import-section').open,true);
+  await setOpen(view,'knx-address-section',true);await setOpen(view,'knx-label-section',true);
+  view.dom.window.close();
+  view=make();
+  assert.equal(view.card('knx-read-delegation').open,false);
+  assert.equal(view.card('knx-label-section').open,true);
+  assert.equal(view.card('knx-address-section').open,true);
+  assert.equal(view.card('knx-import-section').open,true);
+  view.dom.window.close();assert.equal(saved.get(admin),'{"help":false}');
+  for(const malformed of ['{','null','[]','"invalid"','{"knx-label-section":"false"}']){
+    saved.set(key,malformed);view=make();
+    assert(ids.every(id=>view.card(id).open));view.dom.window.close();
+  }
+  saved.set(key,'{"knx-label-section":false}');
+  for(const mode of ['blocked','write-blocked']){
+    view=make(mode);
+    assert.equal(view.card('knx-label-section').open,mode==='blocked');
+    await setOpen(view,'knx-label-section',true);
+    await setOpen(view,'knx-read-delegation',false);
+    assert.equal(view.card('knx-read-delegation').open,false);
+    assert.equal(view.errors(),0);view.dom.window.close();
+  }
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script], check=True, timeout=30)

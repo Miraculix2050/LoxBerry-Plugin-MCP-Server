@@ -42,6 +42,8 @@ meldet alle verbundenen Explorer-/KNX-Tabs ab. Logout-Fehler bleiben sichtbar;
 Refresh stellt eine erfolgreich getrennte Sitzung nicht wieder her.
 Der lokale Dateivergleich benötigt keine OAuth-Anmeldung.
 
+Geöffnete und geschlossene Abschnittsboxen einschließlich ETS-Import bleiben
+beim Neuladen in diesem Browser erhalten, sofern der Browserspeicher verfügbar ist.
 Formulare und Schaltflächen passen sich auch schmalen mobilen Ansichten an;
 breite Tabellen bleiben innerhalb ihres Rahmens horizontal scrollbar.
 Leere Tabellen behalten Spaltenköpfe, eine dezente Leerfläche und einen passenden
