@@ -4,6 +4,16 @@
 
 ## Grundeinstellungen
 
+### Lokale Strahlungsprognosen
+
+Die [lokale Strahlungsorientierung](local-solar-forecast.de.md) nutzt eine separat
+bestätigte Weather4Lox-Quelle. `solar_forecast.enabled` ist standardmäßig `false`,
+`maximum_age_minutes` 180 (1–1440). Der private Fingerprint wird ausschließlich
+durch eine ausdrückliche lokale Administratorbestätigung der Quelle erfasst;
+ein mitgelieferter Fingerprint belegt keine Zuordnung. Die unabhängige LoxBerry-
+Lesefreigabe ist erforderlich. Aufzeichnungs-/Archiveinstellungen bleiben
+erhalten; diese Funktion ist kein PV-Ertragsmodell.
+
 ### MCP-Profilpflege
 
 Die eigene [Profilseite](installation-profile.de.md) verwaltet

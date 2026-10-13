@@ -1,5 +1,26 @@
 # Tool schema reference
 
+## Qualified local irradiance forecasts (#440)
+
+`loxone_get_weather` adds `forecast_sources` and `solar_windows`, keeping original
+modes and defaults. Local file probes require independent live `loxberry:read`
+approval and enabled local reads. Without that approval, discovery reports
+`local_read_not_authorized` without probing the file. The fixed Weather4Lox
+VisualCrossing hourly source is independently off by default; a LoxBerry Admin
+must review and confirm its installation association. No caller URL/path or
+cloud API request is accepted. Discovery is not exhaustive project discovery.
+
+`solar_windows` requires strict `future_options`: source ID, offset-aware future
+start/end, IANA timezone, duration_hours 1–24, nonnegative minimum sample threshold,
+and optional `include_samples`. No cursors/history_options are accepted; future
+options are invalid on other modes. At most 31 touched local days, 768 source
+points, 16 examples and 16 bounded diagnostics fit within 64 KiB. Rank hourly
+point sequences by sample mean, then earliest sample; no interpolation or energy
+integration. JSON numeric precision is checked before ranking. Source changes,
+revocation, stale publication and unknown native constraints remain explicit.
+See [source and method contract](local-solar-forecast-method.md) and
+[user guidance](../user/local-solar-forecast.en.md). Skill revision 87.
+
 ## Structured weather archive (#439)
 
 `loxone_get_weather` retains `actual` and `forecast` reads and adds `mode="history"`.

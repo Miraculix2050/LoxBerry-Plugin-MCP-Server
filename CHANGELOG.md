@@ -10,6 +10,13 @@ extracted from the matching version heading.
   with field effects; preserve other metadata and reconcile uncertain outcomes
   without automatic retries. No prefix, ETS or Loxone writes in this delivery (#458).
 
+- Add opt-in qualified local Weather4Lox VisualCrossing point irradiance discovery
+  and sampled future solar windows to the existing weather tool. Require independent
+  LoxBerry read approval, administrator source association, publication-age limits
+  and fresh source/access checks. Retain bounded invalid-value diagnostics and
+  correlated warnings. W/m² point guidance does not establish PV yield, surplus,
+  admissible load schedules or savings; full PV planning remains open (#440).
+
 - Add conditional retrospective load-shift examples to the existing historical
   analysis: complete confirmed cycles, native hourly energy, declared windows
   and one measured export budget shared across loads. Preserve state gaps,

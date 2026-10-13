@@ -47,6 +47,7 @@ from mcpserver.config import AtomicConfigStore, ConfigError
 from mcpserver.knx.catalog_runtime import CatalogRuntime
 from mcpserver.knx.model import KnxError
 from mcpserver.knx.project_metadata import ProjectMetadata
+from mcpserver.local_solar_forecast import ForecastSourcesResult, LocalSolarForecastRuntime
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.active_alerts import (
     CANDIDATE_TYPES,
@@ -157,6 +158,7 @@ from mcpserver.skill_delivery import (
     SKILL_REVISION,
     read_skill_markdown,
 )
+from mcpserver.solar_forecast import SolarWindowOptions, SolarWindowsResult
 from mcpserver.weather_history_tools import (
     WeatherHistoryData,
     WeatherHistoryOptions,
@@ -2255,7 +2257,7 @@ class RoomSnapshotEnvelope(ToolEnvelope):
 
 
 class WeatherEnvelope(ToolEnvelope):
-    data: WeatherData | WeatherHistoryData | ErrorData
+    data: WeatherData | WeatherHistoryData | ForecastSourcesResult | SolarWindowsResult | ErrorData
 
 
 class SkillGuideEnvelope(ToolEnvelope):
@@ -2825,7 +2827,7 @@ class LoxBerryReadRuntime:
         self._auth_store = auth_store
         self._requests: dict[str, list[float]] = {}
 
-    def _allowed(self, access: StoredAccessToken) -> Any:
+    def _allowed(self, access: StoredAccessToken, *, record_request: bool = True) -> Any:
         if LOXBERRY_READ_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry diagnostics are not authorized")
         config = self._config_store.load()
@@ -2833,6 +2835,8 @@ class LoxBerryReadRuntime:
             config, self._auth_store, access, LOXBERRY_READ_SCOPE
         ):
             raise PermissionError("LoxBerry diagnostics are not authorized")
+        if not record_request:
+            return config
         now = time.monotonic()
         entries = [item for item in self._requests.get(access.family_id, []) if item > now - 60]
         if len(entries) >= config.loxberry_requests_per_minute:
@@ -4352,6 +4356,7 @@ def register_read_tools(
     *,
     control_enabled: bool = False,
     weather_history_reader: WeatherHistoryReader | None = None,
+    solar_forecast_runtime: LocalSolarForecastRuntime | None = None,
 ) -> None:
     """Publish the stable Loxone read-only tools."""
     from mcpserver.message_tools import register_message_tools
@@ -4670,15 +4675,22 @@ def register_read_tools(
             "availability, not weather source age. mode=history reads explicitly configured "
             "local recording with loxone:history and administrator activation. Its received-time "
             "axis, source point time and reported update time are separate; forecasts remain "
-            "forecasts. Unknown units remain unknown. Recording never backfills the past."
+            "forecasts. Unknown units remain unknown. Recording never backfills the past. "
+            "forecast_sources checks only the registered local irradiance source; solar_windows "
+            "compares future point predictions in W/m² with future_options. These local modes "
+            "require independent loxberry:read approval and administrator source confirmation, "
+            "and do not establish PV yield, surplus, admissible load schedules or savings."
         ),
         annotations=annotations,
         structured_output=True,
     )
     async def get_weather(
         mode: Annotated[
-            Literal["actual", "forecast", "history"],
-            Field(description="Current weather, forecast, or paginated local reception history."),
+            Literal["actual", "forecast", "history", "forecast_sources", "solar_windows"],
+            Field(
+                description="Native weather/history, registered local forecast discovery, "
+                "or sampled future solar guidance."
+            ),
         ] = "forecast",
         cursor: Annotated[
             str | None,
@@ -4701,8 +4713,53 @@ def register_read_tools(
             WeatherHistoryOptions | None,
             Field(description="History only: exact source, past reception range and raw opt-in."),
         ] = None,
+        future_options: Annotated[
+            SolarWindowOptions | None,
+            Field(
+                description="Solar windows only: future sample range, timezone and duration; "
+                "no PV yield conversion."
+            ),
+        ] = None,
     ) -> WeatherEnvelope:
+        trace_id = str(uuid4())
         try:
+            if mode in {"forecast_sources", "solar_windows"}:
+                if cursor is not None or history_options is not None:
+                    raise ValueError(
+                        "local forecast modes do not accept cursors or history_options"
+                    )
+                if (mode == "solar_windows") != (future_options is not None):
+                    raise ValueError("future_options are required only for solar_windows")
+                if solar_forecast_runtime is None:
+                    return _error(
+                        WeatherEnvelope,
+                        "temporarily_unavailable",
+                        "Local forecast adapter is unavailable",
+                    )
+                forecast_result = await solar_forecast_runtime.read(
+                    _access(),
+                    future_options,
+                    limit=limit,
+                    trace_id=trace_id,
+                )
+                envelope = _result(
+                    WeatherEnvelope,
+                    forecast_result.model_dump(),
+                    trace_id=trace_id,
+                    warnings=[
+                        "Some source values are unsuitable; inform the user "
+                        "and inspect correlated diagnostics."
+                    ]
+                    if getattr(forecast_result, "invalid_point_count", 0)
+                    else [],
+                )
+                if len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024:
+                    return _error(
+                        WeatherEnvelope, "response_too_large", "Use fewer local forecast examples"
+                    )
+                return envelope
+            if future_options is not None:
+                raise ValueError("future_options require solar_windows mode")
             if mode == "history":
                 if history_options is None:
                     raise ValueError("history_options are required for history mode")
@@ -4801,19 +4858,36 @@ def register_read_tools(
                 warnings=warnings,
             )
         except ValueError as exc:
-            return _error(WeatherEnvelope, "invalid_input", str(exc))
+            return _error(WeatherEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
             return _error(
                 WeatherEnvelope,
-                "unauthenticated",
-                "Authentication with loxone:read is required",
+                "permission_denied"
+                if mode in {"forecast_sources", "solar_windows"}
+                else "unauthenticated",
+                "Independent local read approval is unavailable"
+                if mode in {"forecast_sources", "solar_windows"}
+                else "Authentication with loxone:read is required",
+                trace_id=trace_id,
             )
         except RuntimeUnavailable as exc:
             return _availability_error(WeatherEnvelope, exc)
         except ControlOperationError as exc:
-            return _error(WeatherEnvelope, exc.code, str(exc))
+            return _error(WeatherEnvelope, exc.code, str(exc), trace_id=trace_id)
         except TimeoutError:
-            return _error(WeatherEnvelope, "temporarily_unavailable", "Weather history timed out")
+            return _error(
+                WeatherEnvelope,
+                "temporarily_unavailable",
+                "Weather read timed out",
+                trace_id=trace_id,
+            )
+        except DiagnosticsUnavailable:
+            return _error(
+                WeatherEnvelope,
+                "temporarily_unavailable",
+                "Local forecast read budget is unavailable",
+                trace_id=trace_id,
+            )
 
     @server.tool(
         name="loxone_find_controls",
@@ -8568,6 +8642,9 @@ def register_tool_surface(
             runtime, event_history_runtime._config_store, event_history_runtime._store_path
         )
         if runtime is not None and isinstance(event_history_runtime, EventHistoryRuntime)
+        else None,
+        solar_forecast_runtime=LocalSolarForecastRuntime(runtime, loxberry_runtime)
+        if runtime is not None and loxberry_runtime is not None
         else None,
     )
     if runtime is not None:

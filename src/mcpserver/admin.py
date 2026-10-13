@@ -688,6 +688,13 @@ def _save(payload: object) -> dict[str, Any]:
                 knx_taxonomy_targets=current.knx_taxonomy_targets,
             )
         # Resolve the active target after a possible Miniserver switch.
+        if "solar_forecast" not in payload:
+            candidate = replace(
+                candidate,
+                solar_forecast_enabled=current.solar_forecast_enabled,
+                solar_forecast_maximum_age_minutes=current.solar_forecast_maximum_age_minutes,
+            )
+        candidate = _confirmed_solar_config(current, candidate, payload)
         candidate = PluginConfig.from_document(candidate.to_document())
         validate_active_labels(candidate)
         return candidate
@@ -734,6 +741,27 @@ def _save(payload: object) -> dict[str, Any]:
     } | _service_response()
 
 
+def _confirmed_solar_config(
+    previous: PluginConfig, candidate: PluginConfig, payload: dict[str, Any]
+) -> PluginConfig:
+    """Only a fresh fixed-source read establishes a new administrator association."""
+    candidate = replace(candidate, solar_forecast_fingerprint=previous.solar_forecast_fingerprint)
+    if payload.get("confirm_solar_forecast_source") is True:
+        from mcpserver.local_solar_forecast import read_forecast
+        from mcpserver.solar_forecast import ForecastEvidenceError
+
+        try:
+            confirmed = read_forecast(candidate, deadline=time.monotonic() + 10)
+        except (ForecastEvidenceError, ValueError, TimeoutError):
+            raise AdminError("Local forecast source cannot be confirmed") from None
+        if confirmed.publication_age_seconds > candidate.solar_forecast_maximum_age_minutes * 60:
+            raise AdminError("Local forecast source publication is stale")
+        candidate = replace(candidate, solar_forecast_fingerprint=confirmed.fingerprint)
+    elif candidate.solar_forecast_enabled and not previous.solar_forecast_fingerprint:
+        raise AdminError("Local forecast activation requires explicit source confirmation")
+    return candidate
+
+
 def _save_mcp(payload: object) -> dict[str, Any]:
     """Atomically apply only the MCP configuration section, preserving MQTT."""
     from mcpserver.config import ConfigError, PluginConfig
@@ -763,6 +791,8 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "statistics_memory_max_mib",
         "event_history_enabled",
         "weather_history_enabled",
+        "solar_forecast_enabled",
+        "solar_forecast_maximum_age_minutes",
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
@@ -778,6 +808,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
     def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
         was_active = _service_active()
         updated = replace(previous, **{field: getattr(candidate, field) for field in fields})
+        updated = _confirmed_solar_config(previous, updated, payload)
         save(updated)
         if not was_active:
             return updated

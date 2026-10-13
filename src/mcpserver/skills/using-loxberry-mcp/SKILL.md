@@ -658,6 +658,32 @@ or mode.
 
 ### Read weather
 
+For future solar guidance, first use `loxone_get_weather(mode="forecast_sources")`.
+This checks only the registered local Weather4Lox VisualCrossing hourly source;
+it is not an exhaustive search of all project forecasts. Local file access
+requires independent live `loxberry:read` approval as well as `loxone:read`.
+Default activation is off and requires local administrator source confirmation.
+For unavailable sources, explain `status` and `configuration_guidance`: qualified
+location/timezone-associated W/m² point forecasts can help compare sampled solar
+windows. Offer configuration steps; do not silently configure or download a
+cloud forecast. A future Config MCP import is separate work requiring an explicit
+user instruction. Lux and unverified native integer fields are not W/m².
+
+Use `mode="solar_windows"` with `future_options` (offset-aware future start/end,
+IANA timezone, duration_hours 1–24 and optional minimum_sample_irradiance_w_m2).
+The range touches at most 31 local days. Inspect at most 16 ranked nonoverlapping
+examples. Optional `include_samples` shows the point predictions; do not assume
+conditions persist between samples or integrate them into Wh/m² or PV Wh.
+`mean_sample_irradiance_w_m2` is a sample mean, not an interval mean. File publication
+age, source-reported generation time, unknown provider issue time and unknown
+confidence are separate. Explain invalid-point diagnostics and correlated warnings
+to the user without claiming a proven device fault; original source files remain
+unchanged. PV yield, baseload/surplus allocation, native locks and admissible load
+schedules remain unqualified. Never claim savings or operate devices from these
+weather examples. No cursors/history_options apply to these modes; `future_options`
+is invalid on older modes. A changed source/configuration needs a fresh request,
+not automatic retargeting or cache-based authorization.
+
 Use `loxone_get_weather(mode="actual")` for current weather and
 `loxone_get_weather(mode="forecast")` for the paginated forecast. The default
 mode is `forecast`; follow `next_cursor`. If a continuation cursor is rejected,

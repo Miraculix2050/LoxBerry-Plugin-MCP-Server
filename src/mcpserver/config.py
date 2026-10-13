@@ -374,6 +374,9 @@ class PluginConfig:
     event_history_sources: tuple[tuple[str, str], ...] = ()
     weather_history_enabled: bool = False
     weather_history_sources: tuple[WeatherHistorySource, ...] = ()
+    solar_forecast_enabled: bool = False
+    solar_forecast_maximum_age_minutes: int = 180
+    solar_forecast_fingerprint: str = ""
     structure_refresh_seconds: int = DEFAULT_STRUCTURE_REFRESH_SECONDS
     max_active_runtime_sessions: int = DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS
     runtime_session_idle_seconds: int = DEFAULT_RUNTIME_SESSION_IDLE_SECONDS
@@ -415,6 +418,22 @@ class PluginConfig:
         mqtt = _mapping(root.get("mqtt", {}), name="mqtt")
         emergency_stop = _mapping(root.get("emergency_stop", {}), name="emergency_stop")
         event_history = _mapping(root.get("event_history", {}), name="event_history")
+        solar_forecast = _mapping(root.get("solar_forecast", {}), name="solar_forecast")
+        solar_forecast_enabled = _boolean(
+            solar_forecast.get("enabled", False), name="solar_forecast.enabled"
+        )
+        solar_forecast_maximum_age_minutes = _integer(
+            solar_forecast.get("maximum_age_minutes", 180),
+            name="solar_forecast.maximum_age_minutes",
+            minimum=1,
+            maximum=1440,
+        )
+        solar_forecast_fingerprint = solar_forecast.get("fingerprint", "")
+        if not isinstance(solar_forecast_fingerprint, str) or (
+            solar_forecast_fingerprint
+            and re.fullmatch(r"[a-f0-9]{64}", solar_forecast_fingerprint) is None
+        ):
+            raise ConfigError("solar_forecast.fingerprint is invalid")
         taxonomy = _mapping(root.get("knx_address_taxonomy", {}), name="knx_address_taxonomy")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
@@ -772,6 +791,9 @@ class PluginConfig:
             event_history_sources=event_history_sources,
             weather_history_enabled=weather_history_enabled,
             weather_history_sources=weather_history_sources,
+            solar_forecast_enabled=solar_forecast_enabled,
+            solar_forecast_maximum_age_minutes=solar_forecast_maximum_age_minutes,
+            solar_forecast_fingerprint=solar_forecast_fingerprint,
             structure_refresh_seconds=structure_refresh_seconds,
             max_active_runtime_sessions=max_active_runtime_sessions,
             runtime_session_idle_seconds=runtime_session_idle_seconds,
@@ -809,6 +831,7 @@ class PluginConfig:
             "mqtt",
             "emergency_stop",
             "event_history",
+            "solar_forecast",
             "knx_address_taxonomy",
         ):
             current = document.get(key)
@@ -912,6 +935,11 @@ class PluginConfig:
         document["event_history"]["retention_days"] = self.event_history_retention_days
         document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
         document["event_history"]["weather_enabled"] = self.weather_history_enabled
+        document["solar_forecast"].update(
+            enabled=self.solar_forecast_enabled,
+            maximum_age_minutes=self.solar_forecast_maximum_age_minutes,
+            fingerprint=self.solar_forecast_fingerprint,
+        )
         document["event_history"]["weather_sources"] = [
             s.document() for s in self.weather_history_sources
         ]

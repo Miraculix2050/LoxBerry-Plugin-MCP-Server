@@ -5,6 +5,10 @@ W/m2 forecasts for conditional solar-window guidance, source discovery and
 configuration suggestions. No local PV-yield forecast is known. Irradiance
 does not establish plant output, available surplus, load admissibility or savings.
 Future Loxone Config MCP imports remain a separately requested future integration.
+The owner approved closing the delivered intermediate series separately from
+its two original evidence-gated goals: [numerical comparable days](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/509)
+and [full PV-yield planning](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/510).
+Their parent issues remain open; intermediate delivery is not their completion.
 
 ## Source evidence
 
