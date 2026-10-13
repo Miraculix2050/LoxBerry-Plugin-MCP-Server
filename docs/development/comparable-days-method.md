@@ -4,7 +4,9 @@ Status: PR 6 draft with an owner-approved qualitative runtime branch; final revi
 Predecessor: PR #496, merged as a9f499df. The runtime adapter and acceptance remain
 required before this package can merge. Parent issue: #439.
 
-The pure method accepts adapter-produced hourly evidence for one to 31 contiguous
+## Numerical reference method (no runtime adapter)
+
+The numerical pure method accepts adapter-produced hourly evidence for one to 31 contiguous
 local days. Callers cannot assert evidence-rule identifiers. A reference day and
 all candidates use a fixed local-hour window; a running reference uses only its
 completed hours. Incomplete candidates are excluded rather than shrinking the
