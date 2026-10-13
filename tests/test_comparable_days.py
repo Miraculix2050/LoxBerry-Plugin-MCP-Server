@@ -5,7 +5,15 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from mcpserver.comparable_days import DayEvidence, HourEvidence, Options, compare_days
+from mcpserver.comparable_days import (
+    DayEvidence,
+    HourEvidence,
+    Options,
+    PVRule,
+    RadiationRule,
+    TemperatureRule,
+    compare_days,
+)
 from mcpserver.history_analysis import HistoryAnalysisDeadline
 
 
@@ -25,10 +33,10 @@ def day(offset=0, *, radiation=100, temperature=20, pv=1000, base=date(2026, 7, 
     return DayEvidence(
         selected,
         hours,
-        "fixture_radiation_interval.v1",
-        "fixture_temperature_observation.v1",
-        "fixture_pv_interval.v1",
-        None,
+        RadiationRule.HOURLY_ENERGY_WH_M2,
+        TemperatureRule.CELSIUS_HOUR_START,
+        PVRule.HOURLY_ENERGY_WH,
+        "fixture_installation",
         "fixture_generation",
         temperature_position="hour_start",
     )
@@ -326,3 +334,76 @@ def test_reference_pv_unverified_rule_is_explicit_without_false_group():
     assert result["reference"]["pv_wh"] is None
     assert result["group"] is None
     assert all(candidate["pv_evidence"] == "rule_changed" for candidate in result["candidates"])
+
+
+@pytest.mark.parametrize(
+    "field,rule,reason",
+    [
+        (
+            "radiation_rule",
+            "weather_history.raw_delivery.v1",
+            "radiation_quantity_unit_interval_unverified",
+        ),
+        (
+            "temperature_rule",
+            "user_declared_weather_role",
+            "temperature_observation_position_unverified",
+        ),
+    ],
+)
+def test_untrusted_rule_strings_never_qualify_raw_values(field, rule, reason):
+    result = compare([replace(day(), **{field: rule}), day(1)])
+    assert result["status"] == "insufficient_evidence"
+    assert reason in result["limitations"]
+
+
+def test_decimal_inclusive_radiation_boundary():
+    result = compare([day(radiation=0.009), day(1, radiation=0.01035)])
+    assert len(result["candidates"]) == 1
+    assert result["candidates"][0]["radiation_relative_difference"] == 0.15
+
+
+def test_decimal_inclusive_temperature_boundary():
+    result = compare([day(temperature=1.4), day(1, temperature=4.4)])
+    assert len(result["candidates"]) == 1
+    assert result["candidates"][0]["temperature_difference_c"] == 3.0
+
+
+def test_decimal_strict_advisory_boundary():
+    result = compare([day(pv=2.4), day(1, pv=3.0), day(2, pv=3.0), day(3, pv=3.0)])
+    assert result["group"]["relative_difference"] == -0.2
+    assert result["group"]["check_candidate"] is False
+
+
+def test_untrusted_pv_rule_never_qualifies_group():
+    result = compare([replace(day(), pv_rule="user_declared_production"), day(1), day(2), day(3)])
+    assert result["reference"]["pv_evidence"] == "rule_unverified"
+    assert result["group"] is None
+
+
+@pytest.mark.parametrize("field", ["radiation_rule", "temperature_rule", "pv_rule"])
+def test_serialized_rule_values_are_not_trusted_objects(field):
+    original = day()
+    result = compare([replace(original, **{field: getattr(original, field).value}), day(1)])
+    if field == "pv_rule":
+        assert result["reference"]["pv_evidence"] == "rule_unverified"
+    else:
+        assert "reference" not in result
+
+
+def test_installation_identity_is_required_for_qualified_evidence():
+    result = compare([replace(day(), installation_ref=None), day(1)])
+    assert "source_identity_unverified" in result["limitations"]
+
+
+def test_decimal_values_beyond_boundaries_remain_excluded_or_flagged():
+    from math import nextafter
+
+    assert not compare([day(radiation=0.009), day(1, radiation=nextafter(0.01035, float("inf")))])[
+        "candidates"
+    ]
+    assert not compare([day(temperature=1.4), day(1, temperature=nextafter(4.4, float("inf")))])[
+        "candidates"
+    ]
+    result = compare([day(pv=nextafter(2.4, 0)), day(1, pv=3), day(2, pv=3), day(3, pv=3)])
+    assert result["group"]["check_candidate"] is True

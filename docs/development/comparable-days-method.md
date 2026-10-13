@@ -38,7 +38,27 @@ insufficient_evidence for such sources. Positive method fixtures do not prove
 real-source qualification or compatibility. Define and review the actual adapter
 qualification rules before claiming usable numerical comparisons.
 
-47 reference/contract cases cover thresholds, fixed windows, missing evidence,
+58 reference/contract cases cover thresholds, fixed windows, missing evidence,
 source changes, DST, zero/invalid/overflow values, group completeness and deadline
 checks. Runtime/schema/Explorer/DE-EN documentation and target acceptance are still
 pending. #501 is independent, excluded from this chat and not declared passed.
+
+## First method review corrections
+
+Only closed RadiationRule, TemperatureRule and PVRule enum objects qualify
+internal adapter evidence. Nonempty raw strings, serialized enum values and
+profile roles are rejected. Source generation and installation identity are
+mandatory. No current recorder adapter is granted qualification by these types;
+an adapter must establish each documented quantity/unit/time/interval predicate.
+
+Differences and ratios use the decimal representation of finite source summaries
+before conversion to output floats. Inclusive 15-percent/3-degree bounds and the
+strict -20-percent advisory threshold are tested with fractional decimal inputs
+and representable values immediately beyond their boundaries. No broad tolerance
+or approximate equality widens the accepted thresholds.
+
+Primary weather documentation distinguishes absolute irradiance in W/m²,
+relative irradiance in percent and radiation classes. It does not by itself
+identify the archived binary solar_radiation field or establish a continuous
+observed interval: https://www.loxone.com/enen/kb/weather-service/ . Do not infer
+that mapping from related weather-service outputs.

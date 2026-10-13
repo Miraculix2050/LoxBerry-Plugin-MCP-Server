@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from enum import Enum
 from itertools import pairwise
 from math import fsum, hypot, isfinite
 from statistics import fmean, median
@@ -72,6 +74,29 @@ class DaysResult(TypedDict):
     reference: NotRequired[DaySummary]
 
 
+class RadiationRule(Enum):
+    """Closed adapter contract: proven hourly radiation energy, never a raw delivery."""
+
+    HOURLY_ENERGY_WH_M2 = "radiation.hourly_interval_energy_wh_m2.v1"
+
+
+class TemperatureRule(Enum):
+    """Closed adapter contract: Celsius sample at each matching hour start."""
+
+    CELSIUS_HOUR_START = "temperature.celsius_hour_start_sample.v1"
+
+
+class PVRule(Enum):
+    """Closed adapter contract: isolated PV energy over each complete hour."""
+
+    HOURLY_ENERGY_WH = "pv.isolated_hourly_interval_energy_wh.v1"
+
+
+def _decimal(value: float) -> Decimal:
+    """Use the source decimal representation consistently at exact thresholds."""
+    return Decimal(str(value))
+
+
 @dataclass(frozen=True, slots=True)
 class HourEvidence:
     start: float
@@ -85,9 +110,9 @@ class HourEvidence:
 class DayEvidence:
     day: date
     hours: tuple[HourEvidence, ...]
-    radiation_rule: str | None = None
-    temperature_rule: str | None = None
-    pv_rule: str | None = None
+    radiation_rule: RadiationRule | None = None
+    temperature_rule: TemperatureRule | None = None
+    pv_rule: PVRule | None = None
     installation_ref: str | None = None
     source_generation: str | None = None
     exclusions: tuple[str, ...] = ()
@@ -138,13 +163,13 @@ def _summary(
 ) -> tuple[DaySummary | None, str | None]:
     if source.exclusions:
         return None, source.exclusions[0]
-    if not source.radiation_rule:
+    if not isinstance(source.radiation_rule, RadiationRule):
         return None, "radiation_quantity_unit_interval_unverified"
-    if not source.temperature_rule:
+    if not isinstance(source.temperature_rule, TemperatureRule):
         return None, "temperature_observation_position_unverified"
-    if source.temperature_position is None:
+    if source.temperature_position != "hour_start":
         return None, "temperature_observation_position_unverified"
-    if not source.source_generation:
+    if not source.source_generation or not source.installation_ref:
         return None, "source_identity_unverified"
     try:
         expected = [
@@ -186,7 +211,7 @@ def _summary(
     pv = [item.pv_wh for item in selected]
     pv_evidence: PVEvidence = (
         "rule_unverified"
-        if not source.pv_rule
+        if not isinstance(source.pv_rule, PVRule)
         else "values_invalid"
         if any(
             value is not None and (isinstance(value, bool) or not isfinite(value) or value < 0)
@@ -325,8 +350,19 @@ def compare_days(
             continue
         assert values is not None
         rref, rcandidate = ref_values["radiation_wh_m2"], values["radiation_wh_m2"]
-        relative = abs(rcandidate - rref) / rref if rref > 0 else 0 if rcandidate == 0 else None
-        delta_temp = abs(values["matched_sample_mean_c"] - ref_values["matched_sample_mean_c"])
+        relative = (
+            float(abs(_decimal(rcandidate) - _decimal(rref)) / _decimal(rref))
+            if rref > 0
+            else 0
+            if rcandidate == 0
+            else None
+        )
+        delta_temp = float(
+            abs(
+                _decimal(values["matched_sample_mean_c"])
+                - _decimal(ref_values["matched_sample_mean_c"])
+            )
+        )
         if (relative is not None and not isfinite(relative)) or not isfinite(delta_temp):
             result["exclusions"].append(
                 {"day": item.day.isoformat(), "reason": "derived_numeric_overflow"}
@@ -349,12 +385,12 @@ def compare_days(
             values["pv_evidence"] = "rule_changed"
         reference_pv, candidate_pv = ref_values["pv_wh"], values["pv_wh"]
         paired_absolute = (
-            reference_pv - candidate_pv
+            float(_decimal(reference_pv) - _decimal(candidate_pv))
             if reference_pv is not None and candidate_pv is not None
             else None
         )
         paired_relative = (
-            paired_absolute / candidate_pv
+            float(_decimal(paired_absolute) / _decimal(candidate_pv))
             if paired_absolute is not None and candidate_pv is not None and candidate_pv > 0
             else None
         )
@@ -391,8 +427,8 @@ def compare_days(
     reference_pv = ref_values["pv_wh"]
     if len(pv) >= 3 and reference_pv is not None:
         central = median(pv)
-        absolute = reference_pv - central
-        relative = absolute / central if central > 0 else None
+        absolute = float(_decimal(reference_pv) - _decimal(central))
+        relative = float(_decimal(absolute) / _decimal(central)) if central > 0 else None
         if (
             not isfinite(central)
             or not isfinite(absolute)
