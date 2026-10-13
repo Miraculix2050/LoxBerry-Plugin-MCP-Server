@@ -88,3 +88,30 @@ requires restoring the prior profile backup together with the older code.
 Admin source selection is limited to 500 entries. Larger installations can enter
 exact IDs from Explorer; current Admin visibility is validated again before saving.
 Admin visibility never grants a MCP client additional Loxone access.
+
+
+## Flexible load constraints
+
+Consumer bindings optionally declare local weekly time windows, an explicit
+same-day/next-day completion deadline, expected duration, interruptibility,
+minimum run/off times and energy-profile provenance. Select an independently
+confirmed binary operating-state binding. Changing any parameter requires
+renewed confirmation of the whole binding. These are user declarations; they
+neither prove a physical program cycle nor authorize a load operation.
+
+`active_episode_only` is the default. Select `user_confirmed_cycle` only if you
+explicitly confirm that this operating state represents the complete appliance
+cycle. Unknown/native locks remain `not_checked` and must never be bypassed.
+Measured interval energy and a user-declared Wh value are kept separate. See
+[observed load cycles](load-cycles.en.md) for the historical analysis.
+
+A hidden, missing, changed or unconfirmed companion makes constraints unusable.
+Its identifiers are withheld; the stored declarations are retained. Edit cannot
+silently erase withheld constraints. Reusing a companion binding ID for another
+source requires renewed consumer confirmation. MCP replacement/deletion checks
+old and new companion visibility as well as the primary source.
+
+Profile schema v3 reads validated v1/v2 files without rewriting them or changing
+the revision. The next authorized mutation stores v3. Source fingerprints and
+existing confirmations are retained. Older readers cannot consume v3; rollback
+requires the appropriate profile backup rather than relabelling the version.

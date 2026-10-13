@@ -103,3 +103,33 @@ Die Admin-Quellenauswahl ist auf 500 Einträge begrenzt. Bei größeren Anlagen
 können exakte IDs aus dem Explorer eingegeben werden; sie werden vor dem Speichern
 erneut gegen die aktuelle Admin-Sichtbarkeit geprüft. Admin-Sichtbarkeit erlaubt
 keinem MCP-Client zusätzliche Loxone-Zugriffe.
+
+
+## Flexible Betriebsgrenzen
+
+Verbraucherbindungen können lokale wöchentliche Zeitfenster, einen ausdrücklich
+auf denselben Tag oder Folgetag bezogenen spätesten Abschluss, erwartete Laufdauer,
+Unterbrechbarkeit, Mindestlauf-/Sperrzeiten und die Herkunft des Energieprofils
+enthalten. Wählen Sie eine unabhängig bestätigte Bindung eines binären
+Betriebszustands. Jede Änderung erfordert eine neue Bestätigung der gesamten
+Bindung. Die Angaben sind Nutzeraussagen; sie belegen weder einen physischen
+Programmzyklus noch erlauben sie das Schalten einer Last.
+
+Standard ist `active_episode_only`. Wählen Sie `user_confirmed_cycle` nur, wenn
+Sie ausdrücklich bestätigen, dass dieser Betriebszustand den vollständigen
+Gerätezyklus abbildet. Unbekannte/native Sperren bleiben `not_checked` und dürfen
+nicht übergangen werden. Gemessene Intervallenergie und eine erklärte Wh-Angabe
+bleiben getrennt. Die [beobachteten Lastzyklen](load-cycles.de.md) beschreiben die
+historische Analyse.
+
+Verdeckte, fehlende, geänderte oder unbestätigte verknüpfte Quellen machen die
+Betriebsgrenzen nicht nutzbar. Ihre Kennungen werden zurückgehalten; gespeicherte
+Angaben bleiben erhalten. Bearbeiten entfernt zurückgehaltene Betriebsgrenzen
+nicht stillschweigend. Wiederverwendung einer verknüpften Bindungs-ID für eine
+andere Quelle erfordert eine neue Verbraucherbestätigung. MCP-Ersetzen/-Löschen
+prüft alte und neue verknüpfte Quellen zusätzlich zur primären Quelle.
+
+Profilschema v3 liest validierte v1-/v2-Dateien ohne Umschreiben oder Änderung der
+Revision. Die nächste autorisierte Änderung speichert v3. Quellenfingerprints und
+bestehende Bestätigungen bleiben erhalten. Ältere Reader können v3 nicht lesen;
+ein Rollback benötigt die passende Profilsicherung statt Umbenennen der Version.

@@ -6,6 +6,7 @@
   const get = (id) => document.getElementById(`profile-${id}`);
   let revision = 0, installation = "", bindingId = "", nextOffset = null;
   let sources = [];
+  let profileBindings = [];
   let deleting = false;
   const dialog = get("confirm");
   function ask(text, title, action) {
@@ -98,6 +99,8 @@
     get("form").reset();
     validatePVRange(get("pv-capacity"));
     get("pv-arrays").replaceChildren();
+    get("flex-windows").replaceChildren();
+    get("form").querySelector('button[type="submit"]').disabled = false;
     selectSource();
     configureFields();
   }
@@ -112,6 +115,80 @@
     const production = !weather && get("role").value === "production";
     get("pv-section").hidden = !production;
     get("pv-fields").disabled = !production || !get("pv-enabled").checked;
+    const consumer = !weather && get("role").value === "consumer";
+    get("flex-section").hidden = !consumer;
+    const flexible = consumer && get("flex-enabled").checked;
+    get("flex-fields").disabled = !flexible;
+    const declared = flexible && get("flex-origin").value === "user_declared";
+    get("flex-energy").disabled = !declared;
+    get("flex-energy").required = declared;
+    get("flex-enabled").setCustomValidity(flexible && !get("flex-windows").children.length ? page.dataset.flexError : "");
+    const value = Number(get("flex-energy").value);
+    get("flex-energy").setCustomValidity(declared && get("flex-energy").value !== "" && (!Number.isFinite(value) || value <= 0) ? page.dataset.flexError : "");
+  }
+  function operatingOptions(selected = get("flex-operating").value) {
+    const select = get("flex-operating"); select.replaceChildren();
+    const empty = document.createElement("option"); empty.value = "";
+    empty.textContent = page.dataset.flexUnavailable; select.append(empty);
+    for (const binding of profileBindings.filter((b) => b.load_operating_source_eligible)) {
+      const option = document.createElement("option"); option.value = binding.binding_id;
+      const source = sources.find((s) => s.control_uuid === binding.control_uuid && s.source_id === binding.state_uuid);
+      option.textContent = `${binding.control_name} · ${source?.source_name || binding.binding_id}`;
+      select.append(option);
+    }
+    if (selected && ![...select.options].some((o) => o.value === selected)) {
+      const unavailable = document.createElement("option"); unavailable.value = selected;
+      unavailable.textContent = page.dataset.flexUnavailable; unavailable.disabled = true; select.append(unavailable);
+    }
+    select.value = selected || "";
+  }
+  function validateWindow(row) {
+    const days = [...row.querySelectorAll("[data-weekday]")];
+    days[0].setCustomValidity(days.some((d) => d.checked) ? "" : page.dataset.flexError);
+    const start = row.querySelector('[data-key="start"]').value;
+    const end = row.querySelector('[data-key="end"]');
+    const minutes = (value) => value.split(":").reduce((hours, part) => hours * 60 + Number(part), 0);
+    const length = end.value && start ? minutes(end.value) + 1440 * Number(row.querySelector('[data-key="end_day_offset"]').value) - minutes(start) : null;
+    end.setCustomValidity(length !== null && !(length > 0 && length <= 1440) ? page.dataset.flexError : "");
+  }
+  function addWindow(value = {}) {
+    if (get("flex-windows").children.length >= 16) return;
+    const row = get("flex-window-template").content.firstElementChild.cloneNode(true);
+    for (const input of row.querySelectorAll("[data-weekday]")) {
+      input.checked = (value.weekdays || []).includes(Number(input.value));
+      input.addEventListener("change", () => validateWindow(row));
+    }
+    for (const input of row.querySelectorAll("[data-key]")) input.value = value[input.dataset.key] ?? (input.tagName === "SELECT" ? "0" : "");
+    row.querySelector("[data-remove]").addEventListener("click", () => {
+      row.remove(); get("confirmed").checked = false; get("flex-add-window").focus();
+      configureFields();
+    });
+    get("flex-windows").append(row); validateWindow(row); configureFields();
+    for (const type of ["input", "change"]) row.addEventListener(type, () => validateWindow(row));
+  }
+  function loadFlexibility() {
+    if (get("role").value !== "consumer" || !get("flex-enabled").checked) return null;
+    return {
+      timezone: get("flex-timezone").value,
+      operating_binding_id: get("flex-operating").value,
+      cycle_identity: get("flex-identity").value,
+      latest_completion: get("flex-completion").value,
+      completion_day_offset: Number(get("flex-completion-day").value),
+      duration_seconds: Number(get("flex-duration").value),
+      interruptible: get("flex-interruptible").checked,
+      minimum_run_seconds: Number(get("flex-min-run").value),
+      minimum_off_seconds: Number(get("flex-min-off").value),
+      energy_profile_origin: get("flex-origin").value,
+      declared_cycle_energy_wh: get("flex-origin").value === "user_declared" ? numberOrNull(get("flex-energy")) : null,
+      rationale: get("flex-rationale").value,
+      native_lock_policy: "never_override",
+      windows: [...get("flex-windows").children].map((row) => ({
+        weekdays: [...row.querySelectorAll("[data-weekday]:checked")].map((d) => Number(d.value)),
+        start: row.querySelector('[data-key="start"]').value,
+        end: row.querySelector('[data-key="end"]').value,
+        end_day_offset: Number(row.querySelector('[data-key="end_day_offset"]').value),
+      })),
+    };
   }
   function addArray(value = {}) {
     if (get("pv-arrays").children.length >= 16) return;
@@ -175,6 +252,24 @@
     get("pv-latitude").value = pv?.latitude ?? ""; get("pv-longitude").value = pv?.longitude ?? "";
     get("pv-arrays").replaceChildren();
     for (const array of pv?.arrays || []) addArray(array);
+    const flex = binding.load_flexibility;
+    get("flex-enabled").checked = Boolean(flex);
+    get("flex-timezone").value = flex?.timezone || "";
+    operatingOptions(flex?.operating_binding_id || "");
+    get("flex-identity").value = flex?.cycle_identity || "active_episode_only";
+    get("flex-completion").value = flex?.latest_completion || "";
+    get("flex-completion-day").value = String(flex?.completion_day_offset || 0);
+    get("flex-duration").value = flex?.duration_seconds ?? "";
+    get("flex-interruptible").checked = Boolean(flex?.interruptible);
+    get("flex-min-run").value = flex?.minimum_run_seconds ?? 0;
+    get("flex-min-off").value = flex?.minimum_off_seconds ?? 0;
+    get("flex-origin").value = flex?.energy_profile_origin || "observed_intervals";
+    get("flex-energy").value = flex?.declared_cycle_energy_wh ?? "";
+    get("flex-rationale").value = flex?.rationale || "";
+    get("flex-windows").replaceChildren();
+    for (const window of flex?.windows || []) addWindow(window);
+    get("form").querySelector('button[type="submit"]').disabled = Boolean(binding.load_constraints_present && !flex);
+    if (binding.load_constraints_present && !flex) message("flexUnavailable");
     configureFields();
     const index = sources.findIndex((s) => s.source_kind === binding.source_kind &&
       s.control_uuid === binding.control_uuid && s.source_id === get("source-id").value &&
@@ -205,6 +300,7 @@
     if (offset && revision !== result.revision) { await load(); return; }
     revision = result.revision; installation = result.installation;
     if (!offset) {
+      profileBindings = [];
       get("bindings").replaceChildren();
       sources = result.sources;
       get("source").replaceChildren();
@@ -218,6 +314,7 @@
       get("source-notice").textContent = result.sources_truncated ? page.dataset.truncated : "";
       if (!bindingId) selectSource();
     }
+    profileBindings.push(...result.bindings); operatingOptions();
     append(result.bindings); nextOffset = result.next_offset;
     get("more").hidden = nextOffset === null;
     if (!offset && !result.bindings.length) message("empty");
@@ -229,6 +326,16 @@
   get("kind").addEventListener("change", configureFields);
   get("role").addEventListener("change", configureFields);
   get("pv-enabled").addEventListener("change", configureFields);
+  get("flex-enabled").addEventListener("change", () => {
+    if (get("flex-enabled").checked && !get("flex-windows").children.length) addWindow();
+    configureFields();
+  });
+  get("flex-origin").addEventListener("change", configureFields);
+  get("flex-energy").addEventListener("input", configureFields);
+  get("flex-add-window").addEventListener("click", () => { addWindow(); get("confirmed").checked = false; });
+  for (const type of ["input", "change"]) get("form").addEventListener(type, (event) => {
+    if (event.target !== get("confirmed")) get("confirmed").checked = false;
+  });
   get("pv-capacity").addEventListener("input", () => validatePVRange(get("pv-capacity")));
   get("pv-add-array").addEventListener("click", () => addArray());
   get("new").addEventListener("click", reset);
@@ -239,7 +346,9 @@
     finally { get("more").disabled = false; }
   });
   get("form").addEventListener("submit", async (event) => {
-    event.preventDefault(); get("fields").disabled = true;
+    event.preventDefault();
+    if (get("form").querySelector('button[type="submit"]').disabled) { message("flexUnavailable"); return; }
+    get("fields").disabled = true;
     const kind = get("kind").value;
     const binding = kind === "weather" ? {
       binding_id: bindingId || `b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
@@ -255,6 +364,7 @@
       declared_direction: get("direction").value || null,
       rationale: get("rationale").value, confirmed: get("confirmed").checked,
       pv_parameters: pvParameters(),
+      load_flexibility: loadFlexibility(),
     };
     try { await call("profile_put", { installation, revision, confirm: true, binding }); reset(); await load(); message("saved"); }
     catch (_) { message("error"); }

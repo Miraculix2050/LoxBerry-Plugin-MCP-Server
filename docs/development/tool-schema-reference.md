@@ -675,3 +675,26 @@ invalid version data, unavailable probes and unrequested/unknown applicability.
 Source identity uses the existing strict MAC serial canonicalization (case and
 colon/hyphen presentation only). Invalid identities remain `invalid_identity`;
 no arbitrary string or installation-name equivalence grants applicability.
+
+
+## Confirmed load declarations and cycle output
+
+Consumer profile bindings optionally accept load_flexibility with explicit IANA
+zone, bounded weekly windows/next-day offsets, completion, duration, interruption,
+minimum run/off times, exact operating_binding_id and observed-versus-declared
+energy provenance. Native locks may never be overridden. The default identity is
+active_episode_only; user_confirmed_cycle remains a user assertion, not a native
+measurement or operation authorization. Whole-binding confirmation is renewed.
+
+Read projections expose declaration usability and withhold hidden companion
+identifiers. Companion fingerprints are internal; reused binding IDs do not
+retarget the load without renewed confirmation. MCP mutation checks include old
+and new companions. Profile storage v3 validates/read-converts v1/v2 without
+rewriting them; unknown schemas fail closed.
+
+operating_phases may additionally return comparison.load_cycles with profile
+revision, observed episode bounds, complete-edges/energy flags, source-provenance
+and identity declarations, discrepancies and explicit not_checked native locks /
+not_evaluated planning. Sixteen episodes and 128 energy intervals are separately
+bounded/truncated; complete-hour measured energies never include partial allocation.
+The existing scalar selector and aggregate comparison behavior remain intact.

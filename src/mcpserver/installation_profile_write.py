@@ -179,10 +179,10 @@ class ProfileWriteRuntime:
                     if binding_id is None or item.binding_id == binding_id
                 ]
             )
-            if any(not sources.authorized(item) for item in affected):
+            if any(not sources.related_sources_visible(item, document) for item in affected):
                 raise ProfileError("permission_denied")
             if binding is not None:
-                if not sources.authorized(binding):
+                if not sources.related_sources_visible(binding, document):
                     raise ProfileError("permission_denied")
                 if time.monotonic() >= deadline:
                     raise ProfileError("profile_deadline_expired")

@@ -47,6 +47,7 @@ from mcpserver.installation_profile import (
     project_profile,
     visible_controls,
 )
+from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.event_history import (
     EventHistoryQueryTimeout,
     EventHistoryStore,
@@ -144,6 +145,7 @@ def _statistic_calculation(
     source_id: str,
     deadline: float,
     include_raw: bool,
+    native_granularity: str,
 ) -> tuple[SourceAnalysis, list[dict[str, Any]]]:
     if time.monotonic() >= deadline:
         raise HistoryAnalysisDeadline()
@@ -156,6 +158,20 @@ def _statistic_calculation(
         control_uuid=control_id,
         source_id=source_id,
     )
+    if (
+        operation == "energy"
+        and semantics.value_meaning == "interval_difference_sum"
+        and native_granularity != "hour"
+    ):
+        result = SourceAnalysis(
+            source_kind="statistic",
+            control_uuid=control_id,
+            source_id=source_id,
+            status="insufficient_evidence",
+            unit=semantics.unit,
+            method="unavailable",
+            limitations=["non_hourly_interval_energy_not_supported"],
+        )
     raw = []
     if include_raw and semantics.timestamp_basis == "unix_utc":
         for point in points:
@@ -334,6 +350,7 @@ def register_history_analysis_tool(
                 controls = visible_controls(structure)
                 resolved = []
                 bindings: dict[str, dict[str, Any]] = {}
+                profile_revision: int | None = None
                 if any(source.binding_id for source in sources):
                     if profile_path is None:
                         raise ControlOperationError(
@@ -341,9 +358,10 @@ def register_history_analysis_tool(
                         )
                     identity = installation_identity(runtime.endpoint.origin, structure)
                     document = await run_admitted_worker(ProfileStore(profile_path).read, identity)
+                    profile_revision = document.revision
                     profile_sources = (
                         ProfileSources.from_structure(identity, structure)
-                        if is_day_comparison
+                        if is_day_comparison or operation == "operating_phases"
                         else controls
                     )
                     projection = project_profile(document, identity, profile_sources, limit=256)
@@ -475,6 +493,7 @@ def register_history_analysis_tool(
                             series_id,
                             deadline,
                             include_raw,
+                            source.granularity,
                         )
                         raw.extend(source_raw)
                         _timing(trace_id, "statistics_calculation", phase_started)
@@ -570,6 +589,9 @@ def register_history_analysis_tool(
                                 segments,
                                 binding["role"] if binding else None,
                                 binding["measurement_boundary"] if binding else None,
+                                LoadFlexibility.model_validate(binding["load_flexibility"])
+                                if binding and binding.get("load_constraints_usable")
+                                else None,
                             )
                         )
                 comparison = None
@@ -587,6 +609,17 @@ def register_history_analysis_tool(
                         night_end_hour=options.night_end_hour,
                         deadline=deadline,
                     )
+                    if comparison.load_cycles is not None:
+                        assert profile_path is not None and profile_revision is not None
+                        current_profile = await run_admitted_worker(
+                            ProfileStore(profile_path).read, identity
+                        )
+                        if current_profile.revision != profile_revision:
+                            raise ControlOperationError(
+                                "temporarily_unavailable",
+                                "Installation profile changed during cycle analysis",
+                            )
+                        comparison.load_cycles.profile_revision = profile_revision
                 scope = await run_admitted_worker(
                     _raw_scope,
                     cursors,
@@ -660,6 +693,8 @@ def register_history_analysis_tool(
             "Compute compact temperature, energy, state duration, consumer ranking, PV/load "
             "windows, operating phases, nighttime estimates or qualitative radiation-class "
             "comparable days. Classes do not establish radiation energy or normalized yield. "
+            "Operating phases can describe confirmed load activity cycles. Interval energy "
+            "analysis requires hour granularity; non-hourly aggregates remain unqualified. "
             "Exact sources or confirmed "
             "visible profile bindings; UTC half-open "
             "period and explicit IANA timezone. Requires loxone:read and loxone:history. "

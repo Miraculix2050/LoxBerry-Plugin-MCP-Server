@@ -33,6 +33,63 @@ HIDDEN = "00000003-0000-0000-0000000000000003"
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["replace", "delete", "delete_all"])
+async def test_hidden_old_load_companion_blocks_mcp_mutation(context, operation):
+    from test_load_flexibility import flexibility
+
+    from mcpserver.installation_profile import ProfileSources
+
+    c = context
+    snapshot = c.snapshot.return_value[1]
+    companion = Control(
+        HIDDEN,
+        "Hidden fixture state",
+        "InfoOnlyDigital",
+        None,
+        None,
+        None,
+        (("active", "00000004-0000-0000-0000000000000004"),),
+    )
+    snapshot.structure = replace(snapshot.structure, controls=(c.control, companion))
+    sources = ProfileSources.from_structure(c.installation, snapshot.structure)
+    store = ProfileStore(c.runtime.path)
+    store.put(
+        c.installation,
+        0,
+        BindingInput(
+            binding_id="load-active",
+            role="operating_state",
+            control_uuid=HIDDEN,
+            source_kind="state",
+            state_uuid=companion.state_uuids[0][1],
+            confirmed=True,
+        ),
+        sources,
+        origin="local_admin",
+        actor_ref=profile_binding(c.auth, c.access),
+    )
+    consumer = c.binding.model_copy(update={"role": "consumer", "load_flexibility": flexibility()})
+    store.put(
+        c.installation,
+        1,
+        consumer,
+        sources,
+        origin="local_admin",
+        actor_ref=profile_binding(c.auth, c.access),
+    )
+    snapshot.structure = replace(snapshot.structure, controls=(c.control,))
+    before = c.runtime.path.read_bytes()
+    with pytest.raises(PermissionError, match="not authorized"):
+        await c.runtime.change(
+            c.access,
+            2,
+            binding=c.binding if operation == "replace" else None,
+            binding_id=None if operation == "delete_all" else c.binding.binding_id,
+        )
+    assert c.runtime.path.read_bytes() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["replace", "delete", "delete_all"])
 async def test_missing_old_weather_cannot_be_deleted_or_overwritten_by_mcp(context, operation):
     from mcpserver.installation_profile import ProfileSources, WeatherBindingInput
 

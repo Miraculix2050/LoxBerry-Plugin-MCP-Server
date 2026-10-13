@@ -6,7 +6,12 @@ and supplies no future scheduling or financial saving claim.
 
 ## Profile contract
 
-Add optional `load_flexibility` to a consumer binding in the current profile.
+Add optional `load_flexibility` to a consumer binding in profile schema v3.
+Validate v1/v2 with their original shapes and convert only in memory on read;
+reading never rewrites the file or increments the revision. The next authorized
+mutation persists v3. Unknown versions fail closed. Legacy fingerprints and
+confirmations are preserved; constraints default to absent. Rollback to a reader
+without v3 support requires restoring the backed-up profile, not relabelling it.
 Existing bindings remain valid. Confirm the whole binding again after any change.
 The constraints contain an IANA timezone, at most 16 local weekly windows,
 latest completion, expected duration, interruptibility, minimum run/off times,
@@ -24,7 +29,10 @@ The rationale is bounded plain text, never an instruction or authorization.
 
 Only a currently confirmed consumer and currently visible, confirmed binary
 operating-state association make the constraints usable as declarations. Hidden,
-invalid, changed or unconfirmed linked sources cannot qualify. Do not reveal a
+invalid, changed or unconfirmed linked sources cannot qualify. Confirmation stores
+the companion source fingerprint internally; reuse of its binding ID does not
+retarget the consumer without renewed confirmation. MCP replacements/deletions
+check the old and new companion visibility as well as the primary source. Do not reveal a
 hidden companion's identifiers in the consumer projection. This does not by
 itself make a load schedulable or establish a native lock observation.
 
@@ -61,12 +69,13 @@ shiftability. Native locks remain unverified unless an independent reviewed
 adapter establishes them. PR 8 must preserve this gate.
 
 Bound output to 16 described episodes and 128 energy intervals in total, with
-counts and truncation. Preserve the existing 31 local days, 100,000 input points,
+counts and separate episode/energy-profile truncation. Record the profile revision
+and fail before output if it changes during cycle analysis. Preserve the existing 31 local days, 100,000 input points,
 30-second deadline, two analyses and 64-KiB result ceiling. The target acceptance
 distinguishes isolated installed fixtures from genuine available source evidence.
 
 ## Delivery gate
 
-This draft begins with typed constraints and the method contract. Profile/store
-projection, Admin DE/EN UI, historical cycle runtime, schema/guide, tests and
-focused target acceptance are required before merge. #501 is separate and excluded.
+The typed method was reviewed before integration. Profile/store projection,
+Admin DE/EN UI and historical-cycle integration have regression coverage; final
+review, schema/guide/docs and focused target acceptance are required before merge. #501 is separate and excluded.

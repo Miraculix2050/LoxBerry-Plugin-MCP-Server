@@ -25,6 +25,7 @@ from pydantic import (
 )
 
 from mcpserver.config import _unlock_file
+from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.models import Control, LoxoneStructure
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.uuid import normalize_loxone_uuid
@@ -129,13 +130,25 @@ class PVParameters(BaseModel):
         return self
 
 
-class BindingInput(LegacyBindingInput):
+class Version2BindingInput(LegacyBindingInput):
     pv_parameters: PVParameters | None = None
 
     @model_validator(mode="after")
-    def production_parameters(self) -> BindingInput:
+    def production_parameters(self) -> Version2BindingInput:
         if self.pv_parameters is not None and self.role != "production":
             raise ValueError("profile_pv_role_invalid")
+        return self
+
+
+class BindingInput(Version2BindingInput):
+    load_flexibility: LoadFlexibility | None = None
+
+    @model_validator(mode="after")
+    def consumer_constraints(self) -> BindingInput:
+        if self.load_flexibility is not None and (
+            self.role != "consumer" or self.load_flexibility.operating_binding_id == self.binding_id
+        ):
+            raise ValueError("profile_load_association_invalid")
         return self
 
 
@@ -207,6 +220,20 @@ class LegacyStoredBinding(LegacyBindingInput, ConfirmationFields):
 
 
 class StoredBinding(BindingInput, ConfirmationFields):
+    load_operating_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def load_confirmation(self) -> StoredBinding:
+        if (self.load_flexibility is None and self.load_operating_fingerprint is not None) or (
+            self.load_flexibility is not None
+            and self.confirmed
+            and self.load_operating_fingerprint is None
+        ):
+            raise ValueError("profile_load_confirmation_invalid")
+        return self
+
+
+class Version2StoredBinding(Version2BindingInput, ConfirmationFields):
     pass
 
 
@@ -237,9 +264,19 @@ class LegacyProfileDocument(BaseModel):
         return self
 
 
-class ProfileDocument(BaseModel):
+class Version2ProfileDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     schema_version: Literal[2] = 2
+    installation: str = Field(pattern=r"^[a-f0-9]{64}$")
+    revision: int = Field(ge=0, le=2**31 - 1)
+    bindings: list[
+        Annotated[Version2StoredBinding | StoredWeatherBinding, Field(discriminator="source_kind")]
+    ] = Field(default_factory=list, max_length=MAX_BINDINGS)
+
+
+class ProfileDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: Literal[3] = 3
     installation: str = Field(pattern=r"^[a-f0-9]{64}$")
     revision: int = Field(ge=0, le=2**31 - 1)
     bindings: list[StoredProfileBinding] = Field(default_factory=list, max_length=MAX_BINDINGS)
@@ -349,11 +386,13 @@ class ProfileSources:
         controls: dict[str, Control],
         weather: set[tuple[str, str]] | None = None,
         formats: dict[str, str] | None = None,
+        structure: LoxoneStructure | None = None,
     ) -> None:
         self.installation = installation
         self.controls = controls
         self.weather = weather or set()
         self.formats = formats or {}
+        self.structure = structure
 
     @classmethod
     def from_structure(cls, installation: str, structure: LoxoneStructure) -> ProfileSources:
@@ -365,14 +404,51 @@ class ProfileSources:
                 except (ValueError, TypeError):
                     continue
         return cls(
-            installation, visible_controls(structure), weather, dict(structure.weather.formats)
+            installation,
+            visible_controls(structure),
+            weather,
+            dict(structure.weather.formats),
+            structure,
         )
+
+    def binary_operating_source(self, binding: StoredProfileBinding) -> bool:
+        if (
+            isinstance(binding, WeatherBindingInput)
+            or binding.role != "operating_state"
+            or binding.source_kind != "state"
+            or not self.authorized(binding)
+            or self.structure is None
+        ):
+            return False
+        control = self.controls[binding.control_uuid]
+        name = next((n for n, u in control.state_uuids if u == binding.state_uuid), None)
+        if name is None:
+            return False
+        metadata, _ = StateSemanticsResolver().resolve(self.structure, control, name, None, {})
+        return metadata.measurement_quantity == "binary_state"
 
     def authorized(self, binding: ProfileBindingInput) -> bool:
         # Legacy mutations retain the control anchor even when a state was removed.
         if isinstance(binding, WeatherBindingInput):
             return (binding.mode, binding.weather_state_uuid) in self.weather
         return binding.control_uuid in self.controls
+
+    def related_sources_visible(
+        self, binding: ProfileBindingInput, document: ProfileDocument
+    ) -> bool:
+        if not self.authorized(binding):
+            return False
+        if isinstance(binding, BindingInput) and binding.load_flexibility is not None:
+            linked = next(
+                (
+                    b
+                    for b in document.bindings
+                    if b.binding_id == binding.load_flexibility.operating_binding_id
+                ),
+                None,
+            )
+            return linked is not None and self.authorized(linked)
+        return True
 
     def evidence(self, binding: ProfileBindingInput) -> tuple[str, str | None]:
         if not self.authorized(binding):
@@ -449,6 +525,10 @@ class ProfileStore:
                 legacy = LegacyProfileDocument.model_validate(value)
                 value = legacy.model_dump()
                 value["schema_version"] = 2
+            if isinstance(value, dict) and value.get("schema_version") == 2:
+                version2 = Version2ProfileDocument.model_validate(value)
+                value = version2.model_dump()
+                value["schema_version"] = 3
             return ProfileDocument.model_validate(value)
         except (OSError, ValueError, ValidationError) as exc:
             raise ProfileError("profile_storage_invalid") from exc
@@ -507,8 +587,33 @@ class ProfileStore:
             stored_type = (
                 StoredWeatherBinding if isinstance(binding, WeatherBindingInput) else StoredBinding
             )
+            private_fields: dict[str, Any] = {}
+            if isinstance(binding, BindingInput) and binding.load_flexibility is not None:
+                linked = next(
+                    (
+                        b
+                        for b in document.bindings
+                        if b.binding_id == binding.load_flexibility.operating_binding_id
+                    ),
+                    None,
+                )
+                eligible = linked is not None and sources.binary_operating_source(linked)
+                if eligible:
+                    assert linked is not None
+                    linked_fingerprint, linked_reference = sources.evidence(linked)
+                    eligible = (
+                        linked.confirmed
+                        and linked_fingerprint == linked.source_fingerprint
+                        and linked_reference == linked.semantic_reference
+                    )
+                if binding.confirmed and not eligible:
+                    raise ProfileError("profile_load_operating_source_not_confirmed")
+                private_fields["load_operating_fingerprint"] = (
+                    linked.source_fingerprint if eligible and linked else None
+                )
             stored = stored_type(
                 **binding.model_dump(),
+                **private_fields,
                 source_fingerprint=fingerprint,
                 semantic_reference=reference,
                 confirmation_origin=origin if binding.confirmed else None,
@@ -566,7 +671,7 @@ def project_profile(
     sources = (
         controls if isinstance(controls, ProfileSources) else ProfileSources(installation, controls)
     )
-    visible = []
+    visible: list[dict[str, Any]] = []
     for binding in document.bindings:
         if not sources.authorized(binding):
             continue
@@ -606,10 +711,14 @@ def project_profile(
                     "semantic_status": "not_resolved",
                     "semantic_reference": None,
                     "measurement_boundary_origin": "user_declared",
+                    "load_constraints_present": isinstance(binding, StoredBinding)
+                    and binding.load_flexibility is not None,
                 }
             )
             continue
-        item = binding.model_dump(exclude={"actor_ref", "source_fingerprint"})
+        item = binding.model_dump(
+            exclude={"actor_ref", "source_fingerprint", "load_operating_fingerprint"}
+        )
         item.update(
             {
                 "status": status,
@@ -618,6 +727,10 @@ def project_profile(
                 "semantic_reference": current_reference,
             }
         )
+        if isinstance(binding, StoredBinding) and binding.role == "operating_state":
+            item["load_operating_source_eligible"] = (
+                status == "confirmed" and sources.binary_operating_source(binding)
+            )
         if isinstance(binding, WeatherBindingInput):
             key = WEATHER_FORMAT_KEYS.get(binding.field)
             item.update(
@@ -641,6 +754,33 @@ def project_profile(
                 }
             )
         visible.append(item)
+    current_bindings = {b.binding_id: b for b in document.bindings}
+    projected_bindings = {b["binding_id"]: b for b in visible}
+    for item in visible:
+        binding = current_bindings[item["binding_id"]]
+        if not isinstance(binding, StoredBinding) or binding.load_flexibility is None:
+            continue
+        item["load_constraints_present"] = True
+        linked_id = binding.load_flexibility.operating_binding_id
+        linked = current_bindings.get(linked_id)
+        projected = projected_bindings.get(linked_id)
+        # A hidden companion must not leak identifiers through an otherwise visible load.
+        if projected is None:
+            item["load_flexibility"] = None
+        usable = (
+            item["status"] == "confirmed"
+            and projected is not None
+            and projected["status"] == "confirmed"
+            and linked is not None
+            and sources.binary_operating_source(linked)
+            and linked.source_fingerprint == binding.load_operating_fingerprint
+        )
+        item["load_constraints_usable"] = usable
+        item["load_constraints_origin"] = "user_declared"
+        item["native_lock_status"] = "not_checked"
+        item["load_constraints_limitations"] = (
+            [] if usable else ["linked_operating_source_or_confirmation_not_available"]
+        )
     selected = visible[offset : offset + limit]
     return {
         "status": "available",
