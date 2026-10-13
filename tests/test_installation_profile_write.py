@@ -90,6 +90,77 @@ async def test_hidden_old_load_companion_blocks_mcp_mutation(context, operation)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["replace", "delete", "delete_all"])
+async def test_reused_link_id_does_not_replace_original_source_visibility(context, operation):
+    from test_load_flexibility import flexibility
+
+    from mcpserver.installation_profile import ProfileSources
+
+    c = context
+    snapshot = c.snapshot.return_value[1]
+    old = Control(
+        HIDDEN,
+        "Old fixture",
+        "InfoOnlyDigital",
+        None,
+        None,
+        None,
+        (("active", "00000004-0000-0000-0000000000000004"),),
+    )
+    new = replace(
+        old,
+        uuid="00000005-0000-0000-0000000000000005",
+        state_uuids=(("active", "00000006-0000-0000-0000000000000006"),),
+    )
+    snapshot.structure = replace(snapshot.structure, controls=(c.control, old, new))
+    sources = ProfileSources.from_structure(c.installation, snapshot.structure)
+    store = ProfileStore(c.runtime.path)
+    linked = BindingInput(
+        binding_id="load-active",
+        role="operating_state",
+        control_uuid=old.uuid,
+        source_kind="state",
+        state_uuid=old.state_uuids[0][1],
+        confirmed=True,
+    )
+    store.put(
+        c.installation,
+        0,
+        linked,
+        sources,
+        origin="local_admin",
+        actor_ref=profile_binding(c.auth, c.access),
+    )
+    consumer = c.binding.model_copy(update={"role": "consumer", "load_flexibility": flexibility()})
+    store.put(
+        c.installation,
+        1,
+        consumer,
+        sources,
+        origin="local_admin",
+        actor_ref=profile_binding(c.auth, c.access),
+    )
+    store.put(
+        c.installation,
+        2,
+        linked.model_copy(update={"control_uuid": new.uuid, "state_uuid": new.state_uuids[0][1]}),
+        sources,
+        origin="local_admin",
+        actor_ref=profile_binding(c.auth, c.access),
+    )
+    snapshot.structure = replace(snapshot.structure, controls=(c.control, new))
+    before = c.runtime.path.read_bytes()
+    with pytest.raises(PermissionError, match="not authorized"):
+        await c.runtime.change(
+            c.access,
+            3,
+            binding=c.binding if operation == "replace" else None,
+            binding_id=None if operation == "delete_all" else c.binding.binding_id,
+        )
+    assert c.runtime.path.read_bytes() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["replace", "delete", "delete_all"])
 async def test_missing_old_weather_cannot_be_deleted_or_overwritten_by_mcp(context, operation):
     from mcpserver.installation_profile import ProfileSources, WeatherBindingInput
 

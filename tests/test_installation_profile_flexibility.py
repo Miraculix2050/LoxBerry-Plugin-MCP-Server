@@ -176,6 +176,8 @@ def test_version2_read_migration_preserves_bytes_revision_and_existing_fingerpri
     for binding in document["bindings"]:
         binding.pop("load_flexibility")
         binding.pop("load_operating_fingerprint")
+        binding.pop("load_operating_control_uuid")
+        binding.pop("load_operating_state_uuid")
     store.path.write_text(json.dumps(document), encoding="utf-8")
     original = store.path.read_bytes()
     migrated = store.read(TARGET)

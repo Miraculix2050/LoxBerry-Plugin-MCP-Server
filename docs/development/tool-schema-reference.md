@@ -698,3 +698,7 @@ and identity declarations, discrepancies and explicit not_checked native locks /
 not_evaluated planning. Sixteen episodes and 128 energy intervals are separately
 bounded/truncated; complete-hour measured energies never include partial allocation.
 The existing scalar selector and aggregate comparison behavior remain intact.
+
+Original companion control/state anchors are retained privately with the trusted
+fingerprint. Old-source visibility checks use those original anchors, never a
+reused current binding ID. Private references are withheld from every projection.

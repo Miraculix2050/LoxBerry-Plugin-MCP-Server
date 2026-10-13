@@ -221,16 +221,28 @@ class LegacyStoredBinding(LegacyBindingInput, ConfirmationFields):
 
 class StoredBinding(BindingInput, ConfirmationFields):
     load_operating_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    load_operating_control_uuid: str | None = None
+    load_operating_state_uuid: str | None = None
 
     @model_validator(mode="after")
     def load_confirmation(self) -> StoredBinding:
-        if (self.load_flexibility is None and self.load_operating_fingerprint is not None) or (
-            self.load_flexibility is not None
-            and self.confirmed
-            and self.load_operating_fingerprint is None
+        references = (
+            self.load_operating_fingerprint,
+            self.load_operating_control_uuid,
+            self.load_operating_state_uuid,
+        )
+        if (
+            (any(value is not None for value in references) and not all(references))
+            or (self.load_flexibility is None and any(references))
+            or (self.load_flexibility is not None and self.confirmed and not all(references))
         ):
             raise ValueError("profile_load_confirmation_invalid")
         return self
+
+    @field_validator("load_operating_control_uuid", "load_operating_state_uuid")
+    @classmethod
+    def operating_identifier(cls, value: str | None) -> str | None:
+        return normalize_loxone_uuid(value) if value is not None else None
 
 
 class Version2StoredBinding(Version2BindingInput, ConfirmationFields):
@@ -439,6 +451,12 @@ class ProfileSources:
         if not self.authorized(binding):
             return False
         if isinstance(binding, BindingInput) and binding.load_flexibility is not None:
+            if (
+                isinstance(binding, StoredBinding)
+                and binding.load_operating_control_uuid is not None
+            ):
+                # Check the originally confirmed anchor, not a reused current binding ID.
+                return binding.load_operating_control_uuid in self.controls
             linked = next(
                 (
                     b
@@ -611,6 +629,12 @@ class ProfileStore:
                 private_fields["load_operating_fingerprint"] = (
                     linked.source_fingerprint if eligible and linked else None
                 )
+                private_fields["load_operating_control_uuid"] = (
+                    linked.control_uuid if eligible and isinstance(linked, StoredBinding) else None
+                )
+                private_fields["load_operating_state_uuid"] = (
+                    linked.state_uuid if eligible and isinstance(linked, StoredBinding) else None
+                )
             stored = stored_type(
                 **binding.model_dump(),
                 **private_fields,
@@ -717,7 +741,13 @@ def project_profile(
             )
             continue
         item = binding.model_dump(
-            exclude={"actor_ref", "source_fingerprint", "load_operating_fingerprint"}
+            exclude={
+                "actor_ref",
+                "source_fingerprint",
+                "load_operating_fingerprint",
+                "load_operating_control_uuid",
+                "load_operating_state_uuid",
+            }
         )
         item.update(
             {

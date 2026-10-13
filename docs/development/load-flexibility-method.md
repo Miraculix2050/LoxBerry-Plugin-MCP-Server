@@ -79,3 +79,7 @@ distinguishes isolated installed fixtures from genuine available source evidence
 The typed method was reviewed before integration. Profile/store projection,
 Admin DE/EN UI and historical-cycle integration have regression coverage; final
 review, schema/guide/docs and focused target acceptance are required before merge. #501 is separate and excluded.
+
+Original companion control/state anchors are retained privately with the trusted
+fingerprint. Old-source visibility checks use those original anchors, never a
+reused current binding ID. Private references are withheld from every projection.

@@ -92,6 +92,8 @@ def test_v1_migration_is_idempotent_and_read_does_not_persist(tmp_path):
     del document["bindings"][0]["pv_parameters"]
     del document["bindings"][0]["load_flexibility"]
     del document["bindings"][0]["load_operating_fingerprint"]
+    del document["bindings"][0]["load_operating_control_uuid"]
+    del document["bindings"][0]["load_operating_state_uuid"]
     store.path.write_text(json.dumps(document))
     original = store.path.read_bytes()
     first = store.read(TARGET)
@@ -110,6 +112,8 @@ def test_v1_is_validated_with_original_shape_before_migration(tmp_path):
     document["schema_version"] = 1
     del document["bindings"][0]["load_flexibility"]
     del document["bindings"][0]["load_operating_fingerprint"]
+    del document["bindings"][0]["load_operating_control_uuid"]
+    del document["bindings"][0]["load_operating_state_uuid"]
     store.path.write_text(json.dumps(document))
     with pytest.raises(ProfileError, match="storage_invalid"):
         store.read(TARGET)
