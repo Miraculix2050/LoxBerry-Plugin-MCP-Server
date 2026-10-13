@@ -122,8 +122,10 @@
         announcement.textContent = '';
         busy = false; section.removeAttribute('aria-busy');
         controls();
-        if (focused?.isConnected && !focused.disabled && document.activeElement === document.body)
-          focused.focus({preventScroll: true});
+        if (focused) window.requestAnimationFrame(() => {
+          if (focused.isConnected && !focused.disabled && document.activeElement === document.body)
+            focused.focus({preventScroll: true});
+        });
         schedule();
         if (queued.length) void run(queued.shift());
       }

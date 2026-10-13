@@ -32,7 +32,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {JSDOM} = require('jsdom');
 const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>]*>/g, 'label');
-const dom = new JSDOM(html, {url: 'http://localhost/knx.cgi', runScripts: 'outside-only'});
+const dom = new JSDOM(html,
+  {url: 'http://localhost/knx.cgi', runScripts: 'outside-only', pretendToBeVisual: true});
 const w = dom.window;
 const calls = [];
 let pauseRead = true, resumeRead, failRead = false;
@@ -44,8 +45,10 @@ w.confirm = () => {throw new Error('Native dialog is forbidden');};
 w.HTMLDialogElement.prototype.showModal = function () {this.open = true;};
 w.HTMLDialogElement.prototype.close = function (value) {
   this.returnValue = value; this.open = false;
-  w.document.getElementById('knx-confirm-cancel').blur();
+  const closingFocus = w.document.activeElement;
   this.dispatchEvent(new w.Event('close'));
+  // Chrome releases the closed dialog's focus after the close handler completes.
+  w.setTimeout(() => {if (closingFocus.id === 'knx-confirm-cancel') closingFocus.blur();}, 0);
 };
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
@@ -90,6 +93,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(dialog.open, true);
   assert.match(w.document.getElementById('knx-confirm-message').textContent, /aaaaaaaa/);
   dialog.close('cancel'); await tick();
+  await new Promise(resolve => w.requestAnimationFrame(resolve));
   assert.deepEqual(calls.map(call => call.action), ['knx_read_page']);
   const unsaved = w.document.getElementById('knx-read-enabled');
   unsaved.checked = true; unsaved.dispatchEvent(new w.Event('change'));
@@ -105,6 +109,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   enabled.checked = true;
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   dialog.close('cancel'); await tick();
+  await new Promise(resolve => w.requestAnimationFrame(resolve));
   assert.equal(enabled.checked, false);
   assert.equal(w.document.activeElement, submit);
   assert.equal(calls.at(-1).action, 'knx_read_grant');
@@ -113,6 +118,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   const outside = w.document.getElementById('knx-back');
   outside.focus(); dialog.close('cancel'); await tick();
+  await new Promise(resolve => w.requestAnimationFrame(resolve));
   assert.equal(w.document.activeElement, outside);
   assert.equal(enabled.checked, false);
   enabled.checked = true;
@@ -255,9 +261,7 @@ let state = {target: 'target', revision: 1, taxonomy_revision: 'labels', offset:
 w.confirm = () => { throw new Error('Native browser dialogs are forbidden'); };
 w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 w.HTMLDialogElement.prototype.close = function (value = '') {
-  this.returnValue = value; this.open = false;
-  w.document.getElementById('knx-confirm-cancel').blur();
-  this.dispatchEvent(new w.Event('close'));
+  this.returnValue = value; this.open = false; this.dispatchEvent(new w.Event('close'));
 };
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
