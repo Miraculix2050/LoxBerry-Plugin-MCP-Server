@@ -1,6 +1,6 @@
-# Comparable days method review (PR 6 draft)
+# Comparable days methods (PR 6)
 
-Status: PR 6 draft with an owner-approved qualitative runtime branch; final review and target acceptance pending.
+Status: Owner-approved qualitative runtime branch; numerical reference logic has no qualified runtime adapter. Review and acceptance evidence is recorded in PR #505.
 Predecessor: PR #496, merged as a9f499df. The runtime adapter and acceptance remain
 required before this package can merge. Parent issue: #439.
 

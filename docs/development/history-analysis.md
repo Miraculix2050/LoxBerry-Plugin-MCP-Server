@@ -142,7 +142,7 @@ A dedicated structured-weather input and separate weather summary preserve the
 released exact scalar source contract. Confirmed weather bindings are projected
 through ProfileSources before scalar control/series/state access. The adapter
 uses the existing fresh history context and admitted workers, one bounded
-reception-index query, latest-version deduplication and renewed authorization /
+reception-index query, latest-eligible-version deduplication and renewed authorization /
 configuration checks. It performs no database maintenance or recording writes.
 Unexpected values remain in the archive and in bounded diagnostics with trace-
 correlated sanitized warning logs. See [method review](comparable-days-method.md)

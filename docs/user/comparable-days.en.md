@@ -50,7 +50,7 @@ point. Missing positions never shrink a candidate's comparison window. Ambiguous
 or nonexistent daylight-saving positions are excluded. Matching class sequences
 sort by seasonal distance and date, with reasons and exclusions in the result.
 
-The reader uses one bounded reception-index query and retains the latest received
+The reader uses one bounded reception-index query and retains the latest eligible received
 version per source point. Both reception and source position must lie in the
 requested interval; older source points and later receptions do not backfill it.
 Reception/capture coverage does not prove continuous measurements. Provider or
