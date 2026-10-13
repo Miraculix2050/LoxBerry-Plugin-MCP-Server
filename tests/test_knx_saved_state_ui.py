@@ -5,15 +5,16 @@ import subprocess
 import pytest
 
 
-@pytest.mark.parametrize("prefix", ["knx-read", "knx-drafts"])
+@pytest.mark.parametrize("prefix", ["knx-read", "knx-drafts", "knx-write"])
 def test_saved_badge_polling_preserves_edits_revision_and_visible_tab_boundaries(prefix):
     script = r"""
 const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
 const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
 const dom=new JSDOM(html,
   {url:'https://local.example/knx.cgi',runScripts:'outside-only'}), w=dom.window;
-const prefix=process.argv[1], other=prefix==='knx-read'?'knx-drafts':'knx-read';
-w.document.getElementById(other+'-delegation').remove();
+const prefix=process.argv[1];
+for(const other of ['knx-read','knx-drafts','knx-write'])
+  if(other!==prefix)w.document.getElementById(other+'-delegation').remove();
 const section=w.document.getElementById(prefix+'-delegation');
 const el=id=>w.document.getElementById(prefix+'-'+id);
 Object.assign(section.dataset,{enabled:'Enabled',disabled:'Disabled',unknown:'Unknown',failed:'Failed'});
@@ -87,14 +88,15 @@ const fire=async()=>{assert.equal(timers.size,1);const [id,t]=[...timers][0];
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("prefix", ["knx-read", "knx-drafts"])
+@pytest.mark.parametrize("prefix", ["knx-read", "knx-drafts", "knx-write"])
 def test_foreground_actions_queued_during_polling_execute_in_order(prefix):
     script = r"""
 const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
 const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
 const dom=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}),w=dom.window;
-const prefix=process.argv[1],other=prefix==='knx-read'?'knx-drafts':'knx-read';
-w.document.getElementById(other+'-delegation').remove();
+const prefix=process.argv[1];
+for(const other of ['knx-read','knx-drafts','knx-write'])
+  if(other!==prefix)w.document.getElementById(other+'-delegation').remove();
 const el=id=>w.document.getElementById(prefix+'-'+id);
 Object.defineProperty(w.document,'hidden',{get:()=>false});
 const calls=[],timers=new Map();let sequence=0,pause=false,resume,active=0,maxActive=0;
@@ -166,7 +168,7 @@ const make=(mode='normal',url='https://local.example/knx.cgi')=>{
 (async()=>{
   let view=make();
   const ids=[...view.w.document.querySelectorAll('details[data-persist-collapse]')].map(e=>e.id);
-  assert.equal(ids.length,9);assert.equal(new Set(ids).size,9);
+  assert.equal(ids.length,10);assert.equal(new Set(ids).size,10);
   assert(ids.includes('knx-import-section'));
   assert(ids.every(id=>view.card(id).open));
   const requests=view.requests();
@@ -225,6 +227,8 @@ const data={target:'synthetic',target_display:'synthetic',revision:0,taxonomy_re
   sections:{knx_read_page:{ok:true,data:{target:'synthetic',enabled:true,
     policy_revision:'read-r1',bindings:[]}},knx_drafts_page:{ok:true,data:{target:'synthetic',
     enabled:false,policy_revision:'draft-r1',bindings:[]}},
+    knx_write_page:{ok:true,data:{target:'synthetic',enabled:false,
+      policy_revision:'write-r1',bindings:[]}},
     knx_correction_page:{ok:true,data:{target:'synthetic',drafts:[]}}}};
 if(failure==='section')data.sections.knx_read_page={ok:false,error:{code:'internal_error'}};
 const envelope=failure==='request'?{ok:false,error:{code:'internal_error'}}:{ok:true,data};
@@ -232,6 +236,7 @@ html=html.replace(/<TMPL_VAR[^>]*>/g,'label');
 const dom=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}),w=dom.window;
 const read={target:'synthetic',enabled:true,policy_revision:'read-r1',bindings:[]};
 const drafts={target:'synthetic',enabled:false,policy_revision:'draft-r1',bindings:[]};
+const write={target:'synthetic',enabled:false,policy_revision:'write-r1',bindings:[]};
 const corrections={target:'synthetic',drafts:[]};
 w.setTimeout=(fn,delay)=>{timers.set(++serial,{fn,delay});return serial;};
 w.clearTimeout=id=>timers.delete(id);
@@ -243,7 +248,8 @@ w.fetch=async(_,options)=>{
     if(failure==='request')throw Error('synthetic failure');
     return {ok:true,json:async()=>envelope};
   }
-  const data={knx_read_page:read,knx_drafts_page:drafts,knx_correction_page:corrections}[action];
+  const data={knx_read_page:read,knx_drafts_page:drafts,knx_write_page:write,
+    knx_correction_page:corrections}[action];
   assert(data);return{ok:true,json:async()=>({ok:true,data})};
 };
 const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
@@ -267,8 +273,11 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmedia
     assert.equal(w.document.getElementById('knx-read-badge').dataset.kind,undefined);
     assert.equal(w.document.getElementById('knx-read-enabled').disabled,true);
   }
-  if(failure!=='request')
+  if(failure!=='request'){
     assert.equal(w.document.getElementById('knx-drafts-enabled').disabled,false);
+    assert.equal(w.document.getElementById('knx-write-enabled').disabled,false);
+    assert.equal(w.document.getElementById('knx-write-badge').dataset.kind,'inactive');
+  }
   w.document.getElementById('knx-read-reload').click();await settle();
   assert.equal(calls[initialRequests].action,'knx_read_page');
   assert.equal(w.document.getElementById('knx-read-enabled').checked,true);
