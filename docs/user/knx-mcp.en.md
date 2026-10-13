@@ -223,3 +223,7 @@ separately.
 Configuration schema 12 migrates schema 11 with prefix access disabled. Native
 upgrade preserves existing labels and receipts. Back up the matching configuration
 before upgrading; older code cannot read schema 12.
+
+General settings saves preserve the current KNX labels and their receipts, even
+when a full configuration document includes stale copies. Use the revision-bound
+KNX label action to edit labels.

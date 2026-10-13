@@ -250,3 +250,7 @@ unverändert. Die bestätigte ETS-Exportübergabe folgt separat.
 Konfigurationsschema 12 migriert Schema 11 mit deaktiviertem Präfixzugriff. Das
 native Upgrade erhält Labels und Nachweise. Vor dem Upgrade die passende
 Konfiguration sichern; ältere Software kann Schema 12 nicht lesen.
+
+Allgemeine Einstellungen erhalten die aktuellen KNX-Labels und ihre Nachweise,
+auch wenn ein vollständiges Konfigurationsdokument veraltete Kopien enthält.
+Labels über den revisionsgebundenen KNX-Speichervorgang ändern.

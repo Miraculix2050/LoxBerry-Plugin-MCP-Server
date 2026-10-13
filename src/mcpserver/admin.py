@@ -680,16 +680,14 @@ def _save(payload: object) -> dict[str, Any]:
                 candidate,
                 installation_profile_write_bindings=current.installation_profile_write_bindings,
             )
-        if "knx_address_taxonomy" not in payload:
-            candidate = replace(
-                candidate,
-                knx_address_taxonomy_endpoint=current.knx_address_taxonomy_endpoint,
-                knx_address_taxonomy=current.knx_address_taxonomy,
-                knx_taxonomy_targets=current.knx_taxonomy_targets,
-            )
-        # Form submissions cannot forge, erase or roll back internal effect receipts.
+        # Labels are managed by revision-bound KNX actions. Full config forms
+        # carry display copies, not permission to roll back their live effects.
+        # Preserve labels with their receipts, including restart rollback.
         candidate = replace(
             candidate,
+            knx_address_taxonomy_endpoint=current.knx_address_taxonomy_endpoint,
+            knx_address_taxonomy=current.knx_address_taxonomy,
+            knx_taxonomy_targets=current.knx_taxonomy_targets,
             knx_prefix_apply_receipts=current.knx_prefix_apply_receipts,
             loxberry_knx_prefix_write_enabled=current.loxberry_knx_prefix_write_enabled,
         )
@@ -706,7 +704,7 @@ def _save(payload: object) -> dict[str, Any]:
         validate_active_labels(candidate)
         return candidate
 
-    # Import application uses the same config lock. Preserve omitted KNX fields
+    # KNX application uses the same config lock. Preserve live label effects
     # from the current configuration and validate immediately before each write.
     config = store.mutate(lambda current: configuration_with_current_knx(config, current))
     try:
