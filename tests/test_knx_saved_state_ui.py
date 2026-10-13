@@ -168,8 +168,10 @@ const make=(mode='normal',url='https://local.example/knx.cgi')=>{
 (async()=>{
   let view=make();
   const ids=[...view.w.document.querySelectorAll('details[data-persist-collapse]')].map(e=>e.id);
-  assert.equal(ids.length,10);assert.equal(new Set(ids).size,10);
-  assert(ids.includes('knx-import-section'));
+  const expected=['knx-read-delegation','knx-drafts-delegation','knx-write-delegation',
+    'knx-corrections','knx-label-section','knx-address-section','knx-import-section',
+    'knx-project-section','knx-compare-section','knx-xml-section'];
+  assert.deepEqual(ids.slice().sort(),expected.sort());
   assert(ids.every(id=>view.card(id).open));
   const requests=view.requests();
   for(const id of ['knx-read-delegation','knx-label-section',
