@@ -125,8 +125,7 @@
       data.project_status === 'not_checked' ? section.dataset.unchecked : ''].filter(Boolean).join(' ');
     more.hidden = data.next_offset === null;
   };
-  const reload = async () => {
-    const data = await api('knx_correction_page', target ? {target} : {});
+  const renderDrafts = (data) => {
     target = data.target; selected = null; list.textContent = ''; values.textContent = '';
     values.dataset.emptyMessage = section.dataset.selectDraft;
     more.hidden = true; status.textContent = '';
@@ -142,7 +141,14 @@
     }
     return data.drafts;
   };
+  const reload = async () => renderDrafts(await api('knx_correction_page', target ? {target} : {}));
   more.addEventListener('click', () => { if (selected) void run(() => inspect(selected, selected.next_offset)); });
   document.getElementById('knx-corrections-reload').addEventListener('click', () => void run(reload));
-  void run(reload);
+  if (window.MCPKnx?.initialSections) {
+    void run(async () => {
+      const initial = (await window.MCPKnx.initialSections)?.knx_correction_page;
+      if (!initial?.ok) throw new Error('correction_unavailable');
+      renderDrafts(initial.data);
+    });
+  } else void run(reload);
 })();

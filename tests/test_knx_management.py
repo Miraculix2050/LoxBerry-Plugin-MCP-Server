@@ -386,3 +386,47 @@ def test_polling_logs_omit_successes_but_keep_failures_and_mutations():
         for success in (0, 1)
     ]
     assert result.stdout.splitlines() == expected
+
+
+def test_initial_page_sections_match_individual_reads_without_config_writes(tmp_path, monkeypatch):
+    from mcpserver import admin as admin_module
+    from mcpserver.auth.store import AtomicJsonAuthStore
+
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "a" * 64)
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    monkeypatch.setattr(admin_module, "_auth_store", lambda: auth)
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
+    before = store.path.read_bytes()
+    ordinary = dispatch_knx("knx_page", {}, store)
+    combined = dispatch_knx("knx_page", {"include_sections": True}, store)
+    assert {key: value for key, value in combined.items() if key != "sections"} == ordinary
+    for action, envelope in combined["sections"].items():
+        assert envelope == {"ok": True, "data": dispatch_knx(action, {}, store)}
+    assert store.path.read_bytes() == before
+    assert "sections" not in dispatch_knx("knx_page", {"include_sections": False}, store)
+    for invalid in (1, "true", None, [], {}):
+        with pytest.raises(AdminError) as rejected:
+            dispatch_knx("knx_page", {"include_sections": invalid}, store)
+        assert rejected.value.code == "knx_page_invalid"
+
+
+def test_initial_section_failure_does_not_hide_other_sections(tmp_path, monkeypatch):
+    from mcpserver import admin as admin_module
+
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "a" * 64)
+
+    def failed_auth():
+        raise RuntimeError("private diagnostic must not escape")
+
+    monkeypatch.setattr(admin_module, "_auth_store", failed_auth)
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
+    combined = dispatch_knx("knx_page", {"include_sections": True}, store)
+    assert combined["total"] == 0
+    assert combined["sections"]["knx_correction_page"]["ok"]
+    for action in ("knx_read_page", "knx_drafts_page"):
+        assert combined["sections"][action] == {"ok": False, "error": {"code": "internal_error"}}
+    assert "private diagnostic" not in str(combined)

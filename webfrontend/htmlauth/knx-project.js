@@ -106,8 +106,8 @@
   const mcp = window.McpExplorerClient.create({core, state, explorerState, label,
     accessToken: auth.accessToken, fetchWithTimeout: auth.fetchWithTimeout,
     addTranscript: () => { /* This page does not retain transport payloads. */ }});
-  const run = async (operation) => {
-    if (busy || page.getAttribute('aria-busy') === 'true') return;
+  const run = async (operation, {independent = false} = {}) => {
+    if (busy || (!independent && page.getAttribute('aria-busy') === 'true')) return;
     busy = true; ui.setAttribute('aria-busy', 'true');
     controls(); message(label(restoring ? 'restoringSession' : 'working'), 'working');
     try { await operation(); }
@@ -299,7 +299,6 @@
     } catch (error) { if (request === generation) { clearSession(); originWarning(error); } }
     finally { restoring = false; controls(); }
   };
-  if (page.getAttribute('aria-busy') === 'true') {
-    page.addEventListener('knx-idle', () => void run(restore), {once: true});
-  } else void run(restore);
+  // Session discovery does not depend on the local catalog. User actions still do.
+  void run(restore, {independent: true});
 })();

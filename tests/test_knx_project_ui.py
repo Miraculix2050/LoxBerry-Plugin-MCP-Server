@@ -76,6 +76,14 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('announcement').textContent,'Restoring session');
   assert.equal(el('status').textContent,'Restoring session');
   assert.equal(el('connection-badge').hidden,true);
+  // Restore completes during catalog loading, but user actions remain blocked.
+  await settle();
+  assert.equal(el('status').textContent,'Connected');
+  assert.equal(el('loading').hidden,true);
+  assert.equal(el('run').disabled,true);
+  assert.equal(el('disconnect').disabled,true);
+  await click('run');assert.equal(requests.length,0);
+  assert.equal(page.getAttribute('aria-busy'),'true');
   page.removeAttribute('aria-busy');
   page.dispatchEvent(new w.CustomEvent('knx-idle'));await settle();
   assert.equal(el('run').disabled,false);assert.equal(el('status').textContent,'Connected');

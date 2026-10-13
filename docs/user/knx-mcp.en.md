@@ -31,6 +31,13 @@ their original conflict revision; unavailable status is shown explicitly.
 The address-label badge counts saved unique address-format/prefix combinations,
 including imported labels, counting a manual/imported pair only once.
 
+When opened or reloaded, the KNX page loads the catalog, delegation policies and
+shared correction drafts in one request. OAuth session restoration runs in
+parallel. Loading hints remain visible until their respective operation ends;
+a delegation or draft section failure does not hide other successfully loaded
+sections. Independent refresh buttons and regular saved-policy checks remain
+available.
+
 Project comparison shares the browser OAuth session with MCP Tool Explorer.
 Sign-in offers the same optional scopes; required Loxone read access is selected,
 while additional permissions need explicit selection. Disconnect signs out all

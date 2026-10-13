@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Load the initial KNX catalog, delegation policies and correction drafts in
+  one authenticated Admin request instead of four competing CGI/Python starts.
+  Restore the shared OAuth session in parallel while keeping user actions
+  blocked until their prerequisites are ready. Preserve independent refreshes,
+  fresh authorization reads and explicit section errors.
+  Keep project-analysis imports out of the correction-draft list read path.
+
 - Preserve expanded/collapsed KNX section cards, including nested ETS import,
   across browser reloads, independently of Admin page preferences.
 

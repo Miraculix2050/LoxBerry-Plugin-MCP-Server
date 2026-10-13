@@ -152,6 +152,14 @@
       window.clearTimeout(timer);
       if (!document.hidden) schedule(0);
     });
-    void refresh();
+    if (window.MCPKnx?.initialSections) {
+      void run(async () => {
+        loading.hidden = false;
+        announcement.textContent = announcement.dataset.loading;
+        const initial = (await window.MCPKnx.initialSections)?.[`${actionPrefix}_page`];
+        if (!initial?.ok) throw new Error('delegation_unavailable');
+        render(initial.data);
+      });
+    } else void refresh();
   }
 })();
