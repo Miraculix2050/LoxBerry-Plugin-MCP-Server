@@ -70,7 +70,7 @@ def apply(setup, selected=None, **kwargs):
         1,
         labels_revision(config, TARGET),
         changes() if selected is None else selected,
-        expires_at=200,
+        expires_at=kwargs.pop("expires_at", 200),
         save=kwargs.pop("save", saved.append),
         authorize_effect=kwargs.pop("authorize_effect", lambda: None),
         **kwargs,
@@ -178,6 +178,17 @@ def test_save_failure_does_not_mutate_input_or_catalog(setup):
         apply(setup, save=fail)
     assert not before.knx_prefix_apply_receipts
     assert store.page(TARGET) == snapshot
+
+
+def test_fractional_deadline_after_authorization_does_not_allow_expired_effect(setup, monkeypatch):
+    saved = []
+
+    def after_deadline():
+        monkeypatch.setattr(module.time, "time", lambda: 200.75)
+
+    with pytest.raises(KnxError, match="draft_unavailable"):
+        apply(setup, save=saved.append, authorize_effect=after_deadline, expires_at=200.5)
+    assert saved == []
 
 
 def test_unexpired_receipt_capacity_blocks_without_eviction(setup):

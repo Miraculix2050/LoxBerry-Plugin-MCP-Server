@@ -150,13 +150,14 @@ def apply_prefixes(
             knx_address_taxonomy=entries,
             knx_taxonomy_targets=tuple(sorted(banks.items())),
         )
-        now = int(time.time())
-        if now >= expires_at:
+        current = time.time()
+        if current >= expires_at:
             raise KnxError("knx_draft_unavailable")
         authorize_effect()
-        now = int(time.time())
-        if now >= expires_at:
+        current = time.time()
+        if current >= expires_at:
             raise KnxError("knx_draft_unavailable")
+        now = int(current)
         record = PrefixReceipt(
             receipt_key(owner, target, request),
             digest,
