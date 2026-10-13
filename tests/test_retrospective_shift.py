@@ -15,7 +15,7 @@ START = datetime(2026, 10, 12, tzinfo=UTC).timestamp()
 END = START + 86400
 
 
-def load(name="load", **changes):
+def load(name="load", original_hour=1, **changes):
     flex = flexibility(
         **{
             "timezone": "UTC",
@@ -25,13 +25,13 @@ def load(name="load", **changes):
         }
     )
     segments = (
-        StateSegment(START, START + 3600, False, 0),
-        StateSegment(START + 3600, START + 10800, True, 0),
-        StateSegment(START + 10800, END, False, 0),
+        StateSegment(START, START + original_hour * 3600, False, 0),
+        StateSegment(START + original_hour * 3600, START + (original_hour + 2) * 3600, True, 0),
+        StateSegment(START + (original_hour + 2) * 3600, END, False, 0),
     )
     cycles = describe_load_cycles(
         segments,
-        {START + 3600: 1000.0, START + 7200: 500.0},
+        {START + original_hour * 3600: 1000.0, START + (original_hour + 1) * 3600: 500.0},
         flex,
         name,
         start=START,
@@ -225,3 +225,17 @@ def test_search_budget_exhaustion_publishes_no_greedily_selected_partial_search(
     )
     assert result.evaluated_alternatives == 4096 and not result.examples
     assert "alternative_search_budget_exceeded_no_partial_allocation" in result.limitations
+
+
+@pytest.mark.parametrize("hour", [0, 22])
+def test_zero_off_time_allows_complete_alternative_at_request_start_or_end(hour):
+    base = load(
+        original_hour=3,
+        minimum_off_seconds=0,
+        windows=[{"weekdays": [0], "start": "00:00", "end": "00:00", "end_day_offset": 1}],
+        latest_completion="00:00",
+        completion_day_offset=1,
+    )
+    result = analyze((base,), {START + hour * 3600: 600.0, START + (hour + 1) * 3600: 800.0})
+    assert len(result.examples) == 1
+    assert result.examples[0].conditional_export_absorption_upper_bound_wh == 1100

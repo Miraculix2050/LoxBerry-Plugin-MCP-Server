@@ -231,7 +231,7 @@ def _conditional_retrospective_shift(
                 if (
                     completion is None
                     or finish > completion
-                    or not start < at < finish < end
+                    or not start <= at < finish <= end
                     or not any(
                         a is not None and b is not None and a <= at < finish <= b
                         for a, b in windows
