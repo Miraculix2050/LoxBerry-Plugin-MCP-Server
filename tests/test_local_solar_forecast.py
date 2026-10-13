@@ -281,6 +281,66 @@ def test_failed_admin_source_confirmation_preserves_original_configuration(conte
     assert store.config is original
 
 
+def test_full_config_rollback_does_not_reconfirm_or_retarget_the_previous_source(
+    context, tmp_path, monkeypatch
+):
+    import mcpserver.local_solar_forecast as module
+    from mcpserver import admin
+    from mcpserver.config import AtomicConfigStore
+
+    _, store, path, _ = context
+    previous = replace(
+        store.config,
+        solar_forecast_enabled=False,
+        solar_forecast_fingerprint="a" * 64,
+        loxberry_read_bindings=("b" * 64,),
+    )
+    actual = read_forecast(store.config, deadline=time.monotonic() + 5, path=path)
+    persisted = AtomicConfigStore((tmp_path / "configuration.json").resolve())
+    persisted.save(previous)
+    reads, restarts = 0, 0
+
+    def confirm(*args, **kwargs):
+        nonlocal reads
+        reads += 1
+        if reads > 1:
+            raise ForecastEvidenceError("forecast_file_missing")
+        return actual
+
+    def restart():
+        nonlocal restarts
+        restarts += 1
+        if restarts == 1:
+            raise admin.AdminError("synthetic apply failure")
+
+    monkeypatch.setattr(module, "read_forecast", confirm)
+    monkeypatch.setattr(admin, "_config_store", lambda: persisted)
+    monkeypatch.setattr(admin, "_restart_service", restart)
+    payload = replace(previous, solar_forecast_enabled=True).to_document()
+    payload["confirm_solar_forecast_source"] = True
+    with pytest.raises(admin.AdminError, match="previous configuration restored"):
+        admin._save(payload)
+    assert reads == 1 and restarts == 2
+    restored = persisted.load()
+    assert not restored.solar_forecast_enabled
+    assert restored.solar_forecast_fingerprint == previous.solar_forecast_fingerprint
+
+
+def test_source_confirmation_deadline_is_a_typed_admin_failure(context, monkeypatch):
+    import mcpserver.local_solar_forecast as module
+    from mcpserver.admin import AdminError, _confirmed_solar_config
+    from mcpserver.history_analysis import HistoryAnalysisDeadline
+
+    _, store, _, _ = context
+
+    def expired(*args, **kwargs):
+        raise HistoryAnalysisDeadline()
+
+    monkeypatch.setattr(module, "read_forecast", expired)
+    with pytest.raises(AdminError, match="cannot be confirmed"):
+        _confirmed_solar_config(store.config, store.config, {"confirm_solar_forecast_source": True})
+
+
 @pytest.mark.asyncio
 async def test_registered_weather_outputs_are_typed_and_correlated(context, monkeypatch):
     import mcpserver.tools as tools

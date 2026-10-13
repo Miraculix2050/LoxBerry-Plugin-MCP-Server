@@ -607,7 +607,7 @@ def _save(payload: object) -> dict[str, Any]:
         ]
 
     def configuration_with_current_knx(
-        candidate: PluginConfig, current: PluginConfig
+        candidate: PluginConfig, current: PluginConfig, *, restore_previous_solar: bool = False
     ) -> PluginConfig:
         from mcpserver.knx.admin import validate_active_labels
 
@@ -688,13 +688,14 @@ def _save(payload: object) -> dict[str, Any]:
                 knx_taxonomy_targets=current.knx_taxonomy_targets,
             )
         # Resolve the active target after a possible Miniserver switch.
-        if "solar_forecast" not in payload:
+        if not restore_previous_solar and "solar_forecast" not in payload:
             candidate = replace(
                 candidate,
                 solar_forecast_enabled=current.solar_forecast_enabled,
                 solar_forecast_maximum_age_minutes=current.solar_forecast_maximum_age_minutes,
             )
-        candidate = _confirmed_solar_config(current, candidate, payload)
+        if not restore_previous_solar:
+            candidate = _confirmed_solar_config(current, candidate, payload)
         candidate = PluginConfig.from_document(candidate.to_document())
         validate_active_labels(candidate)
         return candidate
@@ -706,7 +707,13 @@ def _save(payload: object) -> dict[str, Any]:
         _restart_service()
     except AdminError as apply_error:
         try:
-            store.mutate(lambda current: configuration_with_current_knx(previous, current))
+            # Rollback restores the captured association without depending on
+            # a producer file that may have changed since the failed apply.
+            store.mutate(
+                lambda current: configuration_with_current_knx(
+                    previous, current, restore_previous_solar=True
+                )
+            )
             _restart_service()
         except (AdminError, ConfigError) as rollback_error:
             raise AdminError("configuration apply and rollback failed") from rollback_error
@@ -747,12 +754,13 @@ def _confirmed_solar_config(
     """Only a fresh fixed-source read establishes a new administrator association."""
     candidate = replace(candidate, solar_forecast_fingerprint=previous.solar_forecast_fingerprint)
     if payload.get("confirm_solar_forecast_source") is True:
+        from mcpserver.history_analysis import HistoryAnalysisDeadline
         from mcpserver.local_solar_forecast import read_forecast
         from mcpserver.solar_forecast import ForecastEvidenceError
 
         try:
             confirmed = read_forecast(candidate, deadline=time.monotonic() + 10)
-        except (ForecastEvidenceError, ValueError, TimeoutError):
+        except (ForecastEvidenceError, ValueError, TimeoutError, HistoryAnalysisDeadline):
             raise AdminError("Local forecast source cannot be confirmed") from None
         if confirmed.publication_age_seconds > candidate.solar_forecast_maximum_age_minutes * 60:
             raise AdminError("Local forecast source publication is stale")
