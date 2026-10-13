@@ -13,7 +13,7 @@ from decimal import Decimal, localcontext
 from math import isfinite
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator
 
 from mcpserver.history_analysis import HistoryAnalysisDeadline
 from mcpserver.loxone.history_evidence import timezone, utc_timestamp
@@ -37,6 +37,13 @@ class SolarWindowOptions(BaseModel):
     minimum_sample_irradiance_w_m2: FiniteFloat = Field(default=0, ge=0)
     include_samples: bool = False
 
+    @field_validator("minimum_sample_irradiance_w_m2", mode="before")
+    @classmethod
+    def supported_threshold(cls, value: object) -> object:
+        if _finite_number(value) is None:
+            raise ValueError("unsupported_irradiance_threshold")
+        return value
+
 
 class IrradianceSample(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -52,6 +59,7 @@ ForecastIssue = Literal[
     "non_finite_irradiance",
     "negative_irradiance",
     "duplicate_timestamp",
+    "numeric_precision_not_supported",
 ]
 
 
@@ -61,6 +69,9 @@ class ForecastPointDiagnostic(BaseModel):
     at: str | None
     issue: ForecastIssue
     raw_number: FiniteFloat | None
+    raw_numeric_text: str | None = Field(
+        default=None, max_length=256, pattern=r"^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,12 +178,18 @@ def _object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _finite_number(value: object) -> float | None:
-    if type(value) not in (int, float):
+    if type(value) not in (int, float, Decimal):
         return None
-    assert isinstance(value, int | float)
+    assert isinstance(value, int | float | Decimal)
     try:
         number = float(value)
-        return number if isfinite(number) else None
+        if not isfinite(number):
+            return None
+        if isinstance(value, int) and int(number) != value:
+            return None
+        if isinstance(value, Decimal) and Decimal(str(number)) != value:
+            return None
+        return number
     except OverflowError:
         return None
 
@@ -208,7 +225,7 @@ def parse_local_forecast(
     if not isfinite(publication_time) or not isfinite(now) or publication_time > now:
         raise ForecastEvidenceError("invalid_publication_clock")
     try:
-        document = json.loads(payload, object_pairs_hook=_object)
+        document = json.loads(payload, object_pairs_hook=_object, parse_float=Decimal)
     except (ValueError, UnicodeError, RecursionError) as exc:
         if isinstance(exc, ForecastEvidenceError):
             raise
@@ -282,10 +299,14 @@ def parse_local_forecast(
         if issue is None:
             if value is None:
                 issue = "missing_irradiance"
-            elif type(value) not in (int, float):
+            elif type(value) not in (int, float, Decimal):
                 issue = "non_numeric_irradiance"
             elif raw_number is None:
-                issue = "non_finite_irradiance"
+                try:
+                    finite = isfinite(float(value))
+                except OverflowError:
+                    finite = False
+                issue = "numeric_precision_not_supported" if finite else "non_finite_irradiance"
             elif value < 0:
                 issue = "negative_irradiance"
         if issue is not None:
@@ -295,6 +316,11 @@ def parse_local_forecast(
                     at=utc_timestamp(at) if at is not None else None,
                     issue=issue,
                     raw_number=raw_number,
+                    raw_numeric_text=(
+                        str(value)
+                        if issue == "numeric_precision_not_supported" and len(str(value)) <= 256
+                        else None
+                    ),
                 )
             )
         else:
@@ -408,13 +434,18 @@ def sampled_solar_windows(
         a, b = samples[0][0], samples[-1][0] + 3600
         if any(a < d and c < b for c, d in selected):
             continue
+        public_mean = float(mean)
+        if public_mean <= 0 or not isfinite(public_mean):
+            if "sample_mean_not_representable" not in result.limitations:
+                result.limitations.append("sample_mean_not_representable")
+            continue
         selected.append((a, b))
         result.windows.append(
             SampledSolarWindow(
                 start=utc_timestamp(a),
                 nominal_end=utc_timestamp(b),
                 sample_count=count,
-                mean_sample_irradiance_w_m2=float(mean),
+                mean_sample_irradiance_w_m2=public_mean,
                 minimum_sample_irradiance_w_m2=min(v for _, v in samples),
                 samples=[
                     IrradianceSample(at=utc_timestamp(at), irradiance_w_m2=value)

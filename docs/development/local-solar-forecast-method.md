@@ -61,6 +61,13 @@ per-record offsets and agreement with integer UTC epochs. Missing, invalid,
 duplicate or gapped points remain diagnostics; exclude them from usable windows
 without changing the source file. Publish at most 16 safe diagnostics with total
 count/truncation and sanitized correlated warnings for unexpected values.
+Check JSON decimal literals before conversion to the public finite float format.
+Require an exact canonical decimal round trip; do not collapse distinct integers
+or decimal predictions into the same float before ranking. Unsupported precision
+is a point diagnostic with bounded numeric-only original text (256 characters),
+never an echo of arbitrary strings. Keep the source file unchanged. A positive
+derived mean that underflows the public format is an explicit limitation rather
+than a fabricated zero opportunity or an exception.
 
 Keep local file publication time/age separate from source-reported generation
 time and provider forecast issue time. Provider issue time and confidence are

@@ -145,6 +145,42 @@ def test_negative_raw_number_is_retained_in_bounded_diagnostics():
     )
 
 
+def test_inexact_large_json_integer_is_diagnosed_instead_of_collapsing_candidate_order():
+    forecast = parse(valid_document((9007199254740992, 9007199254740993, 100, 0)))
+    assert forecast.invalid_points == 1
+    assert forecast.diagnostics[0].issue == "numeric_precision_not_supported"
+    assert forecast.diagnostics[0].raw_numeric_text == "9007199254740993"
+
+
+def test_derived_sample_mean_underflow_is_a_limitation_not_an_exception():
+    result = windows(valid_document((5e-324, 0, 0)), duration_hours=3)
+    assert not result.windows
+    assert "sample_mean_not_representable" in result.limitations
+
+
+def test_decimal_literal_precision_is_checked_before_json_float_rounding():
+    payload = (
+        json.dumps(valid_document((0.1, 123456789, 500, 0)))
+        .replace("123456789", "9007199254740993.0")
+        .encode()
+    )
+    forecast = parse_local_forecast(
+        payload,
+        publication_time=NOW - 60,
+        target_origin="http://synthetic.local",
+        now=NOW,
+        deadline=time.monotonic() + 5,
+    )
+    assert forecast.invalid_points == 1
+    assert forecast.points[0][1] == 0.1
+    assert forecast.diagnostics[0].raw_numeric_text == "9007199254740993.0"
+
+
+def test_threshold_cannot_silently_round_an_inexact_integer():
+    with pytest.raises(ValidationError):
+        options(minimum_sample_irradiance_w_m2=9007199254740993)
+
+
 def test_duplicate_timestamp_is_excluded_even_when_one_duplicate_is_invalid():
     data = valid_document((100, -1, 500, 0))
     data["hourlyforecast"][1]["time"] = data["hourlyforecast"][0]["time"].copy()
