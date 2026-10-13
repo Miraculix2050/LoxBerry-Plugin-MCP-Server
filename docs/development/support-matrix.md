@@ -32,6 +32,13 @@ to the corresponding recorded target acceptance; fixtures are not device proof.
 
 ## Product limits
 
+- Local solar windows support only the explicitly confirmed Weather4Lox
+  VisualCrossing v1.0 hourly point source with independent LoxBerry read approval.
+  No arbitrary providers, Lux conversion, irradiance-energy integration, PV yield,
+  surplus or admissible load schedule are qualified. Automated source fixtures
+  establish adapter behavior; production read-only source inspection is distinct
+  from test-target/browser acceptance and does not establish all installations.
+
 - `loxone_get_system_messages` is experimental and version-bound to firmware
   17.2.8.28. Its source contract was observed on Gen. 1; plugin/browser acceptance
   must be recorded separately. No Gen. 2 or exhaustive retained-history promise.

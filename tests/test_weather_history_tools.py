@@ -259,7 +259,13 @@ async def test_schema_is_additive_and_legacy_does_not_touch_reader(context, monk
     schema = next(
         t for t in await server.list_tools() if t.name == "loxone_get_weather"
     ).inputSchema
-    assert schema["properties"]["mode"]["enum"] == ["actual", "forecast", "history"]
+    assert schema["properties"]["mode"]["enum"] == [
+        "actual",
+        "forecast",
+        "history",
+        "forecast_sources",
+        "solar_windows",
+    ]
     assert "history_options" in schema["properties"]
     monkeypatch.setattr(
         tools, "_snapshot", AsyncMock(return_value=(access(), runtime.snapshot.return_value))

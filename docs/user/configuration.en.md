@@ -4,6 +4,15 @@
 
 ## Basic settings
 
+### Local irradiance forecasts
+
+[Local irradiance guidance](local-solar-forecast.en.md) uses a separately confirmed
+Weather4Lox source. `solar_forecast.enabled` defaults to `false` and
+`maximum_age_minutes` to 180 (1–1440). The private fingerprint is captured only
+by an explicit local administrator source confirmation; supplying a fingerprint
+cannot establish an association. Independent LoxBerry read approval is required.
+This feature preserves recording/archive settings and is not a PV-yield model.
+
 ### MCP profile management
 
 The dedicated [profile page](installation-profile.en.md) manages

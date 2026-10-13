@@ -130,6 +130,9 @@ window.McpAdmin.createConfiguration = (
     setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
     setFormChecked(mcpConfigForm, 'event_history_enabled', eventHistory.enabled);
     setFormChecked(mcpConfigForm, 'weather_history_enabled', eventHistory.weather_enabled);
+    setFormChecked(mcpConfigForm, 'solar_forecast_enabled', configuration.solar_forecast?.enabled);
+    setFormValue(mcpConfigForm, 'solar_forecast_maximum_age_minutes', configuration.solar_forecast?.maximum_age_minutes ?? 180);
+    setFormChecked(mcpConfigForm, 'confirm_solar_forecast_source', false);
     const brief = document.getElementById('event-history-brief');
     brief.textContent = `${eventHistory.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
       + `${(eventHistory.sources || []).length} ${brief.dataset.sources} · ${brief.dataset.sizeUnknown}`;

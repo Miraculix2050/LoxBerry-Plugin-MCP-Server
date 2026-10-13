@@ -561,6 +561,13 @@ if ($action ne '') {
                 weather_enabled => ($q->{weather_history_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
             },
+            solar_forecast => {
+                enabled => ($q->{solar_forecast_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
+                maximum_age_minutes => 0 + ($q->{solar_forecast_maximum_age_minutes} // 180),
+            },
+            confirm_solar_forecast_source => ($q->{confirm_solar_forecast_source} // '') eq '1'
+                ? JSON::PP::true : JSON::PP::false,
             emergency_stop => {
                 virtual_status_uuid => $q->{emergency_stop_virtual_status_uuid} // '',
             },
@@ -1111,6 +1118,8 @@ $template->param(
     LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
     EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0,
     WEATHER_HISTORY_ENABLED => $config->{event_history}{weather_enabled} ? 1 : 0,
+    SOLAR_FORECAST_ENABLED => $config->{solar_forecast}{enabled} ? 1 : 0,
+    SOLAR_FORECAST_MAXIMUM_AGE => $config->{solar_forecast}{maximum_age_minutes} // 180,
     EVENT_HISTORY_SOURCE_COUNT => scalar(@{$config->{event_history}{sources} // []}),
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
