@@ -241,7 +241,7 @@ def test_receipt_codec_fails_closed(damage):
     with pytest.raises(ValueError):
         parse_receipts([row])
     with pytest.raises(ConfigError):
-        PluginConfig.from_document({"knx_prefix_apply_receipts": [row]})
+        PluginConfig.from_document({"schema_version": 12, "knx_prefix_apply_receipts": [row]})
 
 
 def test_legacy_config_defaults_to_no_prefix_permission_and_empty_receipts():
@@ -249,6 +249,31 @@ def test_legacy_config_defaults_to_no_prefix_permission_and_empty_receipts():
     assert not config.loxberry_knx_prefix_write_enabled
     assert config.knx_prefix_apply_receipts == ()
     assert config.to_document()["schema_version"] == 12
+
+
+def test_compact_receipts_retain_exact_semantics_and_read_legacy_objects():
+    row = PrefixReceipt("a" * 64, "b" * 64, "c" * 64, 1, 1, 1, 200)
+    assert parse_receipts([row.config_record()]) == parse_receipts([row.document()]) == (row,)
+    config = PluginConfig.from_document(
+        {"schema_version": 12, "knx_prefix_apply_receipts": [row.document()]}
+    )
+    assert config.to_document()["knx_prefix_apply_receipts"] == [row.config_record()]
+    assert PluginConfig.from_document(config.to_document()).knx_prefix_apply_receipts == (row,)
+    assert row.result()["manual_revision"] == "c" * 64
+
+
+@pytest.mark.parametrize("column,value", [(0, "short"), (1, True), (3, True), (4, 0), (5, 2)])
+def test_compact_receipt_columns_fail_closed(column, value):
+    record = PrefixReceipt("a" * 64, "b" * 64, "c" * 64, 1, 1, 1, 200).config_record()
+    record[column] = value
+    with pytest.raises(ValueError):
+        parse_receipts([record])
+
+
+@pytest.mark.parametrize("size", [0, 6, 8])
+def test_compact_receipt_rejects_missing_or_additional_columns(size):
+    with pytest.raises(ValueError):
+        parse_receipts([["a"] * size])
 
 
 def test_imported_and_manual_union_limit_prevents_partial_overflow(setup):

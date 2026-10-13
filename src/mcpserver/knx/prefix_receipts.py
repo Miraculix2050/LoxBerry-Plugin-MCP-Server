@@ -11,6 +11,15 @@ from typing import Any
 LIMIT = 32
 MAX_BYTES = 16 * 1024
 TTL = 7 * 24 * 60 * 60
+_FIELDS = (
+    "key",
+    "digest",
+    "manual_revision",
+    "catalog_revision",
+    "selected_changes",
+    "changed_prefixes",
+    "expires_at",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +59,18 @@ class PrefixReceipt:
             "exports_file": False,
         }
 
+    def config_record(self) -> list[str | int]:
+        """Fixed scalar columns avoid repeated keys in the frequently read config."""
+        return [
+            self.key,
+            self.digest,
+            self.manual_revision,
+            self.catalog_revision,
+            self.selected_changes,
+            self.changed_prefixes,
+            self.expires_at,
+        ]
+
 
 def parse_receipts(value: object) -> tuple[PrefixReceipt, ...]:
     if not isinstance(value, list) or len(value) > LIMIT:
@@ -58,6 +79,10 @@ def parse_receipts(value: object) -> tuple[PrefixReceipt, ...]:
     seen: set[str] = set()
     fields = set(PrefixReceipt.__dataclass_fields__)
     for row in value:
+        # Retain the initial object representation on read; new saves use the
+        # strictly sized scalar row. This is internal storage, not MCP output.
+        if isinstance(row, list) and len(row) == len(_FIELDS):
+            row = dict(zip(_FIELDS, row, strict=True))
         if not isinstance(row, dict) or set(row) != fields:
             raise ValueError("Invalid KNX prefix receipt")
         if any(

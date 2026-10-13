@@ -834,7 +834,7 @@ class PluginConfig:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
         document["knx_prefix_apply_receipts"] = [
-            row.document() for row in self.knx_prefix_apply_receipts
+            row.config_record() for row in self.knx_prefix_apply_receipts
         ]
         for key in (
             "server",
