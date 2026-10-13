@@ -350,19 +350,19 @@ def compare_days(
             continue
         assert values is not None
         rref, rcandidate = ref_values["radiation_wh_m2"], values["radiation_wh_m2"]
-        relative = (
-            float(abs(_decimal(rcandidate) - _decimal(rref)) / _decimal(rref))
+        relative_decimal = (
+            abs(_decimal(rcandidate) - _decimal(rref)) / _decimal(rref)
             if rref > 0
-            else 0
+            else Decimal(0)
             if rcandidate == 0
             else None
         )
-        delta_temp = float(
-            abs(
-                _decimal(values["matched_sample_mean_c"])
-                - _decimal(ref_values["matched_sample_mean_c"])
-            )
+        delta_temp_decimal = abs(
+            _decimal(values["matched_sample_mean_c"])
+            - _decimal(ref_values["matched_sample_mean_c"])
         )
+        relative = float(relative_decimal) if relative_decimal is not None else None
+        delta_temp = float(delta_temp_decimal)
         if (relative is not None and not isfinite(relative)) or not isfinite(delta_temp):
             result["exclusions"].append(
                 {"day": item.day.isoformat(), "reason": "derived_numeric_overflow"}
@@ -370,9 +370,10 @@ def compare_days(
             continue
         reason = (
             "radiation_tolerance_exceeded"
-            if relative is None or relative > options.radiation_relative_tolerance
+            if relative_decimal is None
+            or relative_decimal > _decimal(options.radiation_relative_tolerance)
             else "temperature_tolerance_exceeded"
-            if delta_temp > options.temperature_tolerance_c
+            if delta_temp_decimal > _decimal(options.temperature_tolerance_c)
             else None
         )
         if reason:
@@ -384,14 +385,17 @@ def compare_days(
             values["pv_wh"] = None
             values["pv_evidence"] = "rule_changed"
         reference_pv, candidate_pv = ref_values["pv_wh"], values["pv_wh"]
-        paired_absolute = (
-            float(_decimal(reference_pv) - _decimal(candidate_pv))
+        paired_absolute_decimal = (
+            _decimal(reference_pv) - _decimal(candidate_pv)
             if reference_pv is not None and candidate_pv is not None
             else None
         )
+        paired_absolute = (
+            float(paired_absolute_decimal) if paired_absolute_decimal is not None else None
+        )
         paired_relative = (
-            float(_decimal(paired_absolute) / _decimal(candidate_pv))
-            if paired_absolute is not None and candidate_pv is not None and candidate_pv > 0
+            float(paired_absolute_decimal / _decimal(candidate_pv))
+            if paired_absolute_decimal is not None and candidate_pv is not None and candidate_pv > 0
             else None
         )
         if any(
@@ -427,8 +431,10 @@ def compare_days(
     reference_pv = ref_values["pv_wh"]
     if len(pv) >= 3 and reference_pv is not None:
         central = median(pv)
-        absolute = float(_decimal(reference_pv) - _decimal(central))
-        relative = float(_decimal(absolute) / _decimal(central)) if central > 0 else None
+        absolute_decimal = _decimal(reference_pv) - _decimal(central)
+        relative_decimal = absolute_decimal / _decimal(central) if central > 0 else None
+        absolute = float(absolute_decimal)
+        relative = float(relative_decimal) if relative_decimal is not None else None
         if (
             not isfinite(central)
             or not isfinite(absolute)
@@ -443,7 +449,9 @@ def compare_days(
             "maximum_pv_wh": max(pv),
             "absolute_difference_wh": absolute,
             "relative_difference": relative,
-            "check_candidate": bool(rref > 0 and relative is not None and relative < -0.20),
+            "check_candidate": bool(
+                rref > 0 and relative_decimal is not None and relative_decimal < Decimal("-0.20")
+            ),
         }
     elif len(pv) < 3:
         result["limitations"].append("fewer_than_three_complete_pv_comparison_days")

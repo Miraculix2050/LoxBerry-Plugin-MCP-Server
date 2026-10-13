@@ -407,3 +407,17 @@ def test_decimal_values_beyond_boundaries_remain_excluded_or_flagged():
     ]
     result = compare([day(pv=nextafter(2.4, 0)), day(1, pv=3), day(2, pv=3), day(3, pv=3)])
     assert result["group"]["check_candidate"] is True
+
+
+def test_decimal_ratio_above_tolerance_cannot_round_into_selection():
+    reference = day(radiation=104.92506783775553)
+    candidate = day(1, radiation=120.66382801341886)
+    result = compare(
+        [
+            replace(reference, hours=reference.hours[:1]),
+            replace(candidate, hours=candidate.hours[:1]),
+        ],
+        options=Options(start_hour=10, end_hour=11),
+    )
+    assert not result["candidates"]
+    assert result["exclusions"][0]["reason"] == "radiation_tolerance_exceeded"
