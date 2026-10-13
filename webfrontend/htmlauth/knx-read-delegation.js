@@ -123,7 +123,10 @@
         busy = false; section.removeAttribute('aria-busy');
         controls();
         if (focused) window.requestAnimationFrame(() => {
-          if (focused.isConnected && !focused.disabled && document.activeElement === document.body)
+          const active = document.activeElement;
+          const closedDialog = active.closest('dialog');
+          if (focused.isConnected && !focused.disabled &&
+              (active === document.body || (closedDialog && !closedDialog.open)))
             focused.focus({preventScroll: true});
         });
         schedule();

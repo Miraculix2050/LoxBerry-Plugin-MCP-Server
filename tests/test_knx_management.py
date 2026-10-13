@@ -45,10 +45,8 @@ w.confirm = () => {throw new Error('Native dialog is forbidden');};
 w.HTMLDialogElement.prototype.showModal = function () {this.open = true;};
 w.HTMLDialogElement.prototype.close = function (value) {
   this.returnValue = value; this.open = false;
-  const closingFocus = w.document.activeElement;
+  // Chrome can retain focus inside the closed dialog through the next frame.
   this.dispatchEvent(new w.Event('close'));
-  // Chrome releases the closed dialog's focus after the close handler completes.
-  w.setTimeout(() => {if (closingFocus.id === 'knx-confirm-cancel') closingFocus.blur();}, 0);
 };
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
@@ -134,7 +132,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(w.document.getElementById('knx-read-status').textContent, section.dataset.failed);
   assert.equal(announcement.textContent, '');
   dom.window.close();
-})().catch(error => {console.error(error); process.exitCode = 1;});
+})().catch(error => {dom.window.close(); console.error(error); process.exitCode = 1;});
 """
     others = [item for item in ("read", "drafts", "write") if item != kind]
     script = script.replace("knx_read_", f"knx_{kind}_")
@@ -148,7 +146,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     )
     node = shutil.which("node")
     assert node is not None
-    result = subprocess.run([node, "-e", script], cwd=root, capture_output=True, text=True)
+    result = subprocess.run(
+        [node, "-e", script], cwd=root, capture_output=True, text=True, timeout=30
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
