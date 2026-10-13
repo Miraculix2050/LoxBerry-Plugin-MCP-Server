@@ -687,6 +687,12 @@ def _save(payload: object) -> dict[str, Any]:
                 knx_address_taxonomy=current.knx_address_taxonomy,
                 knx_taxonomy_targets=current.knx_taxonomy_targets,
             )
+        # Form submissions cannot forge, erase or roll back internal effect receipts.
+        candidate = replace(
+            candidate,
+            knx_prefix_apply_receipts=current.knx_prefix_apply_receipts,
+            loxberry_knx_prefix_write_enabled=current.loxberry_knx_prefix_write_enabled,
+        )
         # Resolve the active target after a possible Miniserver switch.
         if not restore_previous_solar and "solar_forecast" not in payload:
             candidate = replace(

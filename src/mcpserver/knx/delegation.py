@@ -97,9 +97,16 @@ def authorize_drafts(
 
 
 def authorize_write(
-    config: PluginConfig, auth_store: Any, access: StoredAccessToken, *, now: int | None = None
+    config: PluginConfig,
+    auth_store: Any,
+    access: StoredAccessToken,
+    *,
+    now: int | None = None,
+    prefixes: bool = False,
 ) -> tuple[str, str]:
     """Local writes require independent live write, draft and read approvals."""
+    if prefixes and not config.loxberry_knx_prefix_write_enabled:
+        raise PermissionError("KNX prefix writes require additional Admin activation")
     current = int(time.time()) if now is None else now
     target, owner = authorize_drafts(config, auth_store, access, now=current)
     if LOXBERRY_KNX_WRITE_SCOPE not in access.scopes or not config.loxberry_knx_write_enabled:

@@ -45,8 +45,10 @@ def grant(runtime, monkeypatch):
     )
 
 
-async def approved(server, runtime):
+async def approved(server, runtime, changes=None):
     args = arguments(runtime)
+    if changes is not None:
+        args["changes"] = changes
     created = await call(server, PREPARE, args)
     assert created["ok"]
     inspected = await call(server, READ, {"draft_id": created["data"]["draft_id"]})
@@ -72,6 +74,117 @@ async def approved(server, runtime):
         "draft_revision": 2,
         "approved_change_ids": [identifier],
     }
+
+
+@pytest.mark.asyncio
+async def test_prefixes_require_extra_admin_activation_and_reconcile_after_manual_revision_change(
+    write_client, monkeypatch
+):
+    server, runtime = write_client
+    args = await approved(
+        server,
+        runtime,
+        [
+            dict(
+                destination="local_metadata",
+                kind="prefix",
+                prefix="0/0",
+                address_format="three_level",
+                field="label",
+                operation="set",
+                value="Synthetic label",
+            )
+        ],
+    )
+    args["storage"] = "prefix_labels"
+    grant(runtime, monkeypatch)
+    before = snapshot(runtime)
+    assert (await call(server, APPLY, args))["data"]["error"] == "permission_denied"
+    runtime.config_store.mutate(
+        lambda config: replace(config, loxberry_knx_prefix_write_enabled=True)
+    )
+    applied = await call(server, APPLY, args)
+    assert applied["ok"] and applied["data"]["changed_prefixes"] == 1
+    assert applied["data"]["catalog_revision"] == 1
+    assert snapshot(runtime) == before
+    current = runtime.config_store.load()
+    assert current.knx_address_taxonomy[0].label == "Synthetic label"
+    assert len(current.knx_prefix_apply_receipts) == 1
+    assert (await call(server, APPLY, {**args, "action": "reconcile"}))["data"] == applied["data"]
+    assert (await call(server, APPLY, args))["data"] == applied["data"]
+    runtime.config_store.mutate(
+        lambda config: replace(config, loxberry_knx_prefix_write_enabled=False)
+    )
+    for action in ("apply", "reconcile"):
+        assert (await call(server, APPLY, {**args, "action": action}))["data"][
+            "error"
+        ] == "permission_denied"
+    assert runtime.config_store.load().knx_address_taxonomy == current.knx_address_taxonomy
+
+
+@pytest.mark.asyncio
+async def test_prefix_storage_rejects_address_selection_without_any_effect(
+    write_client, monkeypatch
+):
+    server, runtime = write_client
+    args = await approved(server, runtime)
+    grant(runtime, monkeypatch)
+    runtime.config_store.mutate(
+        lambda config: replace(config, loxberry_knx_prefix_write_enabled=True)
+    )
+    before, config = snapshot(runtime), runtime.config_store.load()
+    result = await call(server, APPLY, {**args, "storage": "prefix_labels"})
+    assert not result["ok"] and result["data"]["error"] == "knx_correction_storage_mixed"
+    assert snapshot(runtime) == before
+    assert runtime.config_store.load() == config
+
+
+@pytest.mark.asyncio
+async def test_prefix_post_replace_uncertainty_reconciles_visible_atomic_result(
+    write_client, monkeypatch
+):
+    from mcpserver.config import ConfigPersistenceUncertain
+
+    server, runtime = write_client
+    args = await approved(
+        server,
+        runtime,
+        [
+            dict(
+                destination="local_metadata",
+                kind="prefix",
+                prefix="0/0",
+                address_format="three_level",
+                field="label",
+                operation="set",
+                value="Synthetic label",
+            )
+        ],
+    )
+    args["storage"] = "prefix_labels"
+    grant(runtime, monkeypatch)
+    runtime.config_store.mutate(
+        lambda config: replace(config, loxberry_knx_prefix_write_enabled=True)
+    )
+    save = runtime.config_store._save_unlocked
+
+    def uncertain(config):
+        save(config)
+        raise ConfigPersistenceUncertain("synthetic post-replace sync failure")
+
+    monkeypatch.setattr(runtime.config_store, "_save_unlocked", uncertain)
+    result = await call(server, APPLY, args)
+    assert not result["ok"] and result["data"]["error"] == "write_outcome_uncertain"
+    assert "reconciliation" in result["data"]["message"].lower()
+    current = runtime.config_store.load()
+    assert current.knx_address_taxonomy[0].label == "Synthetic label"
+    assert len(current.knx_prefix_apply_receipts) == 1
+    reconciled = await call(server, APPLY, {**args, "action": "reconcile"})
+    assert reconciled["ok"] and reconciled["data"]["outcome"] == "applied"
+    assert (
+        reconciled["data"]["manual_revision"]
+        == current.knx_prefix_apply_receipts[0].manual_revision
+    )
 
 
 def snapshot(runtime):

@@ -1595,6 +1595,59 @@ def test_legacy_save_cannot_restore_concurrently_revoked_knx_read(
     assert store.load().loxberry_knx_read_bindings == ()
 
 
+@pytest.mark.parametrize("restart_failure", [False, True])
+def test_full_save_cannot_erase_prefix_receipt_or_restore_old_activation(
+    tmp_path, monkeypatch, restart_failure
+):
+    from mcpserver.knx.prefix_receipts import PrefixReceipt
+
+    store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    store.save(PluginConfig.defaults())
+    original_mutate = store.mutate
+    record = PrefixReceipt("a" * 64, "b" * 64, "c" * 64, 1, 1, 1, 2_000_000_000)
+    calls = 0
+
+    def mutate(operation):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            original_mutate(
+                lambda config: replace(
+                    config,
+                    knx_prefix_apply_receipts=(record,),
+                    loxberry_knx_prefix_write_enabled=True,
+                )
+            )
+        return original_mutate(operation)
+
+    restarts = 0
+
+    def restart():
+        nonlocal restarts
+        restarts += 1
+        if restart_failure and restarts == 1:
+            raise AdminError("synthetic restart failure")
+
+    monkeypatch.setattr(store, "mutate", mutate)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    payload = {
+        "schema_version": 11,
+        "server": {"enabled": False},
+        "knx_prefix_apply_receipts": [],
+        "tools": {"loxberry_knx_prefix_write_enabled": False},
+    }
+    if restart_failure:
+        with pytest.raises(AdminError, match="previous configuration restored"):
+            _save(payload)
+    else:
+        _save(payload)
+    assert store.load().knx_prefix_apply_receipts == (record,)
+    assert store.load().loxberry_knx_prefix_write_enabled
+
+
 def test_partial_legacy_policies_preserve_profile_approval(tmp_path, monkeypatch):
     store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
     store.save(

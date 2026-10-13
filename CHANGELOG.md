@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Apply explicitly accepted style-bound KNX prefix labels through the existing
+  correction tool after additional default-off Admin prefix activation. Keep
+  address and prefix selections separate; atomically save prefix effects and
+  bounded receipts in configuration schema 12. Preserve ETS and inactive target
+  labels, fresh consent and uncertain-outcome reconciliation (#458).
+
 - Apply explicitly accepted existing-address KNX name/description overrides with a
   separate default-off local-write delegation. Commit bounded operation receipts
   with field effects; preserve other metadata and reconcile uncertain outcomes

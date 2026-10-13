@@ -6,6 +6,7 @@
     const actionPrefix = prefix.replace('-', '_');
     const form = document.getElementById(`${prefix}-enable-form`);
     const enabled = document.getElementById(`${prefix}-enabled`);
+    const prefixAccess = prefix === "knx-write" ? document.getElementById("knx-write-prefixes") : null;
     const rows = document.getElementById(`${prefix}-bindings`);
     const status = document.getElementById(`${prefix}-status`);
     const loading = document.getElementById(`${prefix}-loading`);
@@ -57,6 +58,7 @@
       badge.dataset.kind = data.enabled ? 'success' : 'inactive';
       if (!background || !dirty) {
         enabled.checked = data.enabled;
+        if (prefixAccess) prefixAccess.checked = data.allow_prefixes ?? false;
         dirty = false; editRevision = null;
       }
       const fingerprint = JSON.stringify(data.bindings);
@@ -135,7 +137,7 @@
     };
     const refresh = (background = false) => run(async () =>
       render(await api(`${actionPrefix}_page`, state ? {target: state.target} : {}, background), background), background);
-    enabled.addEventListener('change', () => {
+    for (const control of [enabled, prefixAccess].filter(Boolean)) control.addEventListener('change', () => {
       if (!dirty) editRevision = state?.policy_revision;
       dirty = true;
     });
@@ -143,14 +145,19 @@
       event.preventDefault();
       if (!state) return;
       const value = enabled.checked;
+      const allowPrefixes = prefixAccess?.checked;
       const target = state.target;
       const revision = editRevision ?? state.policy_revision;
       void run(async () => {
-        if (value && !await ask(section.dataset.confirmEnable)) {
-          enabled.checked = state.enabled; dirty = false; editRevision = null; return;
+        const expanding = allowPrefixes && !state.allow_prefixes;
+        if ((value || expanding) && !await ask(expanding ? section.dataset.confirmPrefixes : section.dataset.confirmEnable)) {
+          enabled.checked = state.enabled;
+          if (prefixAccess) prefixAccess.checked = state.allow_prefixes ?? false;
+          dirty = false; editRevision = null; return;
         }
         render(await api(`${actionPrefix}_enable`, {target,
-          policy_revision: revision, enabled: value}));
+          policy_revision: revision, enabled: value,
+          ...(prefixAccess ? {allow_prefixes: allowPrefixes} : {})}));
       });
     });
     document.getElementById(`${prefix}-reload`).addEventListener('click', () => {

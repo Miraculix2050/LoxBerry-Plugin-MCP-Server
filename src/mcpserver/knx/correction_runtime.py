@@ -41,7 +41,12 @@ class CorrectionRuntime:
     ) -> dict[str, Any]:
         if action in {"authorize", "authorize_write"}:
             target, owner = (
-                authorize_write(self.catalog.config_store.load(), self.catalog.auth_store, access)
+                authorize_write(
+                    self.catalog.config_store.load(),
+                    self.catalog.auth_store,
+                    access,
+                    prefixes=arguments.get("storage") == "prefix_labels",
+                )
                 if action == "authorize_write"
                 else self.authorized(access)
             )
@@ -52,10 +57,14 @@ class CorrectionRuntime:
         ) -> dict[str, Any]:
             def authorize() -> tuple[str, str]:
                 try:
-                    authorizer = (
-                        authorize_write if action in {"apply", "receipt"} else authorize_drafts
-                    )
-                    return authorizer(config, self.catalog.auth_store, access)
+                    if action in {"apply", "receipt"}:
+                        return authorize_write(
+                            config,
+                            self.catalog.auth_store,
+                            access,
+                            prefixes=arguments.get("storage") == "prefix_labels",
+                        )
+                    return authorize_drafts(config, self.catalog.auth_store, access)
                 except PermissionError:
                     # Config transactions sanitize OSError, including PermissionError,
                     # as lock failures. Keep a revoked grant a domain denial.
@@ -81,6 +90,7 @@ class CorrectionRuntime:
                     reconcile=action == "receipt",
                     query=query,
                     authorize_effect=authorize,
+                    save_config=_save,
                 )
                 try:
                     authorize()

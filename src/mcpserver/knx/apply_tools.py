@@ -26,7 +26,9 @@ class ApplyData(BaseModel):
     selected_changes: int | None = None
     changed_addresses: int | None = None
     destination: Literal["local_metadata"] = "local_metadata"
-    storage: Literal["addresses"] = "addresses"
+    storage: Literal["addresses", "prefix_labels"] = "addresses"
+    manual_revision: str | None = None
+    changed_prefixes: int | None = None
     automatic_retry_allowed: Literal[False] = False
     loxone_written: Literal[False] = False
     import_written: Literal[False] = False
@@ -47,7 +49,9 @@ def register_apply_tools(
         description=(
             "Apply explicitly user-approved accepted IDs from an owned KNX draft. "
             "Separate default-off Admin write, draft and read grants required. Existing "
-            "address name/description overrides only; no prefix, ETS/import or Loxone writes. "
+            "address name/description overrides or style-bound prefix labels; choose one storage "
+            "per call. Prefix labels additionally require explicit Admin prefix activation. "
+            "No new addresses, ETS/import or Loxone writes. "
             "Project-bound drafts require use_project_evidence=true. Exact revisions and "
             "request_id required. After uncertainty use action=reconcile with the same "
             "selection/revisions/request_id; never automatically retry. A receipt describes "
@@ -79,6 +83,7 @@ def register_apply_tools(
             Field(min_length=1, max_length=50),
         ],
         use_project_evidence: Annotated[bool, Field(strict=True)] = False,
+        storage: Literal["addresses", "prefix_labels"] = "addresses",
     ) -> ApplyEnvelope:
         access = None
         started = False
@@ -87,7 +92,7 @@ def register_apply_tools(
             access = _access()
             if runtime is None:
                 raise RuntimeUnavailable("KNX local writes are not configured")
-            authorized = await runtime.run(access, "authorize_write", {})
+            authorized = await runtime.run(access, "authorize_write", {"storage": storage})
             query = None
             if use_project_evidence and action == "apply":
                 if (
@@ -104,6 +109,7 @@ def register_apply_tools(
                 manual_revision=manual_revision,
                 request_id=request_id,
                 approved_change_ids=approved_change_ids,
+                storage=storage,
             )
             started = action == "apply"
             result = await runtime.run(access, "apply" if started else "receipt", arguments, query)

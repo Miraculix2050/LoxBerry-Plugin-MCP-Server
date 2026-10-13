@@ -30,13 +30,21 @@ def operation_digest(arguments: dict[str, Any], target: str) -> str:
         or len(set(selected)) != len(selected)
     ):
         raise KnxError("knx_correction_invalid")
+    storage = arguments.get("storage", "addresses")
+    if storage not in {"addresses", "prefix_labels"}:
+        raise KnxError("knx_correction_invalid")
     fields = [
         arguments.get(key)
         for key in ("draft_id", "draft_revision", "catalog_revision", "manual_revision")
     ]
     return hashlib.sha256(
         json.dumps(
-            ["local-address-apply-v1", target, *fields, sorted(selected)],
+            [
+                "local-address-apply-v1" if storage == "addresses" else "local-prefix-apply-v1",
+                target,
+                *fields,
+                sorted(selected),
+            ],
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode()
@@ -56,19 +64,26 @@ class CorrectionApply:
         reconcile: bool = False,
         query: ProjectQuery | None = None,
         authorize_effect: Callable[[], object],
+        save_config: Callable[[PluginConfig], None] | None = None,
     ) -> dict[str, Any]:
         request = arguments.get("request_id")
         if not isinstance(request, str) or not re.fullmatch(r"[0-9a-f]{32}", request):
             raise KnxError("knx_correction_invalid")
         digest = operation_digest(arguments, target)
         now = int(time.time())
-        with self.service.store.connection() as db:
-            previous = receipt(db, self.owner, target, request, digest, now)
+        storage = arguments.get("storage", "addresses")
+        if storage == "prefix_labels":
+            from .prefix_apply import receipt as prefix_receipt
+
+            previous = prefix_receipt(config, self.owner, target, request, digest, now)
+        else:
+            with self.service.store.connection() as db:
+                previous = receipt(db, self.owner, target, request, digest, now)
         if previous is not None:
             return {"outcome": "applied", **previous}
         if reconcile:
             # An absent observation is not permission to retry an uncertain write.
-            return {"outcome": "not_observed", "automatic_retry_allowed": False}
+            return {"outcome": "not_observed", "automatic_retry_allowed": False, "storage": storage}
         draft, selected = self.service.approved_selection(
             arguments.get("draft_id"),
             config,
@@ -79,6 +94,26 @@ class CorrectionApply:
             arguments.get("approved_change_ids"),
             query=query,
         )
+        if storage == "prefix_labels":
+            from .prefix_apply import apply_prefixes
+
+            if save_config is None:
+                raise KnxError("knx_correction_invalid")
+            result = apply_prefixes(
+                self.service.store,
+                config,
+                self.owner,
+                target,
+                request,
+                digest,
+                arguments["catalog_revision"],
+                arguments["manual_revision"],
+                selected,
+                expires_at=draft["expires_at"],
+                save=save_config,
+                authorize_effect=authorize_effect,
+            )
+            return {"outcome": "applied", **result}
         result = apply_addresses(
             self.service.store,
             self.owner,

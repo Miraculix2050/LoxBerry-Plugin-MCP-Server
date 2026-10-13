@@ -776,7 +776,7 @@ class Phase0OAuthWeb:
         )
         knx_write_option = (
             """<label class="scope-option" for="grant_knx_write"><input id="grant_knx_write" type="checkbox" name="grant_knx_write" value="true" data-optional-scope>
-<span><strong>Local KNX corrections / Lokale KNX-Korrekturen</strong><small>Optional: apply explicitly approved existing-address name/description overrides. Separate Admin write, draft and read approvals required. No ETS/Loxone writes. / Optional: Ausdrücklich bestätigte Namens-/Beschreibungs-Overrides vorhandener Adressen speichern. Separate Admin-Freigaben für Schreiben, Entwürfe und Lesen erforderlich. Keine ETS-/Loxone-Änderungen.</small></span></label>"""
+<span><strong>Local KNX corrections / Lokale KNX-Korrekturen</strong><small>Optional: apply explicitly approved existing-address name/description overrides; prefix labels require additional Admin activation. Separate Admin write, draft and read approvals required. No ETS/Loxone writes. / Optional: Ausdrücklich bestätigte Namens-/Beschreibungs-Overrides vorhandener Adressen speichern; Präfixlabels benötigen eine zusätzliche Admin-Aktivierung. Separate Admin-Freigaben für Schreiben, Entwürfe und Lesen erforderlich. Keine ETS-/Loxone-Änderungen.</small></span></label>"""
             if LOXBERRY_KNX_WRITE_SCOPE in transaction.scopes
             else ""
         )

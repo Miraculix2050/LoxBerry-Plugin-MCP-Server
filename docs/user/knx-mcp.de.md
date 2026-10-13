@@ -190,8 +190,8 @@ weder Projektzugriff noch eine Übernahme. MCP zeichnet konkret abgestimmte
 Entscheidungen mit `loxberry_prepare_knx_corrections(mode="review",
 decisions=[{"change_id": "...", "decision": "accepted"}])` auf: `changes` weglassen,
 aktuelle Ziel-/Katalog-/Präfix-/Entwurfsrevisionen und eine stabile Request-ID angeben.
-Nicht ausgewählte Entscheidungen bleiben erhalten. Präfixübernahme und bestätigte
-Exportübergabe folgen getrennt.
+Nicht ausgewählte Entscheidungen bleiben erhalten. Präfixlabels getrennt von
+Adressen übernehmen; die bestätigte Exportübergabe folgt separat.
 
 Entwürfe gelten absolut 24 Stunden, enthalten höchstens 50 Änderungen und teilen
 die globale Grenze von acht Entwürfen/32 MiB mit Importen, Vergleichen und
@@ -224,8 +224,11 @@ Nach ausdrücklicher Abstimmung `loxberry_apply_knx_corrections(action="apply")`
 mit den angenommenen `approved_change_ids`, Ziel-, Katalog-, Präfix- und
 Entwurfsrevision sowie einer neuen stabilen `request_id` aufrufen. Werte nicht
 erneut senden. Höchstens 50 Änderungen, ausschließlich Namen/Beschreibungen
-vorhandener Einzeladressen; keine Präfix-, DPT-, Flag-, Import-, ETS- oder
-Loxone-Änderungen. Nicht ausgewählte Overrides und die Originaladresse bleiben
+vorhandener Einzeladressen mit `storage="addresses"` (Standard).
+`storage="prefix_labels"` übernimmt darstellungsgebundene Präfixlabels nach
+zusätzlicher Admin-Präfixaktivierung für freigegebene Schreibclients. Pro Aufruf
+einen Speicher wählen; gemischte Auswahlen werden abgewiesen. Keine DPT-, Flag-,
+Import-, ETS- oder Loxone-Änderungen. Nicht ausgewählte Overrides und die Originaladresse bleiben
 erhalten. Entfernen eines Overrides und eine bewusst leere Beschreibung bleiben
 unterschiedliche Vorgänge. Projektgebundene Entwürfe benötigen ausdrücklich
 `use_project_evidence=true` mit frisch autorisiertem unverändertem Projektstand.
@@ -236,4 +239,14 @@ denselben IDs, Revisionen und derselben Vorgangskennung verwenden. Auch ein
 fehlender Nachweis erlaubt keinen automatischen Wiederholungsversuch. Ein
 Nachweis beschreibt das ursprüngliche Ergebnis; danach den aktuellen lokalen
 Katalog erneut lesen und die betroffenen Felder prüfen. Loxone-Namen bleiben
-unverändert primär. Präfixübernahme und Exportübergabe folgen als separate Schritte.
+unverändert primär. Präfixeffekte und ihr Nachweis teilen einen atomaren
+Konfigurationsspeichervorgang; Adresseffekte und ihr Nachweis eine SQLite-Transaktion.
+Es gibt keine gemeinsame speicherübergreifende Übernahme. Präfixnachweise sind
+auf 32 unabgelaufene Vorgänge und 16 KiB begrenzt, ohne gültige Nachweise zu
+verdrängen. Ein voller Bestand sperrt weitere Präfixübernahmen bis zum Ablauf.
+Das Ergebnis enthält die neue manuelle Labelrevision; die Importrevision bleibt
+unverändert. Die bestätigte ETS-Exportübergabe folgt separat.
+
+Konfigurationsschema 12 migriert Schema 11 mit deaktiviertem Präfixzugriff. Das
+native Upgrade erhält Labels und Nachweise. Vor dem Upgrade die passende
+Konfiguration sichern; ältere Software kann Schema 12 nicht lesen.
