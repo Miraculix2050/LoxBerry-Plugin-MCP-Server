@@ -1,9 +1,14 @@
 # Analysis questions: support and boundaries
 
+PR 6 adds [qualitative radiation-class peers](comparable-days.en.md) under an
+explicitly owner-assumed native mapping. Unexpected values remain in the archive
+and appear as bounded diagnostics with an AI warning and correlated sanitized
+log. This does not complete solar-20-22 or qualify numerical irradiance.
+
 Energy & solar PRs 4–5 add confirmed weather-source bindings, optional declared
 PV parameters and independently opt-in [local weather recording](weather-history.en.md).
 This does not yet deliver solar-20–22: numeric radiation semantics and the
-comparison method remain required; recording does not backfill earlier days.
+numerical comparison method remain required; recording does not backfill earlier days.
 Existing statistic/state weather sources retain their actual coverage and semantics.
 
 The original 25 questions remain in the versioned acceptance catalog. Two later KNX cases are separate extensions. Snapshot: Analysis foundation PRs 1–8, 11 October 2026. Labels describe the evidenced answer scope, not exhaustive hardware coverage or 75 independent AI runs.
@@ -31,7 +36,7 @@ Supported: a bounded existing read workflow. Conditional: required sources, sema
 | solar-17 | pv overlap | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; pv_load_overlap with optional observed enable signal; complete active hours only, upper bound rather than exact solar attribution. |
 | solar-18 | consumer ranking | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; consumer_ranking requires explicit comparability confirmation; exclude parent/child overlap and do not sum independent ranks. |
 | solar-19 | retrospective shift | unavailable | `loxone_analyze_history`; Historical observations may inform a qualified response; load-shifting recommendations remain #440. |
-| solar-20 | similar days | unavailable | `loxone_get_statistics`; Historical weather and matched-day method remain #439. |
+| solar-20 | similar days | unavailable | `loxone_get_statistics`; Qualitative same-class peers via comparable_days are a partial weather response; numeric weather-normalized yield/self-consumption remain #439. |
 | solar-21 | self consumption difference | unavailable | `loxone_get_statistics`; No causal self-consumption explanation without native EFM, historical weather and context (#436/#439). |
 | solar-22 | low yield | unavailable | `loxone_get_statistics`; Weather-normalized anomalies and installation parameters remain #439. |
 | solar-23 | night base load | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; baseload uses verified whole-hour energy-derived mean power in local 00-05; daily extrapolation is an estimate of the selected channel. |

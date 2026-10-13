@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded qualitative comparable-day selection to `loxone_analyze_history`
+  from configured actual weather source points. Match fixed completed-hour class
+  sequences under an explicitly owner-assumed 0-3 mapping; retain unexpected
+  values as bounded AI-visible diagnostics and emit correlated sanitized warnings.
+  Exclude forecasts, incomplete positions and changed sources. Do not claim radiation
+  energy, temperature matching, normalized yield or self-consumption (#439).
+
 - Load the initial KNX catalog, delegation policies and correction drafts in
   one authenticated Admin request instead of four competing CGI/Python starts.
   Restore the shared OAuth session in parallel while keeping user actions

@@ -22,6 +22,7 @@ AnalysisOperation = Literal[
     "pv_load_overlap",
     "operating_phases",
     "baseload",
+    "comparable_days",
 ]
 
 

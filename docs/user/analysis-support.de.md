@@ -1,9 +1,15 @@
 # Analysefragen: Support und Grenzen
 
+PR 6 ergänzt [qualitative Strahlungsklassen-Peers](comparable-days.de.md) mit
+einer ausdrücklich angenommenen nativen Zuordnung. Unerwartete Werte bleiben
+in der Historie und erscheinen als begrenzte Diagnostik mit KI-Warnung und
+korreliertem sanitisiertem Log. Solar-20-22 und numerische Einstrahlungssemantik
+sind dadurch nicht vollständig umgesetzt.
+
 Energy & solar PRs 4–5 ergänzen bestätigte Wetterquellenbindungen, optionale
 deklarierte PV-Parameter und eine getrennt aktivierbare
 [lokale Wetteraufzeichnung](weather-history.de.md). Solar-20–22 benötigen weiterhin
-numerische Strahlungssemantik und die Vergleichsmethode; frühere Tage werden nicht
+numerische Strahlungssemantik und die numerische Vergleichsmethode; frühere Tage werden nicht
 aufgefüllt. Bestehende Wetterstatistiken und Zustände behalten ihre
 tatsächliche Abdeckung und Semantik.
 
@@ -32,7 +38,7 @@ Unterstützt: begrenzter vorhandener Leseworkflow. Bedingt: benötigte Quelle, B
 | solar-17 | Vergleiche die Solarerzeugung mit unseren einzeln gemessenen Verbrauchern. Welche liefen überwiegend während der Solarproduktion? | bedingt | `loxone_get_installation_profile` → `loxone_analyze_history`; pv_load_overlap mit optionalem beobachtetem Freigabesignal; nur ganze aktive Stunden, Obergrenze statt exakter Solarzuordnung. |
 | solar-18 | Welche gemessenen Verbraucher haben gestern am meisten Energie benötigt? Stelle ihren Verbrauch dem Solarertrag gegenüber. | bedingt | `loxone_get_installation_profile` → `loxone_analyze_history`; consumer_ranking benötigt ausdrückliche Vergleichbarkeitsbestätigung; Eltern-/Kindüberlappung ausschließen, Rangwerte nicht summieren. |
 | solar-19 | Welche Verbrauchsvorgänge der letzten Woche hätten zeitlich besser zu unserem Solarüberschuss gepasst? | nicht verfügbar | `loxone_analyze_history`; Historische Beobachtungen können eine Teilantwort stützen; Lastverschiebung bleibt #440. |
-| solar-20 | Vergleiche gestern mit Tagen ähnlicher Sonneneinstrahlung, Jahreszeit und Temperatur. Waren Ertrag und Eigenverbrauch auffällig? | nicht verfügbar | `loxone_get_statistics`; Historisches Wetter und Vergleichstagsmethode bleiben #439. |
+| solar-20 | Vergleiche gestern mit Tagen ähnlicher Sonneneinstrahlung, Jahreszeit und Temperatur. Waren Ertrag und Eigenverbrauch auffällig? | nicht verfügbar | `loxone_get_statistics`; Qualitative Klassenpeers über comparable_days liefern eine Wetter-Teilantwort; numerische wetterbereinigte Ertrags-/Eigenverbrauchsvergleiche bleiben #439. |
 | solar-21 | Warum war unser Eigenverbrauch gestern niedriger als an vergleichbaren Tagen? | nicht verfügbar | `loxone_get_statistics`; Keine kausale Eigenverbrauchserklärung ohne native EFM-Werte, Wetterhistorie und Kontext (#436/#439). |
 | solar-22 | Gab es in den letzten vier Wochen Tage mit ungewöhnlich niedrigem Solarertrag, obwohl die Wetterbedingungen vergleichbar waren? | nicht verfügbar | `loxone_get_statistics`; Wetterbereinigte Auffälligkeiten und Anlagenparameter bleiben #439. |
 | solar-23 | Wie hoch ist unser nächtlicher Grundverbrauch, und wie viel Energie benötigt er täglich im Verhältnis zum Solarertrag? | bedingt | `loxone_get_installation_profile` → `loxone_analyze_history`; baseload nutzt belegte stündliche Energie als mittlere Leistung im lokalen Fenster 00-05; Tageshochrechnung ist eine Schätzung des gewählten Kanals. |

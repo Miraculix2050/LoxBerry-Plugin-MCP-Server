@@ -450,3 +450,82 @@ def test_capture_only_writes_enforce_retention_size_and_never_reuse_ids(history)
         assert db.execute("SELECT count(*) FROM weather_captures").fetchone()[0] < 500
     with pytest.raises(EventHistoryUnavailable):
         weather.record(stale, SOURCE, delivery(now), now + 501)
+
+
+def test_analysis_reads_latest_versions_once_and_counts_all_inputs(history):
+    store, weather = history
+    source = WeatherHistorySource(UUID, "actual", SOURCE.fields)
+    now = float(int(time.time()))
+    capture = weather.begin(source, "generation", now - 1)
+    weather.record(capture, source, delivery(now, value=1, count=1), now + 1)
+    weather.record(capture, source, delivery(now, value=3, count=1), now + 2)
+    points, count = weather.analysis_points(
+        source, "generation", now - 1, now + 10, maximum_points=10, deadline=time.monotonic() + 5
+    )
+    assert count == 2
+    assert len(points) == 1
+    assert points[0]["fields"]["solar_radiation"] == 3
+    with pytest.raises(ValueError, match="input point limit"):
+        weather.analysis_points(
+            source, "generation", now - 1, now + 10, maximum_points=1, deadline=time.monotonic() + 5
+        )
+    assert weather.analysis_points(
+        source,
+        "other-generation",
+        now - 1,
+        now + 10,
+        maximum_points=10,
+        deadline=time.monotonic() + 5,
+    ) == ([], 0)
+
+
+def test_analysis_does_not_backfill_old_points_or_late_receptions(history):
+    store, weather = history
+    source = WeatherHistorySource(UUID, "actual", SOURCE.fields)
+    now = float(int(time.time()))
+    capture = weather.begin(source, "generation", now)
+    weather.record(capture, source, delivery(now - 3600, value=2, count=1), now + 1)
+    weather.record(capture, source, delivery(now, value=2, count=1), now + 20)
+    points, count = weather.analysis_points(
+        source, "generation", now - 7200, now + 10, maximum_points=10, deadline=time.monotonic() + 5
+    )
+    assert count == 1
+    assert not points
+
+
+def test_analysis_rejects_forecasts_and_expired_deadlines(history):
+    from mcpserver.loxone.event_history import EventHistoryQueryTimeout
+
+    store, weather = history
+    now = time.time()
+    with pytest.raises(ValueError):
+        weather.analysis_points(
+            SOURCE, "generation", now - 10, now, maximum_points=10, deadline=time.monotonic() + 5
+        )
+    source = WeatherHistorySource(UUID, "actual", SOURCE.fields)
+    with pytest.raises(EventHistoryQueryTimeout):
+        weather.analysis_points(
+            source, "generation", now - 10, now, maximum_points=10, deadline=time.monotonic() - 1
+        )
+
+
+def test_analysis_retains_latest_eligible_point_after_capture_restart(history):
+    store, weather = history
+    source = WeatherHistorySource(UUID, "actual", SOURCE.fields)
+    now = float(int(time.time()))
+    capture = weather.begin(source, "generation", now - 1)
+    weather.record(capture, source, delivery(now, value=1, count=1), now + 1)
+    weather.end(capture, now + 2, "disconnected")
+    restarted = weather.begin(source, "generation", now + 3)
+    weather.record(restarted, source, delivery(now, value=3, count=1), now + 4)
+    points, count = weather.analysis_points(
+        source,
+        "generation",
+        now - 1,
+        now + 10,
+        maximum_points=10,
+        deadline=time.monotonic() + 5,
+    )
+    assert count == 2  # Ineligible versions still consume the bounded read budget.
+    assert len(points) == 1
+    assert points[0]["fields"]["solar_radiation"] == 1

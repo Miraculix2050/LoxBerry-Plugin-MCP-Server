@@ -133,7 +133,10 @@ Weather bindings are a separate `source_kind="weather"` with exact
 `weather_state_uuid`, `mode="actual"|"forecast"`, allowlisted `field` and
 `role="weather_context"`; never invent a control UUID. Formats do not verify units.
 Current values are not automatically observations, forecasts are not past weather
-and `solar_radiation` encoding remains unknown. Structured history is unavailable.
+and `solar_radiation` encoding remains unknown. Structured weather history requires
+explicitly configured local recording sources; it never backfills old days.
+The qualitative comparable-day branch uses an explicitly owner-assumed native
+class mapping, never verified radiation energy. Inspect its diagnostics/warnings.
 Production bindings may include user-declared `pv_parameters`; only a currently
 confirmed valid binding makes them usable. Obtain confirmation of the complete
 proposal, including changed parameters. Missing geometry is unknown, not a reason
@@ -736,6 +739,22 @@ MCP discovery, OAuth, and the HTTP health endpoint remain reachable, but no MCP
 tool call can inspect or alter the emergency-stop condition while it is active.
 
 ## Read history and statistics
+
+For qualitative weather peers use `loxone_analyze_history(operation="comparable_days")`
+with one exact configured actual structured-weather UUID or a confirmed actual
+weather binding for `solar_radiation`, explicit past bounds/timezone and
+`comparable_day_options` containing `reference_day` and a fixed local-hour window.
+Read the `comparable_days.radiation_classes.v1` method and its classification
+origin: native 0-3 mapping is an explicitly owner-approved assumption, not a
+verified decoder. Only the same class sequence at the same completed source-point
+positions qualifies a peer; never shrink missing positions, use forecasts as
+observations, or infer continuous coverage. No raw pages, 15-percent radiation
+tolerance, temperature selection, radiation energy, normalized yield, PV anomaly
+diagnosis or self-consumption result is provided by this class branch. Lux cannot
+be converted universally to irradiance. Numerical source/method gates remain open. Unexpected values stay in the archive
+and in bounded point-time/raw-value/reason diagnostics with a trace-correlated
+sanitized log. Tell the user when the tool warns about mapping/data incompatibility;
+do not call it a proven device fault or silently treat those values as valid classes.
 
 For compact historical calculations prefer `loxone_analyze_history` with exact
 advertised series/state IDs or currently confirmed visible profile bindings.

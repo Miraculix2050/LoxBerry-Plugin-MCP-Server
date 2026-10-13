@@ -127,3 +127,23 @@ or warning/error console messages occurred. These timings and the three native
 energy calls (2234.67/1809.61/1820.62 ms; 2230 bytes each) are bounded observations,
 not controlled latency or token acceptance. The corresponding raw call returned
 6425 bytes. Bytes are not tokenizer counts.
+
+
+## Qualitative comparable days (PR 6)
+
+The owner amended the initial numerical-day package on 2026-10-13 to permit a
+coarse radiation-class branch, with native solarRadiation interpreted as classes
+0-3 only under a labelled owner assumption. `comparable_days.radiation_classes.v1`
+compares the same completed hour-start source-point positions and identical class
+sequences; no radiation energy, temperature selection or normalized yield is
+reported. Numerical source/method gates remain open in #439.
+
+A dedicated structured-weather input and separate weather summary preserve the
+released exact scalar source contract. Confirmed weather bindings are projected
+through ProfileSources before scalar control/series/state access. The adapter
+uses the existing fresh history context and admitted workers, one bounded
+reception-index query, latest-eligible-version deduplication and renewed authorization /
+configuration checks. It performs no database maintenance or recording writes.
+Unexpected values remain in the archive and in bounded diagnostics with trace-
+correlated sanitized warning logs. See [method review](comparable-days-method.md)
+and [user contract](../user/comparable-days.en.md).
