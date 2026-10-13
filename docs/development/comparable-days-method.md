@@ -91,7 +91,7 @@ unexpected values occur outside the selected hour positions; the diagnostics
 remain visible. Missing/invalid required positions never shrink the window.
 
 One bounded read uses the existing reception index; reception and source point
-must both be inside the query interval. Latest point versions replace earlier
+must both be inside the query interval. Latest eligible point versions replace earlier
 versions without summation; every row consumes the input budget. There is no new
 source-time query, persistent schema or backfill. Forecasts and points predating
 capture are excluded from comparison. The existing admission and final caller

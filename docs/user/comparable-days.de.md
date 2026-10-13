@@ -54,7 +54,7 @@ Sommerzeitpositionen werden ausgeschlossen. Gleiche Klassenfolgen werden nach
 saisonalem Abstand und Datum sortiert, mit Auswahlgründen und Ausschlüssen.
 
 Der Reader verwendet eine begrenzte Abfrage über den Empfangszeit-Index und
-behält die zuletzt empfangene Version je Quellenpunkt. Empfang und Quellenposition
+behält die zuletzt empfangene zulässige Version je Quellenpunkt. Empfang und Quellenposition
 müssen im angeforderten Zeitraum liegen; ältere Quellenpunkte und spätere
 Empfänge füllen ihn nicht rückwirkend auf. Empfangs-/Aufzeichnungsabdeckung
 belegt keine kontinuierlichen Messungen. Anbieter- oder Stationswechsel können

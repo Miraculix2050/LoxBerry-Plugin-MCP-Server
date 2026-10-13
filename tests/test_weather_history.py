@@ -507,3 +507,25 @@ def test_analysis_rejects_forecasts_and_expired_deadlines(history):
         weather.analysis_points(
             source, "generation", now - 10, now, maximum_points=10, deadline=time.monotonic() - 1
         )
+
+
+def test_analysis_retains_latest_eligible_point_after_capture_restart(history):
+    store, weather = history
+    source = WeatherHistorySource(UUID, "actual", SOURCE.fields)
+    now = float(int(time.time()))
+    capture = weather.begin(source, "generation", now - 1)
+    weather.record(capture, source, delivery(now, value=1, count=1), now + 1)
+    weather.end(capture, now + 2, "disconnected")
+    restarted = weather.begin(source, "generation", now + 3)
+    weather.record(restarted, source, delivery(now, value=3, count=1), now + 4)
+    points, count = weather.analysis_points(
+        source,
+        "generation",
+        now - 1,
+        now + 10,
+        maximum_points=10,
+        deadline=time.monotonic() + 5,
+    )
+    assert count == 2  # Ineligible versions still consume the bounded read budget.
+    assert len(points) == 1
+    assert points[0]["fields"]["solar_radiation"] == 1

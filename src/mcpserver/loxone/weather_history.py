@@ -241,7 +241,7 @@ class WeatherHistory:
         maximum_points: int,
         deadline: float,
     ) -> tuple[list[dict[str, Any]], int]:
-        """One bounded reception-index read; retain the latest version of each point.
+        """One bounded reception-index read; retain the latest eligible version of each point.
 
         Both reception and source position must be inside the requested interval.
         Later receptions are deliberately excluded, not silently backfilled.
@@ -293,11 +293,11 @@ class WeatherHistory:
         for at, fields, received, predates in rows:
             if time.monotonic() >= deadline:
                 raise EventHistoryQueryTimeout("weather analysis deadline exceeded")
+            if predates or not start <= at < end or at > received:
+                continue
             if at in seen:
                 continue
             seen.add(at)
-            if predates or not start <= at < end or at > received:
-                continue
             points.append({"point_at": at, "received_at": received, "fields": json.loads(fields)})
         return points, len(rows)
 

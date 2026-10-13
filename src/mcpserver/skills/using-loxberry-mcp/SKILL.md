@@ -133,7 +133,10 @@ Weather bindings are a separate `source_kind="weather"` with exact
 `weather_state_uuid`, `mode="actual"|"forecast"`, allowlisted `field` and
 `role="weather_context"`; never invent a control UUID. Formats do not verify units.
 Current values are not automatically observations, forecasts are not past weather
-and `solar_radiation` encoding remains unknown. Structured history is unavailable.
+and `solar_radiation` encoding remains unknown. Structured weather history requires
+explicitly configured local recording sources; it never backfills old days.
+The qualitative comparable-day branch uses an explicitly owner-assumed native
+class mapping, never verified radiation energy. Inspect its diagnostics/warnings.
 Production bindings may include user-declared `pv_parameters`; only a currently
 confirmed valid binding makes them usable. Obtain confirmation of the complete
 proposal, including changed parameters. Missing geometry is unknown, not a reason
