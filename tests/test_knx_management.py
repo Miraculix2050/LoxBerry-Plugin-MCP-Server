@@ -405,6 +405,12 @@ def test_initial_page_sections_match_individual_reads_without_config_writes(tmp_
     ordinary = dispatch_knx("knx_page", {}, store)
     combined = dispatch_knx("knx_page", {"include_sections": True}, store)
     assert {key: value for key, value in combined.items() if key != "sections"} == ordinary
+    assert set(combined["sections"]) == {
+        "knx_read_page",
+        "knx_drafts_page",
+        "knx_write_page",
+        "knx_correction_page",
+    }
     for action, envelope in combined["sections"].items():
         assert envelope == {"ok": True, "data": dispatch_knx(action, {}, store)}
     assert store.path.read_bytes() == before
@@ -430,6 +436,6 @@ def test_initial_section_failure_does_not_hide_other_sections(tmp_path, monkeypa
     combined = dispatch_knx("knx_page", {"include_sections": True}, store)
     assert combined["total"] == 0
     assert combined["sections"]["knx_correction_page"]["ok"]
-    for action in ("knx_read_page", "knx_drafts_page"):
+    for action in ("knx_read_page", "knx_drafts_page", "knx_write_page"):
         assert combined["sections"][action] == {"ok": False, "error": {"code": "internal_error"}}
     assert "private diagnostic" not in str(combined)

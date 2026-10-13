@@ -470,7 +470,12 @@ def _run(
     }
     if action == "knx_page" and payload.get("include_sections"):
         sections: dict[str, Any] = {}
-        for section_action in ("knx_read_page", "knx_drafts_page", "knx_correction_page"):
+        for section_action in (
+            "knx_read_page",
+            "knx_drafts_page",
+            "knx_write_page",
+            "knx_correction_page",
+        ):
             try:
                 sections[section_action] = {
                     "ok": True,

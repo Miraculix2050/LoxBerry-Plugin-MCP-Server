@@ -111,6 +111,9 @@
   </table></div>
  </div></details>
  <details class="mcp-card" data-persist-collapse open id="knx-write-delegation"
+  data-enabled="<TMPL_VAR SUMMARY.ENABLED ESCAPE=HTML>"
+  data-disabled="<TMPL_VAR SUMMARY.DISABLED ESCAPE=HTML>"
+  data-unknown="<TMPL_VAR KNX.STATUS_UNKNOWN ESCAPE=HTML>"
   data-loading="<TMPL_VAR KNX.LOADING ESCAPE=HTML>"
   data-grant="<TMPL_VAR KNX.WRITE_GRANT ESCAPE=HTML>"
   data-revoke="<TMPL_VAR KNX.WRITE_REVOKE ESCAPE=HTML>"
@@ -121,7 +124,7 @@
   data-pending="<TMPL_VAR KNX.WRITE_PENDING ESCAPE=HTML>"
   data-unavailable="<TMPL_VAR KNX.WRITE_UNAVAILABLE ESCAPE=HTML>"
   data-failed="<TMPL_VAR KNX.WRITE_FAILED ESCAPE=HTML>">
-  <summary><h2><TMPL_VAR KNX.WRITE_TITLE></h2> <span id="knx-write-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <summary><h2><TMPL_VAR KNX.WRITE_TITLE></h2> <span id="knx-write-badge" class="mcp-service-badge"><TMPL_VAR KNX.STATUS_UNKNOWN></span> <span id="knx-write-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
   <div class="mcp-collapsible-content">
   <p class="mcp-help"><TMPL_VAR KNX.WRITE_HELP></p>
   <form id="knx-write-enable-form" class="mcp-form">
