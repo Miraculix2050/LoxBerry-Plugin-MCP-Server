@@ -5,6 +5,14 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add conditional retrospective load-shift examples to the existing historical
+  analysis: complete confirmed cycles, native hourly energy, declared windows
+  and one measured export budget shared across loads. Preserve state gaps,
+  profile changes, final-access checks and explicit output/search bounds.
+  Unknown historical native locks block admissibility; examples do not establish
+  measured self-consumption, solar attribution, net/financial savings or device
+  operation permission (#440).
+
 - Add optional owner-confirmed load constraints to the installation profile and
   DE/EN Admin form: explicit weekly windows, deadlines, duration, interruption,
   minimum run/off times, operating-state association and energy provenance.

@@ -23,6 +23,7 @@ AnalysisOperation = Literal[
     "operating_phases",
     "baseload",
     "comparable_days",
+    "retrospective_shift",
 ]
 
 

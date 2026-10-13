@@ -61,3 +61,8 @@ never turns a partial energy profile into a complete one. Existing aggregate
 operating-phase results remain available independently.
 
 Native day/month/year difference aggregates are not relabelled as hourly energy. They return `non_hourly_interval_energy_not_supported`; explicitly requested raw values are retained.
+
+Complete owner-confirmed cycles can feed the separate
+[conditional retrospective comparison](retrospective-shift.en.md). That method
+checks declared windows and a shared export budget, while missing historical
+native locks still prevent an admissibility claim.

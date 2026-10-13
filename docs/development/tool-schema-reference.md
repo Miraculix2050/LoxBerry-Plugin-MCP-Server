@@ -36,7 +36,8 @@ temperature matching or normalized-yield claim is exposed. See the
 
 `loxone_analyze_history` requires `loxone:read` and `loxone:history`.
 `operation` is `temperature_summary`, `energy`, `state_duration`,
-`consumer_ranking`, `pv_load_overlap`, `operating_phases`, `baseload` or the class
+`consumer_ranking`, `pv_load_overlap`, `operating_phases`, `baseload`,
+`retrospective_shift` or the class
 branch above. For the scalar operations, each of
 1–16 `sources` selects exact control plus series/state IDs or a currently
 confirmed `binding_id`. These selector forms cannot be mixed. Statistic selectors
@@ -59,6 +60,19 @@ invalid on the original three operations and participate in cursor proofs.
 Ranking and production/load roles use currently confirmed profile bindings;
 declared compatibility does not become technical topology proof or permission.
 See [architecture and contract decision](history-analysis.md).
+
+`retrospective_shift` uses one confirmed grid_export statistic with explicit
+export direction, matching declared consumer boundaries and explicit
+comparable_boundaries_confirmed=true. Add up to seven confirmed consumer/binary
+operating-state pairs with usable load constraints; energy granularity hour and
+state granularity raw. Distinct physical sources and complete owner-confirmed
+cycles/hourly energy profiles are required. comparison.retrospective_shift is
+bounded to 16 conditional examples and 128 hourly allocations with one shared
+export budget, profile revision, search/output limits and excluded-cycle count.
+Every example has admissibility=not_proven, native_lock_status=not_checked and
+blocking condition historical_native_lock_coverage_missing. No admissible
+schedule, measured self-consumption, PV attribution or saving is claimed.
+See [user workflow](../user/retrospective-shift.en.md).
 
 ## Shared history time and coverage evidence (#437)
 
