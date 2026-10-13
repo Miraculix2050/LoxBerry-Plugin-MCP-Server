@@ -901,8 +901,8 @@
         "workflow": [
           "loxone_get_statistics"
         ],
-        "scope_en": "Historical weather and matched-day method remain #439.",
-        "scope_de": "Historisches Wetter und Vergleichstagsmethode bleiben #439.",
+        "scope_en": "Qualitative same-class peers via comparable_days are a partial weather response; numeric weather-normalized yield/self-consumption remain #439.",
+        "scope_de": "Qualitative Klassenpeers über comparable_days liefern eine Wetter-Teilantwort; numerische wetterbereinigte Ertrags-/Eigenverbrauchsvergleiche bleiben #439.",
         "evidence": "source_contract",
         "native_result": "qualified_insufficient_evidence_or_visible_subset",
         "ai_three_independent_runs": "incomplete"
