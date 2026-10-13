@@ -66,3 +66,8 @@ sichtbar. Eine Ausgabegrenze macht ein Teilprofil nicht vollständig. Bestehende
 aggregierte Ergebnisse für Betriebsphasen bleiben unabhängig verfügbar.
 
 Native Tages-/Monats-/Jahres-Differenzaggregate werden nicht als stündliche Energie umgedeutet. Sie liefern `non_hourly_interval_energy_not_supported`; ausdrücklich angeforderte Rohwerte bleiben erhalten.
+
+Vollständige vom Anwender bestätigte Zyklen können den separaten
+[bedingten rückblickenden Vergleich](retrospective-shift.de.md) versorgen. Diese
+Methode prüft erklärte Fenster und ein gemeinsames Exportbudget; fehlende
+historische native Sperren verhindern weiterhin eine Zulässigkeitsbehauptung.

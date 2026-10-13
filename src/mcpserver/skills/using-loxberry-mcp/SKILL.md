@@ -1279,3 +1279,28 @@ assertion. Declared Wh values never become measured interval energy. Unknown
 native locks remain not_checked, planning not_evaluated. Never infer shiftability,
 a cleared lock, operation authorization, self-consumption or financial savings.
 A profile-change failure requires a fresh read and review, not blind retry.
+
+### Conditional retrospective load shifts
+
+For retrospective_shift, read the current profile and use one confirmed
+grid_export statistic with explicit export direction and the same declared
+measurement boundary as every consumer. Select at most seven distinct confirmed
+consumer/operating-state pairs with usable constraints; energy granularity hour,
+state granularity raw. Explicit comparable_boundaries_confirmed=true is required;
+check the declaration and exclude duplicate/overlapping consumer counters.
+Use complete user_confirmed_cycle activity episodes with matching duration and
+complete observed hourly energy profiles. Declared totals, missing hours,
+capture gaps/restarts and non-hourly aggregates never invent measured profiles.
+
+Inspect comparison.retrospective_shift, profile_revision, excluded_cycles,
+limitations, examples_truncated and each example's blocking_conditions. The
+shared export budget is allocated across all loads without counting the same
+energy twice. Declared original-date windows/completion, DST, continuous
+inactive coverage and minimum off time are checked; cycles remain contiguous.
+Missing historical native locks explicitly block admissibility: every example
+is conditional_only, admissibility=not_proven and native_lock_status=not_checked.
+Explain this condition to the user. Never recommend it as an allowed device
+operation, measured self-consumption, proven solar attribution, net saving or
+financial benefit. Storage, other load responses and sub-hour dynamics remain
+unknown. No future planning or device write is authorized. Search exhaustion
+returns no allocation from a partial search; truncation is not global optimality.

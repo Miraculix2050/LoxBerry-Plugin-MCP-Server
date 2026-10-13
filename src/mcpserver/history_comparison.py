@@ -18,8 +18,15 @@ from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.history_evidence import HistoryInterval, timezone, utc_timestamp
 from mcpserver.loxone.state_semantics import SeriesSemantics
 from mcpserver.loxone.statistics import StatisticPoint
+from mcpserver.retrospective_shift import (
+    RetrospectiveShiftResult,
+    ShiftLoad,
+    conditional_retrospective_shift,
+)
 
-ComparisonOperation = Literal["consumer_ranking", "pv_load_overlap", "operating_phases", "baseload"]
+ComparisonOperation = Literal[
+    "consumer_ranking", "pv_load_overlap", "operating_phases", "baseload", "retrospective_shift"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +38,7 @@ class ComparisonInput:
     profile_role: str | None = None
     declared_boundary: str | None = None
     load_flexibility: LoadFlexibility | None = None
+    declared_direction: str | None = None
 
 
 class ComparisonResult(BaseModel):
@@ -45,6 +53,7 @@ class ComparisonResult(BaseModel):
     usable_intervals_truncated: bool = False
     limitations: list[str] = Field(default_factory=list, max_length=16)
     load_cycles: LoadCyclesResult | None = None
+    retrospective_shift: RetrospectiveShiftResult | None = None
 
 
 def _check(deadline: float) -> None:
@@ -100,6 +109,85 @@ def _finite(result: ComparisonResult) -> ComparisonResult:
     return result
 
 
+def _retrospective_shift(
+    inputs: tuple[ComparisonInput, ...],
+    start: float,
+    end: float,
+    boundaries_confirmed: bool,
+    deadline: float,
+) -> ComparisonResult:
+    result = ComparisonResult()
+    export = [s for s in inputs if s.profile_role == "grid_export"]
+    consumers = [s for s in inputs if s.profile_role == "consumer"]
+    states = [s for s in inputs if s.profile_role == "operating_state"]
+    if (
+        not boundaries_confirmed
+        or len(export) != 1
+        or not 1 <= len(consumers) <= 7
+        or len(states) != len(consumers)
+        or len(inputs) != 1 + 2 * len(consumers)
+        or any(not s.summary.binding_id for s in inputs)
+        or any(s.summary.source_kind != "statistic" for s in export + consumers)
+        or any(s.summary.source_kind != "event_history" for s in states)
+        or export[0].declared_direction != "export"
+    ):
+        result.limitations = [
+            "confirmed_export_direction_consumer_operating_pairs_and_boundary_confirmation_required"
+        ]
+        return result
+    boundary = export[0].declared_boundary
+    if not boundary or any(s.declared_boundary != boundary for s in consumers):
+        result.limitations = ["matching_declared_export_consumer_boundary_required"]
+        return result
+    export_hours = _hours(export[0], start, end, deadline)
+    if not export_hours:
+        result.limitations = ["complete_native_hourly_export_energy_required"]
+        return result
+    state_map = {s.summary.binding_id: s for s in states}
+    loads = []
+    associations = []
+    for consumer in consumers:
+        _check(deadline)
+        flex = consumer.load_flexibility
+        state = state_map.get(flex.operating_binding_id) if flex is not None else None
+        if (
+            flex is None
+            or state is None
+            or not state.segments
+            or consumer.summary.binding_id is None
+        ):
+            result.limitations = [
+                "usable_confirmed_load_constraints_and_exact_operating_association_required"
+            ]
+            return result
+        associations.append(flex.operating_binding_id)
+        cycles = describe_load_cycles(
+            state.segments,
+            _hours(consumer, start, end, deadline),
+            flex,
+            consumer.summary.binding_id,
+            start=start,
+            end=end,
+            deadline=deadline,
+        )
+        loads.append(ShiftLoad(consumer.summary.binding_id, flex, cycles, state.segments))
+    if len(state_map) != len(states) or len(set(associations)) != len(associations):
+        result.limitations = ["distinct_consumer_operating_associations_required"]
+        return result
+    result.retrospective_shift = conditional_retrospective_shift(
+        tuple(loads),
+        export_hours,
+        start=start,
+        end=end,
+        deadline=deadline,
+    )
+    result.method = "conditional_shared_export_absorption"
+    result.status = result.retrospective_shift.status
+    result.unit = "Wh"
+    result.limitations = list(result.retrospective_shift.limitations)
+    return result
+
+
 def compare_history(
     operation: ComparisonOperation,
     inputs: tuple[ComparisonInput, ...],
@@ -114,6 +202,8 @@ def compare_history(
 ) -> ComparisonResult:
     _check(deadline)
     result = ComparisonResult()
+    if operation == "retrospective_shift":
+        return _retrospective_shift(inputs, start, end, comparable_boundaries_confirmed, deadline)
     if operation == "consumer_ranking":
         if not comparable_boundaries_confirmed:
             result.limitations = ["explicit_comparable_boundary_confirmation_required"]

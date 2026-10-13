@@ -306,9 +306,14 @@ def register_history_analysis_tool(
                 "pv_load_overlap",
                 "operating_phases",
                 "baseload",
+                "retrospective_shift",
             }
             if comparison_options is not None and not is_comparison:
                 raise ValueError("comparison options require a comparison operation")
+            if operation == "retrospective_shift" and (
+                not sources or any(not source.binding_id for source in sources)
+            ):
+                raise ValueError("retrospective_shift requires confirmed profile bindings")
             is_day_comparison = operation == "comparable_days"
             if comparable_day_options is not None and not is_day_comparison:
                 raise ValueError("comparable day options require comparable_days")
@@ -361,7 +366,8 @@ def register_history_analysis_tool(
                     profile_revision = document.revision
                     profile_sources = (
                         ProfileSources.from_structure(identity, structure)
-                        if is_day_comparison or operation == "operating_phases"
+                        if is_day_comparison
+                        or operation in {"operating_phases", "retrospective_shift"}
                         else controls
                     )
                     projection = project_profile(document, identity, profile_sources, limit=256)
@@ -439,6 +445,10 @@ def register_history_analysis_tool(
                         raise ControlOperationError("not_found", "source is not visible")
                     key = (control.uuid, series_id, state_id, source.granularity)
                     if key in seen:
+                        if operation == "retrospective_shift":
+                            raise ValueError(
+                                "retrospective_shift requires distinct physical sources"
+                            )
                         continue
                     seen.add(key)
                     resolved.append((source, binding, control, series_id, state_id))
@@ -515,7 +525,12 @@ def register_history_analysis_tool(
                         metadata, _ = resolver.resolve(structure, control, state_name, None, {})
                         if (
                             operation
-                            not in {"state_duration", "operating_phases", "pv_load_overlap"}
+                            not in {
+                                "state_duration",
+                                "operating_phases",
+                                "pv_load_overlap",
+                                "retrospective_shift",
+                            }
                             or metadata.measurement_quantity != "binary_state"
                         ):
                             result = SourceAnalysis(
@@ -592,6 +607,7 @@ def register_history_analysis_tool(
                                 LoadFlexibility.model_validate(binding["load_flexibility"])
                                 if binding and binding.get("load_constraints_usable")
                                 else None,
+                                binding["declared_direction"] if binding else None,
                             )
                         )
                 comparison = None
@@ -609,7 +625,7 @@ def register_history_analysis_tool(
                         night_end_hour=options.night_end_hour,
                         deadline=deadline,
                     )
-                    if comparison.load_cycles is not None:
+                    if comparison.load_cycles is not None or operation == "retrospective_shift":
                         assert profile_path is not None and profile_revision is not None
                         current_profile = await run_admitted_worker(
                             ProfileStore(profile_path).read, identity
@@ -619,7 +635,10 @@ def register_history_analysis_tool(
                                 "temporarily_unavailable",
                                 "Installation profile changed during cycle analysis",
                             )
-                        comparison.load_cycles.profile_revision = profile_revision
+                        if comparison.load_cycles is not None:
+                            comparison.load_cycles.profile_revision = profile_revision
+                        if comparison.retrospective_shift is not None:
+                            comparison.retrospective_shift.profile_revision = profile_revision
                 scope = await run_admitted_worker(
                     _raw_scope,
                     cursors,
@@ -693,8 +712,12 @@ def register_history_analysis_tool(
             "Compute compact temperature, energy, state duration, consumer ranking, PV/load "
             "windows, operating phases, nighttime estimates or qualitative radiation-class "
             "comparable days. Classes do not establish radiation energy or normalized yield. "
-            "Operating phases can describe confirmed load activity cycles. Interval energy "
-            "analysis requires hour granularity; non-hourly aggregates remain unqualified. "
+            "Operating phases can describe confirmed load activity cycles. "
+            "Retrospective shift analysis provides conditional shared-export absorption "
+            "examples with unproven admissibility and unknown native locks; no scheduling "
+            "or saving claim. "
+            "Interval energy analysis requires hour granularity; "
+            "non-hourly aggregates remain unqualified. "
             "Exact sources or confirmed "
             "visible profile bindings; UTC half-open "
             "period and explicit IANA timezone. Requires loxone:read and loxone:history. "

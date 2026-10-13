@@ -172,3 +172,26 @@ The runtime retains their explicit raw values when requested, but returns
 non_hourly_interval_energy_not_supported rather than relabelling them as one-hour
 energy. This applies to the shared energy/energy-comparison adapter as well as
 cycle profiles; raw counter and documented hour behavior remain unchanged.
+
+## Conditional retrospective shifts (PR 8)
+
+The additive retrospective_shift operation uses the existing fresh historical
+context/admission and past-only interval gate. One confirmed grid_export
+statistic with explicit export direction and matching declared measurement
+boundary supplies a shared hourly export budget for up to seven confirmed
+consumer/operating-state pairs. Explicit boundary confirmation and usable
+fingerprint-bound constraints are required. Repeated physical sources fail
+rather than being silently deduplicated into a different requested load set.
+
+Complete owner-confirmed cycles, matching duration and complete observed hourly
+profiles feed the [reviewed conditional method](retrospective-shift-method.md).
+All loads share one budget; original-date windows/completion, DST and continuous
+inactive/minimum-off coverage are checked. Missing historical native locks keep
+every example conditional and admissibility unproven. No future scheduling,
+device operation, solar attribution, self-consumption or saving is established.
+
+comparison.retrospective_shift records the profile revision; every new-operation
+comparison rechecks revision before publication, including unavailable results.
+The existing final access check, deadline/point/output limits, raw pagination
+and legacy branches remain in force. Installed fixtures and genuine source
+availability are separate acceptance evidence. #501 is excluded.

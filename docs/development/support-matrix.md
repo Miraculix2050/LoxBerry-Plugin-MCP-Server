@@ -65,3 +65,9 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   activity edges and interval-energy profiles are separate from user-confirmed
   program identity, native lock observation and future scheduling. Unknown locks
   are never inferred clear; no operation permission or saving claim is added.
+
+- Conditional retrospective shifts (#440): existing history analysis checks
+  complete cycles/hourly energy and declared windows against one shared measured
+  export budget. Missing historical native locks remain a blocking qualification
+  condition in every example. Automated fixtures establish arithmetic/contract
+  gates only; no admissible device schedule, PV attribution or saving claim.
