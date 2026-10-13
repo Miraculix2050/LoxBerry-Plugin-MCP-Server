@@ -7,7 +7,7 @@ import json
 import logging
 import time
 from contextlib import AsyncExitStack
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from math import ceil
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
@@ -18,6 +18,12 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mcpserver.bounded_worker import run_admitted_worker
+from mcpserver.comparable_days_models import ClassComparableDayOptions, ClassComparableDaysResult
+from mcpserver.comparable_days_tools import (
+    WeatherAnalysisSource,
+    WeatherAnalysisSummary,
+    class_day_analysis,
+)
 from mcpserver.history_analysis import (
     AnalysisOperation,
     HistoryAnalysisDeadline,
@@ -35,6 +41,7 @@ from mcpserver.history_comparison import (
 )
 from mcpserver.installation_profile import (
     ProfileError,
+    ProfileSources,
     ProfileStore,
     installation_identity,
     project_profile,
@@ -112,6 +119,8 @@ class AnalysisData(BaseModel):
     raw: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     next_cursor: str | None = None
     comparison: ComparisonResult | None = None
+    comparable_days: ClassComparableDaysResult | None = None
+    weather_sources: list[WeatherAnalysisSummary] = Field(default_factory=list, max_length=16)
 
 
 class ComparisonOptions(BaseModel):
@@ -171,7 +180,7 @@ def _raw_scope(
     start: str,
     end: str,
     zone: str,
-    sources: list[AnalysisSource],
+    sources: list[AnalysisSource | WeatherAnalysisSource],
     raw: list[dict[str, Any]],
     outputs: list[SourceAnalysis],
     deadline: float,
@@ -262,13 +271,14 @@ def register_history_analysis_tool(
 
     async def calculate(
         operation: AnalysisOperation,
-        sources: list[AnalysisSource],
+        sources: list[AnalysisSource | WeatherAnalysisSource],
         start: str,
         end: str,
         timezone_name: str,
         include_raw: bool,
         cursor: str | None,
         comparison_options: ComparisonOptions | None,
+        comparable_day_options: ClassComparableDayOptions | None,
     ) -> AnalysisEnvelope:
         trace_id = str(uuid4())
         try:
@@ -283,6 +293,13 @@ def register_history_analysis_tool(
             }
             if comparison_options is not None and not is_comparison:
                 raise ValueError("comparison options require a comparison operation")
+            is_day_comparison = operation == "comparable_days"
+            if comparable_day_options is not None and not is_day_comparison:
+                raise ValueError("comparable day options require comparable_days")
+            if is_day_comparison and (comparable_day_options is None or include_raw or cursor):
+                raise ValueError("comparable_days requires reference options and compact output")
+            if not is_day_comparison and any(isinstance(s, WeatherAnalysisSource) for s in sources):
+                raise ValueError("structured weather sources require comparable_days")
             first, last = _rfc3339(start), _rfc3339(end)
             zone = timezone(timezone_name)
             if first >= last or last > datetime.now(UTC):
@@ -294,6 +311,16 @@ def register_history_analysis_tool(
             )
             if touched > 31:
                 raise ValueError("analysis is limited to 31 local calendar days")
+            if is_day_comparison:
+                assert comparable_day_options is not None
+                reference = datetime.fromisoformat(comparable_day_options.reference_day).date()
+                last_day = local_last.date()
+                if local_last.time().replace(tzinfo=None) == datetime.min.time():
+                    last_day -= timedelta(days=1)
+                if not local_first.date() <= reference <= last_day:
+                    raise ValueError("reference must lie inside the selected range")
+                if any(isinstance(s, AnalysisSource) and not s.binding_id for s in sources):
+                    raise ValueError("class comparisons require structured weather selectors")
             if cursor is not None and not include_raw:
                 raise ValueError("cursor requires explicitly requested raw data")
             begin, finish = first.timestamp(), last.timestamp()
@@ -314,19 +341,78 @@ def register_history_analysis_tool(
                         )
                     identity = installation_identity(runtime.endpoint.origin, structure)
                     document = await run_admitted_worker(ProfileStore(profile_path).read, identity)
-                    projection = project_profile(document, identity, controls, limit=256)
+                    profile_sources = (
+                        ProfileSources.from_structure(identity, structure)
+                        if is_day_comparison
+                        else controls
+                    )
+                    projection = project_profile(document, identity, profile_sources, limit=256)
                     bindings = {
                         b["binding_id"]: b
                         for b in projection["bindings"]
                         if b["status"] == "confirmed"
                     }
+                if is_day_comparison:
+                    assert comparable_day_options is not None
+                    days, weather = await class_day_analysis(
+                        runtime,
+                        event_runtime,
+                        access,
+                        structure,
+                        [source.model_dump() for source in sources],
+                        bindings,
+                        begin=begin,
+                        finish=finish,
+                        zone_name=timezone_name,
+                        options=comparable_day_options,
+                        deadline=deadline,
+                    )
+                    envelope = _result(
+                        AnalysisEnvelope,
+                        {
+                            "operation": operation,
+                            "start": utc_timestamp(begin),
+                            "end": utc_timestamp(finish),
+                            "timezone": timezone_name,
+                            "sources": [],
+                            "input_points": weather.input_versions,
+                            "comparable_days": days,
+                            "weather_sources": [weather],
+                        },
+                        trace_id=trace_id,
+                        warnings=[
+                            "Some recorded radiation values do not fit the class mapping. "
+                            "Inform the user and review the mapping/source; "
+                            "diagnostics are retained."
+                        ]
+                        if days.invalid_source_point_count
+                        else [],
+                    )
+                    if len(envelope.model_dump_json().encode()) > 64 * 1024:
+                        raise ValueError("analysis output byte limit exceeded")
+                    if days.invalid_source_point_count:
+                        _LOGGER.warning(
+                            "component=history_analysis trace_id=%s operation=comparable_days "
+                            "outcome=unexpected_class_values mapping=%s issues=%s count=%d "
+                            "diagnostic_truncated=%s",
+                            trace_id,
+                            days.classification_origin,
+                            ",".join(sorted({point.issue for point in days.invalid_points})),
+                            days.invalid_source_point_count,
+                            days.invalid_points_truncated,
+                        )
+                    return envelope
                 seen = set()
                 for source in sources:
+                    if not isinstance(source, AnalysisSource):
+                        raise ValueError("scalar operations require scalar sources")
                     binding = bindings.get(source.binding_id) if source.binding_id else None
                     if source.binding_id and binding is None:
                         raise ControlOperationError(
                             "not_found", "confirmed visible binding is not available"
                         )
+                    if binding and binding.get("source_kind") == "weather":
+                        raise ValueError("weather bindings require comparable_days")
                     control_id = binding["control_uuid"] if binding else source.control_uuid
                     series_id = binding["series_id"] if binding else source.series_id
                     state_id = binding["state_uuid"] if binding else source.state_uuid
@@ -572,7 +658,9 @@ def register_history_analysis_tool(
         name="loxone_analyze_history",
         description=(
             "Compute compact temperature, energy, state duration, consumer ranking, PV/load "
-            "windows, operating phases or nighttime estimates. Exact sources or confirmed "
+            "windows, operating phases, nighttime estimates or qualitative radiation-class "
+            "comparable days. Classes do not establish radiation energy or normalized yield. "
+            "Exact sources or confirmed "
             "visible profile bindings; UTC half-open "
             "period and explicit IANA timezone. Requires loxone:read and loxone:history. "
             "No raw data unless requested."
@@ -582,13 +670,16 @@ def register_history_analysis_tool(
     )
     async def analyze_history(
         operation: AnalysisOperation,
-        sources: Annotated[list[AnalysisSource], Field(min_length=1, max_length=16)],
+        sources: Annotated[
+            list[AnalysisSource | WeatherAnalysisSource], Field(min_length=1, max_length=16)
+        ],
         start: Annotated[str, Field(max_length=64, json_schema_extra={"format": "date-time"})],
         end: Annotated[str, Field(max_length=64, json_schema_extra={"format": "date-time"})],
         timezone: Annotated[str, Field(min_length=1, max_length=128)],
         include_raw: bool = False,
         cursor: Annotated[str | None, Field(max_length=512)] = None,
         comparison_options: ComparisonOptions | None = None,
+        comparable_day_options: ClassComparableDayOptions | None = None,
     ) -> AnalysisEnvelope:
         if len(pending) >= 2:
             return _error(
@@ -596,7 +687,15 @@ def register_history_analysis_tool(
             )
         task = asyncio.create_task(
             calculate(
-                operation, sources, start, end, timezone, include_raw, cursor, comparison_options
+                operation,
+                sources,
+                start,
+                end,
+                timezone,
+                include_raw,
+                cursor,
+                comparison_options,
+                comparable_day_options,
             )
         )
         pending.add(task)

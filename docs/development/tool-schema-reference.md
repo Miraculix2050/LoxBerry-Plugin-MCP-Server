@@ -20,9 +20,24 @@ and recheck access and relevant configuration before publishing.
 
 ## Compact historical calculations (#438)
 
+`operation="comparable_days"` adds a compact qualitative class branch. Select one
+deduplicated `source_kind="structured_weather"`, exact `state_uuid` and
+`stored_mode="actual"`, or a confirmed actual-weather `binding_id` for
+`solar_radiation`. Scalar selector contracts remain unchanged. Strict
+`comparable_day_options` requires `reference_day`, uses
+`method="radiation_classes"` and whole `start_hour`/`end_hour` (0/24 defaults),
+with `maximum_seasonal_days` at most 30. Raw/cursor requests are rejected for this
+branch. `data.weather_sources` carries the separate source/provenance summary;
+`data.comparable_days` carries fixed positions, class origin, peers and exclusions.
+The native 0-3 mapping is an explicitly owner-approved assumption of 2026-10-13,
+not technically verified encoding. No irradiance energy, 15-percent tolerance,
+temperature matching or normalized-yield claim is exposed. See the
+[qualitative method](../user/comparable-days.en.md).
+
 `loxone_analyze_history` requires `loxone:read` and `loxone:history`.
 `operation` is `temperature_summary`, `energy`, `state_duration`,
-`consumer_ranking`, `pv_load_overlap`, `operating_phases` or `baseload`. Each of
+`consumer_ranking`, `pv_load_overlap`, `operating_phases`, `baseload` or the class
+branch above. For the scalar operations, each of
 1–16 `sources` selects exact control plus series/state IDs or a currently
 confirmed `binding_id`. These selector forms cannot be mixed. Statistic selectors
 have granularity; state history remains raw. UTC-normalized half-open RFC3339

@@ -9,7 +9,9 @@ Structured weather history is independently opt-in and uses the shared SQLite v8
 store/subscription. Current and forecast provenance, reception time and point time
 remain separate. Numeric weather units/radiation encoding are unverified;
 recording does not prove continuous observation, backfill, comparable days or a
-PV forecast. See [weather history](../user/weather-history.en.md) for read limits
+PV forecast. A separate [qualitative comparable-day method](../user/comparable-days.en.md)
+uses an explicitly owner-assumed class mapping and does not qualify numerical
+irradiance, normalized yield or self-consumption. See [weather history](../user/weather-history.en.md) for read limits
 and the v7 backup required for rollback to older code. Device evidence is scoped
 to the corresponding recorded target acceptance; fixtures are not device proof.
 

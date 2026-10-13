@@ -231,6 +231,76 @@ class WeatherHistory:
     def __init__(self, store: EventHistoryStore) -> None:
         self.store = store
 
+    def analysis_points(
+        self,
+        source: WeatherHistorySource,
+        fingerprint: str,
+        start: float,
+        end: float,
+        *,
+        maximum_points: int,
+        deadline: float,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """One bounded reception-index read; retain the latest version of each point.
+
+        Both reception and source position must be inside the requested interval.
+        Later receptions are deliberately excluded, not silently backfilled.
+        Duplicate versions consume the input budget even when not returned.
+        """
+        from mcpserver.loxone.event_history import EventHistoryQueryTimeout, EventHistoryUnavailable
+
+        if (
+            source.mode != "actual"
+            or type(maximum_points) is not int
+            or not 0 <= maximum_points <= 100_000
+            or not math.isfinite(start + end)
+            or not 0 < end - start <= 32 * 86400
+        ):
+            raise ValueError("weather analysis range or budget is invalid")
+        if time.monotonic() >= deadline:
+            raise EventHistoryQueryTimeout("weather analysis deadline exceeded")
+        effective_start = max(start, time.time() - self.store.retention_seconds)
+        with _read_connection(self.store.path) as db:
+            db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+            try:
+                db.execute("BEGIN")
+                if db.execute("PRAGMA user_version").fetchone()[0] != 8:
+                    raise EventHistoryUnavailable("local weather history needs migration")
+                rows = db.execute(
+                    "SELECT p.point_at,p.fields_json,p.received_at,p.point_predates_capture "
+                    "FROM weather_points p INDEXED BY weather_point_source_received "
+                    "WHERE p.state_uuid=? AND p.mode=? AND p.fingerprint=? "
+                    "AND p.received_at>=? AND p.received_at<? "
+                    "ORDER BY p.received_at DESC,p.id DESC LIMIT ?",
+                    (
+                        source.state_uuid,
+                        source.mode,
+                        fingerprint,
+                        effective_start,
+                        end,
+                        maximum_points + 1,
+                    ),
+                ).fetchall()
+                if len(rows) > maximum_points:
+                    raise ValueError("analysis input point limit exceeded")
+                db.execute("COMMIT")
+            except sqlite3.Error as exc:
+                if time.monotonic() >= deadline:
+                    raise EventHistoryQueryTimeout("weather analysis deadline exceeded") from exc
+                raise EventHistoryUnavailable("local weather analysis is unavailable") from exc
+        points = []
+        seen: set[float] = set()
+        for at, fields, received, predates in rows:
+            if time.monotonic() >= deadline:
+                raise EventHistoryQueryTimeout("weather analysis deadline exceeded")
+            if at in seen:
+                continue
+            seen.add(at)
+            if predates or not start <= at < end or at > received:
+                continue
+            points.append({"point_at": at, "received_at": received, "fields": json.loads(fields)})
+        return points, len(rows)
+
     def summary(self) -> dict[str, int]:
         if not self.store.path.is_file():
             return {"deliveries": 0, "points": 0}

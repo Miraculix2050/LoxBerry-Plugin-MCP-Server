@@ -97,3 +97,68 @@ class ComparableDaysResult(Contract):
     advisory_relative_threshold: FiniteFloat = Field(ge=-0.2, le=-0.2)
     advisory_threshold_comparison: Literal["strictly_less_than"]
     limitations: list[Reason] = Field(max_length=32)
+
+
+class ClassComparableDayOptions(Contract):
+    reference_day: DayString
+    method: Literal["radiation_classes"] = "radiation_classes"
+    start_hour: int = Field(default=0, ge=0, le=23)
+    end_hour: int = Field(default=24, ge=1, le=24)
+    maximum_seasonal_days: int = Field(default=30, ge=0, le=30)
+
+    @field_validator("reference_day")
+    @classmethod
+    def calendar_day(cls, value: str) -> str:
+        date.fromisoformat(value)
+        return value
+
+    @model_validator(mode="after")
+    def ordered_window(self) -> "ClassComparableDayOptions":
+        if self.start_hour >= self.end_hour:
+            raise ValueError("common local window must be nonempty")
+        return self
+
+
+RadiationClass = Annotated[int, Field(ge=0, le=3)]
+
+
+class ClassDayCandidate(Contract):
+    day: DayString
+    seasonal_distance_days: int = Field(ge=0, le=30)
+    radiation_classes: list[RadiationClass] = Field(min_length=1, max_length=24)
+    selection_reason: Literal["identical_class_sequence"]
+
+
+class ClassDayUsedOptions(Contract):
+    start_hour: int = Field(ge=0, le=23)
+    end_hour: int = Field(ge=1, le=24)
+    maximum_seasonal_days: int = Field(ge=0, le=30)
+    class_match_policy: Literal["identical_sequence"]
+
+
+class ClassPointDiagnostic(Contract):
+    day: DayString
+    point_at: FiniteFloat
+    raw_value: FiniteFloat | bool | None
+    raw_value_repr: Literal["NaN", "Infinity", "-Infinity"] | None
+    issue: Literal["missing", "boolean", "not_numeric", "not_finite", "out_of_range", "fractional"]
+    classification_origin: Literal["reviewed_risk_class_0_3", "owner_assumed_risk_class_0_3"]
+    action: Literal["not_used_as_a_valid_class"]
+
+
+class ClassComparableDaysResult(Contract):
+    method_version: Literal["comparable_days.radiation_classes.v1"]
+    status: Literal["partial", "insufficient_evidence"]
+    reference_day: DayString
+    timezone: str = Field(min_length=1, max_length=128)
+    common_hour_positions: list[Annotated[int, Field(ge=0, le=23)]] = Field(max_length=24)
+    options: ClassDayUsedOptions
+    classification_origin: Literal["reviewed_risk_class_0_3", "owner_assumed_risk_class_0_3"] | None
+    reference_classes: list[RadiationClass] | None = Field(default=None, max_length=24)
+    candidates: list[ClassDayCandidate] = Field(max_length=30)
+    exclusions: list[ComparableDayExclusion] = Field(max_length=30)
+    coverage: Literal["matched_hour_start_source_points_only"]
+    limitations: list[Reason] = Field(max_length=32)
+    invalid_source_point_count: int = Field(ge=0, le=100_000)
+    invalid_points: list[ClassPointDiagnostic] = Field(max_length=16)
+    invalid_points_truncated: bool
