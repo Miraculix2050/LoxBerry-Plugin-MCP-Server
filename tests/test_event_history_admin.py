@@ -841,3 +841,154 @@ def test_selector_projection_passes_numeric_subphase_channel(monkeypatch):
     assert seen == [timing]
     assert len(timing) == 4 and all(type(value) is float for value in timing.values())
     assert "private" not in repr(timing)
+
+
+@pytest.fixture
+def weather_admin(tmp_path, monkeypatch):
+    from mcpserver.loxone.models import GlobalMetadata, LoxoneIdentity, LoxoneStructure
+    from mcpserver.loxone.weather_history import WeatherHistorySource
+
+    config_store, history = _setup(tmp_path, monkeypatch)
+    config_store.save(replace(config_store.load(), loxone_endpoint="https://weather.example"))
+    source = WeatherHistorySource(SOURCE[1], "actual", ("solar_radiation",))
+    visible = LoxoneStructure(
+        LoxoneIdentity("service", "serial"),
+        "1",
+        (),
+        (),
+        (),
+        global_metadata=(
+            GlobalMetadata("weather_state", "actual", "Actual", state_uuid=SOURCE[1]),
+        ),
+    )
+    calls = []
+
+    async def fresh():
+        calls.append("fresh")
+        return visible
+
+    monkeypatch.setattr(
+        event_history_admin, "_monitor", lambda _config: SimpleNamespace(visible_structure=fresh)
+    )
+    return config_store, history, source, calls
+
+
+def test_weather_admin_options_migrates_stopped_v7_archive_and_preserves_scalar(weather_admin):
+    _config, history, _source, _calls = weather_admin
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    with history._opened() as db:
+        for table in ("weather_points", "weather_deliveries", "weather_captures"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("PRAGMA user_version=7")
+    options = event_history_admin.weather_sources("weather_history_options", {})
+    assert options["retained"] == {"deliveries": 0, "points": 0}
+    with history._opened() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("action", ["weather_history_options", "weather_history_add_source"])
+@pytest.mark.parametrize("failure", [TimeoutError, OSError, RuntimeError, ValueError])
+def test_weather_admin_discovery_failure_is_actionable_without_mutation(
+    weather_admin, monkeypatch, action, failure
+):
+    config_store, _history, source, _calls = weather_admin
+
+    async def unavailable():
+        raise failure("private-discovery-detail")
+
+    monkeypatch.setattr(
+        event_history_admin,
+        "_monitor",
+        lambda _config: SimpleNamespace(visible_structure=unavailable),
+    )
+    with pytest.raises(admin.AdminError) as error:
+        event_history_admin.weather_sources(action, {"confirm": True, "source": source.document()})
+    assert error.value.code == "temporarily_unavailable"
+    assert "private-discovery-detail" not in str(error.value)
+    assert not config_store.load().weather_history_sources
+
+
+def test_weather_admin_add_is_visible_idempotent_and_never_activates(weather_admin):
+    config_store, _history, source, calls = weather_admin
+    options = event_history_admin.weather_sources("weather_history_options", {})
+    assert options["choices"] == [{"state_uuid": source.state_uuid, "mode": "actual"}]
+    assert not options["enabled"] and options["retained"] == {"deliveries": 0, "points": 0}
+    payload = {"confirm": True, "source": source.document()}
+    assert event_history_admin.weather_sources("weather_history_add_source", payload)["changed"]
+    assert not event_history_admin.weather_sources("weather_history_add_source", payload)["changed"]
+    assert len(calls) == 3
+    assert not config_store.load().weather_history_enabled
+    assert config_store.load().weather_history_sources == (source,)
+
+
+@pytest.mark.parametrize("change", ["endpoint", "timeout"])
+def test_weather_admin_discovery_race_blocks_add(weather_admin, monkeypatch, change):
+    config_store, _history, source, _calls = weather_admin
+
+    async def changed():
+        current = config_store.load()
+        config_store.save(
+            replace(
+                current,
+                **(
+                    {"loxone_endpoint": "https://other.example"}
+                    if change == "endpoint"
+                    else {"connection_timeout": current.connection_timeout + 1}
+                ),
+            )
+        )
+        from mcpserver.loxone.models import GlobalMetadata, LoxoneIdentity, LoxoneStructure
+
+        return LoxoneStructure(
+            LoxoneIdentity("service", "serial"),
+            "1",
+            (),
+            (),
+            (),
+            global_metadata=(
+                GlobalMetadata("weather_state", "actual", "Actual", state_uuid=source.state_uuid),
+            ),
+        )
+
+    monkeypatch.setattr(
+        event_history_admin, "_monitor", lambda _config: SimpleNamespace(visible_structure=changed)
+    )
+    with pytest.raises(admin.AdminError, match="configuration changed"):
+        event_history_admin.weather_sources(
+            "weather_history_add_source", {"confirm": True, "source": source.document()}
+        )
+    assert not config_store.load().weather_history_sources
+
+
+def test_weather_admin_exact_mode_capacity_stale_removal_and_archive_preservation(weather_admin):
+    from mcpserver.loxone.weather_history import WeatherHistory, WeatherHistorySource
+
+    config_store, history, source, _calls = weather_admin
+    payload = {"confirm": True, "source": source.document()}
+    wrong = replace(source, mode="forecast")
+    with pytest.raises(admin.AdminError, match="not visible"):
+        event_history_admin.weather_sources(
+            "weather_history_add_source", {"confirm": True, "source": wrong.document()}
+        )
+    fillers = tuple(
+        WeatherHistorySource(f"00000000-0000-0000-00000000{i:08x}", "actual", source.fields)
+        for i in range(10, 26)
+    )
+    config_store.save(replace(config_store.load(), weather_history_sources=fillers))
+    with pytest.raises(admin.AdminError, match="capacity"):
+        event_history_admin.weather_sources("weather_history_add_source", payload)
+    config_store.save(replace(config_store.load(), weather_history_sources=(source,)))
+    history.initialize()
+    weather = WeatherHistory(history)
+    capture = weather.begin(source, "fp", time.time())
+    changed_fields = replace(source, fields=("temperature",))
+    with pytest.raises(admin.AdminError, match="configuration changed"):
+        event_history_admin.weather_sources(
+            "weather_history_remove_source", {"confirm": True, "source": changed_fields.document()}
+        )
+    assert event_history_admin.weather_sources("weather_history_remove_source", payload)["changed"]
+    with history._opened() as db:
+        assert db.execute("SELECT id FROM weather_captures WHERE id=?", (capture,)).fetchone()
+    assert not config_store.load().weather_history_sources

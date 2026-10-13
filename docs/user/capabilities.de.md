@@ -51,8 +51,9 @@ Zuordnungen über die Admin-Seite. MCP liest sie mit aktueller Sichtbarkeit und
 kann sie mit separater lokaler Profilfreigabe, erwarteter Revision und ausdrücklicher
 Nutzerbestätigung pflegen. Nutzerrollen bleiben von technischer Semantik getrennt.
 Genaue Wetterbindungen und optionale PV-Geometrie-/Leistungsangaben nutzen dasselbe
-Profil mit getrenntem Herkunftsnachweis. Strukturierte Wetterhistorie ist noch nicht
-verfügbar; ungeprüfte Strahlungskodierungen werden nicht numerisch interpretiert.
+Profil mit getrenntem Herkunftsnachweis. Eine unabhängig aktivierbare
+[lokale Wetteraufzeichnung](weather-history.de.md) liefert begrenzte Historie nach
+Empfangszeit; ungeprüfte Strahlungskodierungen werden nicht numerisch interpretiert.
 
 WindowMonitor `windowStates` wird über gewöhnliche Zustandsleser, Zustandssemantik
 und optionale Semantik kompakter Abfragen dekodiert. Nutzen Sie

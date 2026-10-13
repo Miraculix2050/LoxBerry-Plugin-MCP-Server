@@ -650,9 +650,22 @@ or mode.
 Use `loxone_get_weather(mode="actual")` for current weather and
 `loxone_get_weather(mode="forecast")` for the paginated forecast. The default
 mode is `forecast`; follow `next_cursor`. If a continuation cursor is rejected,
-restart at page one because the forecast may have changed. This tool has no
-historical mode. Never present forecast entries or retained state values as
+restart at page one because the forecast may have changed. Never present forecast entries or retained state values as
 measured weather history.
+Use `mode="history"` only with explicit `history_options` (exact visible
+`state_uuid`, `stored_mode`, offset-aware `start` and `end`). This requires
+activated `loxone:history` and a locally configured recorder source. Recording
+is independently off by default and never backfills earlier days. Each call
+covers at most 31 days on the **received-at** axis, with up to 96 point rows and
+128 capture phases. Follow `next_cursor`; restart after clear, retention or
+source/field/format generation changes. Each page freshly checks caller access.
+Raw selected values require `include_raw=true`; default pages show bounded
+delivery/point metadata and coverage. `point_at`, `received_at` and
+`reported_update_at` are separate Unix UTC seconds. Future forecast point times
+remain forecasts even in a historical reception query. Reported update time
+does not establish forecast issuance. Capture phases establish recorder readiness,
+not continuous observations or provider cadence. Unknown units, especially
+`solar_radiation`, remain unknown; this operation does not select comparable days.
 `data.last_updated_at` is the source update time reported by Loxone;
 `data.received_at` is when the local cache processed the Weather-State event
 and may be `null` if unknown; envelope `observed_at` is when the tool produced

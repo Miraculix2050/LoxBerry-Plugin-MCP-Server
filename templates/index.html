@@ -98,6 +98,18 @@
       <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1" <TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
       <p id="event-history-brief" class="mcp-help" data-enabled="<TMPL_VAR SETUP.EVENT_HISTORY_ON ESCAPE=HTML>" data-disabled="<TMPL_VAR SETUP.EVENT_HISTORY_OFF ESCAPE=HTML>" data-sources="<TMPL_VAR SETUP.EVENT_HISTORY_SOURCES ESCAPE=HTML>" data-size-unknown="<TMPL_VAR SETUP.EVENT_HISTORY_SIZE_UNKNOWN ESCAPE=HTML>"><TMPL_IF EVENT_HISTORY_ENABLED><TMPL_VAR SETUP.EVENT_HISTORY_ON><TMPL_ELSE><TMPL_VAR SETUP.EVENT_HISTORY_OFF></TMPL_IF> · <TMPL_VAR EVENT_HISTORY_SOURCE_COUNT> <TMPL_VAR SETUP.EVENT_HISTORY_SOURCES> · <TMPL_VAR SETUP.EVENT_HISTORY_SIZE_UNKNOWN></p>
       <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP> <a href="event_history.cgi"><TMPL_VAR SETUP.EVENT_HISTORY_OPEN></a></p>
+      <label class="mcp-check"><input id="weather-history-enabled" name="weather_history_enabled" type="checkbox" value="1" <TMPL_IF WEATHER_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.WEATHER_HISTORY_ENABLED></span></label>
+      <p class="mcp-help"><TMPL_VAR SETUP.WEATHER_HISTORY_HELP></p>
+      <details id="weather-recorder-settings">
+        <summary><TMPL_VAR SETUP.WEATHER_HISTORY_SOURCES></summary>
+        <button id="weather-recorder-load" type="button" class="lb-button"><TMPL_VAR SETUP.WEATHER_HISTORY_LOAD></button>
+        <label for="weather-recorder-source"><TMPL_VAR SETUP.WEATHER_HISTORY_SOURCE></label>
+        <select id="weather-recorder-source" disabled></select>
+        <fieldset id="weather-recorder-fields" disabled><legend><TMPL_VAR SETUP.WEATHER_HISTORY_FIELDS></legend></fieldset>
+        <button id="weather-recorder-add" type="button" class="lb-button" disabled><TMPL_VAR SETUP.WEATHER_HISTORY_ADD></button>
+        <ul id="weather-recorder-configured"></ul>
+        <p id="weather-recorder-status" role="status" class="mcp-help"></p>
+      </details>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -369,6 +381,23 @@
 
 <TMPL_UNLESS SERVER_RENDERED_FALLBACK>
 <div id="admin-labels" hidden
+  data-l-setup-weather-history-help="<TMPL_VAR SETUP.WEATHER_HISTORY_HELP ESCAPE=HTML>"
+  data-l-setup-weather-history-actual="<TMPL_VAR SETUP.WEATHER_HISTORY_ACTUAL ESCAPE=HTML>"
+  data-l-setup-weather-history-forecast="<TMPL_VAR SETUP.WEATHER_HISTORY_FORECAST ESCAPE=HTML>"
+  data-l-setup-weather-history-remove="<TMPL_VAR SETUP.WEATHER_HISTORY_REMOVE ESCAPE=HTML>"
+  data-l-setup-weather-history-remove-confirm="<TMPL_VAR SETUP.WEATHER_HISTORY_REMOVE_CONFIRM ESCAPE=HTML>"
+  data-l-setup-weather-history-saved="<TMPL_VAR SETUP.WEATHER_HISTORY_SAVED ESCAPE=HTML>"
+  data-l-setup-weather-history-select-fields="<TMPL_VAR SETUP.WEATHER_HISTORY_SELECT_FIELDS ESCAPE=HTML>"
+  data-l-profile-weather-type="<TMPL_VAR PROFILE.WEATHER_TYPE ESCAPE=HTML>"
+  data-l-profile-wind-direction="<TMPL_VAR PROFILE.WIND_DIRECTION ESCAPE=HTML>"
+  data-l-profile-solar-radiation="<TMPL_VAR PROFILE.SOLAR_RADIATION ESCAPE=HTML>"
+  data-l-profile-relative-humidity="<TMPL_VAR PROFILE.RELATIVE_HUMIDITY ESCAPE=HTML>"
+  data-l-profile-temperature="<TMPL_VAR PROFILE.TEMPERATURE ESCAPE=HTML>"
+  data-l-profile-perceived-temperature="<TMPL_VAR PROFILE.PERCEIVED_TEMPERATURE ESCAPE=HTML>"
+  data-l-profile-dew-point="<TMPL_VAR PROFILE.DEW_POINT ESCAPE=HTML>"
+  data-l-profile-precipitation="<TMPL_VAR PROFILE.PRECIPITATION ESCAPE=HTML>"
+  data-l-profile-wind-speed="<TMPL_VAR PROFILE.WIND_SPEED ESCAPE=HTML>"
+  data-l-profile-barometric-pressure="<TMPL_VAR PROFILE.BAROMETRIC_PRESSURE ESCAPE=HTML>"
   data-l-action-allow-loxberry-operate="<TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE ESCAPE=HTML>"
   data-l-action-allow-loxberry-read="<TMPL_VAR ACTION.ALLOW_LOXBERRY_READ ESCAPE=HTML>"
   data-l-action-confirm-loxone-token="<TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN ESCAPE=HTML>"
@@ -430,6 +459,6 @@
 <script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
 <script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v13"></script>
 <script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
-<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v15"></script>
+<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v17"></script>
 <script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14"></script>
 </TMPL_UNLESS>

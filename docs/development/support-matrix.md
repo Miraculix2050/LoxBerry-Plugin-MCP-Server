@@ -5,6 +5,14 @@
 
 ## Platforms and Miniservers
 
+Structured weather history is independently opt-in and uses the shared SQLite v8
+store/subscription. Current and forecast provenance, reception time and point time
+remain separate. Numeric weather units/radiation encoding are unverified;
+recording does not prove continuous observation, backfill, comparable days or a
+PV forecast. See [weather history](../user/weather-history.en.md) for read limits
+and the v7 backup required for rollback to older code. Device evidence is scoped
+to the corresponding recorded target acceptance; fixtures are not device proof.
+
 | Component | Status | Scope |
 | --- | --- | --- |
 | LoxBerry 4.0.0.14, Debian 13, aarch64 | hardware confirmed | native package, service, HTTPS transport and offline wheels |

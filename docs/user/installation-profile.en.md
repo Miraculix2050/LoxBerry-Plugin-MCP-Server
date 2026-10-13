@@ -16,8 +16,9 @@ one weather field. This source has its own visibility check and no control UUID.
 Formats are presentation metadata; units and the `solar_radiation` encoding remain
 unverified. Current source values are not automatically measured observations,
 and forecasts are not historical measurements. Existing state/statistic weather
-bindings keep their original coverage. Structured weather history is unavailable
-until a separately enabled recorder is delivered. Source formats and rule changes
+bindings keep their original coverage. Structured weather history requires the
+independently enabled [recorder](weather-history.en.md); profile declarations do
+not check its coverage. Source formats and rule changes
 require review; provider, station and location changes cannot be fully detected.
 
 Production bindings optionally contain **PV installation parameters**: installed

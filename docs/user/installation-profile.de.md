@@ -6,8 +6,9 @@ Kontroll-UUID. Formate sind Darstellungsmetadaten; Einheiten und die Kodierung v
 `solar_radiation` bleiben ungeprüft. Aktuelle Quellenwerte sind nicht automatisch
 gemessene Beobachtungen; Prognosen sind keine historischen Messungen. Bestehende
 Wetterbindungen an Zustände oder Statistiken behalten ihre ursprüngliche Abdeckung.
-Strukturierte Wetterhistorie ist bis zur gesondert aktivierbaren Aufzeichnung
-nicht verfügbar. Geänderte relevante Formate oder Quellenregeln erfordern eine
+Strukturierte Wetterhistorie benötigt die getrennt aktivierte
+[Aufzeichnung](weather-history.de.md); das Profil prüft deren Abdeckung nicht.
+Geänderte relevante Formate oder Quellenregeln erfordern eine
 Prüfung; Anbieter-, Stations- und Standortwechsel sind nicht vollständig erkennbar.
 
 Erzeugungsbindungen können **PV-Anlagenparameter** enthalten: installierte kWp,

@@ -1,5 +1,23 @@
 # Tool schema reference
 
+## Structured weather archive (#439)
+
+`loxone_get_weather` retains `actual` and `forecast` reads and adds `mode="history"`.
+This branch requires `loxone:read`, `loxone:history`, global history activation and
+an exact configured weather UUID/mode visible in the caller's fresh structure.
+`history_options` selects that UUID, `stored_mode`, offset-aware past `start`/`end`
+on the delivery reception axis (at most 31 days), and optional `include_raw`.
+It is invalid on the original modes. Recording remains a separate, disabled-by-default
+LoxBerry Admin option in the shared SQLite archive; configuring a source does not enable it.
+
+Pages contain at most 96 source points and 128 explicit capture phases, with
+truncation and an identity/source/content-generation-bound cursor. Raw fields are
+omitted by default. Source point time, local reception and reported update remain
+separate; `point_predates_capture` establishes no earlier capture coverage.
+Forecast points remain forecasts and unknown units remain unknown. The whole response
+is limited to 64 KiB; readers retain their history admission through worker completion
+and recheck access and relevant configuration before publishing.
+
 ## Compact historical calculations (#438)
 
 `loxone_analyze_history` requires `loxone:read` and `loxone:history`.

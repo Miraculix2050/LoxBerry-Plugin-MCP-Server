@@ -121,7 +121,7 @@ def test_mixed_weather_source_projection_and_revocation(tmp_path):
     item = project_profile(document, TARGET, sources, offset=1)["bindings"][0]
     assert item["status"] == "confirmed" and item["unit"] is None
     assert (
-        item["history_status"] == "unavailable" and item["value_origin"] == "current_source_value"
+        item["history_status"] == "not_checked" and item["value_origin"] == "current_source_value"
     )
     assert "control_uuid" not in item and "actor_ref" not in item
     revoked = ProfileSources.from_structure(TARGET, replace(structure(), global_metadata=()))

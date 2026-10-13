@@ -18,6 +18,72 @@ ADMIN_SCRIPTS = (
 )
 
 
+def test_weather_source_mutations_wait_for_discovery_and_restart() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf("  const weatherPanel =");
+const panel = source.slice(start, source.indexOf("  syncMiniserverSelection();", start));
+class Element {
+  constructor() { this.children = []; this.events = {}; this.disabled = false; }
+  addEventListener(event, handler) { this.events[event] = handler; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren() { this.children = []; }
+  querySelectorAll() { return []; }
+}
+const elements = new Map();
+const get = (id) => {
+  if (!elements.has(id)) elements.set(id, new Element());
+  return elements.get(id);
+};
+const configured = {state_uuid: 'weather', mode: 'actual', fields: ['temperature']};
+const requests = [];
+const context = {
+  URLSearchParams,
+  document: {getElementById: get, createElement: () => new Element()},
+  window: {confirm: () => true},
+  label: (key) => key,
+  postAjax: async (body, timeout) => {
+    const action = body.get('action');
+    requests.push([action, timeout]);
+    // Model a successful server response after the maximum backend work.
+    const elapsed = action === 'weather_history_add_source' ? 95000 :
+                    action === 'weather_history_remove_source' ? 65000 : 30000;
+    if (timeout <= elapsed) throw new Error('premature client abort');
+    return {data: {choices: [configured], fields: ['temperature'], sources:
+      action === 'weather_history_remove_source' ? [] : [configured]}};
+  },
+};
+vm.runInNewContext(panel, context);
+(async () => {
+  await get('weather-recorder-load').events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_HELP');
+  get('weather-recorder-source').value = JSON.stringify(configured);
+  get('weather-recorder-fields').querySelectorAll = () => [{value: 'temperature'}];
+  await get('weather-recorder-add').events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_SAVED');
+  assert.equal(get('weather-recorder-add').disabled, false);
+  const row = get('weather-recorder-configured').children[0];
+  await row.children[1].events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_SAVED');
+  assert.equal(get('weather-recorder-configured').children.length, 0);
+  assert.equal(requests[0][1], 35000);
+  assert.ok(requests[1][1] > 95000);
+  assert.ok(requests[2][1] > 65000);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _admin_script(name: str) -> str:
     return (ROOT / "webfrontend/htmlauth/admin" / name).read_text(encoding="utf-8")
 
@@ -111,7 +177,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v15", "page.js": "v14", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v17", "page.js": "v14", "sessions.js": "v13"}.get(
             name, "v12"
         )
         assert (
@@ -724,7 +790,7 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
-    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v15" in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v17" in _admin_source()
     assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v10" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi
@@ -2533,6 +2599,67 @@ def test_unavailable_logmanager_warning_has_request_id_without_private_details(
         events,
     )
     assert "private-detail" not in events
+
+
+def test_weather_source_mutations_emit_sanitized_audit_events(tmp_path: Path) -> None:
+    from urllib.parse import urlencode
+
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "weather-audit.txt"
+    environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
+    environment["LB_TEST_PLUGIN_LOGLEVEL"] = "6"
+    private_payload = json.dumps(
+        {"source": {"state_uuid": "private-source", "fields": ["private-field"]}}
+    )
+    for action in ("weather_history_add_source", "weather_history_remove_source"):
+        for ok, payload in ((True, private_payload), (False, private_payload), (False, "[")):
+            marker.unlink(missing_ok=True)
+            response = (
+                {"ok": ok, "data": {}}
+                if ok
+                else {
+                    "ok": False,
+                    "error": {"code": "not_found", "message": "private-error"},
+                }
+            )
+            (tmp_path / "mcpserver-admin").write_text(
+                f"#!/usr/bin/env perl\nmy $request = <STDIN>;\nprint q({json.dumps(response)});\n",
+                encoding="utf-8",
+            )
+            body = urlencode({"action": action, "ajax": "1", "payload": payload})
+            result = subprocess.run(
+                [
+                    perl,
+                    f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                    str(ROOT / "webfrontend/htmlauth/index.cgi"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                input=body,
+                env={
+                    **environment,
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                    "CONTENT_LENGTH": str(len(body)),
+                    "HTTP_ORIGIN": "https://loxberry.example",
+                    "HTTP_HOST": "loxberry.example",
+                },
+            )
+            assert json.loads(result.stdout.partition("\n\n")[2])["ok"] is ok
+            events = marker.read_text(encoding="utf-8")
+            severity, outcome = ("info", "completed") if ok else ("warning", "rejected")
+            assert re.search(
+                rf"{severity}:component=weather_history request_id=[0-9a-f]+-[0-9a-f]+ "
+                rf"action={action} outcome={outcome}",
+                events,
+            )
+            assert "private-source" not in events
+            assert "private-field" not in events
+            assert "private-error" not in events
 
 
 def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) -> None:

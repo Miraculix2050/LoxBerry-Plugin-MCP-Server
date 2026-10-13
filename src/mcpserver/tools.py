@@ -157,6 +157,11 @@ from mcpserver.skill_delivery import (
     SKILL_REVISION,
     read_skill_markdown,
 )
+from mcpserver.weather_history_tools import (
+    WeatherHistoryData,
+    WeatherHistoryOptions,
+    WeatherHistoryReader,
+)
 
 DEFAULT_PAGE_SIZE: Final = 50
 MAX_PAGE_SIZE: Final = 100
@@ -2250,7 +2255,7 @@ class RoomSnapshotEnvelope(ToolEnvelope):
 
 
 class WeatherEnvelope(ToolEnvelope):
-    data: WeatherData | ErrorData
+    data: WeatherData | WeatherHistoryData | ErrorData
 
 
 class SkillGuideEnvelope(ToolEnvelope):
@@ -2748,7 +2753,7 @@ class _CursorCodec:
             if (
                 isinstance(anchor, list)
                 and len(anchor) == 4
-                and anchor[0] in {"statistics", "history", "event_history"}
+                and anchor[0] in {"statistics", "history", "event_history", "weather_history"}
                 and isinstance(anchor[1], int)
                 and not isinstance(anchor[1], bool)
                 and isinstance(anchor[2], str)
@@ -4342,7 +4347,11 @@ def register_opening_contact_tool(server: FastMCP, runtime: LoxoneRuntime | None
 
 
 def register_read_tools(
-    server: FastMCP, runtime: LoxoneRuntime | None, *, control_enabled: bool = False
+    server: FastMCP,
+    runtime: LoxoneRuntime | None,
+    *,
+    control_enabled: bool = False,
+    weather_history_reader: WeatherHistoryReader | None = None,
 ) -> None:
     """Publish the stable Loxone read-only tools."""
     from mcpserver.message_tools import register_message_tools
@@ -4658,15 +4667,18 @@ def register_read_tools(
             "Get bounded current or forecast weather from the configured Loxone weather server. "
             "last_updated_at is the source update time, data.received_at is the local cache "
             "processing time, and observed_at is the tool response time. stale describes cache "
-            "availability, not weather source age. This does not provide historical weather."
+            "availability, not weather source age. mode=history reads explicitly configured "
+            "local recording with loxone:history and administrator activation. Its received-time "
+            "axis, source point time and reported update time are separate; forecasts remain "
+            "forecasts. Unknown units remain unknown. Recording never backfills the past."
         ),
         annotations=annotations,
         structured_output=True,
     )
     async def get_weather(
         mode: Annotated[
-            Literal["actual", "forecast"],
-            Field(description="Return the current weather or up to 96 forecast points."),
+            Literal["actual", "forecast", "history"],
+            Field(description="Current weather, forecast, or paginated local reception history."),
         ] = "forecast",
         cursor: Annotated[
             str | None,
@@ -4685,8 +4697,30 @@ def register_read_tools(
                 le=MAX_WEATHER_POINTS,
             ),
         ] = 24,
+        history_options: Annotated[
+            WeatherHistoryOptions | None,
+            Field(description="History only: exact source, past reception range and raw opt-in."),
+        ] = None,
     ) -> WeatherEnvelope:
         try:
+            if mode == "history":
+                if history_options is None:
+                    raise ValueError("history_options are required for history mode")
+                if weather_history_reader is None:
+                    return _error(
+                        WeatherEnvelope, "temporarily_unavailable", "Weather history is unavailable"
+                    )
+                result = await weather_history_reader.read(
+                    _access(), history_options, cursor, limit, cursors
+                )
+                envelope = _result(WeatherEnvelope, result.model_dump())
+                if len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024:
+                    return _error(
+                        WeatherEnvelope, "response_too_large", "Use a smaller weather history page"
+                    )
+                return envelope
+            if history_options is not None:
+                raise ValueError("history_options require history mode")
             _access_token, snapshot = await _snapshot(runtime)
             metadata = next(
                 (
@@ -4776,6 +4810,10 @@ def register_read_tools(
             )
         except RuntimeUnavailable as exc:
             return _availability_error(WeatherEnvelope, exc)
+        except ControlOperationError as exc:
+            return _error(WeatherEnvelope, exc.code, str(exc))
+        except TimeoutError:
+            return _error(WeatherEnvelope, "temporarily_unavailable", "Weather history timed out")
 
     @server.tool(
         name="loxone_find_controls",
@@ -8520,7 +8558,16 @@ def register_tool_surface(
         and profile_auth_store is not None
         else None,
     )
-    register_read_tools(server, runtime, control_enabled=control_enabled)
+    register_read_tools(
+        server,
+        runtime,
+        control_enabled=control_enabled,
+        weather_history_reader=WeatherHistoryReader(
+            runtime, event_history_runtime._config_store, event_history_runtime._store_path
+        )
+        if runtime is not None and isinstance(event_history_runtime, EventHistoryRuntime)
+        else None,
+    )
     if runtime is not None:
         register_project_tools(server, runtime, project_config_store, knx_store_path=knx_store_path)
         register_observability_tools(server, runtime, event_history_runtime)

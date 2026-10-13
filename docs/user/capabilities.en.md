@@ -48,8 +48,9 @@ bindings through the Admin page. MCP reads them with fresh visibility and can
 manage them with separate local profile approval, an expected revision and explicit
 user confirmation. User roles remain separate from technical semantics.
 Exact weather bindings and optional PV geometry/capacity declarations use the same
-profile. Their provenance remains separate; structured weather history is not yet
-available and unverified radiation encoding is not numerically interpreted.
+profile. Their provenance remains separate. Independently opt-in
+[local weather recording](weather-history.en.md) provides bounded received-time
+history; unverified radiation encoding is not numerically interpreted.
 
 WindowMonitor `windowStates` is decoded through ordinary state reads, state
 semantics and optional compact-read semantics. Use `semantic_value.contacts`:

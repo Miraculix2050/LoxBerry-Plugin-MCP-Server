@@ -22,6 +22,7 @@ from mcpserver.loxone.event_history import (
     EventHistoryStoreSummary,
     source_revision_for_snapshot,
 )
+from mcpserver.loxone.models import LoxoneStructure
 from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 
@@ -820,6 +821,94 @@ def save_policy(payload: object) -> dict[str, Any]:
         "changed": changed,
         "retention_days": updated.event_history_retention_days,
         "maximum_mib": updated.event_history_maximum_mib,
+    }
+
+
+def _weather_structure(config: PluginConfig) -> LoxoneStructure:
+    bridge = _bridge()
+    if not config.loxone_endpoint:
+        raise bridge.AdminError("Miniserver is not configured", code="temporarily_unavailable")
+    try:
+        return asyncio.run(asyncio.wait_for(_monitor(config).visible_structure(), timeout=30))
+    except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
+        raise bridge.AdminError(
+            "visible Miniserver structure is unavailable", code="temporarily_unavailable"
+        ) from exc
+
+
+def weather_sources(action: str, payload: object) -> dict[str, Any]:
+    """Local authenticated Admin configures exact weather sources, independently of MCP."""
+    from mcpserver.installation_profile import installation_identity
+    from mcpserver.loxone.endpoint import MiniserverEndpoint
+    from mcpserver.loxone.weather_history import (
+        FIELDS,
+        MAX_SOURCES,
+        WeatherHistory,
+        WeatherHistorySource,
+        source_fingerprint,
+    )
+
+    bridge = _bridge()
+    config = bridge._config_store().load()
+    if action == "weather_history_options":
+        structure = _weather_structure(config)
+        choices = [
+            {"state_uuid": m.state_uuid, "mode": m.identifier}
+            for m in structure.global_metadata
+            if m.kind == "weather_state" and m.identifier in {"actual", "forecast"} and m.state_uuid
+        ]
+        return {
+            "choices": choices,
+            "fields": list(FIELDS),
+            "sources": [s.document() for s in config.weather_history_sources],
+            "enabled": config.weather_history_enabled,
+            "retained": WeatherHistory(_store(config)).summary(),
+        }
+    _confirmed(payload)
+    try:
+        source = WeatherHistorySource.parse(
+            payload.get("source") if isinstance(payload, dict) else None
+        )
+    except (TypeError, ValueError) as exc:
+        raise bridge.AdminError("weather source is invalid") from exc
+    add = action == "weather_history_add_source"
+    if add:
+        structure = _weather_structure(config)
+        try:
+            source_fingerprint(
+                source,
+                structure,
+                installation_identity(
+                    MiniserverEndpoint.parse(config.loxone_endpoint).origin, structure
+                ),
+            )
+        except ValueError as exc:
+            raise bridge.AdminError("weather source is not visible", code="not_found") from exc
+
+    def change(current: PluginConfig) -> PluginConfig:
+        _require_same_visibility_context(config, current)
+        sources = current.weather_history_sources
+        key = (source.state_uuid, source.mode)
+        existing = next((s for s in sources if (s.state_uuid, s.mode) == key), None)
+        if add:
+            if existing is not None:
+                if existing == source:
+                    return current
+                raise bridge.AdminError("remove the source before changing its selected fields")
+            if len(sources) >= MAX_SOURCES:
+                raise bridge.AdminError("weather source capacity reached", code="rate_limited")
+            return replace(current, weather_history_sources=(*sources, source))
+        if existing != source:
+            raise bridge.AdminError(
+                "weather source configuration changed", code="stale_configuration"
+            )
+        return replace(current, weather_history_sources=tuple(s for s in sources if s != source))
+
+    updated, changed = _apply(change)
+    return {
+        "changed": changed,
+        "sources": [s.document() for s in updated.weather_history_sources],
+        "enabled": updated.weather_history_enabled,
     }
 
 

@@ -106,7 +106,7 @@ def test_schema_six_migration_preserves_events_without_initial_value_backfill(tm
     assert len(page.entries) == 1
     assert page.capture_intervals[0][2:] == (None, None)
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_retention_truncation_drops_obsolete_initial_evidence(tmp_path):
@@ -430,7 +430,7 @@ def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, mo
     monkeypatch.setattr(store, "_prune", lambda *_args, **_kwargs: pytest.fail("maintenance"))
     assert store.prepare_chart_read() == 0
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
         assert (
             db.execute("SELECT mutation_generation FROM history_metadata WHERE id = 1").fetchone()[
                 0
@@ -475,7 +475,7 @@ def test_source_inventory_page_upgrades_v5_store(tmp_path):
     assert page == (("control", "state", True, None),)
     assert cursor is None
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):
@@ -497,7 +497,7 @@ def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_
 
     assert store.snapshot((source,)).sources[0].logical_value_bytes is None
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM events WHERE logical_value_bytes IS NOT NULL"
