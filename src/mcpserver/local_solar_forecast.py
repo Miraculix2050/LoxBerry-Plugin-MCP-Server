@@ -253,7 +253,8 @@ class LocalSolarForecastRuntime:
                         )
                     except ForecastEvidenceError as exc:
                         _LOGGER.warning(
-                            "component=solar_forecast trace_id=%s phase=verification source_issue=%s",
+                            "component=solar_forecast trace_id=%s phase=verification "
+                            "source_issue=%s",
                             trace_id,
                             str(exc),
                         )
