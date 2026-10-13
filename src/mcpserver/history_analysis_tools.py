@@ -443,7 +443,11 @@ def register_history_analysis_tool(
                     control = controls.get(control_id or "")
                     if control is None:
                         raise ControlOperationError("not_found", "source is not visible")
-                    key = (control.uuid, series_id, state_id, source.granularity)
+                    key = (
+                        (control.uuid, series_id, state_id)
+                        if operation == "retrospective_shift"
+                        else (control.uuid, series_id, state_id, source.granularity)
+                    )
                     if key in seen:
                         if operation == "retrospective_shift":
                             raise ValueError(

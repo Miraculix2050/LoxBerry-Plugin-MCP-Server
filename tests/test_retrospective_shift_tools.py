@@ -261,3 +261,15 @@ async def test_changed_measurement_boundary_remains_unqualified(monkeypatch, tmp
     assert result.data.comparison.limitations == [
         "matching_declared_export_consumer_boundary_required"
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("granularity", ["day", "month", "year"])
+async def test_same_physical_source_at_different_granularity_is_rejected_before_reads(
+    monkeypatch, tmp_path, granularity
+):
+    runtime, tool, args, *_ = setup(monkeypatch, tmp_path)
+    args["sources"].append(AnalysisSource(binding_id="export", granularity=granularity))
+    result = await tool.fn(**args)
+    assert not result.ok and result.data.error == "invalid_input"
+    assert runtime.authorized_statistics.await_count == 0
