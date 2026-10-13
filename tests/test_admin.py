@@ -2913,3 +2913,36 @@ def test_admin_revocation_retains_first_cause_and_exports_safe_diagnostics(
     assert summary["recent_revocations"][0]["family_ref"] == lifecycle_reference("family", "family")
     for raw in ("private-client", "private-identity", "private-miniserver"):
         assert raw not in json.dumps(summary)
+
+
+@pytest.mark.parametrize("capability", ["read", "drafts", "write"])
+def test_legacy_save_with_partial_policies_preserves_each_knx_explorer_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+) -> None:
+    from mcpserver.config import ExplorerBindingApproval
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    approval = ExplorerBindingApproval(
+        binding_id="a" * 64,
+        capability=f"loxberry:knx:{capability}",
+        application_id="tool-explorer-v1",
+        version=1,
+        created_at=100,
+        last_active_at=100,
+        last_active_until=200,
+    )
+    previous = replace(PluginConfig.defaults(), explorer_bindings=(approval,))
+    store.save(previous)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+            "policies": {},
+        }
+    )
+    assert store.load().explorer_bindings == (approval,)

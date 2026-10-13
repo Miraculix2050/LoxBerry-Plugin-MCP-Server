@@ -230,3 +230,68 @@ def test_connection_view_does_not_replace_an_oauth_error() -> None:
             connectDisabled:el.connect.disabled};
         })()))"""
     ) == {"text": "OAuth failed", "kind": "error", "connectDisabled": False}
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_explorer_oauth_requests_independent_knx_write_scope(explicit) -> None:
+    requested = json.dumps(
+        {
+            "requestedScopes": [
+                "loxone:read",
+                "loxberry:knx:read",
+                "loxberry:knx:drafts",
+                "loxberry:knx:write",
+            ]
+        }
+        if explicit
+        else {}
+    )
+    result = _run_node(
+        """(async () => {
+          const origin='https://loxberry-test';
+          const issuer=origin+'/plugins/mcpserver/oauth';
+          global.window={setTimeout,clearTimeout,location:{protocol:'https:',origin,
+            href:origin+'/admin/plugins/mcpserver/explorer.cgi'}};
+          const scopes=['loxone:read','loxberry:knx:read',
+            'loxberry:knx:drafts','loxberry:knx:write'];
+          let registration, authorization;
+          global.fetch=async (url,options)=>{
+            let value;
+            if(url.includes('oauth-protected-resource')) value={
+              resource:origin+'/plugins/mcpserver/mcp',
+              authorization_servers:[issuer],scopes_supported:scopes};
+            else if(url.includes('oauth-authorization-server')) value={issuer,
+              authorization_endpoint:issuer+'/authorize',token_endpoint:issuer+'/token',
+              registration_endpoint:issuer+'/register',revocation_endpoint:issuer+'/revoke'};
+            else {registration=JSON.parse(options.body);value={client_id:'synthetic-client'};}
+            return {ok:true,json:async()=>value};
+          };
+          const options=REQUEST_OPTIONS;
+          const session=auth.create({core,state:{},explorerState:{},label:x=>x,
+            clearOriginWarning:()=>{},renderConnection:()=>{},revokeAndClear:()=>{},...options});
+          const popup={location:{replace(url){authorization=new URL(url);
+            throw new Error('synthetic-stop-after-authorization-request');}}};
+          try {await session.authorize(popup);}
+          catch(error) {
+            if(error.message!=='synthetic-stop-after-authorization-request') throw error;}
+          return {registration:registration.scope.split(' '),
+            authorization:authorization.searchParams.get('scope').split(' ')};
+        })().then(value=>console.log(JSON.stringify(value)))
+          .catch(error=>{console.error(error);process.exit(1)});""".replace(
+            "REQUEST_OPTIONS", requested
+        )
+    )
+    scopes = ["loxone:read", "loxberry:knx:read", "loxberry:knx:drafts", "loxberry:knx:write"]
+    assert result == {"registration": scopes, "authorization": scopes}
+
+
+def test_knx_write_explorer_assets_and_bilingual_permission_label_are_current() -> None:
+    template = (ROOT / "templates/explorer.html").read_text(encoding="utf-8")
+    for name in ("explorer-adapters", "explorer"):
+        assert f"{name}.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1" in template
+    assert (
+        'data-knx-write-required="<TMPL_VAR EXPLORER.KNX_WRITE_REQUIRED ESCAPE=HTML>"' in template
+    )
+    for language in ("de", "en"):
+        source = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "KNX_WRITE_REQUIRED=" in source

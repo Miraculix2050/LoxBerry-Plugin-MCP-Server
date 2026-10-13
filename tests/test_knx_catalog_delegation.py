@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 
 from mcpserver.auth.provider import StoredAccessToken, normalize_scopes
-from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE, READ_SCOPE
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
+    READ_SCOPE,
+)
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import ConfigError, PluginConfig
 from mcpserver.knx.delegation import (
@@ -60,6 +65,23 @@ def test_draft_scope_requires_independent_catalog_consent_and_defaults_off():
         f"{LOXBERRY_KNX_DRAFTS_SCOPE} {LOXBERRY_KNX_READ_SCOPE} {READ_SCOPE}",
         control_enabled=False,
     ) == (READ_SCOPE, LOXBERRY_KNX_READ_SCOPE, LOXBERRY_KNX_DRAFTS_SCOPE)
+
+
+def test_local_write_scope_requires_both_other_consents_and_defaults_off():
+    config = PluginConfig.defaults()
+    assert not config.loxberry_knx_write_enabled and not config.loxberry_knx_write_bindings
+    assert PluginConfig.from_document(config.to_document()).to_document() == config.to_document()
+    for requested in (
+        f"{READ_SCOPE} {LOXBERRY_KNX_WRITE_SCOPE}",
+        f"{READ_SCOPE} {LOXBERRY_KNX_READ_SCOPE} {LOXBERRY_KNX_WRITE_SCOPE}",
+    ):
+        with pytest.raises(ValueError, match="unsupported scope"):
+            normalize_scopes(requested, control_enabled=False)
+    assert normalize_scopes(
+        f"{LOXBERRY_KNX_WRITE_SCOPE} {LOXBERRY_KNX_DRAFTS_SCOPE} {READ_SCOPE} "
+        f"{LOXBERRY_KNX_READ_SCOPE}",
+        control_enabled=False,
+    ) == (READ_SCOPE, LOXBERRY_KNX_READ_SCOPE, LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_WRITE_SCOPE)
 
 
 @pytest.fixture

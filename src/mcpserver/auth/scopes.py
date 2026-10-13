@@ -10,6 +10,7 @@ HISTORY_SCOPE: Final = "loxone:history"
 LOXBERRY_OPERATE_SCOPE: Final = "loxberry:operate"
 LOXBERRY_KNX_READ_SCOPE: Final = "loxberry:knx:read"
 LOXBERRY_KNX_DRAFTS_SCOPE: Final = "loxberry:knx:drafts"
+LOXBERRY_KNX_WRITE_SCOPE: Final = "loxberry:knx:write"
 # Retained as the Phase 1 source-level alias used by existing integrations.
 SCOPE: Final = READ_SCOPE
 SUPPORTED_SCOPES: Final = (
@@ -21,4 +22,5 @@ SUPPORTED_SCOPES: Final = (
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_KNX_READ_SCOPE,
     LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
 )

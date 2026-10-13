@@ -323,7 +323,8 @@
     if (core.toolIsMutating(state.selectedTool) && requiredMutationScope &&
         !(granted && granted.has(requiredMutationScope))) {
       const requiredLabel = requiredMutationScope === 'loxone:messages:confirm' ? 'messagesRequired'
-        : requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired';
+        : requiredMutationScope === 'loxberry:operate' ? 'operateRequired'
+        : requiredMutationScope === 'loxberry:knx:write' ? 'knxWriteRequired' : 'controlRequired';
       setCallFeedback(label(requiredLabel), 'error');
       return;
     }

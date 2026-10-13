@@ -24,7 +24,7 @@ def record(name: str = "Additional name") -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("kind", ["read", "drafts"])
+@pytest.mark.parametrize("kind", ["read", "drafts", "write"])
 def test_knx_delegation_ui_requires_html_confirmation_before_grant_and_enable(kind) -> None:
     root = Path(__file__).resolve().parents[1]
     script = r"""
@@ -32,7 +32,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {JSDOM} = require('jsdom');
 const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>]*>/g, 'label');
-const dom = new JSDOM(html, {url: 'http://localhost/knx.cgi', runScripts: 'outside-only'});
+const dom = new JSDOM(html,
+  {url: 'http://localhost/knx.cgi', runScripts: 'outside-only', pretendToBeVisual: true});
 const w = dom.window;
 const calls = [];
 let pauseRead = true, resumeRead, failRead = false;
@@ -43,7 +44,9 @@ let state = {target: 'synthetic-target', policy_revision: 'revision-1', enabled:
 w.confirm = () => {throw new Error('Native dialog is forbidden');};
 w.HTMLDialogElement.prototype.showModal = function () {this.open = true;};
 w.HTMLDialogElement.prototype.close = function (value) {
-  this.returnValue = value; this.open = false; this.dispatchEvent(new w.Event('close'));
+  this.returnValue = value; this.open = false;
+  // Chrome can retain focus inside the closed dialog through the next frame.
+  this.dispatchEvent(new w.Event('close'));
 };
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
@@ -88,6 +91,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(dialog.open, true);
   assert.match(w.document.getElementById('knx-confirm-message').textContent, /aaaaaaaa/);
   dialog.close('cancel'); await tick();
+  await new Promise(resolve => w.requestAnimationFrame(resolve));
   assert.deepEqual(calls.map(call => call.action), ['knx_read_page']);
   const unsaved = w.document.getElementById('knx-read-enabled');
   unsaved.checked = true; unsaved.dispatchEvent(new w.Event('change'));
@@ -98,11 +102,23 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(state.enabled, false);
   const enabled = w.document.getElementById('knx-read-enabled');
   const form = w.document.getElementById('knx-read-enable-form');
+  const submit = form.querySelector('button[type=submit]');
+  submit.focus();
   enabled.checked = true;
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   dialog.close('cancel'); await tick();
+  await new Promise(resolve => w.requestAnimationFrame(resolve));
   assert.equal(enabled.checked, false);
+  assert.equal(w.document.activeElement, submit);
   assert.equal(calls.at(-1).action, 'knx_read_grant');
+  // A user who moves elsewhere during the pending confirmation keeps that focus.
+  submit.focus(); enabled.checked = true;
+  form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
+  const outside = w.document.getElementById('knx-back');
+  outside.focus(); dialog.close('cancel'); await tick();
+  await new Promise(resolve => w.requestAnimationFrame(resolve));
+  assert.equal(w.document.activeElement, outside);
+  assert.equal(enabled.checked, false);
   enabled.checked = true;
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   dialog.close('continue'); await tick();
@@ -116,18 +132,23 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(w.document.getElementById('knx-read-status').textContent, section.dataset.failed);
   assert.equal(announcement.textContent, '');
   dom.window.close();
-})().catch(error => {console.error(error); process.exitCode = 1;});
+})().catch(error => {dom.window.close(); console.error(error); process.exitCode = 1;});
 """
-    other = "drafts" if kind == "read" else "read"
+    others = [item for item in ("read", "drafts", "write") if item != kind]
     script = script.replace("knx_read_", f"knx_{kind}_")
     script = script.replace("getElementById('knx-read-", f"getElementById('knx-{kind}-")
     script = script.replace(
         "const w = dom.window;",
-        f"const w = dom.window; w.document.getElementById('knx-{other}-delegation').remove();",
+        "const w = dom.window; "
+        + " ".join(
+            f"w.document.getElementById('knx-{other}-delegation').remove();" for other in others
+        ),
     )
     node = shutil.which("node")
     assert node is not None
-    result = subprocess.run([node, "-e", script], cwd=root, capture_output=True, text=True)
+    result = subprocess.run(
+        [node, "-e", script], cwd=root, capture_output=True, text=True, timeout=30
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -402,6 +423,12 @@ def test_initial_page_sections_match_individual_reads_without_config_writes(tmp_
     ordinary = dispatch_knx("knx_page", {}, store)
     combined = dispatch_knx("knx_page", {"include_sections": True}, store)
     assert {key: value for key, value in combined.items() if key != "sections"} == ordinary
+    assert set(combined["sections"]) == {
+        "knx_read_page",
+        "knx_drafts_page",
+        "knx_write_page",
+        "knx_correction_page",
+    }
     for action, envelope in combined["sections"].items():
         assert envelope == {"ok": True, "data": dispatch_knx(action, {}, store)}
     assert store.path.read_bytes() == before
@@ -427,6 +454,6 @@ def test_initial_section_failure_does_not_hide_other_sections(tmp_path, monkeypa
     combined = dispatch_knx("knx_page", {"include_sections": True}, store)
     assert combined["total"] == 0
     assert combined["sections"]["knx_correction_page"]["ok"]
-    for action in ("knx_read_page", "knx_drafts_page"):
+    for action in ("knx_read_page", "knx_drafts_page", "knx_write_page"):
         assert combined["sections"][action] == {"ok": False, "error": {"code": "internal_error"}}
     assert "private diagnostic" not in str(combined)

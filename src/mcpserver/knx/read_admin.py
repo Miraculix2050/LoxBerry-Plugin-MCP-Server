@@ -11,7 +11,12 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
-from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE, READ_SCOPE
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
+    READ_SCOPE,
+)
 from mcpserver.auth.store import lifecycle_event
 from mcpserver.config import ExplorerBindingApproval, PluginConfig, binding_application_name
 from mcpserver.explorer_bindings import (
@@ -20,7 +25,7 @@ from mcpserver.explorer_bindings import (
     explorer_binding_id,
 )
 
-from .delegation import draft_binding_id, read_binding_id
+from .delegation import draft_binding_id, read_binding_id, write_binding_id
 from .model import KnxError
 
 
@@ -50,7 +55,10 @@ class DelegationPolicy:
 
     @property
     def required_scopes(self) -> set[str]:
-        return {READ_SCOPE, LOXBERRY_KNX_READ_SCOPE, self.scope}
+        scopes = {READ_SCOPE, LOXBERRY_KNX_READ_SCOPE, self.scope}
+        if self.scope == LOXBERRY_KNX_WRITE_SCOPE:
+            scopes.add(LOXBERRY_KNX_DRAFTS_SCOPE)
+        return scopes
 
     def binding_updates(self, values: tuple[str, ...]) -> dict[str, Any]:
         return {self.bindings_field: values}
@@ -69,6 +77,13 @@ DRAFT_POLICY = DelegationPolicy(
     "loxberry_knx_drafts_enabled",
     "loxberry_knx_drafts_bindings",
     draft_binding_id,
+)
+WRITE_POLICY = DelegationPolicy(
+    LOXBERRY_KNX_WRITE_SCOPE,
+    "knx_write",
+    "loxberry_knx_write_enabled",
+    "loxberry_knx_write_bindings",
+    write_binding_id,
 )
 
 

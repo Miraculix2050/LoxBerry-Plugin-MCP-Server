@@ -556,3 +556,20 @@ test('EFM binding previews expose unsupported and conflicting source status', as
   assert.match(h.byId('result-tree').textContent, /unsupported_version/);
   assert.match(h.byId('result-tree').textContent, /conflict/);
 });
+
+
+test('KNX apply without write scope directs to KNX consent without calling MCP', async (t) => {
+  const tool = {name:'loxberry_apply_knx_corrections',
+    annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true},
+    inputSchema:{type:'object',properties:{action:{type:'string'}}}};
+  const h = createHarness({scope:'loxone:read loxberry:knx:read loxberry:knx:drafts', tools:[tool]});
+  t.after(h.close);
+  await h.ready();
+  h.document.getElementById('mcp-explorer').dataset.knxWriteRequired='KNX write consent required';
+  await h.click(h.byId('tools').querySelector('button'));
+  h.byId('json').value=JSON.stringify({action:'apply'});
+  await h.click(h.byId('run'));
+  assert.equal(h.calls().length,0);
+  assert.equal(h.byId('confirm').open,false);
+  assert.equal(h.byId('call-feedback').textContent,'KNX write consent required');
+});

@@ -253,6 +253,39 @@ class CorrectionService:
             raise KnxError("knx_project_evidence_changed")
         return draft
 
+    def approved_selection(
+        self,
+        identifier: object,
+        config: PluginConfig,
+        target: str,
+        expected: object,
+        catalog_revision: object,
+        manual_revision: object,
+        selected: object,
+        *,
+        query: ProjectQuery | None = None,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Resolve only explicit accepted IDs under fresh source/project bindings."""
+        if (
+            not isinstance(selected, list)
+            or not 1 <= len(selected) <= 50
+            or any(
+                not isinstance(item, str) or not re.fullmatch(r"[0-9a-f]{24}", item)
+                for item in selected
+            )
+            or len(set(selected)) != len(selected)
+        ):
+            raise KnxError("knx_correction_invalid")
+        draft = self._editable(
+            identifier, config, target, expected, catalog_revision, manual_revision, query
+        )
+        if draft["project_status"] not in {"not_required", "current"}:
+            raise KnxError("knx_project_evidence_required")
+        rows = {row["change_id"]: row for row in draft["changes"]}
+        if any(item not in rows or rows[item]["decision"] != "accepted" for item in selected):
+            raise KnxError("knx_correction_not_accepted")
+        return draft, [rows[item] for item in selected]
+
     def edit(
         self,
         identifier: object,

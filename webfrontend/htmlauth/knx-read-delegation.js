@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  for (const prefix of ['knx-read', 'knx-drafts']) {
+  for (const prefix of ['knx-read', 'knx-drafts', 'knx-write']) {
     const section = document.getElementById(`${prefix}-delegation`);
     if (!section) continue;
     const actionPrefix = prefix.replace('-', '_');
@@ -104,6 +104,7 @@
         return;
       }
       if (background && page.getAttribute('aria-busy') === 'true') { schedule(); return; }
+      const focused = !background && section.contains(document.activeElement) ? document.activeElement : null;
       busy = true;
       backgroundBusy = background;
       controls();
@@ -121,6 +122,13 @@
         announcement.textContent = '';
         busy = false; section.removeAttribute('aria-busy');
         controls();
+        if (focused) window.requestAnimationFrame(() => {
+          const active = document.activeElement;
+          const closedDialog = active.closest('dialog');
+          if (focused.isConnected && !focused.disabled &&
+              (active === document.body || (closedDialog && !closedDialog.open)))
+            focused.focus({preventScroll: true});
+        });
         schedule();
         if (queued.length) void run(queued.shift());
       }

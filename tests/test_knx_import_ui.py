@@ -17,6 +17,7 @@ const page = w.document.getElementById('knx-page');
 const ui = w.document.getElementById('knx-import-section');
 const cards = [...page.querySelectorAll(':scope > details.mcp-card')];
 assert.deepEqual(cards.map(card => card.id), ['knx-read-delegation', 'knx-drafts-delegation',
+  'knx-write-delegation',
   'knx-corrections', 'knx-label-section',
   'knx-address-section', 'knx-project-section', 'knx-compare-section', 'knx-xml-section']);
 assert(cards.every(card => card.firstElementChild.tagName === 'SUMMARY'));

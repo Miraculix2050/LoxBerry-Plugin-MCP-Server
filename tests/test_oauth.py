@@ -165,6 +165,7 @@ def test_provider_preserves_scope_exports_and_order() -> None:
         LOXBERRY_OPERATE_SCOPE,
         "loxberry:knx:read",
         "loxberry:knx:drafts",
+        "loxberry:knx:write",
     )
     assert scopes.SUPPORTED_SCOPES == SUPPORTED_SCOPES == expected
     assert SCOPE == scopes.SCOPE == READ_SCOPE
@@ -1224,6 +1225,7 @@ def test_metadata_advertises_all_requestable_scopes(tmp_path: Path) -> None:
         LOXBERRY_OPERATE_SCOPE,
         "loxberry:knx:read",
         "loxberry:knx:drafts",
+        "loxberry:knx:write",
     ]
     assert response.json()["code_challenge_methods_supported"] == ["S256"]
     assert response.headers["cache-control"] == "no-store"
@@ -1300,6 +1302,37 @@ def test_local_knx_read_is_an_explicit_optional_consent_without_other_delegation
     assert 'name="grant_loxberry"' not in page
     assert 'name="grant_loxberry_operate"' not in page
     assert 'name="grant_history"' not in page
+
+
+def test_local_knx_write_consent_is_explicit_and_independent(tmp_path):
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="knx",
+        csrf_token="csrf",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1_800_000_000,
+        scopes=(READ_SCOPE, "loxberry:knx:read", "loxberry:knx:drafts", "loxberry:knx:write"),
+    )
+    page = web._consent_page(transaction).body.decode()
+    assert 'name="grant_knx_write" value="true" data-optional-scope' in page
+    assert (
+        'id="grant_knx_write" type="checkbox" name="grant_knx_write" value="true" checked'
+        not in page
+    )
+    assert "Separate Admin write, draft and read approvals required" in page
+    assert "Separate Admin-Freigaben für Schreiben, Entwürfe und Lesen erforderlich" in page
+    assert 'name="grant_history"' not in page
+    assert 'name="grant_control"' not in page
 
 
 @pytest.mark.asyncio

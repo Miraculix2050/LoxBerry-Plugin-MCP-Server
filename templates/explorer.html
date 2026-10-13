@@ -45,6 +45,7 @@
   data-restore-failed="<TMPL_VAR EXPLORER.RESTORE_FAILED ESCAPE=HTML>"
   data-session-other-tab="<TMPL_VAR EXPLORER.SESSION_OTHER_TAB ESCAPE=HTML>"
   data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
+  data-knx-write-required="<TMPL_VAR EXPLORER.KNX_WRITE_REQUIRED ESCAPE=HTML>"
   data-control-required="<TMPL_VAR EXPLORER.CONTROL_REQUIRED ESCAPE=HTML>"
   data-loxberry-required="<TMPL_VAR EXPLORER.LOXBERRY_REQUIRED ESCAPE=HTML>"
   data-history-required="<TMPL_VAR EXPLORER.HISTORY_REQUIRED ESCAPE=HTML>"
@@ -250,10 +251,10 @@
   </form>
 </dialog>
 
-<script defer src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
-<script defer src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
+<script defer src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1"></script>
+<script defer src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1"></script>
 <script defer src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
 <script defer src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
 <script defer src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
 <script defer src="explorer-views.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-metadata-v1"></script>
-<script defer src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
+<script defer src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1"></script>
