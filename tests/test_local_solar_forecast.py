@@ -301,6 +301,57 @@ async def test_registered_weather_outputs_are_typed_and_correlated(context, monk
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("replacement", [None, b"", b"{invalid", b"{}"])
+async def test_verification_read_failure_is_retryable_not_a_caller_input_error(
+    context, monkeypatch, replacement
+):
+    import mcpserver.local_solar_forecast as module
+    import mcpserver.tools as tools
+
+    adapter, _, path, options = context
+    original = module.sampled_solar_windows
+
+    def calculate(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if replacement is None:
+            path.unlink()
+        else:
+            path.write_bytes(replacement)
+        return result
+
+    monkeypatch.setattr(module, "sampled_solar_windows", calculate)
+    monkeypatch.setattr(tools, "_access", access)
+    server = FastMCP("solar-source-change")
+    register_read_tools(server, adapter.runtime, solar_forecast_runtime=adapter)
+    tool = server._tool_manager.get_tool("loxone_get_weather")
+    result = await tool.run({"mode": "solar_windows", "future_options": options.model_dump()})
+    assert not result.ok and result.data.error == "temporarily_unavailable"
+    assert adapter._pending == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["read_forecast", "sampled_solar_windows"])
+async def test_worker_deadline_returns_the_declared_weather_envelope(context, monkeypatch, phase):
+    import mcpserver.local_solar_forecast as module
+    import mcpserver.tools as tools
+    from mcpserver.history_analysis import HistoryAnalysisDeadline
+
+    adapter, _, _, options = context
+
+    def expired(*args, **kwargs):
+        raise HistoryAnalysisDeadline()
+
+    monkeypatch.setattr(module, phase, expired)
+    monkeypatch.setattr(tools, "_access", access)
+    server = FastMCP("solar-deadline")
+    register_read_tools(server, adapter.runtime, solar_forecast_runtime=adapter)
+    tool = server._tool_manager.get_tool("loxone_get_weather")
+    result = await tool.run({"mode": "solar_windows", "future_options": options.model_dump()})
+    assert not result.ok and result.data.error == "temporarily_unavailable"
+    assert result.trace_id and adapter._pending == 0
+
+
+@pytest.mark.asyncio
 async def test_new_weather_modes_reject_cross_mode_inputs(context, monkeypatch):
     import mcpserver.tools as tools
 

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcpserver.bounded_worker import run_admitted_worker
+from mcpserver.history_analysis import HistoryAnalysisDeadline
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.runtime import ControlOperationError
 from mcpserver.solar_forecast import (
@@ -246,9 +247,20 @@ class LocalSolarForecastRuntime:
                             forecast.diagnostics_truncated,
                             ",".join(sorted({item.issue for item in forecast.diagnostics})),
                         )
-                    checked = await run_admitted_worker(
-                        read_forecast, config, deadline=deadline, path=self.path
-                    )
+                    try:
+                        checked = await run_admitted_worker(
+                            read_forecast, config, deadline=deadline, path=self.path
+                        )
+                    except ForecastEvidenceError as exc:
+                        _LOGGER.warning(
+                            "component=solar_forecast trace_id=%s phase=verification source_issue=%s",
+                            trace_id,
+                            str(exc),
+                        )
+                        raise ControlOperationError(
+                            "temporarily_unavailable",
+                            "Local forecast verification failed; retry with current evidence",
+                        ) from None
                     if (
                         checked.document_digest != forecast.document_digest
                         or checked.publication_at != forecast.publication_at
@@ -281,5 +293,9 @@ class LocalSolarForecastRuntime:
                         "use forecast_sources for configuration guidance",
                     )
                 return result
+        except (HistoryAnalysisDeadline, TimeoutError):
+            raise ControlOperationError(
+                "temporarily_unavailable", "Local forecast read timed out"
+            ) from None
         finally:
             self._pending -= 1
