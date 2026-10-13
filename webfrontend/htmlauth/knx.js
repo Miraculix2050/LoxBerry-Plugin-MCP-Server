@@ -1,6 +1,8 @@
 (() => {
   'use strict';
   const page = document.getElementById('knx-page');
+  let resolveInitialSections;
+  const initialSections = new Promise(resolve => { resolveInitialSections = resolve; });
   const collapseStorageKey = 'mcpserver.knx.sections.v1';
   const collapsibles = [...page.querySelectorAll('details[data-persist-collapse]')];
   let storedCollapseState = {};
@@ -357,7 +359,16 @@
     document.getElementById('knx-json-preview').textContent = '';
     message(page.dataset.saved);
   }));
-  window.MCPKnx = Object.freeze({api, run, ask, render, snapshot: () => state,
+  window.MCPKnx = Object.freeze({api, run, ask, render, initialSections, snapshot: () => state,
     setImportDirty: (value) => { importDirty = value; }, message});
-  void run(async () => render(await api('knx_page')));
+  void run(async () => {
+    try {
+      const data = await api('knx_page', {include_sections: true});
+      render(data);
+      resolveInitialSections(data.sections || null);
+    } catch (error) {
+      resolveInitialSections(null);
+      throw error;
+    }
+  });
 })();

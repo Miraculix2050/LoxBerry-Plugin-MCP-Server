@@ -35,6 +35,13 @@ bleiben erhalten. Ein nicht abrufbarer Status wird ausdrücklich angezeigt.
 Das Adresslabel-Badge zählt gespeicherte eindeutige Adressformat-/Präfixpaare
 einschließlich importierter Labels; manuelle/importierte Paare zählen einmal.
 
+Beim Öffnen oder Neuladen lädt die KNX-Seite Katalog, Freigaben und gemeinsame
+Korrekturentwürfe in einer gemeinsamen Anfrage. Die Wiederherstellung der
+OAuth-Sitzung läuft parallel. Ladehinweise bleiben bis zum jeweiligen Abschluss
+sichtbar; Fehler eines Freigabe- oder Entwurfsabschnitts verbergen die anderen
+erfolgreich geladenen Abschnitte nicht. Die getrennten Aktualisierungsschaltflächen
+und die regelmäßige Prüfung der gespeicherten Freigaben bleiben verfügbar.
+
 Der Projektabgleich teilt die OAuth-Browsersitzung mit dem MCP Tool Explorer.
 Die Anmeldung bietet dieselben optionalen Scopes: erforderlicher Loxone-Lesezugriff
 ist ausgewählt, weitere Rechte erfordern eine ausdrückliche Auswahl. Trennen

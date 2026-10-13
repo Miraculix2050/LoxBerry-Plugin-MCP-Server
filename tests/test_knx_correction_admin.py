@@ -1,8 +1,10 @@
 """Admin inspection of shared proposals does not expand delegated MCP ownership."""
 
 import hashlib
+import os
 import shutil
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,6 +18,39 @@ from mcpserver.knx.correction_drafts import CorrectionDraftStore
 from mcpserver.knx.correction_service import CorrectionService
 from mcpserver.knx.model import KnxError
 from mcpserver.knx.store import KnxStore
+
+
+@pytest.mark.parametrize("combined", [False, True])
+def test_draft_list_does_not_load_project_analysis(tmp_path, combined):
+    script = """
+import os, sys
+from pathlib import Path
+from dataclasses import replace
+from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.knx.admin import dispatch_knx
+path = Path(sys.argv[1])
+os.environ['LBPDATA'] = str(path)
+os.environ['MCPSERVER_KNX_ADMIN_SESSION'] = 'a' * 64
+os.environ['MCPSERVER_AUTH_STORE'] = str(path / 'auth.json')
+store = AtomicConfigStore(path / 'config.json')
+store.save(replace(PluginConfig.defaults(), loxone_endpoint='https://local.example'))
+combined = sys.argv[2] == 'True'
+result = dispatch_knx('knx_page' if combined else 'knx_correction_page',
+                      {'include_sections': True} if combined else {}, store)
+drafts = result['sections']['knx_correction_page']['data'] if combined else result
+assert drafts['drafts'] == []
+for module in ('mcpserver.knx.correction_service', 'mcpserver.loxone.project.analysis',
+               'mcpserver.loxone.project.ets_comparison'):
+    assert module not in sys.modules, module
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path), str(combined)],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_admin_inspects_same_owner_draft_without_transferring_ownership(tmp_path, monkeypatch):

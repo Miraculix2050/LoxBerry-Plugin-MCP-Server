@@ -117,6 +117,12 @@ def _run(
     target = MiniserverEndpoint.parse(config.loxone_endpoint).origin
     token = hashlib.sha256(target.encode()).hexdigest()
     if (
+        action == "knx_page"
+        and "include_sections" in payload
+        and not isinstance(payload["include_sections"], bool)
+    ):
+        raise KnxError("knx_page_invalid")
+    if (
         action
         not in {"knx_page", "knx_export", "knx_read_page", "knx_drafts_page", "knx_correction_page"}
         and payload.get("target") != token
@@ -201,8 +207,6 @@ def _run(
         "knx_correction_edit",
     }:
         from .correction_drafts import CorrectionDraftStore
-        from .correction_projection import project_draft
-        from .correction_service import CorrectionService
 
         fields = {"target", "draft_id", "draft_revision", "offset", "detail"}
         if action in {"knx_correction_review", "knx_correction_edit"}:
@@ -222,6 +226,9 @@ def _run(
         )
         if action == "knx_correction_page":
             return {"target": token, "drafts": corrections.list_admin(target)}
+        from .correction_projection import project_draft
+        from .correction_service import CorrectionService
+
         identifier = payload.get("draft_id")
         correction_service = CorrectionService(store, corrections.admin_reader(identifier, target))
         if action in {"knx_correction_review", "knx_correction_edit"}:
@@ -433,7 +440,7 @@ def _run(
         )
     except KnxError as exc:
         raise AdminError("KNX operation rejected", code=exc.code) from None
-    return {
+    result = {
         **page,
         "target": token,
         "target_display": target,
@@ -441,3 +448,26 @@ def _run(
         "taxonomy_revision": taxonomy_revision,
         "imported_labels": repository.selected_labels(target),
     }
+    if action == "knx_page" and payload.get("include_sections"):
+        sections: dict[str, Any] = {}
+        for section_action in ("knx_read_page", "knx_drafts_page", "knx_correction_page"):
+            try:
+                sections[section_action] = {
+                    "ok": True,
+                    "data": _run(section_action, {"target": token}, config, save),
+                }
+            except (AdminError, KnxError) as exc:
+                LOGGER.warning(
+                    "component=knx_initial_section action=%s outcome=rejected code=%s",
+                    section_action,
+                    exc.code,
+                )
+                sections[section_action] = {"ok": False, "error": {"code": exc.code}}
+            except Exception:
+                LOGGER.warning(
+                    "component=knx_initial_section action=%s outcome=rejected code=internal_error",
+                    section_action,
+                )
+                sections[section_action] = {"ok": False, "error": {"code": "internal_error"}}
+        result["sections"] = sections
+    return result

@@ -211,3 +211,71 @@ const make=(mode='normal',url='https://local.example/knx.cgi')=>{
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
     subprocess.run(["node", "-e", script], check=True, timeout=30)
+
+
+@pytest.mark.parametrize("failure", ["none", "section", "request"])
+def test_initial_hydration_uses_one_request_and_recovers_independent_sections(failure):
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+let html=fs.readFileSync('templates/knx.html','utf8');
+const failure=process.argv[1],calls=[],timers=new Map();
+let resume,serial=0;
+const data={target:'synthetic',target_display:'synthetic',revision:0,taxonomy_revision:'t1',
+  items:[],taxonomy:[],imported_labels:[],offset:0,total:0,
+  sections:{knx_read_page:{ok:true,data:{target:'synthetic',enabled:true,
+    policy_revision:'read-r1',bindings:[]}},knx_drafts_page:{ok:true,data:{target:'synthetic',
+    enabled:false,policy_revision:'draft-r1',bindings:[]}},
+    knx_correction_page:{ok:true,data:{target:'synthetic',drafts:[]}}}};
+if(failure==='section')data.sections.knx_read_page={ok:false,error:{code:'internal_error'}};
+const envelope=failure==='request'?{ok:false,error:{code:'internal_error'}}:{ok:true,data};
+html=html.replace(/<TMPL_VAR[^>]*>/g,'label');
+const dom=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}),w=dom.window;
+const read={target:'synthetic',enabled:true,policy_revision:'read-r1',bindings:[]};
+const drafts={target:'synthetic',enabled:false,policy_revision:'draft-r1',bindings:[]};
+const corrections={target:'synthetic',drafts:[]};
+w.setTimeout=(fn,delay)=>{timers.set(++serial,{fn,delay});return serial;};
+w.clearTimeout=id=>timers.delete(id);
+w.fetch=async(_,options)=>{
+  const action=options.body.get('action'),payload=JSON.parse(options.body.get('payload'));
+  calls.push({action,payload});
+  if(action==='knx_page'){
+    assert.equal(payload.include_sections,true);await new Promise(resolve=>resume=resolve);
+    if(failure==='request')throw Error('synthetic failure');
+    return {ok:true,json:async()=>envelope};
+  }
+  const data={knx_read_page:read,knx_drafts_page:drafts,knx_correction_page:corrections}[action];
+  assert(data);return{ok:true,json:async()=>({ok:true,data})};
+};
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
+(async()=>{
+  for(const file of ['knx.js','knx-import.js','knx-read-delegation.js','knx-corrections.js'])
+    w.eval(fs.readFileSync('webfrontend/htmlauth/'+file,'utf8'));
+  const initialRequests=1;
+  await settle();assert.equal(calls.length,initialRequests);
+  assert.equal(w.document.getElementById('knx-page').getAttribute('aria-busy'),'true');
+  resume();await settle();assert.equal(calls.length,1);
+  assert.equal(w.document.getElementById('knx-initial-state'),null);
+  assert.equal(w.document.querySelectorAll('[aria-busy="true"]').length,0);
+  assert.equal(w.document.getElementById('knx-ets-apply').disabled,true);
+  assert.equal(w.document.getElementById('knx-ets-previous').disabled,true);
+  assert.equal(w.document.getElementById('knx-ets-next').disabled,true);
+  if(failure==='none'){
+    assert.equal(w.document.getElementById('knx-read-enabled').checked,true);
+    assert.equal(w.document.getElementById('knx-drafts-enabled').checked,false);
+    assert.equal(w.document.getElementById('knx-read-enabled').disabled,false);
+  } else {
+    assert.equal(w.document.getElementById('knx-read-badge').dataset.kind,undefined);
+    assert.equal(w.document.getElementById('knx-read-enabled').disabled,true);
+  }
+  if(failure!=='request')
+    assert.equal(w.document.getElementById('knx-drafts-enabled').disabled,false);
+  w.document.getElementById('knx-read-reload').click();await settle();
+  assert.equal(calls[initialRequests].action,'knx_read_page');
+  assert.equal(w.document.getElementById('knx-read-enabled').checked,true);
+  // Late subscribers still receive the completed initial result without another request.
+  const initial=await w.MCPKnx.initialSections;
+  assert.equal(initial===null,failure==='request');
+  assert.equal(calls.length,initialRequests+1);dom.window.close();
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script, failure], check=True, timeout=30)
