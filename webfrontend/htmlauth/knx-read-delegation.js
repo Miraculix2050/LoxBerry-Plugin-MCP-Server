@@ -104,6 +104,7 @@
         return;
       }
       if (background && page.getAttribute('aria-busy') === 'true') { schedule(); return; }
+      const focused = !background && section.contains(document.activeElement) ? document.activeElement : null;
       busy = true;
       backgroundBusy = background;
       controls();
@@ -121,6 +122,8 @@
         announcement.textContent = '';
         busy = false; section.removeAttribute('aria-busy');
         controls();
+        if (focused?.isConnected && !focused.disabled && document.activeElement === document.body)
+          focused.focus({preventScroll: true});
         schedule();
         if (queued.length) void run(queued.shift());
       }

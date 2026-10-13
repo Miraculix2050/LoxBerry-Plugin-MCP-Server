@@ -43,7 +43,9 @@ let state = {target: 'synthetic-target', policy_revision: 'revision-1', enabled:
 w.confirm = () => {throw new Error('Native dialog is forbidden');};
 w.HTMLDialogElement.prototype.showModal = function () {this.open = true;};
 w.HTMLDialogElement.prototype.close = function (value) {
-  this.returnValue = value; this.open = false; this.dispatchEvent(new w.Event('close'));
+  this.returnValue = value; this.open = false;
+  w.document.getElementById('knx-confirm-cancel').blur();
+  this.dispatchEvent(new w.Event('close'));
 };
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
@@ -98,11 +100,21 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(state.enabled, false);
   const enabled = w.document.getElementById('knx-read-enabled');
   const form = w.document.getElementById('knx-read-enable-form');
+  const submit = form.querySelector('button[type=submit]');
+  submit.focus();
   enabled.checked = true;
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   dialog.close('cancel'); await tick();
   assert.equal(enabled.checked, false);
+  assert.equal(w.document.activeElement, submit);
   assert.equal(calls.at(-1).action, 'knx_read_grant');
+  // A user who moves elsewhere during the pending confirmation keeps that focus.
+  submit.focus(); enabled.checked = true;
+  form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
+  const outside = w.document.getElementById('knx-back');
+  outside.focus(); dialog.close('cancel'); await tick();
+  assert.equal(w.document.activeElement, outside);
+  assert.equal(enabled.checked, false);
   enabled.checked = true;
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   dialog.close('continue'); await tick();
@@ -243,7 +255,9 @@ let state = {target: 'target', revision: 1, taxonomy_revision: 'labels', offset:
 w.confirm = () => { throw new Error('Native browser dialogs are forbidden'); };
 w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 w.HTMLDialogElement.prototype.close = function (value = '') {
-  this.returnValue = value; this.open = false; this.dispatchEvent(new w.Event('close'));
+  this.returnValue = value; this.open = false;
+  w.document.getElementById('knx-confirm-cancel').blur();
+  this.dispatchEvent(new w.Event('close'));
 };
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
