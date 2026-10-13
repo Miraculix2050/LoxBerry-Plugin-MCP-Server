@@ -28,10 +28,10 @@ unzugängliche alte Wetterbindung kann MCP nicht löschen; ein authentisierter
 lokaler Admin darf verwaiste lokale Metadaten entfernen. Überschreitet eine
 vollständige MCP-Seite 64 KiB, fragen Sie mit kleinerem `limit` erneut ab.
 
-Profilversion 1 wird zunächst nach ihrem ursprünglichen Vertrag geprüft und nur
-im Speicher zu Version 2 migriert. Lesen verändert den Dateiinhalt nicht. Die
-nächste autorisierte Revisionstransaktion schreibt Version 2. Ältere Pluginversionen
-können Version 2 nicht lesen: Für einen Binär-Rollback nach einem Profilschreibzugriff
+Profilversionen 1 und 2 werden zunächst nach ihrem ursprünglichen Vertrag geprüft
+und nur im Speicher zu Version 3 migriert. Lesen verändert weder den Dateiinhalt
+noch die Revision. Die nächste autorisierte Revisionstransaktion schreibt Version 3.
+Ältere Pluginversionen können Version 3 nicht lesen: Für einen Binär-Rollback nach einem Profilschreibzugriff
 muss zusammen mit dem älteren Code die vorherige Profilsicherung wiederhergestellt
 werden. Unbekannte Versionen werden ohne Überschreiben abgelehnt.
 

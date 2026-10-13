@@ -80,9 +80,10 @@ plugin-owned data directory, limited to 256 bindings and 1 MiB. Native service
 configuration determines the data directory through the existing KNX store path.
 No credentials, measurements or complete structures are stored in the profile.
 Upgrade preserves it; unknown schema versions are rejected without overwriting.
-Version 1 is validated and migrated to version 2 in memory without changing file
-content on reads. The next authorized revision transaction persists version 2.
-Older plugin versions cannot read version 2: binary rollback after a profile write
+Versions 1 and 2 are validated against their original contracts and migrated to
+version 3 in memory without changing file content or revision on reads. The next
+authorized revision transaction persists version 3.
+Older plugin versions cannot read version 3: binary rollback after a profile write
 requires restoring the prior profile backup together with the older code.
 
 Admin source selection is limited to 500 entries. Larger installations can enter
