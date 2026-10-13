@@ -35,12 +35,18 @@ confirmed profile sources explicitly associate a consumer and its operating
 state. Keep the default calculation for existing callers. Use the existing fresh
 history context, deduplicated reads, current scalar semantics and common bounds.
 
-A complete cycle requires a decoded false-to-true-to-false sequence within one
+A complete activity episode requires a decoded false-to-true-to-false sequence within one
 continuous capture phase, strictly inside the requested interval. Repeated
 identical active values may be coalesced within the same capture phase. Initial
 active values, query-edge truncation, capture restarts, gaps and unknown states
 cannot establish both boundaries. Preserve incomplete episode diagnostics rather
 than asserting missing cycles or inventing durations.
+
+An active binary state alone does not prove a complete appliance/program cycle.
+`cycle_identity` defaults to `active_episode_only`; the owner may explicitly
+declare `user_confirmed_cycle` as part of whole-binding confirmation. This remains
+a user declaration, never verified native program identity. Without it, episodes
+cannot qualify as complete cycle inputs for PR 8 even with complete energy data.
 
 Associate energy only when the existing scalar rule establishes nonnegative,
 complete hourly Wh/kWh interval energies and those intervals tile the entire
