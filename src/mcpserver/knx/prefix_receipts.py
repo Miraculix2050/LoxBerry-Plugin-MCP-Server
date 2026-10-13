@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 
 LIMIT = 32
@@ -24,7 +24,17 @@ class PrefixReceipt:
     expires_at: int
 
     def document(self) -> dict[str, Any]:
-        return asdict(self)
+        # All fields are validated scalar values. Recursive dataclass copying
+        # adds avoidable work to every configuration load and write.
+        return {
+            "key": self.key,
+            "digest": self.digest,
+            "manual_revision": self.manual_revision,
+            "catalog_revision": self.catalog_revision,
+            "selected_changes": self.selected_changes,
+            "changed_prefixes": self.changed_prefixes,
+            "expires_at": self.expires_at,
+        }
 
     def result(self) -> dict[str, Any]:
         return {
@@ -66,10 +76,8 @@ def parse_receipts(value: object) -> tuple[PrefixReceipt, ...]:
             raise ValueError("Invalid KNX prefix receipt")
         seen.add(row["key"])
         result.append(PrefixReceipt(**row))
-    if (
-        len(json.dumps([row.document() for row in result], separators=(",", ":")).encode())
-        > MAX_BYTES
-    ):
+    # The input was fully validated above; measure it without recreating rows.
+    if len(json.dumps(value, separators=(",", ":")).encode()) > MAX_BYTES:
         raise ValueError("KNX prefix receipts exceed limit")
     return tuple(result)
 
