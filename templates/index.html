@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -165,7 +165,9 @@
       </fieldset>
     </form>
     <p><a class="lb-button" href="knx.cgi"><TMPL_VAR KNX.TITLE></a></p>
+    <p class="mcp-help"><TMPL_VAR HELP.KNX_HELP></p>
     <p><a class="lb-button" href="profile.cgi"><TMPL_VAR PROFILE.TITLE></a></p>
+    <p class="mcp-help"><TMPL_VAR HELP.PROFILE_HELP></p>
     <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
     </div>
   </details>
@@ -322,13 +324,34 @@
   <details id="help" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
     <summary><TMPL_VAR HELP.TITLE></summary>
     <div class="mcp-collapsible-content">
-      <p><TMPL_VAR HELP.TOOL_ACCESS></p>
-      <p class="mcp-actions">
-        <a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a>
-        <a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
-        <a id="event-history-help-link" class="lb-button" href="event_history.cgi"><TMPL_VAR SETUP.EVENT_HISTORY_OPEN></a>
-      </p>
-      <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
+      <div class="mcp-help-link">
+        <p><a id="project-help-link" class="lb-button" href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener" aria-describedby="project-help-link-description"><TMPL_VAR HELP.PROJECT></a></p>
+        <p id="project-help-link-description" class="mcp-help"><TMPL_VAR HELP.PROJECT_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener" aria-describedby="explorer-link-description"><TMPL_VAR ACTION.EXPLORER></a></p>
+        <p id="explorer-link-description" class="mcp-help"><TMPL_VAR HELP.EXPLORER_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener" aria-describedby="schema-reference-link-description"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a></p>
+        <p id="schema-reference-link-description" class="mcp-help"><TMPL_VAR HELP.SCHEMA_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="event-history-help-link" class="lb-button" href="event_history.cgi" aria-describedby="event-history-help-link-description"><TMPL_VAR HELP.HISTORY></a></p>
+        <p id="event-history-help-link-description" class="mcp-help"><TMPL_VAR HELP.HISTORY_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="knx-help-link" class="lb-button" href="knx.cgi" aria-describedby="knx-help-link-description"><TMPL_VAR KNX.TITLE></a></p>
+        <p id="knx-help-link-description" class="mcp-help"><TMPL_VAR HELP.KNX_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="profile-help-link" class="lb-button" href="profile.cgi" aria-describedby="profile-help-link-description"><TMPL_VAR PROFILE.TITLE></a></p>
+        <p id="profile-help-link-description" class="mcp-help"><TMPL_VAR HELP.PROFILE_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="message-approval-help-link" class="lb-button" href="<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>" aria-describedby="message-approval-help-link-description"><TMPL_VAR HELP.MESSAGES></a></p>
+        <p id="message-approval-help-link-description" class="mcp-help"><TMPL_VAR HELP.MESSAGES_HELP></p>
+      </div>
     </div>
   </details>
 </main>

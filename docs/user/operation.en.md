@@ -66,3 +66,5 @@ transcript remain in the current tab and clear when its session ends.
 MCP clients receive the tool descriptions published by the specific installation, including their input and output schemas, through the MCP method `tools/list`. The Tool Explorer reads and visualizes that exact response. **Help** also provides a static HTML reference for the complete tool contract of this plugin version and the same data as a JSON download.
 
 Next: [Troubleshooting](troubleshooting.en.md).
+
+**Help and developer tools** provides links to the project and guides, Tool Explorer, schema reference, local event history, KNX address management, confirmed installation profile and individual message approval. Each link briefly explains the purpose and limits of its destination. KNX address management and the installation profile also remain available under **MCP configuration**, with the same explanations. Message approval opened from Help keeps the current page language.

@@ -1904,7 +1904,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v1"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1"' in template
     assert (
         '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>'
         '-collapsible-v2">' in explorer
@@ -2763,7 +2763,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v1"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -3864,3 +3864,111 @@ def test_diagnostic_cgi_keeps_native_attachment_and_ajax_envelope(tmp_path: Path
         assert ("Content-Disposition: attachment" in headers) is (not ajax)
         assert json.loads(payload) == (reply if ajax else document)
         _assert_admin_security_headers(result.stdout)
+
+
+def test_admin_help_navigation_explains_each_destination_in_order() -> None:
+    template = _admin_source()
+    section = template[template.index('id="help"') : template.index("</main>")]
+    destinations = (
+        (
+            "project-help-link",
+            "https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server",
+            "PROJECT",
+            True,
+        ),
+        ("explorer-link", "<TMPL_VAR EXPLORER_URL ESCAPE=HTML>", "EXPLORER", True),
+        ("schema-reference-link", "<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>", "SCHEMA", True),
+        ("event-history-help-link", "event_history.cgi", "HISTORY", False),
+        ("knx-help-link", "knx.cgi", "KNX", False),
+        ("profile-help-link", "profile.cgi", "PROFILE", False),
+        (
+            "message-approval-help-link",
+            "<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>",
+            "MESSAGES",
+            False,
+        ),
+    )
+    positions = []
+    for link_id, target, key, external in destinations:
+        marker = f'id="{link_id}"'
+        assert template.count(marker) == 1
+        positions.append(section.index(marker))
+        start = section.index(marker)
+        link = section[start : section.index("</a>", start)]
+        assert f'href="{target}"' in link
+        assert f'aria-describedby="{link_id}-description"' in link
+        assert ('target="_blank" rel="noopener"' in link) is external
+        assert template.count(f'id="{link_id}-description"') == 1
+        assert f"<TMPL_VAR HELP.{key}_HELP>" in section
+    assert positions == sorted(positions)
+    assert "HELP.TOOL_ACCESS" not in template
+    assert section.count("<details") == 0
+    for key in ("KNX", "PROFILE"):
+        assert template.count(f"<TMPL_VAR HELP.{key}_HELP>") == 2
+    assert 'href="message-approval.cgi"><TMPL_VAR SETUP.MESSAGES_APPROVAL>' in template
+
+
+def test_admin_help_explanations_have_matching_localized_keys() -> None:
+    expected = {
+        "PROJECT_HELP",
+        "EXPLORER_HELP",
+        "SCHEMA_HELP",
+        "HISTORY_HELP",
+        "KNX_HELP",
+        "PROFILE_HELP",
+        "MESSAGES_HELP",
+        "HISTORY",
+        "MESSAGES",
+    }
+    for language in ("de", "en"):
+        text = (ROOT / "templates" / "lang" / f"language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("[HELP]", 1)[1].split("[ACCESS]", 1)[0]
+        values = dict(line.split("=", 1) for line in section.splitlines() if "=" in line)
+        assert expected <= values.keys()
+        assert all(values[key].strip() for key in expected)
+        assert "TOOL_ACCESS" not in values
+
+
+def test_admin_message_help_link_preserves_effective_page_language(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    wrapper = (
+        'no warnings "redefine"; '
+        "*LoxBerry::System::read_file = sub { return q("
+        '<a id="approval" href="<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>">'
+        "approval</a>); }; "
+        "$LoxBerry::System::lang = $ENV{LB_TEST_SYSTEM_LANG}; "
+        "do $ARGV[0]; die $@ if $@;"
+    )
+    for configured, query, expected in (
+        ("de", "", "de"),
+        ("en", "", "en"),
+        ("de", "lang=en", "en"),
+        ("en", "lang=de", "de"),
+        ("en", "lang=fr", "en"),
+    ):
+        response = subprocess.run(
+            [
+                perl,
+                f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                "-MLoxBerry::System",
+                "-e",
+                wrapper,
+                str(ROOT / "webfrontend/htmlauth/index.cgi"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                **environment,
+                "LB_TEST_SYSTEM_LANG": configured,
+                "REQUEST_METHOD": "GET",
+                "QUERY_STRING": query,
+            },
+            timeout=10,
+        )
+        assert f'href="message-approval.cgi?lang={expected}"' in response.stdout

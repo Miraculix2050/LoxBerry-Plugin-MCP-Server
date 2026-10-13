@@ -68,3 +68,5 @@ aktuellen Tab und werden beim Ende seiner Sitzung gelöscht.
 MCP-Clients erhalten die auf der konkreten Installation veröffentlichten Werkzeugbeschreibungen sowie deren Ein- und Ausgabeschemas über die MCP-Methode `tools/list`. Der Tool Explorer liest genau diese Antwort und visualisiert sie. Unter **Hilfe** stehen außerdem eine statische HTML-Referenz des vollständigen Werkzeugvertrags dieser Plugin-Version und dieselben Daten als JSON-Download bereit.
 
 Weiter: [Fehlerbehebung](troubleshooting.de.md).
+
+Unter **Hilfe und Entwicklerwerkzeuge** finden Sie Links zu Projekt und Anleitungen, Tool Explorer, Schema-Referenz, lokaler Ereignishistorie, KNX-Adressverwaltung, bestätigtem Anlagenprofil und der Freigabe einzelner Meldungen. Jeder Link erklärt kurz Zweck und Grenzen der jeweiligen Seite. KNX-Adressverwaltung und Anlagenprofil bleiben zusätzlich unter **MCP Konfiguration** erreichbar und zeigen dort dieselben Erklärungen. Die Meldungsfreigabe aus dem Hilfebereich übernimmt die aktuelle Seitensprache.
