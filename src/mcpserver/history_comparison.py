@@ -13,6 +13,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from mcpserver.history_analysis import HistoryAnalysisDeadline, SourceAnalysis, StateSegment
+from mcpserver.load_cycles import LoadCyclesResult, describe_load_cycles
+from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.history_evidence import HistoryInterval, timezone, utc_timestamp
 from mcpserver.loxone.state_semantics import SeriesSemantics
 from mcpserver.loxone.statistics import StatisticPoint
@@ -28,6 +30,7 @@ class ComparisonInput:
     segments: tuple[StateSegment, ...] = ()
     profile_role: str | None = None
     declared_boundary: str | None = None
+    load_flexibility: LoadFlexibility | None = None
 
 
 class ComparisonResult(BaseModel):
@@ -41,6 +44,7 @@ class ComparisonResult(BaseModel):
     usable_intervals: list[HistoryInterval] = Field(default_factory=list, max_length=128)
     usable_intervals_truncated: bool = False
     limitations: list[str] = Field(default_factory=list, max_length=16)
+    load_cycles: LoadCyclesResult | None = None
 
 
 def _check(deadline: float) -> None:
@@ -247,6 +251,23 @@ def compare_history(
             result.limitations = ["one_evidenced_state_and_one_numeric_source_required"]
             return result
         intervals = _hours(numeric[0], start, end, deadline)
+        flexibility = numeric[0].load_flexibility
+        if (
+            flexibility is not None
+            and numeric[0].profile_role == "consumer"
+            and states[0].profile_role == "operating_state"
+            and states[0].summary.binding_id == flexibility.operating_binding_id
+            and numeric[0].summary.binding_id is not None
+        ):
+            result.load_cycles = describe_load_cycles(
+                states[0].segments,
+                intervals,
+                flexibility,
+                numeric[0].summary.binding_id,
+                start=start,
+                end=end,
+                deadline=deadline,
+            )
         active = [s for s in states[0].segments if s.active]
         active_starts = [s.start for s in active]
 

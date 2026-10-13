@@ -90,15 +90,19 @@ def test_v1_migration_is_idempotent_and_read_does_not_persist(tmp_path):
     document = put(store, 0, production()).model_dump()
     document["schema_version"] = 1
     del document["bindings"][0]["pv_parameters"]
+    del document["bindings"][0]["load_flexibility"]
+    del document["bindings"][0]["load_operating_fingerprint"]
+    del document["bindings"][0]["load_operating_control_uuid"]
+    del document["bindings"][0]["load_operating_state_uuid"]
     store.path.write_text(json.dumps(document))
     original = store.path.read_bytes()
     first = store.read(TARGET)
-    assert first == store.read(TARGET) and first.schema_version == 2
+    assert first == store.read(TARGET) and first.schema_version == 3
     assert store.path.read_bytes() == original
     assert first.bindings[0].source_fingerprint == document["bindings"][0]["source_fingerprint"]
     second = put(store, 1, weather())
     assert second.revision == 2 and len(second.bindings) == 2
-    assert json.loads(store.path.read_text())["schema_version"] == 2
+    assert json.loads(store.path.read_text())["schema_version"] == 3
     assert second.bindings[0] == first.bindings[0]
 
 
@@ -106,6 +110,10 @@ def test_v1_is_validated_with_original_shape_before_migration(tmp_path):
     store = ProfileStore(tmp_path / "profile.json")
     document = put(store, 0, production(pv_parameters={"installed_kwp": 5.0})).model_dump()
     document["schema_version"] = 1
+    del document["bindings"][0]["load_flexibility"]
+    del document["bindings"][0]["load_operating_fingerprint"]
+    del document["bindings"][0]["load_operating_control_uuid"]
+    del document["bindings"][0]["load_operating_state_uuid"]
     store.path.write_text(json.dumps(document))
     with pytest.raises(ProfileError, match="storage_invalid"):
         store.read(TARGET)

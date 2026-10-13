@@ -36,7 +36,7 @@ function harness(config = {}) {
     if (action === 'profile_put') revision++;
     return {ok: true, json: async () => ({ok: true, data: {
       status: 'available', installation: 'synthetic-installation', revision,
-      bindings: [binding], sources: config.sources || [{control_uuid: 'control', source_kind: 'state', source_id: 'state', control_name: 'Synthetic', source_name: 'value'}],
+      bindings: config.bindings || [binding], sources: config.sources || [{control_uuid: 'control', source_kind: 'state', source_id: 'state', control_name: 'Synthetic', source_name: 'value'}],
       next_offset: null, sources_truncated: false,
     }})};
   };
@@ -182,4 +182,74 @@ test('exclusive PV boundaries reject zero capacity and 360 azimuth then clear on
   assert.equal(azimuth.checkValidity(), false);
   h.get('new').click();
   assert.equal(h.get('pv-capacity').validationMessage, '');
+});
+
+
+const flexibleBinding = {
+  binding_id: 'load', source_kind: 'state', control_uuid: 'control', control_name: 'Synthetic',
+  state_uuid: 'state', role: 'consumer', status: 'confirmed', confirmed: true,
+  load_constraints_present: true,
+  load_flexibility: {
+    timezone: 'Europe/Berlin', operating_binding_id: 'operating', cycle_identity: 'active_episode_only',
+    windows: [{weekdays: [0, 2, 6], start: '23:00', end: '01:00', end_day_offset: 1}],
+    latest_completion: '02:00', completion_day_offset: 1, duration_seconds: 7200,
+    interruptible: false, minimum_run_seconds: 3600, minimum_off_seconds: 1800,
+    energy_profile_origin: 'observed_intervals', declared_cycle_energy_wh: null,
+    rationale: '<script>owner declaration</script>', native_lock_policy: 'never_override',
+  },
+};
+const operatingBinding = {
+  binding_id: 'operating', source_kind: 'state', control_uuid: 'control', control_name: 'Synthetic',
+  state_uuid: 'state', role: 'operating_state', status: 'confirmed', confirmed: true,
+  load_operating_source_eligible: true,
+};
+
+test('load constraints round-trip with explicit midnight offsets and renewed confirmation', async (t) => {
+  const h = harness({bindings: [flexibleBinding, operatingBinding]}); t.after(h.close); await h.tick();
+  h.get('bindings').querySelector('button').click();
+  assert.equal(h.get('flex-section').hidden, false);
+  assert.equal(h.get('confirmed').checked, false);
+  assert.equal(h.get('flex-fields').disabled, false);
+  assert.equal(h.get('flex-operating').value, 'operating');
+  assert.equal(h.get('flex-rationale').value, '<script>owner declaration</script>');
+  assert.equal(h.get('flex-windows').querySelector('script'), null);
+  h.get('confirmed').checked = true;
+  h.get('flex-duration').value = '7300';
+  h.get('flex-duration').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  assert.equal(h.get('confirmed').checked, false);
+  h.get('flex-duration').value = '7200'; h.get('confirmed').checked = true;
+  h.get('form').dispatchEvent(new h.window.Event('submit', {cancelable: true})); await h.tick();
+  const saved = h.calls.find((c) => c.action === 'profile_put').payload.binding;
+  assert.deepEqual(saved.load_flexibility, flexibleBinding.load_flexibility);
+  assert.equal(saved.confirmed, true);
+});
+
+test('declared energy and weekday/window limits are validated without asserting a measurement', async (t) => {
+  const h = harness({bindings: [flexibleBinding, operatingBinding]}); t.after(h.close); await h.tick();
+  h.get('bindings').querySelector('button').click();
+  h.get('flex-origin').value = 'user_declared';
+  h.get('flex-origin').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.equal(h.get('flex-energy').disabled, false); assert.equal(h.get('flex-energy').required, true);
+  h.get('flex-energy').value = '0'; h.get('flex-energy').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  assert.equal(h.get('flex-energy').checkValidity(), false);
+  h.get('flex-energy').value = '1200'; h.get('flex-energy').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  assert.equal(h.get('flex-energy').checkValidity(), true);
+  for (let i = 0; i < 20; i++) h.get('flex-add-window').click();
+  assert.equal(h.get('flex-windows').children.length, 16);
+  assert.equal(h.get('flex-windows').lastElementChild.querySelector('[data-weekday]').checkValidity(), false);
+  for (const row of [...h.get('flex-windows').children]) row.querySelector('[data-remove]').click();
+  assert.equal(h.get('flex-enabled').checkValidity(), false);
+  h.get('flex-enabled').checked = false; h.get('flex-enabled').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.equal(h.get('flex-enabled').checkValidity(), true);
+});
+
+test('editing masked constraints cannot silently remove them and New restores editing', async (t) => {
+  const h = harness({binding: {...flexibleBinding, load_flexibility: null}}); t.after(h.close); await h.tick();
+  h.get('bindings').querySelector('button').click();
+  assert.equal(h.get('form').querySelector('button[type="submit"]').disabled, true);
+  h.get('form').dispatchEvent(new h.window.Event('submit', {cancelable: true})); await h.tick();
+  assert.equal(h.calls.filter((c) => c.action === 'profile_put').length, 0);
+  h.get('new').click();
+  assert.equal(h.get('form').querySelector('button[type="submit"]').disabled, false);
+  assert.equal(h.get('flex-windows').children.length, 0);
 });

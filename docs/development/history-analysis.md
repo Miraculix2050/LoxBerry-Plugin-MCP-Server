@@ -147,3 +147,28 @@ configuration checks. It performs no database maintenance or recording writes.
 Unexpected values remain in the archive and in bounded diagnostics with trace-
 correlated sanitized warning logs. See [method review](comparable-days-method.md)
 and [user contract](../user/comparable-days.en.md).
+
+
+## Confirmed load constraints and observed cycles
+
+The existing operating_phases branch can return comparison.load_cycles for one
+confirmed consumer energy statistic (hour granularity) and its confirmed binary
+operating-state binding (raw). Optional load_flexibility declarations are checked
+through the current profile projection. One fresh admitted context, exact source
+reads, native quantity/unit/interval rules and the original limits remain intact.
+A profile revision change during calculation prevents output.
+
+Capture indices are retained internally on decoded StateSegment objects without
+changing published raw state rows. Only two observed edges inside one continuous
+capture establish a complete activity episode. Program identity remains distinct
+and user-declared; native locks and planning are explicitly not checked/evaluated.
+Cycle energy requires complete whole hourly intervals tiling the episode. Missing
+hours, truncation and derived overflow do not create a measured energy result.
+Limits are 16 episodes / 128 total profile intervals and the existing 64-KiB
+ceiling. See [load flexibility method](load-flexibility-method.md).
+
+Native day/month/year difference aggregates do not qualify as hourly energies.
+The runtime retains their explicit raw values when requested, but returns
+non_hourly_interval_energy_not_supported rather than relabelling them as one-hour
+energy. This applies to the shared energy/energy-comparison adapter as well as
+cycle profiles; raw counter and documented hour behavior remain unchanged.

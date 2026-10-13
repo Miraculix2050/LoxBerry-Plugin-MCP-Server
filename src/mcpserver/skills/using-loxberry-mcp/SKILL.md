@@ -1255,3 +1255,27 @@ invalid version data, unavailable probes and unrequested/unknown applicability.
 Source identity uses the existing strict MAC serial canonicalization (case and
 colon/hyphen presentation only). Invalid identities remain `invalid_identity`;
 no arbitrary string or installation-name equivalence grants applicability.
+
+
+### Confirmed flexible loads and observed activity cycles
+
+Read the current installation profile first. Only confirmed consumer bindings
+with load_constraints_usable=true provide declared windows/deadlines, duration,
+interruptibility, minimum run/off times and exact operating-state association.
+Hidden/unconfirmed/changed companions cannot qualify; do not invent IDs or native
+lock observations. For profile replacement or deletion include the whole exact
+load_flexibility proposal in the user's explicit confirmation, including linked
+source and cycle identity. A reused operating binding ID does not retarget a load
+without renewed confirmation. Local Admin can review orphaned metadata.
+
+Use operating_phases with this confirmed consumer statistic at hour granularity
+and its confirmed binary operating-state binding at raw granularity. Inspect
+comparison.load_cycles, profile_revision, boundaries_complete, energy_profile_complete,
+discrepancies, limits and both truncation flags. Initial active states, query
+edges, capture restarts/gaps and missing hours are incomplete evidence. State
+edges describe local observed activity, not native appliance/program identity.
+active_episode_only is the default; user_confirmed_cycle is an explicit owner
+assertion. Declared Wh values never become measured interval energy. Unknown
+native locks remain not_checked, planning not_evaluated. Never infer shiftability,
+a cleared lock, operation authorization, self-consumption or financial savings.
+A profile-change failure requires a fresh read and review, not blind retry.

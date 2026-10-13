@@ -16,6 +16,8 @@
  data-permission-disabled="<TMPL_VAR PROFILE.PERMISSION_DISABLED ESCAPE=HTML>"
  data-truncated="<TMPL_VAR PROFILE.TRUNCATED ESCAPE=HTML>"
  data-pv-range-error="<TMPL_VAR PROFILE.PV_RANGE_ERROR ESCAPE=HTML>"
+ data-flex-unavailable="<TMPL_VAR PROFILE.FLEX_UNAVAILABLE ESCAPE=HTML>"
+ data-flex-error="<TMPL_VAR PROFILE.FLEX_ERROR ESCAPE=HTML>"
  data-empty="<TMPL_VAR PROFILE.EMPTY ESCAPE=HTML>"
  data-draft="<TMPL_VAR PROFILE.DRAFT ESCAPE=HTML>"
  data-confirmed="<TMPL_VAR PROFILE.CONFIRMED ESCAPE=HTML>"
@@ -91,12 +93,48 @@
       <button type="button" class="lb-button" id="profile-pv-add-array"><TMPL_VAR PROFILE.PV_ADD_ARRAY></button>
      </fieldset>
     </section>
+    <section id="profile-flex-section" hidden>
+     <label><input type="checkbox" id="profile-flex-enabled"><TMPL_VAR PROFILE.FLEX_ENABLE></label>
+     <fieldset id="profile-flex-fields" disabled>
+      <p class="mcp-help"><TMPL_VAR PROFILE.FLEX_HELP></p>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_TIMEZONE></span><input id="profile-flex-timezone" maxlength="128" placeholder="Europe/Berlin" required></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_OPERATING></span><select id="profile-flex-operating" required></select></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_IDENTITY></span><select id="profile-flex-identity"><option value="active_episode_only"><TMPL_VAR PROFILE.FLEX_EPISODE></option><option value="user_confirmed_cycle"><TMPL_VAR PROFILE.FLEX_CYCLE></option></select></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_COMPLETION></span><input id="profile-flex-completion" type="time" required></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_COMPLETION_DAY></span><select id="profile-flex-completion-day"><option value="0"><TMPL_VAR PROFILE.FLEX_SAME_DAY></option><option value="1"><TMPL_VAR PROFILE.FLEX_NEXT_DAY></option></select></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_DURATION></span><input id="profile-flex-duration" type="number" min="1" max="86400" step="1" required></label>
+      <label><input id="profile-flex-interruptible" type="checkbox"><TMPL_VAR PROFILE.FLEX_INTERRUPTIBLE></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_MIN_RUN></span><input id="profile-flex-min-run" type="number" min="0" max="86400" step="1" value="0" required></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_MIN_OFF></span><input id="profile-flex-min-off" type="number" min="0" max="86400" step="1" value="0" required></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_ORIGIN></span><select id="profile-flex-origin"><option value="observed_intervals"><TMPL_VAR PROFILE.FLEX_MEASURED></option><option value="user_declared"><TMPL_VAR PROFILE.FLEX_DECLARED></option></select></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_ENERGY></span><input id="profile-flex-energy" type="number" min="0" max="1000000000" step="any" disabled></label>
+      <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_RATIONALE></span><input id="profile-flex-rationale" maxlength="256" required></label>
+      <div id="profile-flex-windows"></div>
+      <button type="button" class="lb-button" id="profile-flex-add-window"><TMPL_VAR PROFILE.FLEX_ADD_WINDOW></button>
+     </fieldset>
+    </section>
     <label><input type="checkbox" id="profile-confirmed"><TMPL_VAR PROFILE.CONFIRM_ROLE></label>
     <p class="mcp-help"><TMPL_VAR PROFILE.CONFIRM_HELP></p>
     <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR PROFILE.SAVE></button><button class="lb-button" type="button" id="profile-new"><TMPL_VAR PROFILE.NEW></button></div>
    </fieldset>
   </form>
  </section>
+ <template id="profile-flex-window-template">
+  <fieldset>
+   <legend><TMPL_VAR PROFILE.FLEX_WINDOW></legend>
+   <label><input type="checkbox" data-weekday value="0"><TMPL_VAR PROFILE.FLEX_MONDAY></label>
+   <label><input type="checkbox" data-weekday value="1"><TMPL_VAR PROFILE.FLEX_TUESDAY></label>
+   <label><input type="checkbox" data-weekday value="2"><TMPL_VAR PROFILE.FLEX_WEDNESDAY></label>
+   <label><input type="checkbox" data-weekday value="3"><TMPL_VAR PROFILE.FLEX_THURSDAY></label>
+   <label><input type="checkbox" data-weekday value="4"><TMPL_VAR PROFILE.FLEX_FRIDAY></label>
+   <label><input type="checkbox" data-weekday value="5"><TMPL_VAR PROFILE.FLEX_SATURDAY></label>
+   <label><input type="checkbox" data-weekday value="6"><TMPL_VAR PROFILE.FLEX_SUNDAY></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_START></span><input data-key="start" type="time" required></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_END></span><input data-key="end" type="time" required></label>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.FLEX_END_DAY></span><select data-key="end_day_offset"><option value="0"><TMPL_VAR PROFILE.FLEX_SAME_DAY></option><option value="1"><TMPL_VAR PROFILE.FLEX_NEXT_DAY></option></select></label>
+   <button type="button" class="lb-button" data-remove><TMPL_VAR PROFILE.FLEX_REMOVE_WINDOW></button>
+  </fieldset>
+ </template>
  <template id="profile-pv-array-template">
   <fieldset>
    <legend><TMPL_VAR PROFILE.PV_ARRAY></legend>
@@ -117,4 +155,4 @@
   </form>
  </dialog>
 </main>
-<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v4" defer></script>
+<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v5" defer></script>

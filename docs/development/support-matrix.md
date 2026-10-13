@@ -58,3 +58,10 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   hardware observation evidence. This adds no hardware-family or firmware compatibility promise. Known
   unsupported monitor/alarm families make coverage partial; this is no safety
   certification or alarm notification service.
+
+
+- Confirmed load constraints and observed-cycle descriptions (#440): additive
+  profile/Admin declarations and historical operating_phases detail. Complete
+  activity edges and interval-energy profiles are separate from user-confirmed
+  program identity, native lock observation and future scheduling. Unknown locks
+  are never inferred clear; no operation permission or saving claim is added.

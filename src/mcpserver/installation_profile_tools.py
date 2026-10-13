@@ -22,6 +22,7 @@ from mcpserver.installation_profile import (
     project_profile,
 )
 from mcpserver.installation_profile_write import ProfileWriteRuntime
+from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeAuthorizationError, RuntimeUnavailable
 from mcpserver.persistence import PersistenceUncertain
 from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result
@@ -47,6 +48,13 @@ class ProfileBindingData(BaseModel):
     measurement_boundary_origin: Literal["user_declared"] = "user_declared"
     pv_parameters: PVParameters | None = None
     pv_parameters_usable: bool = False
+    load_flexibility: LoadFlexibility | None = None
+    load_constraints_usable: bool = False
+    load_constraints_present: bool = False
+    load_constraints_origin: Literal["user_declared"] = "user_declared"
+    native_lock_status: Literal["not_checked"] = "not_checked"
+    load_constraints_limitations: list[str] = Field(default_factory=list, max_length=8)
+    load_operating_source_eligible: bool = False
 
 
 class WeatherProfileBindingData(BaseModel):

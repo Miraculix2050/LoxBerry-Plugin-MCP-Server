@@ -5,6 +5,20 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add optional owner-confirmed load constraints to the installation profile and
+  DE/EN Admin form: explicit weekly windows, deadlines, duration, interruption,
+  minimum run/off times, operating-state association and energy provenance.
+  Validate profile v1/v2 before read-only conversion to v3; preserve original
+  files/revisions on read and write v3 only on an authorized mutation.
+  Hide inaccessible companion identifiers and prevent implicit retargeting.
+  Extend existing operating-phase analysis with bounded observed activity episodes
+  and complete interval-energy profiles, preserving gaps, restarts, uncertainty
+  and profile-revision changes. Do not infer native program identity, cleared
+  native locks, shiftability, operation permission or savings (#440).
+  Keep native day/month/year difference aggregates unqualified for hourly energy
+  analysis rather than treating their values as one-hour energy; preserve explicitly
+  requested raw values with the interval limitation.
+
 - Add bounded qualitative comparable-day selection to `loxone_analyze_history`
   from configured actual weather source points. Match fixed completed-hour class
   sequences under an explicitly owner-assumed 0-3 mapping; retain unexpected

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 from math import isfinite
 from statistics import fmean
@@ -35,6 +35,7 @@ class StateSegment:
     start: float
     end: float
     active: bool
+    capture_index: int | None = field(default=None, compare=False)
 
 
 class SourceAnalysis(BaseModel):
@@ -191,7 +192,7 @@ def reconstruct_segments(
     """Values are already decoded by the semantic adapter; None remains unknown."""
     segments: list[StateSegment] = []
     previous_end = float("-inf")
-    for phase_start, phase_end, initial, changes in phases:
+    for capture_index, (phase_start, phase_end, initial, changes) in enumerate(phases):
         if phase_start < previous_end:
             raise ValueError("overlapping capture phases")
         previous_end = phase_end
@@ -200,10 +201,10 @@ def reconstruct_segments(
             if observed < position or observed >= min(end, phase_end):
                 continue
             if isinstance(value, bool) and observed > position:
-                segments.append(StateSegment(position, observed, value))
+                segments.append(StateSegment(position, observed, value, capture_index))
             position, value = observed, next_value
         if isinstance(value, bool) and position < min(end, phase_end):
-            segments.append(StateSegment(position, min(end, phase_end), value))
+            segments.append(StateSegment(position, min(end, phase_end), value, capture_index))
     return tuple(segments)
 
 
