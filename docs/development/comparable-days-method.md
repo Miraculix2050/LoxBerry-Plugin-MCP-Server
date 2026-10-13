@@ -57,7 +57,7 @@ strict -20-percent advisory threshold are tested with fractional decimal inputs
 and representable values immediately beyond their boundaries. No broad tolerance
 or approximate equality widens the accepted thresholds.
 
-Primary weather documentation distinguishes absolute irradiance in W/m²,
+Primary weather documentation distinguishes absolute irradiance in W/mÂ²,
 relative irradiance in percent and radiation classes. It does not by itself
 identify the archived binary solar_radiation field or establish a continuous
 observed interval: https://www.loxone.com/enen/kb/weather-service/ . Do not infer
