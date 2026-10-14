@@ -472,12 +472,44 @@ def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
     assert 'limits.setdefault("explorer_binding_retention_hours", 72)' in hook
     assert 'policies.setdefault("explorer_bindings", [])' in hook
     assert 'document["schema_version"] = 11' in hook
+    assert 'document.get("schema_version") == 11' in hook
+    assert 'document["schema_version"] = 12' in hook
+    assert 'tools.setdefault("loxberry_knx_prefix_write_enabled", False)' in hook
     assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in hook
     assert 'python3 "$root_path_helper" statistics-cache' in postroot
     assert "os.O_NOFOLLOW" in helper
     assert "os.fchown(child_fd" in helper
     assert "os.fchmod(child_fd, 0o700)" in helper
     assert "os.lstat(path)" in helper
+
+
+def test_schema_twelve_upgrade_preserves_user_data_and_is_idempotent(tmp_path) -> None:
+    hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+    source = hook.split("python3 - \"$plugin_config/mcpserver.json\" <<'PY' || exit 2\n", 1)[1]
+    # Exercise the exact migration and atomic replacement on every platform.
+    # Native directory-sync/install evidence is covered by target acceptance.
+    source = source.split("# A retry can see the migrated schema", 1)[0]
+    path = tmp_path / "mcpserver.json"
+    original = {
+        "schema_version": 11,
+        "tools": {"loxberry_knx_write_enabled": True},
+        "knx_address_taxonomy": {
+            "endpoint": "http://192.168.99.1",
+            "entries": [{"prefix": "1/2", "address_format": "three_level", "label": "Preserved"}],
+        },
+        "unrelated": {"keep": True},
+    }
+    path.write_text(json.dumps(original), encoding="utf-8")
+    subprocess.run([sys.executable, "-c", source, str(path)], check=True, timeout=10)
+    migrated = json.loads(path.read_text(encoding="utf-8"))
+    assert migrated["schema_version"] == 12
+    assert migrated["tools"] == {**original["tools"], "loxberry_knx_prefix_write_enabled": False}
+    assert migrated["knx_prefix_apply_receipts"] == []
+    assert migrated["knx_address_taxonomy"] == original["knx_address_taxonomy"]
+    assert migrated["unrelated"] == original["unrelated"]
+    before = path.read_bytes()
+    subprocess.run([sys.executable, "-c", source, str(path)], check=True, timeout=10)
+    assert path.read_bytes() == before
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:

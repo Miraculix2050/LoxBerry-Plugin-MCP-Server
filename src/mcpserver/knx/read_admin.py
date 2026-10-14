@@ -94,6 +94,11 @@ def policy_revision(
         json.dumps(
             [
                 target,
+                *(
+                    [config.loxberry_knx_prefix_write_enabled]
+                    if policy.scope == LOXBERRY_KNX_WRITE_SCOPE
+                    else []
+                ),
                 getattr(config, policy.enabled_field),
                 getattr(config, policy.bindings_field),
                 [
@@ -201,6 +206,11 @@ def snapshot(
         "enabled": getattr(config, policy.enabled_field),
         "policy_revision": policy_revision(config, target, policy),
         "bindings": rows,
+        **(
+            {"allow_prefixes": config.loxberry_knx_prefix_write_enabled}
+            if policy.scope == LOXBERRY_KNX_WRITE_SCOPE
+            else {}
+        ),
     }
 
 
@@ -219,6 +229,8 @@ def dispatch(
         f"{policy.prefix}_grant": {"target", "policy_revision", "binding"},
         f"{policy.prefix}_revoke": {"target", "policy_revision", "binding"},
     }
+    if policy.scope == LOXBERRY_KNX_WRITE_SCOPE:
+        allowed[f"{policy.prefix}_enable"].add("allow_prefixes")
     if action not in allowed or not payload.keys() <= allowed[action]:
         raise KnxError("knx_delegation_invalid")
     if action == f"{policy.prefix}_page":
@@ -229,7 +241,12 @@ def dispatch(
     if action == f"{policy.prefix}_enable":
         if type(payload.get("enabled")) is not bool:
             raise KnxError("knx_delegation_invalid")
-        updated = replace(config, **{policy.enabled_field: payload["enabled"]})
+        updates = {policy.enabled_field: payload["enabled"]}
+        if "allow_prefixes" in payload:
+            if type(payload["allow_prefixes"]) is not bool:
+                raise KnxError("knx_delegation_invalid")
+            updates["loxberry_knx_prefix_write_enabled"] = payload["allow_prefixes"]
+        updated = replace(config, **updates)
         save(updated)
         lifecycle_event(
             "approval_match",

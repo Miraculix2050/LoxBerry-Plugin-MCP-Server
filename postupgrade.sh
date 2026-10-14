@@ -129,6 +129,14 @@ if document.get("schema_version") == 10:
     taxonomy.setdefault("entries", [])
     document["schema_version"] = 11
     changed = True
+if document.get("schema_version") == 11:
+    tools = document.setdefault("tools", {})
+    if not isinstance(tools, dict):
+        raise SystemExit("KNX write configuration is not an object")
+    tools.setdefault("loxberry_knx_prefix_write_enabled", False)
+    document.setdefault("knx_prefix_apply_receipts", [])
+    document["schema_version"] = 12
+    changed = True
 if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)

@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 import idna
 
+from mcpserver.knx.prefix_receipts import PrefixReceipt, parse_receipts
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.uuid import normalize_loxone_uuid
@@ -29,7 +30,7 @@ from mcpserver.loxone.weather_history import MAX_SOURCES as MAX_WEATHER_HISTORY_
 from mcpserver.loxone.weather_history import WeatherHistorySource
 from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
 
-SCHEMA_VERSION: Final = 11
+SCHEMA_VERSION: Final = 12
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -347,6 +348,7 @@ class PluginConfig:
     loxberry_knx_read_enabled: bool = False
     loxberry_knx_drafts_enabled: bool = False
     loxberry_knx_write_enabled: bool = False
+    loxberry_knx_prefix_write_enabled: bool = False
     loxone_history_enabled: bool = False
     loxone_message_confirmation_enabled: bool = False
     loxberry_operate_enabled: bool = False
@@ -397,6 +399,7 @@ class PluginConfig:
     knx_address_taxonomy_endpoint: str = ""
     knx_address_taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
     knx_taxonomy_targets: tuple[tuple[str, tuple[AddressTaxonomyEntry, ...]], ...] = ()
+    knx_prefix_apply_receipts: tuple[PrefixReceipt, ...] = ()
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -406,7 +409,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, 9, 10, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, 9, 10, 11, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -435,6 +438,11 @@ class PluginConfig:
         ):
             raise ConfigError("solar_forecast.fingerprint is invalid")
         taxonomy = _mapping(root.get("knx_address_taxonomy", {}), name="knx_address_taxonomy")
+
+        try:
+            prefix_receipts = parse_receipts(root.get("knx_prefix_apply_receipts", []))
+        except ValueError:
+            raise ConfigError("knx_prefix_apply_receipts is invalid") from None
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -764,6 +772,10 @@ class PluginConfig:
             loxberry_knx_read_enabled=loxberry_knx_read_enabled,
             loxberry_knx_drafts_enabled=loxberry_knx_drafts_enabled,
             loxberry_knx_write_enabled=loxberry_knx_write_enabled,
+            loxberry_knx_prefix_write_enabled=_boolean(
+                tools.get("loxberry_knx_prefix_write_enabled", False),
+                name="tools.loxberry_knx_prefix_write_enabled",
+            ),
             loxone_history_enabled=loxone_history_enabled,
             loxone_message_confirmation_enabled=loxone_message_confirmation_enabled,
             loxberry_operate_enabled=loxberry_operate_enabled,
@@ -814,12 +826,16 @@ class PluginConfig:
             knx_address_taxonomy_endpoint=taxonomy_endpoint,
             knx_address_taxonomy=taxonomy_entries,
             knx_taxonomy_targets=tuple(sorted(target_entries.items())),
+            knx_prefix_apply_receipts=prefix_receipts,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
+        document["knx_prefix_apply_receipts"] = [
+            row.config_record() for row in self.knx_prefix_apply_receipts
+        ]
         for key in (
             "server",
             "loxone",
@@ -847,6 +863,9 @@ class PluginConfig:
         document["tools"]["loxberry_knx_read_enabled"] = self.loxberry_knx_read_enabled
         document["tools"]["loxberry_knx_drafts_enabled"] = self.loxberry_knx_drafts_enabled
         document["tools"]["loxberry_knx_write_enabled"] = self.loxberry_knx_write_enabled
+        document["tools"]["loxberry_knx_prefix_write_enabled"] = (
+            self.loxberry_knx_prefix_write_enabled
+        )
         document["tools"]["loxone_history_enabled"] = self.loxone_history_enabled
         document["tools"]["loxone_message_confirmation_enabled"] = (
             self.loxone_message_confirmation_enabled

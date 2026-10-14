@@ -170,7 +170,7 @@ verify project access or apply changes. MCP can record concrete agreed decisions
 `loxberry_prepare_knx_corrections(mode="review", decisions=[{"change_id": "...",
 "decision": "accepted"}])`, omitting `changes` and supplying current target,
 catalog/manual/draft revisions and a stable request ID. Unselected decisions remain
-unchanged. Prefix application and confirmed export handoff follow separately.
+unchanged. Apply prefix labels separately from addresses; confirmed export handoff follows separately.
 
 Drafts have an absolute 24-hour lifetime, at most 50 changes each, and share the
 existing global eight-draft/32-MiB budget with imports, comparisons and XML
@@ -199,8 +199,10 @@ neither this approval nor the concrete user decision.
 After explicit user agreement, call `loxberry_apply_knx_corrections(action="apply")`
 with accepted `approved_change_ids`, target/catalog/manual/draft revisions and
 a new stable `request_id`. Do not resend values. Maximum 50 changes; existing
-single-address name/description overrides only. No prefix, DPT, flag, import, ETS
-or Loxone changes. Preserve unselected overrides and the original address.
+`storage="addresses"` (default) applies existing name/description overrides.
+`storage="prefix_labels"` applies style-bound prefix labels after additional
+Admin prefix activation for approved write clients. Select one storage per call;
+mixed selections are rejected. No DPT, flag, import, ETS or Loxone changes. Preserve unselected overrides and the original address.
 Removing an override differs from intentionally emptying a description.
 Project-bound drafts explicitly require `use_project_evidence=true` with a
 freshly authorized unchanged project snapshot.
@@ -210,4 +212,18 @@ together. After uncertainty use only `action="reconcile"` with the same IDs,
 revisions and request ID. Even an absent receipt does not permit automatic retry.
 A receipt describes the original result; reread the current local catalog and
 verify affected fields afterwards. Loxone names remain primary and unchanged.
-Prefix application and export handoff follow as separate steps.
+Prefix effects and their receipt share one atomic configuration save; address
+effects and their receipt share one SQLite transaction. There is no combined
+cross-store write. Prefix receipts are bounded to 32 unexpired operations and
+16 KiB, without eviction of valid evidence. A full ledger rejects further prefix
+writes until expiry. The result returns the changed manual-label revision; the
+import catalog revision is unchanged. An accepted ETS export handoff follows
+separately.
+
+Configuration schema 12 migrates schema 11 with prefix access disabled. Native
+upgrade preserves existing labels and receipts. Back up the matching configuration
+before upgrading; older code cannot read schema 12.
+
+General settings saves preserve the current KNX labels and their receipts, even
+when a full configuration document includes stale copies. Use the revision-bound
+KNX label action to edit labels.

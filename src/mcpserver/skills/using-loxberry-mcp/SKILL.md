@@ -126,8 +126,10 @@ Accepted/rejected/proposed decisions grant no apply or download permission. Keep
 verification status explicit; local writes remain a separate workflow.
 With independent default-off `loxberry:knx:write` consent/Admin approval, use
 `loxberry_apply_knx_corrections(action="apply")` only for concrete user-agreed,
-accepted IDs and exact target/catalog/manual/draft revisions. Existing address
-name/description overrides only; prefixes/export/Loxone stay separate. Retrieve
+accepted IDs and exact target/catalog/manual/draft revisions. Select one storage:
+`addresses` (default) for existing name/description overrides, or `prefix_labels`
+for style-bound labels after extra Admin prefix activation. Mixed selections fail;
+import/ETS/Loxone writes stay separate. Retrieve
 full guidance before this write. After uncertainty use `action="reconcile"` with
 the exact original selection/revisions/request ID; an absent receipt permits no
 automatic retry. Receipts last seven days and describe the original operation.

@@ -123,6 +123,22 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
   dialog.close('continue'); await tick();
   assert.equal(state.enabled, true);
+  if (section.id === 'knx-write-delegation') {
+    const prefixes = w.document.getElementById('knx-write-prefixes');
+    assert.equal(prefixes.checked, false);
+    prefixes.checked = true; prefixes.dispatchEvent(new w.Event('change'));
+    const before = calls.length;
+    form.dispatchEvent(new w.Event('submit', {cancelable:true})); await tick();
+    assert.equal(dialog.open, true);
+    dialog.close('cancel'); await tick();
+    assert.equal(calls.length, before);
+    assert.equal(prefixes.checked, false);
+    prefixes.checked = true; prefixes.dispatchEvent(new w.Event('change'));
+    form.dispatchEvent(new w.Event('submit', {cancelable:true})); await tick();
+    dialog.close('continue'); await tick();
+    assert.equal(calls.at(-1).payload.allow_prefixes, true);
+    assert.equal(calls.at(-1).payload.enabled, true);
+  }
   assert.equal(section.hasAttribute('aria-busy'), false);
   pauseRead = true; failRead = true;
   w.document.getElementById('knx-read-reload').click(); await tick();

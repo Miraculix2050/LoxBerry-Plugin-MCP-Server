@@ -383,7 +383,7 @@ def test_upgrade_migration_sync_failure_and_idempotency(tmp_path, monkeypatch, f
     else:
         exec(code, namespace)
     assert events == ["file", "replace", "directory", "close"]
-    assert json.loads(path.read_text())["schema_version"] == 11
+    assert json.loads(path.read_text())["schema_version"] == 12
     events.clear()
     if fail_sync:
         with pytest.raises(OSError, match="directory failed"):

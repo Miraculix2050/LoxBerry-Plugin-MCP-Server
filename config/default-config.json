@@ -54,7 +54,7 @@
     "maximum_mib": 128,
     "sources": []
   },
-  "schema_version": 11,
+  "schema_version": 12,
   "server": {
     "enabled": false,
     "public_origin": ""
@@ -67,6 +67,8 @@
     "loxone_read_enabled": true,
     "loxberry_read_enabled": true,
     "loxberry_operate_enabled": false,
-    "installation_profile_write_enabled": false
-  }
+    "installation_profile_write_enabled": false,
+    "loxberry_knx_prefix_write_enabled": false
+  },
+  "knx_prefix_apply_receipts": []
 }

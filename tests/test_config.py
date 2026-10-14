@@ -75,7 +75,7 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 11
+    assert config.to_document()["schema_version"] == 12
 
 
 def test_version_ten_config_adds_empty_knx_taxonomy_without_changing_endpoint() -> None:
@@ -83,7 +83,7 @@ def test_version_ten_config_adds_empty_knx_taxonomy_without_changing_endpoint() 
         {"schema_version": 10, "loxone": {"endpoint": "http://192.168.10.20"}}
     )
     document = config.to_document()
-    assert document["schema_version"] == 11
+    assert document["schema_version"] == 12
     assert document["knx_address_taxonomy"] == {"endpoint": "", "entries": []}
     assert document["loxone"]["endpoint"] == "http://192.168.10.20"
 
