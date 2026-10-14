@@ -26,10 +26,12 @@
       || [...rows.querySelectorAll('textarea, input:not([type="checkbox"])')].some(e => e.value !== '');
     rows.dataset.emptyMessage = valid ? ui.dataset.noEntries : ui.dataset.needsComparison;
     document.getElementById('knx-xml-preview').disabled = blocked || !eligible || !selected;
-    document.getElementById('knx-xml-download').disabled = blocked || !eligible || !preview || !confirm.checked;
+    const handoff = current && preview?.correction_handoff && current.target === preview.target
+      && current.revision === preview.revision;
+    document.getElementById('knx-xml-download').disabled = blocked || !(eligible || handoff) || !preview || !confirm.checked;
     document.getElementById('knx-xml-clear').disabled = blocked
       || (!retainedPreview && (!eligible || !(selected || edited || preview)));
-    confirm.disabled = blocked || !eligible || !preview;
+    confirm.disabled = blocked || !(eligible || handoff) || !preview;
     rows.querySelectorAll('input, select, textarea').forEach(e => { e.disabled = blocked || !eligible; });
   };
   const invalidate = () => { preview = null; previewArea.replaceChildren(); confirm.checked = false; controls(); };
@@ -98,6 +100,9 @@
     if (!project.snapshot() || project.snapshot().binding !== binding
         || core.snapshot().target !== result.target || core.snapshot().revision !== result.revision)
       throw new Error('knx_revision_conflict');
+    showPreview(result);
+  }));
+  const showPreview = (result) => {
     invalidate(); preview = result;
     previewArea.append(node('p', `${result.rows.length} ${ui.dataset.select} · ${result.bytes} bytes`));
     for (const row of result.rows) {
@@ -113,16 +118,20 @@
     preserved.setAttribute('aria-label', ui.dataset.metadata);
     const details = node('details'); details.append(node('summary', ui.dataset.metadata), preserved);
     previewArea.append(details); controls();
-  }));
+  };
   confirm.addEventListener('change', controls);
   document.getElementById('knx-xml-download').addEventListener('click', () => void core.run(async () => {
     if (!preview || !confirm.checked) throw new Error('knx_export_confirmation_required');
     const expected = preview;
-    await project.validate(expected.project_binding);
+    if (!expected.correction_handoff) await project.validate(expected.project_binding);
     if (preview !== expected || !confirm.checked) throw new Error('knx_revision_conflict');
-    const result = await core.api('knx_xml_download', {target: expected.target, revision: expected.revision,
-      draft_id: expected.draft_id, project_binding: expected.project_binding, confirmed_experimental: true});
-    if (preview !== expected || !project.snapshot() || project.snapshot().binding !== expected.project_binding
+    const result = expected.correction_handoff
+      ? await (expected.use_project_evidence ? project.adminRequest : core.api)('knx_correction_xml_download',
+        {target:expected.target, revision:expected.revision, draft_id:expected.draft_id, confirmed_experimental:true})
+      : await core.api('knx_xml_download', {target: expected.target, revision: expected.revision,
+        draft_id: expected.draft_id, project_binding: expected.project_binding, confirmed_experimental: true});
+    if (preview !== expected || (!expected.correction_handoff
+        && (!project.snapshot() || project.snapshot().binding !== expected.project_binding))
         || core.snapshot().target !== result.target || core.snapshot().revision !== result.revision)
       throw new Error('knx_revision_conflict');
     const url = URL.createObjectURL(new Blob([result.content], {type: 'application/xml;charset=utf-8'}));
@@ -133,7 +142,18 @@
     if (retainedPreview) await core.api('knx_xml_discard', {target: core.snapshot().target});
     retainedPreview = false; renderChoices();
   }));
-  page.addEventListener('knx-project-state', renderChoices);
+  page.addEventListener('knx-correction-export-start', () => {retainedPreview = true; invalidate();});
+  page.addEventListener('knx-correction-export-preview', event => {
+    const result = event.detail;
+    const current = core.snapshot();
+    if (!result.correction_handoff || current?.target !== result.target || current?.revision !== result.revision)
+      return;
+    source = null; rows.replaceChildren(); retainedPreview = true;
+    showPreview(result); ui.open = true; confirm.focus();
+  });
+  page.addEventListener('knx-project-state', () => {
+    if (preview?.correction_handoff && !preview.use_project_evidence) controls(); else renderChoices();
+  });
   page.addEventListener('knx-state', () => { invalidate(); controls(); });
   page.addEventListener('knx-idle', controls);
   renderChoices();

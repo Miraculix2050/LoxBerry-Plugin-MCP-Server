@@ -10,7 +10,7 @@ import struct
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
-from contextlib import asynccontextmanager, contextmanager, suppress
+from contextlib import asynccontextmanager, contextmanager, nullcontext, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -499,8 +499,15 @@ class LoxoneRuntime:
             yield
 
     @asynccontextmanager
-    async def project_call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
-        async with self._project_slot(access), self.call_slot(access):
+    async def project_call_slot(
+        self, access: StoredAccessToken, *, worker_admitted: bool = False
+    ) -> AsyncIterator[None]:
+        # Internal callers with a retained global worker lease must not acquire
+        # that same lease again. All project identity/rate gates still apply.
+        async with (
+            self._project_slot(access),
+            nullcontext() if worker_admitted else self.call_slot(access),
+        ):
             # Charge only work admitted by the family and current-access gates.
             self._project_rate.append(time.monotonic())
             yield

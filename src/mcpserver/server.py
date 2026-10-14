@@ -940,6 +940,22 @@ def create_server(settings: ServerSettings) -> FastMCP:
         ),
     )
 
+    if knx_catalog_runtime is not None and runtime is not None and token_verifier is not None:
+        from mcpserver.knx.admin_bridge import PATH as knx_admin_path
+        from mcpserver.knx.admin_bridge import AdminProjectBridge
+
+        knx_admin_bridge = AdminProjectBridge(
+            knx_catalog_runtime.auth_store,
+            knx_catalog_runtime.config_store,
+            token_verifier._provider,
+            runtime,
+            knx_catalog_runtime.store.path,
+            call_admission,
+        )
+        server.custom_route(knx_admin_path, methods=["POST"], include_in_schema=False)(
+            knx_admin_bridge.handle
+        )
+
     if oauth_web is not None:
         server.custom_route("/authorize", methods=["GET", "POST"], include_in_schema=False)(
             oauth_web.authorize

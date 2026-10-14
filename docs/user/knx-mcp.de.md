@@ -245,7 +245,7 @@ Es gibt keine gemeinsame speicherübergreifende Übernahme. Präfixnachweise sin
 auf 32 unabgelaufene Vorgänge und 16 KiB begrenzt, ohne gültige Nachweise zu
 verdrängen. Ein voller Bestand sperrt weitere Präfixübernahmen bis zum Ablauf.
 Das Ergebnis enthält die neue manuelle Labelrevision; die Importrevision bleibt
-unverändert. Die bestätigte ETS-Exportübergabe folgt separat.
+unverändert. Akzeptierte ETS-Vorschläge lassen sich für die bestehende experimentelle XML-Vorschau auswählen.
 
 Konfigurationsschema 12 migriert Schema 11 mit deaktiviertem Präfixzugriff. Das
 native Upgrade erhält Labels und Nachweise. Vor dem Upgrade die passende
@@ -257,10 +257,25 @@ Labels über den revisionsgebundenen KNX-Speichervorgang ändern.
 
 Die authentifizierte Admin-Seite kann eine einzeln ausgewählte, akzeptierte rein lokale
 Änderung nach HTML-Bestätigung mit vollständigem Wert speichern. Dafür gilt die
-Admin-Anmeldung, nicht die MCP-Clientfreigabe. Projektgebundene Vorschläge bleiben bis
-zur serverseitigen frischen Projektberechtigung gesperrt; ein Projektstand aus dem
-Browser schaltet sie nicht frei. Nach ungewissem Ergebnis **Ergebnis des genauen Vorgangs
+Admin-Anmeldung, nicht die MCP-Clientfreigabe. Projektgebundene Vorschläge benötigen zusätzlich die aktuelle Loxone-Verbindung.
+Eine feste Loopback-Brücke prüft Admin-Anmeldung und frischen Projektzugriff separat;
+ein Projektstand aus dem Browser autorisiert keinen Vorgang. Nach ungewissem Ergebnis **Ergebnis des genauen Vorgangs
 prüfen**, ohne erneut zu schreiben. Adress- und Präfixziele bleiben getrennt;
 Importquellen, ETS und Loxone bleiben unverändert.
 
 Offene Vorgangskennungen und Revisionen bleiben höchstens sieben Tage im Sitzungsspeicher dieses Tabs erhalten, ohne Feldwerte oder Zugangsdaten. Dadurch bleibt die genaue Ergebnisprüfung nach Neuladen verfügbar. Eine eindeutige Ablehnung vor der Übernahme entfernt sie. Eine ungeklärte Prüfung lässt sich nach Kontrolle des aktuellen Katalogs ausdrücklich verwerfen; dabei wird nicht erneut geschrieben.
+
+## Akzeptierte ETS-Exportvorschläge
+
+Akzeptierte `ets_export`-Zeilen für Namen/Beschreibungen auswählen und die
+bestehende XML-Vorschau öffnen. Lokale Overrides und Importfelder bleiben
+unverändert. Zulässig sind ausschließlich bestehende XML-belegte Adressen mit
+rekonstruierbaren Metadaten; Präfixe, neue Adressen und bewusst leere
+Beschreibungen werden abgewiesen. Die Vorschau hält die genaue Auswahl und
+Revisionen in derselben Admin-Sitzung. Der Download prüft Ablauf, Entscheidungen,
+Ziel, Katalog-/Präfixrevisionen und gegebenenfalls den autorisierten Projektstand
+erneut. Änderungen erfordern eine neue Vorschau. Den experimentellen Download
+nur für eine gesicherte ETS-Projektkopie bestätigen. Echte ETS-Kompatibilität
+bleibt unbestätigt (#419); MCP lädt keine ETS-Dateien herunter und schreibt sie
+nicht. Das Ziel Loxone Config bleibt ein Vorschlag für einen künftig verfügbaren
+Writer, kein umgesetzter Projektschreibzugriff.

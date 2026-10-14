@@ -11,6 +11,8 @@
   let target = null;
   let selected = null;
   let busy = false;
+  const exportSelection = new Set();
+  const exportButton = document.getElementById('knx-corrections-export');
   let pendingApply = null;
   const reconcile = document.getElementById('knx-corrections-reconcile');
   const forget = document.getElementById('knx-corrections-forget');
@@ -31,7 +33,13 @@
       pendingApply = retained.arguments; reconcile.hidden = false; forget.hidden = false;
     }
   } catch (_) { /* No recovered write is ever sent automatically. */ }
-  const api = async (action, payload) => {
+  const api = async (action, payload, withProject = false) => {
+    if (withProject) {
+      if (!window.MCPKnxProject?.adminRequest) {
+        const error = new Error('knx_project_evidence_required'); error.code = 'knx_project_evidence_required'; throw error;
+      }
+      return window.MCPKnxProject.adminRequest(action, payload);
+    }
     const response = await fetch('knx.cgi', {method: 'POST', credentials: 'same-origin',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: new URLSearchParams({action, payload: JSON.stringify(payload)})});
@@ -69,7 +77,8 @@
       draft_revision: selected.draft_revision, offset, detail: true});
     const change = complete.changes[0];
     if (!change || change.change_id !== item.change_id || change.decision !== 'accepted'
-        || complete.catalog_stale || complete.manual_stale || complete.project_status !== 'not_required')
+        || complete.catalog_stale || complete.manual_stale
+        || !['not_required', 'not_checked'].includes(complete.project_status))
       throw new Error('correction_changed');
     const question = `${section.dataset.confirmApply}\n${change.identity} · ${change.field} / ${change.operation}\n`
       + `${display(change.manual)} → ${display(change.proposed)}`;
@@ -77,10 +86,12 @@
     updatePending({target, draft_id: selected.draft_id, draft_revision: selected.draft_revision,
       catalog_revision: selected.catalog_revision, manual_revision: selected.manual_revision,
       request_id: requestId(), approved_change_ids: [change.change_id],
-      storage: change.kind === 'prefix' ? 'prefix_labels' : 'addresses', confirmed: true});
+      storage: change.kind === 'prefix' ? 'prefix_labels' : 'addresses', confirmed: true,
+      use_project_evidence: Boolean(selected.project_binding_digest)});
     // Once sent, retain only reconciliation. Never automatically repeat an uncertain write.
     let result;
-    try { result = await api('knx_correction_apply', {...pendingApply, action: 'apply'}); }
+    const {use_project_evidence, ...parameters} = pendingApply;
+    try { result = await api('knx_correction_apply', {...parameters, action: 'apply'}, use_project_evidence); }
     catch (error) {
       const rejected = ['knx_revision_conflict', 'knx_target_conflict', 'knx_correction_invalid',
         'knx_correction_not_accepted', 'knx_draft_unavailable', 'knx_draft_expired',
@@ -146,6 +157,8 @@
   const inspect = async (draft, offset = 0) => {
     const data = await api('knx_correction_inspect', {target, draft_id: draft.draft_id,
       draft_revision: draft.draft_revision, offset});
+    if (!selected || selected.draft_id !== data.draft.draft_id
+        || selected.draft_revision !== data.draft.draft_revision) exportSelection.clear();
     selected = {...data.draft, next_offset: data.next_offset};
     values.textContent = '';
     values.dataset.emptyMessage = section.dataset.noChanges;
@@ -156,7 +169,17 @@
       cell(row, section.dataset[item.decision || 'proposed']);
       const actions = document.createElement('td');
       if (!data.catalog_stale && !data.manual_stale) {
-        if (!pendingApply && data.project_status === 'not_required' && item.decision === 'accepted'
+        if (item.decision === 'accepted' && item.destination === 'ets_export') {
+          const choice = document.createElement('input'); choice.type = 'checkbox';
+          choice.setAttribute('aria-label', `${section.dataset.selectExport}: ${item.identity} · ${item.field}`);
+          choice.checked = exportSelection.has(item.change_id);
+          choice.addEventListener('change', () => {
+            if (choice.checked) exportSelection.add(item.change_id); else exportSelection.delete(item.change_id);
+            exportButton.hidden = !exportSelection.size;
+          });
+          actions.append(choice);
+        }
+        if (!pendingApply && ['not_required', 'not_checked'].includes(data.project_status) && item.decision === 'accepted'
             && item.destination === 'local_metadata') {
           actions.append(button(section.dataset.applyLocal, () => applyLocal(item, offset + index)));
         }
@@ -180,9 +203,11 @@
     status.textContent = [data.catalog_stale || data.manual_stale ? section.dataset.stale : '',
       data.project_status === 'not_checked' ? section.dataset.unchecked : ''].filter(Boolean).join(' ');
     more.hidden = data.next_offset === null;
+    exportButton.hidden = !exportSelection.size || data.catalog_stale || data.manual_stale;
   };
   const renderDrafts = (data) => {
     target = data.target; selected = null; list.textContent = ''; values.textContent = '';
+    exportSelection.clear(); exportButton.hidden = true;
     values.dataset.emptyMessage = section.dataset.selectDraft;
     more.hidden = true; status.textContent = '';
     for (const draft of data.drafts) {
@@ -200,9 +225,22 @@
   const reload = async () => renderDrafts(await api('knx_correction_page', target ? {target} : {}));
   more.addEventListener('click', () => { if (selected) void run(() => inspect(selected, selected.next_offset)); });
   document.getElementById('knx-corrections-reload').addEventListener('click', () => void run(reload));
+  exportButton.addEventListener('click', () => void run(async () => {
+    if (!selected || !exportSelection.size) return;
+    const payload = {target, draft_id:selected.draft_id, draft_revision:selected.draft_revision,
+      catalog_revision:selected.catalog_revision, manual_revision:selected.manual_revision,
+      approved_change_ids:[...exportSelection]};
+    const withProject = Boolean(selected.project_binding_digest);
+    // Keep the existing XML section's cancellation available if preview response is lost.
+    document.getElementById('knx-page').dispatchEvent(new CustomEvent('knx-correction-export-start'));
+    const result = await api('knx_correction_xml_preview', payload, withProject);
+    document.getElementById('knx-page').dispatchEvent(new CustomEvent('knx-correction-export-preview',
+      {detail:{...result, use_project_evidence:withProject}}));
+  }));
   reconcile.addEventListener('click', () => void run(async () => {
     if (!pendingApply) return;
-    const result = await api('knx_correction_apply', {...pendingApply, action: 'reconcile'});
+    const {use_project_evidence, ...parameters} = pendingApply;
+    const result = await api('knx_correction_apply', {...parameters, action: 'reconcile'});
     status.textContent = result.outcome === 'applied' ? section.dataset.applied : section.dataset.notObserved;
     if (result.outcome === 'applied') updatePending(null);
   }));
