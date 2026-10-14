@@ -20,6 +20,139 @@ from mcpserver.knx.model import KnxError
 from mcpserver.knx.store import KnxStore
 
 
+@pytest.mark.parametrize("kind", ["address", "prefix"])
+def test_admin_applies_only_confirmed_accepted_local_selection(tmp_path, monkeypatch, kind):
+    target = "https://first.example"
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "b" * 64)
+    config = replace(PluginConfig.defaults(), loxone_endpoint=target)
+    configs = AtomicConfigStore(tmp_path / "config.json")
+    configs.save(config)
+    store = KnxStore(tmp_path / "knx" / "metadata.sqlite3")
+    store.put(
+        target, 0, dict(address="1/2/3", address_format="three_level", fields={"name": "Local"})
+    )
+    owner = CorrectionDraftStore(tmp_path / "knx" / "drafts.sqlite3", "a" * 64)
+    change = dict(
+        destination="local_metadata",
+        kind=kind,
+        address_format="three_level",
+        field="name" if kind == "address" else "label",
+        operation="set",
+        value="Agreed",
+    )
+    change["address" if kind == "address" else "prefix"] = "1/2/3" if kind == "address" else "1/2"
+    plan = CorrectionService(store, owner).plan(
+        config, target, 1, labels_revision(config, target), [change]
+    )
+    created = owner.create_correction(target, 1, plan["manual_revision"], plan["changes"])
+    payload = dict(
+        target=hashlib.sha256(target.encode()).hexdigest(),
+        draft_id=created["draft_id"],
+        draft_revision=1,
+        catalog_revision=1,
+        manual_revision=plan["manual_revision"],
+        request_id="c" * 32,
+        approved_change_ids=[created["changes"][0]["change_id"]],
+        storage="addresses" if kind == "address" else "prefix_labels",
+        confirmed=True,
+        action="apply",
+    )
+    with pytest.raises(AdminError) as unaccepted:
+        dispatch_knx("knx_correction_apply", payload, configs)
+    assert unaccepted.value.code == "knx_correction_not_accepted"
+    changes = [{**row, "decision": "accepted"} for row in created["changes"]]
+    owner.update_correction(created["draft_id"], target, 1, changes)
+    payload["draft_revision"] = 2
+    with pytest.raises(AdminError) as unconfirmed:
+        dispatch_knx("knx_correction_apply", {**payload, "confirmed": False}, configs)
+    assert unconfirmed.value.code == "knx_correction_invalid"
+    result = dispatch_knx("knx_correction_apply", payload, configs)
+    assert result["outcome"] == "applied"
+    assert (
+        not result["loxone_written"] and not result["import_written"] and not result["exports_file"]
+    )
+    # Exact receipts remain observable after the source revision changes.
+    observed = dispatch_knx("knx_correction_apply", {**payload, "action": "reconcile"}, configs)
+    assert observed == result
+    assert dispatch_knx("knx_correction_apply", payload, configs) == result
+    absent = dispatch_knx(
+        "knx_correction_apply", {**payload, "action": "reconcile", "request_id": "d" * 32}, configs
+    )
+    assert absent["outcome"] == "not_observed" and not absent["automatic_retry_allowed"]
+    if kind == "address":
+        assert store.page(target)["items"][0]["effective"]["name"] == "Agreed"
+    else:
+        assert configs.load().knx_address_taxonomy[0].label == "Agreed"
+        assert store.page(target)["items"][0]["effective"]["name"] == "Local"
+    assert not configs.load().loxberry_knx_write_enabled
+    owner.discard_correction(created["draft_id"], target, 2)
+    assert (
+        dispatch_knx("knx_correction_apply", {**payload, "action": "reconcile"}, configs) == result
+    )
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "e" * 64)
+    foreign = dispatch_knx("knx_correction_apply", {**payload, "action": "reconcile"}, configs)
+    assert foreign["outcome"] == "not_observed"
+
+
+def test_admin_project_bound_selection_cannot_use_browser_binding(tmp_path, monkeypatch):
+    target = "https://first.example"
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "b" * 64)
+    config = replace(PluginConfig.defaults(), loxone_endpoint=target)
+    configs = AtomicConfigStore(tmp_path / "config.json")
+    configs.save(config)
+    store = KnxStore(tmp_path / "knx" / "metadata.sqlite3")
+    store.put(
+        target, 0, dict(address="1/2/3", address_format="three_level", fields={"name": "Local"})
+    )
+    owner = CorrectionDraftStore(tmp_path / "knx" / "drafts.sqlite3", "a" * 64)
+    plan = CorrectionService(store, owner).plan(
+        config,
+        target,
+        1,
+        labels_revision(config, target),
+        [
+            dict(
+                destination="local_metadata",
+                kind="address",
+                address_format="three_level",
+                address="1/2/3",
+                field="name",
+                operation="set",
+                value="Agreed",
+            )
+        ],
+    )
+    created = owner.create_correction(
+        target,
+        1,
+        plan["manual_revision"],
+        [{**row, "decision": "accepted"} for row in plan["changes"]],
+        project_binding="unverified-project",
+    )
+    payload = dict(
+        target=hashlib.sha256(target.encode()).hexdigest(),
+        draft_id=created["draft_id"],
+        draft_revision=1,
+        catalog_revision=1,
+        manual_revision=plan["manual_revision"],
+        request_id="c" * 32,
+        approved_change_ids=[created["changes"][0]["change_id"]],
+        storage="addresses",
+        confirmed=True,
+        action="apply",
+    )
+    with pytest.raises(AdminError) as bound:
+        dispatch_knx("knx_correction_apply", payload, configs)
+    assert bound.value.code == "knx_project_evidence_required"
+    with pytest.raises(AdminError):
+        dispatch_knx(
+            "knx_correction_apply", {**payload, "project_binding": "unverified-project"}, configs
+        )
+    assert store.page(target)["items"][0]["effective"]["name"] == "Local"
+
+
 @pytest.mark.parametrize("combined", [False, True])
 def test_draft_list_does_not_load_project_analysis(tmp_path, combined):
     script = """
@@ -303,5 +436,73 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
         text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_admin_local_apply_confirms_full_value_and_reconciles_without_retry():
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const dom=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'});
+const w=dom.window, calls=[];
+const draft={draft_id:'a'.repeat(48),draft_revision:2,catalog_revision:1,
+ manual_revision:'b'.repeat(64)};
+const full='Full synthetic agreed name';
+const item={change_id:'c'.repeat(24),identity:'1/2/3',kind:'address',field:'name',operation:'set',
+ destination:'local_metadata',decision:'accepted',imported:{state:'missing'},manual:{state:'value',value:'Original'},
+ proposed:{state:'value',value:'truncated',truncated:true}};
+let confirm=false,questions=[];
+w.MCPKnx={ask:async text=>{questions.push(text);return confirm;}};
+w.confirm=()=>{throw Error('native dialog forbidden');};
+w.fetch=async (_,options)=>{
+ const action=options.body.get('action'), payload=JSON.parse(options.body.get('payload'));
+ calls.push({action,payload});
+ let data;
+ if(action==='knx_correction_page') data={
+ target:'d'.repeat(64),drafts:[{...draft,change_count:1,expires_at:2000000000}]};
+ else if(action==='knx_correction_apply') {
+   if(payload.action==='apply') throw Error('uncertain response');
+   data={outcome:'applied'};
+ } else data={draft,next_offset:null,catalog_stale:false,manual_stale:false,
+ project_status:'not_required',
+   changes:[payload.detail?{...item,proposed:{state:'value',value:full}}:item]};
+ return {ok:true,json:async()=>({ok:true,data})};
+};
+const tick=()=>new Promise(r=>setTimeout(r,0));
+(async()=>{
+ w.eval(fs.readFileSync('webfrontend/htmlauth/knx-corrections.js','utf8'));
+ await tick();await tick();
+ w.document.querySelector('#knx-corrections-list button').click();
+ await tick();await tick();
+ w.document.querySelector('#knx-corrections-values button').click();
+ await tick();await tick();
+ assert.equal(calls.filter(c=>c.action==='knx_correction_apply').length,0);
+ assert.ok(questions[0].includes(full));assert.ok(!questions[0].includes('truncated'));
+ confirm=true;w.document.querySelector('#knx-corrections-values button').click();
+ await tick();await tick();
+ assert.equal(calls.filter(c=>c.action==='knx_correction_apply').length,1);
+ const first=calls.at(-1).payload;
+ assert.deepEqual(first.approved_change_ids,[item.change_id]);assert.equal(first.storage,'addresses');
+ const reconcile=w.document.getElementById('knx-corrections-reconcile');
+ assert.equal(reconcile.hidden,false);
+ reconcile.click();
+ await tick();await tick();
+ const observed=calls.at(-1).payload;
+ assert.equal(observed.action,'reconcile');assert.equal(observed.request_id,first.request_id);
+ assert.equal(calls.filter(c=>c.payload.action==='apply').length,1);
+ assert.equal(reconcile.hidden,true);dom.window.close();
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+    node = shutil.which("node")
+    assert node is not None
+    result = subprocess.run(
+        [node, "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr

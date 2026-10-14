@@ -11,6 +11,8 @@
   let target = null;
   let selected = null;
   let busy = false;
+  let pendingApply = null;
+  const reconcile = document.getElementById('knx-corrections-reconcile');
   const api = async (action, payload) => {
     const response = await fetch('knx.cgi', {method: 'POST', credentials: 'same-origin',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -41,6 +43,28 @@
     control.type = 'button'; control.className = 'lb-button'; control.textContent = text;
     control.addEventListener('click', () => void run(action));
     return control;
+  };
+  const applyLocal = async (item, offset) => {
+    const complete = await api('knx_correction_inspect', {target, draft_id: selected.draft_id,
+      draft_revision: selected.draft_revision, offset, detail: true});
+    const change = complete.changes[0];
+    if (!change || change.change_id !== item.change_id || change.decision !== 'accepted'
+        || complete.catalog_stale || complete.manual_stale || complete.project_status !== 'not_required')
+      throw new Error('correction_changed');
+    const question = `${section.dataset.confirmApply}\n${change.identity} · ${change.field} / ${change.operation}\n`
+      + `${display(change.manual)} → ${display(change.proposed)}`;
+    if (!await window.MCPKnx.ask(question)) return;
+    pendingApply = {target, draft_id: selected.draft_id, draft_revision: selected.draft_revision,
+      catalog_revision: selected.catalog_revision, manual_revision: selected.manual_revision,
+      request_id: requestId(), approved_change_ids: [change.change_id],
+      storage: change.kind === 'prefix' ? 'prefix_labels' : 'addresses', confirmed: true};
+    reconcile.hidden = false;
+    // Once sent, retain only reconciliation. Never automatically repeat an uncertain write.
+    const result = await api('knx_correction_apply', {...pendingApply, action: 'apply'});
+    if (result.outcome !== 'applied') throw new Error('correction_uncertain');
+    pendingApply = null; reconcile.hidden = true;
+    await reload();
+    status.textContent = section.dataset.applied;
   };
   const editor = async (container, item, offset) => {
     const data = await api('knx_correction_inspect', {target, draft_id: selected.draft_id,
@@ -104,6 +128,10 @@
       cell(row, section.dataset[item.decision || 'proposed']);
       const actions = document.createElement('td');
       if (!data.catalog_stale && !data.manual_stale) {
+        if (!pendingApply && data.project_status === 'not_required' && item.decision === 'accepted'
+            && item.destination === 'local_metadata') {
+          actions.append(button(section.dataset.applyLocal, () => applyLocal(item, offset + index)));
+        }
         for (const decision of ['accepted', 'rejected', 'proposed']) {
           const text = {accepted: section.dataset.accept, rejected: section.dataset.reject,
             proposed: section.dataset.reset}[decision];
@@ -144,6 +172,12 @@
   const reload = async () => renderDrafts(await api('knx_correction_page', target ? {target} : {}));
   more.addEventListener('click', () => { if (selected) void run(() => inspect(selected, selected.next_offset)); });
   document.getElementById('knx-corrections-reload').addEventListener('click', () => void run(reload));
+  reconcile.addEventListener('click', () => void run(async () => {
+    if (!pendingApply) return;
+    const result = await api('knx_correction_apply', {...pendingApply, action: 'reconcile'});
+    status.textContent = result.outcome === 'applied' ? section.dataset.applied : section.dataset.notObserved;
+    if (result.outcome === 'applied') { pendingApply = null; reconcile.hidden = true; }
+  }));
   if (window.MCPKnx?.initialSections) {
     void run(async () => {
       const initial = (await window.MCPKnx.initialSections)?.knx_correction_page;

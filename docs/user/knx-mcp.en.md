@@ -227,3 +227,10 @@ before upgrading; older code cannot read schema 12.
 General settings saves preserve the current KNX labels and their receipts, even
 when a full configuration document includes stale copies. Use the revision-bound
 KNX label action to edit labels.
+
+The authenticated Admin page can apply an individually selected, accepted local-only
+change after an HTML confirmation showing its full value. This uses Admin authentication,
+not MCP client grants. Project-bound proposals remain blocked until server-side fresh
+project authorization is available; browser-supplied stand identifiers do not unlock them.
+After an uncertain result, use **Check the exact operation outcome** without repeating
+the write. Address/prefix destinations remain separate and imports/ETS/Loxone unchanged.
