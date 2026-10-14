@@ -38,6 +38,7 @@ from mcpserver.knx.import_service import select_candidates
 from mcpserver.knx.store import KnxStore
 from mcpserver.knx.xml_adapter import parse_xml
 from mcpserver.loxone.endpoint import MiniserverEndpoint
+from mcpserver.loxone.runtime import RuntimeUnavailable
 
 TARGET = "https://first.example"
 SESSION = "b" * 64
@@ -419,14 +420,12 @@ def test_bridge_rechecks_actual_project_binding_at_effect_and_result_boundaries(
         ),
         None,
     )
-    first = [True]
+    calls = [0]
 
     async def current(*args, **kwargs):
-        if first[0]:
-            first[0] = False
-            return original
-        effect = kwargs.get("worker_admitted", False)
-        return changed if effect == (changed_at == "effect") else original
+        calls[0] += 1
+        changed_call = 2 if changed_at == "effect" else 3
+        return changed if calls[0] == changed_call else original
 
     loader.side_effect = current
     with TestClient(app, client=("127.0.0.1", 12345)) as client:
@@ -438,3 +437,22 @@ def test_bridge_rechecks_actual_project_binding_at_effect_and_result_boundaries(
     assert result["error"]["code"] == expected_code
     expected_name = "Original" if changed_at == "effect" else "Primary B"
     assert store.page(TARGET)["items"][0]["effective"]["name"] == expected_name
+
+
+def test_bridge_uses_only_one_family_read_admission_for_effect_and_release(bridge):
+    _, app, body, headers, loader, _, _, _, _ = bridge
+    original = loader.return_value
+    ordinary = [0]
+
+    async def one_read_token(*args, **kwargs):
+        if not kwargs.get("worker_admitted"):
+            ordinary[0] += 1
+            if ordinary[0] > 1:
+                raise RuntimeUnavailable("Synthetic single family read budget exhausted")
+        return original
+
+    loader.side_effect = one_read_token
+    with TestClient(app, client=("127.0.0.1", 12345)) as client:
+        result = client.post(PATH, content=body, headers=headers).json()
+    assert result["ok"] and result["data"]["outcome"] == "applied"
+    assert ordinary[0] == 1 and loader.await_count == 3

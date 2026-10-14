@@ -293,11 +293,16 @@ class AdminProjectBridge:
                 admin_session=session,
                 metadata_path=self.metadata_path,
             )
-        try:
-            await recheck(worker_admitted=False)
-            await asyncio.to_thread(self.fresh, access)
-        except (PermissionError, ProjectError, RuntimeUnavailable, KnxError):
-            raise AdminError(
-                "Operation outcome uncertain", code="write_outcome_uncertain"
-            ) from None
-        return result
+            try:
+                # One request spends one family read token. Retain its worker
+                # lease through final evidence checks rather than readmitting it.
+                if value["action"] == "knx_correction_apply":
+                    await recheck(worker_admitted=True)
+                # The export adapter already rechecks project evidence after
+                # serialization, then checks proposal expiry before returning.
+                await asyncio.to_thread(self.fresh, access)
+            except (PermissionError, ProjectError, RuntimeUnavailable, KnxError):
+                raise AdminError(
+                    "Operation outcome uncertain", code="write_outcome_uncertain"
+                ) from None
+            return result

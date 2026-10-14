@@ -561,7 +561,10 @@ def test_admin_storage_error_audit_matches_uncertain_apply(
     assert f"mode={mode} outcome={expected}" in caplog.text
 
 
-def test_bridged_storage_failure_audit_remains_uncertain(tmp_path, monkeypatch, caplog):
+@pytest.mark.parametrize("mode, outcome", [("apply", "uncertain"), ("reconcile", "rejected")])
+def test_bridged_storage_failure_audit_matches_operation(
+    tmp_path, monkeypatch, caplog, mode, outcome
+):
     from mcpserver.knx import admin_bridge
 
     configs = AtomicConfigStore(tmp_path / "config.json")
@@ -573,6 +576,6 @@ def test_bridged_storage_failure_audit_remains_uncertain(tmp_path, monkeypatch, 
     monkeypatch.setattr(admin_bridge, "forward", failed)
     caplog.set_level("INFO", logger="mcpserver.knx.admin")
     with pytest.raises(AdminError):
-        dispatch_knx("knx_correction_apply", {"action": "apply"}, configs)
-    assert "mode=apply outcome=uncertain" in caplog.text
+        dispatch_knx("knx_correction_apply", {"action": mode}, configs)
+    assert f"mode={mode} outcome={outcome}" in caplog.text
     assert "Synthetic storage failure" not in caplog.text

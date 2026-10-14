@@ -143,7 +143,9 @@ def dispatch_knx(
         raise
     except AdminError as exc:
         if exc.code in {"persistence_uncertain", "write_outcome_uncertain"} or (
-            action == "knx_correction_apply" and exc.code == "knx_storage_failed"
+            action == "knx_correction_apply"
+            and payload.get("action") == "apply"
+            and exc.code == "knx_storage_failed"
         ):
             outcome = "uncertain"
         raise
