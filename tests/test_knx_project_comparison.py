@@ -3,7 +3,7 @@
 import asyncio
 import json
 import threading
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -193,6 +193,94 @@ def test_missing_names_and_unicode_are_observations_not_inferred_matches(tmp_pat
     assert not unpack_observation(
         comparison.observe("target", 3, {2563: ("Stra\u00dfe",)})["rows"][0]
     )["names_differ"]
+
+
+@pytest.mark.parametrize(
+    ("imported", "names", "different", "ambiguous", "assessed"),
+    [
+        ({"name": "ETS"}, ("ETS", "ETS"), False, False, True),
+        ({"name": "ETS"}, ("ETS", "Other", "ETS"), True, True, True),
+        ({"name": ""}, ("", ""), False, False, True),
+        ({"name": ""}, ("", "Other"), True, True, True),
+        ({"name": "ETS"}, (), False, False, False),
+        ({"description": "Name unavailable"}, ("A", "B"), False, True, False),
+    ],
+)
+def test_bulk_names_preserve_empty_unknown_and_duplicate_sources(
+    tmp_path, imported, names, different, ambiguous, assessed
+):
+    store, comparison = catalog(tmp_path)
+    with store.connection() as db:
+        db.execute("UPDATE addresses SET imported=? WHERE address=2563", (json.dumps(imported),))
+        db.commit()
+    result = comparison.observe("target", 3, {2563: names})
+    row = unpack_observation(result["rows"][0])
+    assert row["names_differ"] is different
+    assert row["ambiguous_names"] is ambiguous
+    assert row["name_comparison"] == ("compared" if assessed else "unknown")
+    assert result["counts"]["name_deviations"] == int(different)
+    assert result["counts"]["name_comparisons_unknown"] == int(not assessed)
+    assert result["counts"]["ambiguous_project_names"] == int(ambiguous)
+
+
+def test_maximum_import_comparison_uses_constant_scalar_queries(tmp_path, monkeypatch):
+    store = KnxStore(tmp_path / "maximum.sqlite3")
+    with store.connection() as db:
+        db.execute("INSERT INTO targets VALUES('target',1)")
+        db.executemany(
+            "INSERT INTO addresses(target,address,format,original,imported,overrides) "
+            "VALUES(?,?,?,?,?,?)",
+            (
+                ("target", number, "three_level", "0/0/0", '{"name":"ETS"}', "{}")
+                for number in range(65536)
+            ),
+        )
+        db.commit()
+    metadata = ProjectMetadata(store.path)
+    connection = metadata.store.connection
+    statements = []
+
+    @contextmanager
+    def traced_connection():
+        with connection() as db:
+            db.set_trace_callback(statements.append)
+            yield db
+
+    monkeypatch.setattr(metadata.store, "connection", traced_connection)
+    # Full counts include common addresses beyond the bounded output page.
+    names = dict.fromkeys(range(30000, 65536), ("ETS", "ETS"))
+    result = ProjectComparison(metadata).observe("target", 1, names)
+    assert result["counts"] == {
+        "common": 35536,
+        "import_only": 30000,
+        "observed_project_only": 0,
+        "name_deviations": 0,
+        "name_comparisons_unknown": 0,
+        "ambiguous_project_names": 0,
+    }
+    assert [row & 65535 for row in result["rows"]] == list(range(MAX_COMPARISON_FINDINGS))
+    assert result["truncated"]
+    assert len(statements) < 30
+    assert not any(
+        "CREATE TEMP" in statement or "INSERT INTO" in statement for statement in statements
+    )
+    assert sum("json_group_array(json_array" in statement for statement in statements) == 1
+    assert metadata.cache_bytes == 0
+    # A small project reuses the same query shape; it does not fetch all ETS names.
+    statements.clear()
+    short = ProjectComparison(metadata).observe("target", 1, {65535: ("Other",)})
+    assert short["counts"]["common"] == short["counts"]["name_deviations"] == 1
+    assert len(statements) < 30
+    assert sum("json_group_array(json_array" in statement for statement in statements) == 1
+
+
+def test_elapsed_comparison_budget_rejects_python_classification(tmp_path, monkeypatch):
+    import mcpserver.knx.project_comparison as domain
+
+    _, comparison = catalog(tmp_path)
+    monkeypatch.setattr(domain, "monotonic", lambda: 2)
+    with pytest.raises(KnxError, match="knx_storage_failed"):
+        comparison.observe("target", 3, {2563: ("ETS",)}, deadline=1)
 
 
 @pytest.mark.parametrize("number", [-1, 65536, True])

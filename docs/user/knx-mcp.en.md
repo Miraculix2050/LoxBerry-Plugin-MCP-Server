@@ -127,6 +127,11 @@ or whether a client can execute the task.
 
 ## Compact ETS comparison
 
+Comparison reads ETS names for common addresses in one batch; other metadata is
+loaded only for the delivered page. Counts still cover the entire observed
+inventory even when the findings list is bounded. This optimization preserves
+name precedence, authorization checks and revision checks.
+
 Explicitly select `analyses=["ets_project_comparison"]`, `scope="knx"` and
 `view="summary"` for counts without individual address detail reads. Use
 `view="findings"` for paginated source evidence or `view="detail"` with an exact

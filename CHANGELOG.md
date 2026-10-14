@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reduce ETS/project comparison work with a batched common-address name projection
+  and bounded numeric output keys. Preserve exact source-name semantics, full
+  counts, revision checks and paginated metadata hydration (#458).
+
 - Apply accepted project-bound KNX proposals from the Admin page with independent
   Admin and fresh Loxone authorization. Hand selected accepted ETS name/description
   proposals into the existing session-bound experimental XML preview; revalidate
