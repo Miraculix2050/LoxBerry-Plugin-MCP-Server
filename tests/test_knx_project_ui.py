@@ -107,7 +107,8 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('scope-list').children.length,0);
   assert.equal(el('scope-unavailable').hidden,false);
   authOptions.state.oauth.scope='loxone:read';authOptions.renderConnection();
-  await assert.rejects(()=>w.MCPKnxProject.adminRequest('arbitrary_action',{}),/knx_correction_invalid/);
+  await assert.rejects(()=>w.MCPKnxProject.adminRequest('arbitrary_action',{}),
+    /knx_correction_invalid/);
   assert.equal(adminCall,undefined);
   const adminResult=await w.MCPKnxProject.adminRequest('knx_correction_apply',{target:'binding'});
   assert.equal(adminResult.outcome,'applied');
