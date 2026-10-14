@@ -28,11 +28,13 @@ w.MCPKnx={snapshot:()=>saved};
 w.confirm=w.alert=w.prompt=()=>{throw new Error('Native dialog forbidden');};
 for(const name of ['explorer-core.js','explorer-state.js'])
   w.eval(fs.readFileSync('webfrontend/htmlauth/'+name,'utf8'));
-let authOptions, requests=[], mode='ok', pendingResolve;
+let authOptions, requests=[], mode='ok', pendingResolve, adminCall;
 w.McpExplorerAuth={create(options){authOptions=options;return{
   discover:async()=>({authorizationMetadata:{},resourceMetadata:{resource:'local'}}),
   refreshAccessToken:async()=>options.explorerState.updateToken({access_token:'synthetic',scope:'loxone:read',
-    expires_in:60,expires_at:Date.now()/1000+60}),accessToken:async()=>'synthetic',fetchWithTimeout:async()=>{},
+    expires_in:60,expires_at:Date.now()/1000+60}),accessToken:async()=>'synthetic',fetchWithTimeout:async(url,options)=>{
+ adminCall={url,options};return{ok:true,json:async()=>({ok:true,data:{outcome:'applied'}})};
+ },
   explorerSession:async()=>{},openAuthorizationPopup:()=>null,authorize:async()=>{}
 };}};
 const item={group_address:'1/2/3',comparison:{address_id:2563,relation:'common',names_differ:true,
@@ -105,6 +107,16 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('scope-list').children.length,0);
   assert.equal(el('scope-unavailable').hidden,false);
   authOptions.state.oauth.scope='loxone:read';authOptions.renderConnection();
+  await assert.rejects(()=>w.MCPKnxProject.adminRequest('arbitrary_action',{}),/knx_correction_invalid/);
+  assert.equal(adminCall,undefined);
+  const adminResult=await w.MCPKnxProject.adminRequest('knx_correction_apply',{target:'binding'});
+  assert.equal(adminResult.outcome,'applied');
+  assert.equal(adminCall.url,'knx.cgi');
+  assert.equal(adminCall.options.credentials,'same-origin');
+  assert.equal(adminCall.options.headers['X-Loxone-Authorization'],'Bearer synthetic');
+  assert(!Object.hasOwn(adminCall.options.headers,'Authorization'));
+  assert(!adminCall.options.body.toString().includes('synthetic'));
+
   await click('run');
   assert.equal(requests[0].name,'loxone_analyze_project');
   assert.equal(requests[0].args.analyses.join(','),'ets_project_comparison');

@@ -224,7 +224,31 @@
       generation: frame.generation, target: frame.target, revision: frame.revision}),
       target: frame.target, revision: frame.revision, items: frame.evidence};
   };
-  window.MCPKnxProject = Object.freeze({snapshot: exportSnapshot, validate: async binding => {
+  window.MCPKnxProject = Object.freeze({snapshot: exportSnapshot,
+    adminRequest: async (action, payload) => {
+      if (!['knx_correction_apply', 'knx_correction_xml_preview', 'knx_correction_xml_download'].includes(action))
+        throw new Error('knx_correction_invalid');
+      const unavailable = () => {const error = new Error('knx_project_evidence_required');
+        error.code = 'knx_project_evidence_required'; return error;};
+      const session = state.oauth;
+      if (!session) throw unavailable();
+      let token;
+      try { token = await auth.accessToken(); } catch (_) { throw unavailable(); }
+      if (state.oauth !== session || Date.now() >= session.resumeUntil) throw unavailable();
+      // Preserve Apache Admin authentication. The separate Loxone token is a
+      // header only; the helper forwards it to the fixed loopback service.
+      const response = await auth.fetchWithTimeout('knx.cgi', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/x-www-form-urlencoded', 'X-Loxone-Authorization':`Bearer ${token}`},
+        body:new URLSearchParams({action, payload:JSON.stringify(payload)})}, 60000);
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        const error = new Error('correction_unavailable'); error.code = result.error?.code; throw error;
+      }
+      if (state.oauth !== session) {
+        const error = new Error('write_outcome_uncertain'); error.code = 'write_outcome_uncertain'; throw error;
+      }
+      return result.data;
+    }, validate: async binding => {
     const snapshot = exportSnapshot();
     if (!snapshot || snapshot.binding !== binding) throw new Error('knx_revision_conflict');
     const expected = frame;

@@ -102,3 +102,46 @@ const click = async id => {el(id).click(); await Promise.all(pending.splice(0));
 """
     result = subprocess.run(["node", "-e", script, invalidated], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("project_bound", [False, True])
+def test_accepted_handoff_reuses_explicit_xml_confirmation_and_correct_authority(project_bound):
+    script = r"""
+const assert=require('node:assert/strict'), fs=require('node:fs'), {JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const w=new JSDOM(html,{url:'https://example.invalid/knx.cgi',runScripts:'outside-only'}).window;
+const page=w.document.getElementById('knx-page'), pending=[], calls=[];
+const el=id=>w.document.getElementById('knx-xml-'+id);
+let downloads=0; const bound=process.argv[1]==='true', saved={target:'target',revision:1};
+const api=authority=>async(action,payload)=>{calls.push({authority,action,payload});
+ assert.equal(action,'knx_correction_xml_download');
+ return {...saved,content:'<xml/>',filename:'experimental.xml'};};
+w.MCPKnx={snapshot:()=>saved,api:api('admin'),run:operation=>{
+ const task=operation();pending.push(task);return task;}};
+w.MCPKnxProject={snapshot:()=>null,validate:()=>{throw new Error('legacy path forbidden');},
+ adminRequest:api('admin-and-project')};
+w.confirm=w.alert=w.prompt=()=>{throw new Error('native dialog forbidden');};
+w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};
+w.HTMLAnchorElement.prototype.click=function(){downloads++;};
+w.eval(fs.readFileSync('webfrontend/htmlauth/knx-xml-export.js','utf8'));
+(async()=>{
+ page.dispatchEvent(new w.CustomEvent('knx-correction-export-start'));
+ page.dispatchEvent(new w.CustomEvent('knx-correction-export-preview',{detail:{...saved,
+ correction_handoff:true,use_project_evidence:bound,draft_id:'draft',bytes:100,groups:{},
+ rows:[{address:'0/0/1',before:{Name:'ETS'},after:{Name:'<img src=x>'}}]}}));
+ assert(el('download').disabled);assert(!el('confirm').disabled);
+ assert.equal(el('result').querySelectorAll('img').length,0);
+ el('confirm').click();assert(!el('download').disabled);
+ el('download').click();await Promise.all(pending.splice(0));
+ assert.equal(downloads,1);assert.equal(calls.length,1);
+ assert.equal(calls[0].authority,bound?'admin-and-project':'admin');
+ assert.equal(calls[0].payload.confirmed_experimental,true);
+ assert.deepEqual(Object.keys(calls[0].payload).sort(),['confirmed_experimental','draft_id','revision','target']);
+ page.dispatchEvent(new w.CustomEvent('knx-correction-export-start'));
+ assert(el('download').disabled);assert(!el('confirm').checked);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", script, str(project_bound).lower()], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

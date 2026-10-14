@@ -11,7 +11,7 @@ import os
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.endpoint import MiniserverEndpoint
@@ -27,6 +27,9 @@ from .store import KnxStore
 from .xml_export import XmlCorrectionExport
 
 LOGGER = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from mcpserver.loxone.project.query import ProjectQuery
 
 
 def validate_active_labels(config: PluginConfig) -> None:
@@ -55,7 +58,16 @@ def validate_active_labels(config: PluginConfig) -> None:
         raise AdminError("KNX active label limit exceeded", code="knx_label_limit")
 
 
-def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) -> dict[str, Any]:
+def dispatch_knx(
+    action: str,
+    payload: object,
+    config_store: AtomicConfigStore,
+    *,
+    query: ProjectQuery | None = None,
+    authorize_effect: Callable[[], object] | None = None,
+    admin_session: str | None = None,
+    metadata_path: Path | None = None,
+) -> dict[str, Any]:
     from mcpserver.admin import AdminError
 
     allowed = {
@@ -93,18 +105,45 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_correction_review",
         "knx_correction_edit",
         "knx_correction_apply",
+        "knx_correction_xml_preview",
+        "knx_correction_xml_download",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
     outcome = "rejected"
     try:
-        result = config_store.transaction(lambda config, save: _run(action, payload, config, save))
+        if (
+            query is None
+            and action
+            in {"knx_correction_apply", "knx_correction_xml_preview", "knx_correction_xml_download"}
+            and bool(os.environ.get("HTTP_X_LOXONE_AUTHORIZATION", ""))
+        ):
+            from .admin_bridge import forward
+
+            result = forward(action, payload, config_store)
+        else:
+            result = config_store.transaction(
+                lambda config, save: _run(
+                    action,
+                    payload,
+                    config,
+                    save,
+                    query=query,
+                    authorize_effect=authorize_effect,
+                    admin_session=admin_session,
+                    metadata_path=metadata_path,
+                )
+            )
         outcome = (
             result.get("outcome", "completed") if action == "knx_correction_apply" else "completed"
         )
         return result
     except PersistenceUncertain:
         outcome = "uncertain"
+        raise
+    except AdminError as exc:
+        if exc.code in {"persistence_uncertain", "write_outcome_uncertain"}:
+            outcome = "uncertain"
         raise
     except KnxError as exc:
         if exc.code == "write_outcome_uncertain" or (
@@ -115,7 +154,13 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
             outcome = "uncertain"
         raise AdminError("KNX operation rejected", code=exc.code) from None
     finally:
-        if action in {"knx_correction_review", "knx_correction_edit", "knx_correction_apply"}:
+        if action in {
+            "knx_correction_review",
+            "knx_correction_edit",
+            "knx_correction_apply",
+            "knx_correction_xml_preview",
+            "knx_correction_xml_download",
+        }:
             LOGGER.info(
                 "component=knx_draft_admin_audit action=%s mode=%s outcome=%s",
                 action,
@@ -128,9 +173,20 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
 
 
 def _run(
-    action: str, payload: dict[str, Any], config: PluginConfig, save: Callable[[PluginConfig], None]
+    action: str,
+    payload: dict[str, Any],
+    config: PluginConfig,
+    save: Callable[[PluginConfig], None],
+    *,
+    query: ProjectQuery | None = None,
+    authorize_effect: Callable[[], object] | None = None,
+    admin_session: str | None = None,
+    metadata_path: Path | None = None,
 ) -> dict[str, Any]:
     from mcpserver.admin import AdminError
+
+    native_session: str = os.environ.get("MCPSERVER_KNX_ADMIN_SESSION", "")
+    session_value = admin_session if admin_session is not None else native_session
 
     if not config.loxone_endpoint:
         raise AdminError("A configured Miniserver is required", code="knx_target_missing")
@@ -232,10 +288,26 @@ def _run(
     }
     if action in import_fields and not payload.keys() <= import_fields[action]:
         raise KnxError("knx_preview_invalid")
-    data_root = os.getenv("LBPDATA", "")
+    data_root = (
+        str(metadata_path.parent.parent) if metadata_path is not None else os.getenv("LBPDATA", "")
+    )
     if not data_root or not Path(data_root).is_absolute():
         raise AdminError("Plugin data directory unavailable")
-    store = KnxStore(Path(data_root) / "knx" / "metadata.sqlite3")
+    store = KnxStore(metadata_path or Path(data_root) / "knx" / "metadata.sqlite3")
+    if action in {"knx_correction_xml_preview", "knx_correction_xml_download"}:
+        from .admin_export import correction_export
+
+        return correction_export(
+            action,
+            payload,
+            config,
+            store,
+            target,
+            token,
+            session_value,
+            query=query,
+            authorize=authorize_effect or (lambda: None),
+        )
     if action in {
         "knx_correction_page",
         "knx_correction_inspect",
@@ -272,7 +344,8 @@ def _run(
         if not payload.keys() <= fields:
             raise KnxError("knx_correction_invalid")
         corrections = CorrectionDraftStore(
-            Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
+            Path(data_root) / "knx" / "drafts.sqlite3",
+            session_value,
         )
         if action == "knx_correction_page":
             return {"target": token, "drafts": corrections.list_admin(target)}
@@ -306,8 +379,9 @@ def _run(
                 target,
                 payload,
                 reconcile=payload["action"] == "reconcile",
-                authorize_effect=lambda: None,
+                authorize_effect=authorize_effect or (lambda: None),
                 save_config=save,
+                query=query,
             )
             return {"target": token, **result}
         if action in {"knx_correction_review", "knx_correction_edit"}:

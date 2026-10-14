@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Apply accepted project-bound KNX proposals from the Admin page with independent
+  Admin and fresh Loxone authorization. Hand selected accepted ETS name/description
+  proposals into the existing session-bound experimental XML preview; revalidate
+  their decisions, expiry and revisions at download. No new MCP tool or ETS/Loxone
+  write, and no confirmed ETS import compatibility (#458/#419).
 - Apply individually accepted local-only KNX corrections from the authenticated
   Admin page with full-value HTML confirmation and exact uncertain-outcome
   reconciliation. Keep project-bound drafts blocked without fresh server-side

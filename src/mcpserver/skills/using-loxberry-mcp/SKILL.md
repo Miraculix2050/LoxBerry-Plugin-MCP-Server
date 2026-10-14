@@ -134,6 +134,11 @@ full guidance before this write. After uncertainty use `action="reconcile"` with
 the exact original selection/revisions/request ID; an absent receipt permits no
 automatic retry. Receipts last seven days and describe the original operation.
 Reread the current local catalog to verify; Loxone names remain unchanged.
+For accepted `ets_export` rows, direct the user to select them on the Admin page,
+review the existing XML preview and explicitly confirm its experimental download.
+The server rechecks decisions, expiry, revisions and fresh project evidence;
+MCP performs no download. Real ETS import compatibility remains unconfirmed.
+`loxone_config` remains a proposal until an independently available writer exists.
 
 ## Read information
 

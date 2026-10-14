@@ -78,3 +78,8 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   export budget. Missing historical native locks remain a blocking qualification
   condition in every example. Automated fixtures establish arithmetic/contract
   gates only; no admissible device schedule, PV attribution or saving claim.
+
+- Accepted KNX Admin project-bound application and ETS preview handoff (#458):
+  independently authenticated Admin helper and fresh authorized project evidence,
+  with cancellation-safe bounded workers. Fixture coverage is not installed-device
+  acceptance or actual ETS import evidence. No new firmware compatibility claim.

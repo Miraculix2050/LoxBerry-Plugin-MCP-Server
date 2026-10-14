@@ -170,7 +170,7 @@ verify project access or apply changes. MCP can record concrete agreed decisions
 `loxberry_prepare_knx_corrections(mode="review", decisions=[{"change_id": "...",
 "decision": "accepted"}])`, omitting `changes` and supplying current target,
 catalog/manual/draft revisions and a stable request ID. Unselected decisions remain
-unchanged. Apply prefix labels separately from addresses; confirmed export handoff follows separately.
+unchanged. Apply prefix labels separately from addresses; select accepted export proposals on the Admin page.
 
 Drafts have an absolute 24-hour lifetime, at most 50 changes each, and share the
 existing global eight-draft/32-MiB budget with imports, comparisons and XML
@@ -217,8 +217,7 @@ effects and their receipt share one SQLite transaction. There is no combined
 cross-store write. Prefix receipts are bounded to 32 unexpired operations and
 16 KiB, without eviction of valid evidence. A full ledger rejects further prefix
 writes until expiry. The result returns the changed manual-label revision; the
-import catalog revision is unchanged. An accepted ETS export handoff follows
-separately.
+import catalog revision is unchanged. Accepted ETS proposals can be selected for the existing experimental XML preview.
 
 Configuration schema 12 migrates schema 11 with prefix access disabled. Native
 upgrade preserves existing labels and receipts. Back up the matching configuration
@@ -230,9 +229,23 @@ KNX label action to edit labels.
 
 The authenticated Admin page can apply an individually selected, accepted local-only
 change after an HTML confirmation showing its full value. This uses Admin authentication,
-not MCP client grants. Project-bound proposals remain blocked until server-side fresh
-project authorization is available; browser-supplied stand identifiers do not unlock them.
+not MCP client grants. Project-bound proposals additionally require the current Loxone connection. A fixed
+loopback bridge independently verifies Admin authentication and fresh project access;
+browser-supplied stand identifiers do not authorize an operation.
 After an uncertain result, use **Check the exact operation outcome** without repeating
 the write. Address/prefix destinations remain separate and imports/ETS/Loxone unchanged.
 
 Pending operation identities/revisions are retained in this tab session storage for at most seven days, without field values or credentials, so reloading keeps exact reconciliation available. A definitive pre-effect rejection clears them. An unresolved operation can be explicitly dismissed only after checking the current catalog; dismissal never retries a write.
+
+## Accepted ETS export proposals
+
+Select accepted `ets_export` name/description rows and open the existing XML
+preview. No local override or import field changes. Only existing XML-proven
+addresses with reconstructible metadata are eligible; prefixes, new addresses
+and deliberately empty descriptions are rejected. The preview retains the exact
+proposal selection and revisions in the same Admin session. Download rechecks
+expiry, decisions, target, catalog/manual revisions and any authorized project
+binding. Changes require a new preview. Confirm the experimental download only
+for a backed-up ETS project copy. Actual ETS compatibility remains unconfirmed
+(#419); MCP never downloads or writes ETS files. A Loxone Config destination
+remains a proposal for a future available writer, not an implemented project write.

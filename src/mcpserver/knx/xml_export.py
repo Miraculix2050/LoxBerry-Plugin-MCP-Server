@@ -43,7 +43,13 @@ class XmlCorrectionExport:
     def __init__(self, store: KnxStore, drafts: DraftStore, target: str) -> None:
         self.store, self.drafts, self.target = store, drafts, target
 
-    def preview(self, payload: dict[str, Any], *, persist: bool = True) -> dict[str, Any]:
+    def preview(
+        self,
+        payload: dict[str, Any],
+        *,
+        persist: bool = True,
+        correction_handoff: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         expected = payload.get("revision")
         choices = payload.get("choices")
         binding = text(payload.get("project_binding"), 4096, empty=False)
@@ -223,8 +229,11 @@ class XmlCorrectionExport:
         }
         _check_response(result)
         if persist:
+            options: dict[str, Any] = {"project_binding": binding}
+            if correction_handoff is not None:
+                options["correction_handoff"] = correction_handoff
             result["draft_id"] = self.drafts.create(
-                self.target, expected, body, {"project_binding": binding}, slot="xml_export"
+                self.target, expected, body, options, slot="xml_export"
             )
         else:
             result.pop("draft_id")
@@ -242,7 +251,9 @@ class XmlCorrectionExport:
         ):
             raise KnxError("knx_export_source_unavailable")
 
-    def download(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def download(
+        self, payload: dict[str, Any], *, confirmed_handoff: bool = False
+    ) -> dict[str, Any]:
         if payload.get("confirmed_experimental") is not True:
             raise KnxError("knx_export_confirmation_required")
         with self.store.connection() as db:
@@ -253,6 +264,8 @@ class XmlCorrectionExport:
             raw, options = self.drafts.load(payload.get("draft_id"), self.target, expected)
             if options.get("draft_slot") != "xml_export":
                 raise KnxError("knx_draft_invalid")
+            if "correction_handoff" in options and not confirmed_handoff:
+                raise KnxError("knx_correction_invalid")
             if payload.get("project_binding") != options.get("project_binding"):
                 raise KnxError("knx_revision_conflict")
             result = {
