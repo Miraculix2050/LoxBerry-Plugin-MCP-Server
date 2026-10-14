@@ -143,6 +143,11 @@ Metadaten, keinen Rezepttext und keine erfolgreiche Aufgabenausführung im Clien
 
 ## Kompakter ETS-Abgleich
 
+Der Vergleich liest ETS-Namen gemeinsamer Adressen gesammelt; weitere Metadaten
+werden erst für die ausgegebene Seite geladen. Zählwerte berücksichtigen weiterhin
+den gesamten beobachteten Bestand, auch wenn die Befundliste begrenzt ist.
+Die Optimierung verändert weder Namensvorrang noch Berechtigungs- und Revisionsprüfungen.
+
 Ausdrücklich `analyses=["ets_project_comparison"]`, `scope="knx"` und
 `view="summary"` für Zählwerte ohne einzelne Adressdetailabfragen wählen.
 `view="findings"` liefert paginierte Quellenbefunde; `view="detail"` mit einer
