@@ -1198,3 +1198,28 @@ async def test_initial_state_timeout_logs_setup_failure_before_cancellation(capl
     assert len(terminal) == 1
     assert "reason=initial_state_timeout" in terminal[0]
     assert "reason=local_disconnect" not in terminal[0]
+
+
+@pytest.mark.asyncio
+async def test_admitted_project_recheck_reuses_worker_lease_without_bypassing_identity_or_rate():
+    validator = AsyncMock(return_value=True)
+    runtime = _project_runtime(validate_access=validator)
+    runtime._parallel = asyncio.Semaphore(1)
+    async with runtime.worker_slot():
+        async with asyncio.timeout(1), runtime.project_call_slot(_access(), worker_admitted=True):
+            assert runtime._parallel.locked()
+            assert runtime._project_admission.locked()
+        assert runtime._parallel.locked()
+        assert len(runtime._project_rate) == 1
+        validator.return_value = False
+        with pytest.raises(PermissionError):
+            async with runtime.project_call_slot(_access(), worker_admitted=True):
+                pytest.fail("fresh access rejection bypassed")
+        validator.return_value = True
+        for _ in range(11):
+            async with runtime.project_call_slot(_access(), worker_admitted=True):
+                pass
+        with pytest.raises(RuntimeUnavailable, match="rate limit"):
+            async with runtime.project_call_slot(_access(), worker_admitted=True):
+                pytest.fail("project rate gate bypassed")
+    assert not runtime._parallel.locked()

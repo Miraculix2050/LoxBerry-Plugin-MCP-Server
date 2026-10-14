@@ -3438,13 +3438,21 @@ async def _snapshot(
 
 
 async def _project_query(
-    runtime: LoxoneRuntime | None, access: StoredAccessToken | None = None
+    runtime: LoxoneRuntime | None,
+    access: StoredAccessToken | None = None,
+    *,
+    worker_admitted: bool = False,
 ) -> tuple[ProjectQuery, RuntimeSnapshot]:
     """Admit bounded project work before acquiring a shared call slot."""
     if runtime is None or runtime.projects is None:
         raise RuntimeUnavailable("the project service is not configured")
     access = _access() if access is None else access
-    async with runtime.project_call_slot(access):
+    slot = (
+        runtime.project_call_slot(access, worker_admitted=True)
+        if worker_admitted
+        else runtime.project_call_slot(access)
+    )
+    async with slot:
         try:
             snapshot = await runtime.snapshot(access, fresh_visibility=True)
         except RuntimeUnavailable:

@@ -244,6 +244,7 @@ class AdminProjectBridge:
         from mcpserver.tools import _project_query
 
         from .admin import dispatch_knx
+        from .correction_service import project_binding
 
         config = await asyncio.to_thread(self.configs.load)
         target = MiniserverEndpoint.parse(config.loxone_endpoint).origin
@@ -254,12 +255,29 @@ class AdminProjectBridge:
             raise AdminError("Target changed", code="knx_target_conflict")
         query, _ = await _project_query(self.runtime, access)
 
+        loop = asyncio.get_running_loop()
+        binding = project_binding(query)
+
+        async def recheck(*, worker_admitted: bool) -> None:
+            current, _ = await _project_query(self.runtime, access, worker_admitted=worker_admitted)
+            if project_binding(current) != binding:
+                raise KnxError("knx_project_evidence_changed")
+
         def authorize() -> None:
             try:
                 if not verify(key, session, body, supplied, int(time.time())):
                     raise PermissionError("Admin approval expired")
                 self.fresh(access)
-            except PermissionError:
+                checking = asyncio.run_coroutine_threadsafe(recheck(worker_admitted=True), loop)
+                try:
+                    checking.result(timeout=15)
+                except TimeoutError:
+                    checking.cancel()
+                    raise KnxError("knx_project_evidence_required") from None
+                if not verify(key, session, body, supplied, int(time.time())):
+                    raise PermissionError("Admin approval expired")
+                self.fresh(access)
+            except (PermissionError, ProjectError, RuntimeUnavailable):
                 # PermissionError is an OSError; config transactions would
                 # otherwise sanitize revocation as a persistence failure.
                 raise KnxError("knx_project_evidence_required") from None
@@ -276,10 +294,9 @@ class AdminProjectBridge:
                 metadata_path=self.metadata_path,
             )
         try:
-            await asyncio.to_thread(authorize)
-            assert self.runtime.projects is not None
-            await self.runtime.projects.authorize(access)
-        except (PermissionError, ProjectError, KnxError):
+            await recheck(worker_admitted=False)
+            await asyncio.to_thread(self.fresh, access)
+        except (PermissionError, ProjectError, RuntimeUnavailable, KnxError):
             raise AdminError(
                 "Operation outcome uncertain", code="write_outcome_uncertain"
             ) from None

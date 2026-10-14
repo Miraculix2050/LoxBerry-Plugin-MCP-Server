@@ -234,9 +234,10 @@ def test_bridge_uses_fresh_project_query_and_independent_admin_authority(bridge)
     with TestClient(app, client=("127.0.0.1", 12345)) as client:
         result = client.post(PATH, content=body, headers=headers).json()
     assert result["ok"] and result["data"]["outcome"] == "applied"
-    assert loader.await_count == 1
+    assert loader.await_count >= 3
+    assert any(call.kwargs.get("worker_admitted") for call in loader.await_args_list)
     assert loader.await_args.args[1].family_id == "family"
-    assert service.runtime.projects.authorize.await_count == 1
+    assert service.runtime.projects.authorize.await_count == 0
     assert store.page(TARGET)["items"][0]["effective"]["name"] == "Primary B"
     assert not configs.load().loxberry_knx_write_enabled
     assert not result["data"]["loxone_written"] and not result["data"]["exports_file"]
@@ -404,3 +405,36 @@ def test_export_does_not_return_after_shared_proposal_expires_during_authorizati
     assert expired.value.code == "knx_draft_expired"
     assert count[0] == expire_call
     assert store.page(TARGET)["items"][0]["imported"]["name"] == "ETS"
+
+
+@pytest.mark.parametrize("changed_at", ["effect", "release"])
+def test_bridge_rechecks_actual_project_binding_at_effect_and_result_boundaries(bridge, changed_at):
+    _, app, body, headers, loader, store, _, _, _ = bridge
+    original = loader.return_value
+    query = original[0]
+    changed = (
+        replace(
+            query,
+            view=replace(query.view, snapshot=replace(query.view.snapshot, fingerprint="c" * 64)),
+        ),
+        None,
+    )
+    first = [True]
+
+    async def current(*args, **kwargs):
+        if first[0]:
+            first[0] = False
+            return original
+        effect = kwargs.get("worker_admitted", False)
+        return changed if effect == (changed_at == "effect") else original
+
+    loader.side_effect = current
+    with TestClient(app, client=("127.0.0.1", 12345)) as client:
+        result = client.post(PATH, content=body, headers=headers).json()
+    assert not result["ok"]
+    expected_code = (
+        "knx_project_evidence_changed" if changed_at == "effect" else "write_outcome_uncertain"
+    )
+    assert result["error"]["code"] == expected_code
+    expected_name = "Original" if changed_at == "effect" else "Primary B"
+    assert store.page(TARGET)["items"][0]["effective"]["name"] == expected_name
