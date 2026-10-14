@@ -164,6 +164,7 @@
   data-apply-local="<TMPL_VAR KNX.CORRECTIONS_APPLY_LOCAL ESCAPE=HTML>"
   data-confirm-apply="<TMPL_VAR KNX.CORRECTIONS_CONFIRM_APPLY ESCAPE=HTML>"
   data-applied="<TMPL_VAR KNX.CORRECTIONS_APPLIED ESCAPE=HTML>"
+  data-confirm-forget="<TMPL_VAR KNX.CORRECTIONS_CONFIRM_FORGET ESCAPE=HTML>"
   data-not-observed="<TMPL_VAR KNX.CORRECTIONS_NOT_OBSERVED ESCAPE=HTML>">
   <summary><h2><TMPL_VAR KNX.CORRECTIONS_TITLE></h2> <span id="knx-corrections-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
   <div class="mcp-collapsible-content">
@@ -182,6 +183,7 @@
     <th><TMPL_VAR KNX.CORRECTIONS_DECISION></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
     <tbody id="knx-corrections-values" data-empty-message="<TMPL_VAR KNX.SELECT_DRAFT ESCAPE=HTML>"></tbody></table>
   </div>
+  <button class="lb-button" type="button" id="knx-corrections-forget" hidden><TMPL_VAR KNX.CORRECTIONS_FORGET></button>
   <button class="lb-button" type="button" id="knx-corrections-reconcile" hidden><TMPL_VAR KNX.CORRECTIONS_RECONCILE></button>
   <button class="lb-button" type="button" id="knx-corrections-more" hidden><TMPL_VAR KNX.CORRECTIONS_MORE></button>
  </div></details>
@@ -424,7 +426,7 @@
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v16" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v6" defer></script>
-<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v6" defer></script>
+<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v7" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1" defer></script>
 <script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>

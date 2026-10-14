@@ -16,6 +16,7 @@ from typing import Any
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import parse_taxonomy
+from mcpserver.persistence import PersistenceUncertain
 
 from .catalog_service import CatalogService
 from .drafts import DraftStore
@@ -98,15 +99,29 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
     outcome = "rejected"
     try:
         result = config_store.transaction(lambda config, save: _run(action, payload, config, save))
-        outcome = "completed"
+        outcome = (
+            result.get("outcome", "completed") if action == "knx_correction_apply" else "completed"
+        )
         return result
+    except PersistenceUncertain:
+        outcome = "uncertain"
+        raise
     except KnxError as exc:
+        if exc.code == "write_outcome_uncertain" or (
+            action == "knx_correction_apply"
+            and payload.get("action") == "apply"
+            and exc.code == "knx_storage_failed"
+        ):
+            outcome = "uncertain"
         raise AdminError("KNX operation rejected", code=exc.code) from None
     finally:
         if action in {"knx_correction_review", "knx_correction_edit", "knx_correction_apply"}:
             LOGGER.info(
-                "component=knx_draft_admin_audit action=%s outcome=%s",
+                "component=knx_draft_admin_audit action=%s mode=%s outcome=%s",
                 action,
+                payload.get("action")
+                if payload.get("action") in ("apply", "reconcile")
+                else "draft",
                 outcome,
                 extra={"mcp_audit": True},
             )
@@ -274,10 +289,10 @@ def _run(
         if action == "knx_correction_apply":
             from .correction_apply import CorrectionApply
 
-            if payload.get("confirmed") is not True or payload.get("action") not in {
+            if payload.get("confirmed") is not True or payload.get("action") not in (
                 "apply",
                 "reconcile",
-            }:
+            ):
                 raise KnxError("knx_correction_invalid")
             # Admin authentication is supplied by Apache/CGI, independently of
             # delegated MCP grants. Scope receipts to this Admin session and the

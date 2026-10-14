@@ -262,3 +262,5 @@ zur serverseitigen frischen Projektberechtigung gesperrt; ein Projektstand aus d
 Browser schaltet sie nicht frei. Nach ungewissem Ergebnis **Ergebnis des genauen Vorgangs
 prüfen**, ohne erneut zu schreiben. Adress- und Präfixziele bleiben getrennt;
 Importquellen, ETS und Loxone bleiben unverändert.
+
+Offene Vorgangskennungen und Revisionen bleiben höchstens sieben Tage im Sitzungsspeicher dieses Tabs erhalten, ohne Feldwerte oder Zugangsdaten. Dadurch bleibt die genaue Ergebnisprüfung nach Neuladen verfügbar. Eine eindeutige Ablehnung vor der Übernahme entfernt sie. Eine ungeklärte Prüfung lässt sich nach Kontrolle des aktuellen Katalogs ausdrücklich verwerfen; dabei wird nicht erneut geschrieben.

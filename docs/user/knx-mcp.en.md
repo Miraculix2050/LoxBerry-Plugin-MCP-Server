@@ -234,3 +234,5 @@ not MCP client grants. Project-bound proposals remain blocked until server-side 
 project authorization is available; browser-supplied stand identifiers do not unlock them.
 After an uncertain result, use **Check the exact operation outcome** without repeating
 the write. Address/prefix destinations remain separate and imports/ETS/Loxone unchanged.
+
+Pending operation identities/revisions are retained in this tab session storage for at most seven days, without field values or credentials, so reloading keeps exact reconciliation available. A definitive pre-effect rejection clears them. An unresolved operation can be explicitly dismissed only after checking the current catalog; dismissal never retries a write.

@@ -99,7 +99,18 @@ if (($q->{action} // '') ne '') {
                 && $q->{action} =~ /\A(?:knx_page|knx_read_page|knx_drafts_page)\z/;
             if (!$quiet_read) {
                 my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir, addtime => 1);
-                $log->INF('action=' . $q->{action} . ' outcome=' . ($result->{ok} ? 'completed' : 'rejected')) if $log;
+                my $outcome = $result->{ok} ? 'completed' : 'rejected';
+                my $mode = '';
+                if ($q->{action} eq 'knx_correction_apply') {
+                    $mode = ($payload->{action} // '') =~ /\A(?:apply|reconcile)\z/
+                        ? ' mode=' . $payload->{action} : ' mode=invalid';
+                    $outcome = 'uncertain' if ($result->{error}{code} // '') =~ /\A(?:persistence_uncertain|write_outcome_uncertain|internal_error)\z/;
+                    $outcome = 'uncertain' if ($payload->{action} // '') eq 'apply'
+                        && ($result->{error}{code} // '') eq 'knx_storage_failed';
+                    $outcome = $result->{data}{outcome} if $result->{ok}
+                        && ($result->{data}{outcome} // '') =~ /\A(?:applied|not_observed)\z/;
+                }
+                $log->INF('action=' . $q->{action} . $mode . ' outcome=' . $outcome) if $log;
             }
         }
     }
