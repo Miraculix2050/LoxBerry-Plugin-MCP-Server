@@ -11,12 +11,34 @@
   let target = null;
   let selected = null;
   let busy = false;
+  let pendingApply = null;
+  const reconcile = document.getElementById('knx-corrections-reconcile');
+  const forget = document.getElementById('knx-corrections-forget');
+  const pendingKey = 'mcp-knx-admin-pending-apply-v1';
+  const updatePending = (value) => {
+    // Only identities/revisions: no field values, tokens or Admin cookies.
+    // Persist before sending; refuse a write when exact recovery cannot be retained.
+    if (value) sessionStorage.setItem(pendingKey, JSON.stringify({arguments:value, expires:Date.now()+7*86400000}));
+    else sessionStorage.removeItem(pendingKey);
+    pendingApply = value; reconcile.hidden = !value; forget.hidden = !value;
+  };
+  try {
+    const raw = sessionStorage.getItem(pendingKey);
+    const retained = raw && raw.length <= 4096 ? JSON.parse(raw) : null;
+    if (retained && retained.expires > Date.now() && retained.expires <= Date.now()+7*86400000
+        && /^[0-9a-f]{32}$/.test(retained.arguments?.request_id)
+        && /^[0-9a-f]{48}$/.test(retained.arguments?.draft_id)) {
+      pendingApply = retained.arguments; reconcile.hidden = false; forget.hidden = false;
+    }
+  } catch (_) { /* No recovered write is ever sent automatically. */ }
   const api = async (action, payload) => {
     const response = await fetch('knx.cgi', {method: 'POST', credentials: 'same-origin',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: new URLSearchParams({action, payload: JSON.stringify(payload)})});
     const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error('correction_unavailable');
+    if (!response.ok || !result.ok) {
+      const error = new Error('correction_unavailable'); error.code = result.error?.code; throw error;
+    }
     return result.data;
   };
   const cell = (row, value) => {
@@ -41,6 +63,36 @@
     control.type = 'button'; control.className = 'lb-button'; control.textContent = text;
     control.addEventListener('click', () => void run(action));
     return control;
+  };
+  const applyLocal = async (item, offset) => {
+    const complete = await api('knx_correction_inspect', {target, draft_id: selected.draft_id,
+      draft_revision: selected.draft_revision, offset, detail: true});
+    const change = complete.changes[0];
+    if (!change || change.change_id !== item.change_id || change.decision !== 'accepted'
+        || complete.catalog_stale || complete.manual_stale || complete.project_status !== 'not_required')
+      throw new Error('correction_changed');
+    const question = `${section.dataset.confirmApply}\n${change.identity} · ${change.field} / ${change.operation}\n`
+      + `${display(change.manual)} → ${display(change.proposed)}`;
+    if (!await window.MCPKnx.ask(question)) return;
+    updatePending({target, draft_id: selected.draft_id, draft_revision: selected.draft_revision,
+      catalog_revision: selected.catalog_revision, manual_revision: selected.manual_revision,
+      request_id: requestId(), approved_change_ids: [change.change_id],
+      storage: change.kind === 'prefix' ? 'prefix_labels' : 'addresses', confirmed: true});
+    // Once sent, retain only reconciliation. Never automatically repeat an uncertain write.
+    let result;
+    try { result = await api('knx_correction_apply', {...pendingApply, action: 'apply'}); }
+    catch (error) {
+      const rejected = ['knx_revision_conflict', 'knx_target_conflict', 'knx_correction_invalid',
+        'knx_correction_not_accepted', 'knx_draft_unavailable', 'knx_draft_expired',
+        'knx_project_evidence_required', 'knx_project_evidence_changed', 'knx_label_limit',
+        'knx_correction_receipt_limit'];
+      if (rejected.includes(error.code)) updatePending(null);
+      throw error;
+    }
+    if (result.outcome !== 'applied') throw new Error('correction_uncertain');
+    updatePending(null);
+    await reload();
+    status.textContent = section.dataset.applied;
   };
   const editor = async (container, item, offset) => {
     const data = await api('knx_correction_inspect', {target, draft_id: selected.draft_id,
@@ -104,6 +156,10 @@
       cell(row, section.dataset[item.decision || 'proposed']);
       const actions = document.createElement('td');
       if (!data.catalog_stale && !data.manual_stale) {
+        if (!pendingApply && data.project_status === 'not_required' && item.decision === 'accepted'
+            && item.destination === 'local_metadata') {
+          actions.append(button(section.dataset.applyLocal, () => applyLocal(item, offset + index)));
+        }
         for (const decision of ['accepted', 'rejected', 'proposed']) {
           const text = {accepted: section.dataset.accept, rejected: section.dataset.reject,
             proposed: section.dataset.reset}[decision];
@@ -144,6 +200,16 @@
   const reload = async () => renderDrafts(await api('knx_correction_page', target ? {target} : {}));
   more.addEventListener('click', () => { if (selected) void run(() => inspect(selected, selected.next_offset)); });
   document.getElementById('knx-corrections-reload').addEventListener('click', () => void run(reload));
+  reconcile.addEventListener('click', () => void run(async () => {
+    if (!pendingApply) return;
+    const result = await api('knx_correction_apply', {...pendingApply, action: 'reconcile'});
+    status.textContent = result.outcome === 'applied' ? section.dataset.applied : section.dataset.notObserved;
+    if (result.outcome === 'applied') updatePending(null);
+  }));
+  forget.addEventListener('click', () => void run(async () => {
+    if (!pendingApply || !await window.MCPKnx.ask(section.dataset.confirmForget)) return;
+    updatePending(null); await reload();
+  }));
   if (window.MCPKnx?.initialSections) {
     void run(async () => {
       const initial = (await window.MCPKnx.initialSections)?.knx_correction_page;

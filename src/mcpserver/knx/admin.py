@@ -16,6 +16,7 @@ from typing import Any
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import parse_taxonomy
+from mcpserver.persistence import PersistenceUncertain
 
 from .catalog_service import CatalogService
 from .drafts import DraftStore
@@ -91,21 +92,36 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_correction_inspect",
         "knx_correction_review",
         "knx_correction_edit",
+        "knx_correction_apply",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
     outcome = "rejected"
     try:
         result = config_store.transaction(lambda config, save: _run(action, payload, config, save))
-        outcome = "completed"
+        outcome = (
+            result.get("outcome", "completed") if action == "knx_correction_apply" else "completed"
+        )
         return result
+    except PersistenceUncertain:
+        outcome = "uncertain"
+        raise
     except KnxError as exc:
+        if exc.code == "write_outcome_uncertain" or (
+            action == "knx_correction_apply"
+            and payload.get("action") == "apply"
+            and exc.code == "knx_storage_failed"
+        ):
+            outcome = "uncertain"
         raise AdminError("KNX operation rejected", code=exc.code) from None
     finally:
-        if action in {"knx_correction_review", "knx_correction_edit"}:
+        if action in {"knx_correction_review", "knx_correction_edit", "knx_correction_apply"}:
             LOGGER.info(
-                "component=knx_draft_admin_audit action=%s outcome=%s",
+                "component=knx_draft_admin_audit action=%s mode=%s outcome=%s",
                 action,
+                payload.get("action")
+                if payload.get("action") in ("apply", "reconcile")
+                else "draft",
                 outcome,
                 extra={"mcp_audit": True},
             )
@@ -225,10 +241,24 @@ def _run(
         "knx_correction_inspect",
         "knx_correction_review",
         "knx_correction_edit",
+        "knx_correction_apply",
     }:
-        from .correction_drafts import CorrectionDraftStore
+        from .correction_drafts import CorrectionDraftStore, _identifier
 
         fields = {"target", "draft_id", "draft_revision", "offset", "detail"}
+        if action == "knx_correction_apply":
+            fields = {
+                "target",
+                "draft_id",
+                "draft_revision",
+                "catalog_revision",
+                "manual_revision",
+                "request_id",
+                "approved_change_ids",
+                "storage",
+                "confirmed",
+                "action",
+            }
         if action in {"knx_correction_review", "knx_correction_edit"}:
             fields = {
                 "target",
@@ -249,14 +279,43 @@ def _run(
         from .correction_projection import project_draft
         from .correction_service import CorrectionService
 
-        identifier = payload.get("draft_id")
-        correction_service = CorrectionService(store, corrections.admin_reader(identifier, target))
+        correction_id = _identifier(payload.get("draft_id"))
+        correction_service = CorrectionService(
+            store,
+            corrections
+            if action == "knx_correction_apply" and payload.get("action") == "reconcile"
+            else corrections.admin_reader(correction_id, target),
+        )
+        if action == "knx_correction_apply":
+            from .correction_apply import CorrectionApply
+
+            if payload.get("confirmed") is not True or payload.get("action") not in (
+                "apply",
+                "reconcile",
+            ):
+                raise KnxError("knx_correction_invalid")
+            # Admin authentication is supplied by Apache/CGI, independently of
+            # delegated MCP grants. Scope receipts to this Admin session and the
+            # selected draft ID. Receipt lookup remains possible after draft
+            # expiry; never accept ownership from the browser.
+            owner = hashlib.sha256(
+                ("knx-admin-apply-v1:" + corrections.session + ":" + correction_id).encode()
+            ).hexdigest()
+            result = CorrectionApply(correction_service, owner).execute(
+                config,
+                target,
+                payload,
+                reconcile=payload["action"] == "reconcile",
+                authorize_effect=lambda: None,
+                save_config=save,
+            )
+            return {"target": token, **result}
         if action in {"knx_correction_review", "knx_correction_edit"}:
             request_id = payload.get("request_id")
             if not isinstance(request_id, str):
                 raise KnxError("knx_correction_invalid")
             args = (
-                identifier,
+                correction_id,
                 config,
                 target,
                 payload.get("draft_revision"),
@@ -274,10 +333,10 @@ def _run(
                     payload.get("edit"),
                     request_id=request_id,
                 )
-            result = correction_service.drafts.inspect_correction(identifier, target)
+            result = correction_service.drafts.inspect_correction(correction_id, target)
             return {
                 "target": token,
-                "draft_id": identifier,
+                "draft_id": correction_id,
                 "draft_revision": result["draft_revision"],
                 "operation_revision": revision,
                 "expires_at": result["expires_at"],
@@ -290,7 +349,7 @@ def _run(
         detail = payload.get("detail", False)
         if type(detail) is not bool:
             raise KnxError("knx_correction_invalid")
-        draft = correction_service.inspect(identifier, config, target)
+        draft = correction_service.inspect(correction_id, config, target)
         if (
             type(payload.get("draft_revision")) is not int
             or payload["draft_revision"] != draft["draft_revision"]

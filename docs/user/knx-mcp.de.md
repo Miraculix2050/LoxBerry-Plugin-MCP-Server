@@ -254,3 +254,13 @@ Konfiguration sichern; ältere Software kann Schema 12 nicht lesen.
 Allgemeine Einstellungen erhalten die aktuellen KNX-Labels und ihre Nachweise,
 auch wenn ein vollständiges Konfigurationsdokument veraltete Kopien enthält.
 Labels über den revisionsgebundenen KNX-Speichervorgang ändern.
+
+Die authentifizierte Admin-Seite kann eine einzeln ausgewählte, akzeptierte rein lokale
+Änderung nach HTML-Bestätigung mit vollständigem Wert speichern. Dafür gilt die
+Admin-Anmeldung, nicht die MCP-Clientfreigabe. Projektgebundene Vorschläge bleiben bis
+zur serverseitigen frischen Projektberechtigung gesperrt; ein Projektstand aus dem
+Browser schaltet sie nicht frei. Nach ungewissem Ergebnis **Ergebnis des genauen Vorgangs
+prüfen**, ohne erneut zu schreiben. Adress- und Präfixziele bleiben getrennt;
+Importquellen, ETS und Loxone bleiben unverändert.
+
+Offene Vorgangskennungen und Revisionen bleiben höchstens sieben Tage im Sitzungsspeicher dieses Tabs erhalten, ohne Feldwerte oder Zugangsdaten. Dadurch bleibt die genaue Ergebnisprüfung nach Neuladen verfügbar. Eine eindeutige Ablehnung vor der Übernahme entfernt sie. Eine ungeklärte Prüfung lässt sich nach Kontrolle des aktuellen Katalogs ausdrücklich verwerfen; dabei wird nicht erneut geschrieben.

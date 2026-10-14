@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Apply individually accepted local-only KNX corrections from the authenticated
+  Admin page with full-value HTML confirmation and exact uncertain-outcome
+  reconciliation. Keep project-bound drafts blocked without fresh server-side
+  project authorization; preserve imported sources and delegated MCP ownership (#458).
+
 - Apply explicitly accepted style-bound KNX prefix labels through the existing
   correction tool after additional default-off Admin prefix activation. Keep
   address and prefix selections separate; atomically save prefix effects and

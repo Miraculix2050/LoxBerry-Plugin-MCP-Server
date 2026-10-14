@@ -62,7 +62,7 @@ if (($q->{action} // '') ne '') {
     my $result;
     if (!MCPServer::RequestSecurity::same_origin_post()) {
         $result = {ok => JSON::PP::false, error => {code => 'forbidden'}};
-    } elsif ($cgi->cgi_error || ($q->{action} // '') !~ /\A(?:knx_page|knx_put|knx_delete|knx_export|knx_restore|knx_taxonomy|knx_preview|knx_import_load|knx_import_preview|knx_import_apply|knx_import_discard|knx_compare_load|knx_compare_page|knx_compare_discard|knx_xml_preview|knx_xml_download|knx_xml_discard|knx_read_page|knx_read_enable|knx_read_grant|knx_read_revoke|knx_drafts_page|knx_drafts_enable|knx_drafts_grant|knx_drafts_revoke|knx_write_page|knx_write_enable|knx_write_grant|knx_write_revoke|knx_correction_page|knx_correction_inspect|knx_correction_review|knx_correction_edit)\z/) {
+    } elsif ($cgi->cgi_error || ($q->{action} // '') !~ /\A(?:knx_page|knx_put|knx_delete|knx_export|knx_restore|knx_taxonomy|knx_preview|knx_import_load|knx_import_preview|knx_import_apply|knx_import_discard|knx_compare_load|knx_compare_page|knx_compare_discard|knx_xml_preview|knx_xml_download|knx_xml_discard|knx_read_page|knx_read_enable|knx_read_grant|knx_read_revoke|knx_drafts_page|knx_drafts_enable|knx_drafts_grant|knx_drafts_revoke|knx_write_page|knx_write_enable|knx_write_grant|knx_write_revoke|knx_correction_page|knx_correction_inspect|knx_correction_review|knx_correction_edit|knx_correction_apply)\z/) {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request'}};
     } else {
         my $payload = eval { decode_json($q->{payload} // '{}') };
@@ -99,7 +99,18 @@ if (($q->{action} // '') ne '') {
                 && $q->{action} =~ /\A(?:knx_page|knx_read_page|knx_drafts_page)\z/;
             if (!$quiet_read) {
                 my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir, addtime => 1);
-                $log->INF('action=' . $q->{action} . ' outcome=' . ($result->{ok} ? 'completed' : 'rejected')) if $log;
+                my $outcome = $result->{ok} ? 'completed' : 'rejected';
+                my $mode = '';
+                if ($q->{action} eq 'knx_correction_apply') {
+                    $mode = ($payload->{action} // '') =~ /\A(?:apply|reconcile)\z/
+                        ? ' mode=' . $payload->{action} : ' mode=invalid';
+                    $outcome = 'uncertain' if ($result->{error}{code} // '') =~ /\A(?:persistence_uncertain|write_outcome_uncertain|internal_error)\z/;
+                    $outcome = 'uncertain' if ($payload->{action} // '') eq 'apply'
+                        && ($result->{error}{code} // '') eq 'knx_storage_failed';
+                    $outcome = $result->{data}{outcome} if $result->{ok}
+                        && ($result->{data}{outcome} // '') =~ /\A(?:applied|not_observed)\z/;
+                }
+                $log->INF('action=' . $q->{action} . $mode . ' outcome=' . $outcome) if $log;
             }
         }
     }
