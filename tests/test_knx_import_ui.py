@@ -280,6 +280,7 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r))
         input=template,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
         cwd=root,
     )
