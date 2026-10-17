@@ -10,7 +10,7 @@
   const state = explorerState.data;
   const label = (key) => ui.dataset[key] || key;
   const elements = Object.fromEntries(['connect', 'disconnect', 'run', 'status', 'summary',
-    'coverage', 'coverage-data', 'rows', 'count', 'next', 'origin-warning', 'origin-link',
+    'coverage', 'coverage-data', 'rows', 'count', 'next', 'previous', 'origin-warning', 'origin-link',
     'connection-badge', 'session-expiry', 'session-expiry-time', 'access-scopes',
     'scope-unavailable', 'scope-list', 'loading', 'announcement']
     .map((key) => [key, document.getElementById(`knx-project-${key}`)]));
@@ -20,6 +20,28 @@
   let restoring = true;
   let generation = 0;
   let expiryTimer = null;
+  const pages = new Map();
+  let trail = [0];
+  const viewKey = 'mcp-knx-project-view-v1';
+  const sortFields = ['address','relation','loxone_names','imported_name','manual_name','observation'];
+  const sortOrder = () => knx.tables?.selection('knx-project-rows', sortFields) || null;
+  let savedView = null;
+  try {
+    const raw = sessionStorage.getItem(viewKey);
+    const value = raw?.length < 16384 ? JSON.parse(raw) : null;
+    if (/^[0-9a-f]{64}$/.test(value?.target) && Number.isInteger(value.offset)
+        && value.offset >= 0 && value.offset <= 65536) {
+      savedView = {target:value.target,offset:value.offset};
+      if (Array.isArray(value.trail) && value.trail.length <= 1400
+          && value.trail.every(n=>Number.isInteger(n)&&n>=0&&n<=65536)) trail = value.trail;
+    }
+  } catch (_) { /* Reload preferences are optional; data is never stored here. */ }
+  const rememberView = () => {
+    try {
+      if (frame) sessionStorage.setItem(viewKey, JSON.stringify({target:frame.target,offset:frame.offset,trail}));
+      else sessionStorage.removeItem(viewKey);
+    } catch (_) { /* Continue without browser persistence. */ }
+  };
   const message = (text, kind) => {
     elements.status.textContent = text;
     elements.status.dataset.kind = kind || (state.oauth ? 'success' : 'inactive');
@@ -29,6 +51,7 @@
   const clearResult = () => {
     generation++;
     frame = null;
+    pages.clear();
     page.dispatchEvent(new CustomEvent('knx-project-state'));
     elements.rows.replaceChildren();
     elements.rows.dataset.emptyMessage = label('notRun');
@@ -74,13 +97,15 @@
     elements.connect.disabled = blocked || Boolean(state.oauth);
     elements.disconnect.disabled = blocked || !state.oauth;
     elements.run.disabled = blocked || !state.oauth || !knx.snapshot();
-    elements.next.disabled = blocked || !state.oauth || !frame?.cursor;
+    elements.next.disabled = blocked || !state.oauth || frame?.nextOffset == null;
+    elements.previous.disabled = blocked || !state.oauth || !frame?.offset;
   };
   const clearSession = () => {
     restoring = false;
     window.clearTimeout(expiryTimer);
     explorerState.clear();
     clearResult();
+    savedView = null; rememberView();
     message(label('disconnected'));
     controls();
   };
@@ -103,9 +128,6 @@
     clearOriginWarning: () => { elements['origin-warning'].hidden = true; },
     renderConnection: () => { scheduleExpiry(); controls(); },
     revokeAndClear: clearSession});
-  const mcp = window.McpExplorerClient.create({core, state, explorerState, label,
-    accessToken: auth.accessToken, fetchWithTimeout: auth.fetchWithTimeout,
-    addTranscript: () => { /* This page does not retain transport payloads. */ }});
   const run = async (operation, {independent = false} = {}) => {
     if (busy || (!independent && page.getAttribute('aria-busy') === 'true')) return;
     busy = true; ui.setAttribute('aria-busy', 'true');
@@ -113,8 +135,11 @@
     try { await operation(); }
     catch (error) {
       if (error?.httpStatus === 401 || error?.sessionCleared === true) clearSession();
-      clearResult(); originWarning(error);
-      message(`${label('error')}: ${error instanceof Error ? error.message : label('error')}`, 'error');
+      const retainedView = Boolean(frame);
+      if (frame) { frame.stale = true; pages.clear(); page.dispatchEvent(new CustomEvent('knx-project-state')); }
+      originWarning(error);
+      message(retainedView ? label('refreshFailed')
+        : `${label('error')}: ${error instanceof Error ? error.message : label('error')}`, 'error');
     } finally { busy = false; ui.removeAttribute('aria-busy'); controls(); }
   };
   const relation = (value) => label({common: 'common', import_only: 'importOnly',
@@ -189,17 +214,25 @@
     elements.coverage.hidden = false;
     message(`${label('connected')} · ${label('limited')}`);
   };
-  const compare = async (cursor = null) => {
+  const compare = async (offset = 0, refresh = false) => {
     const saved = knx.snapshot();
     if (!saved) throw new Error(label('targetChanged'));
     const binding = {target: saved.target, revision: saved.revision};
     const expectedSession = state.oauth;
+    if (!expectedSession || expectedSession.resumeUntil <= Date.now()) {
+      const error = new Error(label('disconnected')); error.sessionCleared = true; throw error;
+    }
     const request = ++generation;
-    const priorCount = cursor ? frame?.count || 0 : 0;
-    const result = await mcp.callTool('loxone_analyze_project', {scope: 'knx',
-      analyses: ['ets_project_comparison'], limit: 50, ...(cursor ? {cursor} : {})});
+    const sort = sortOrder();
+    if (refresh) { pages.clear(); if (!offset) trail = [0]; }
+    const cached = pages.get(offset);
+    const retained = cached && Date.now() - cached.loadedAt < 60000
+      && cached.target === binding.target && cached.revision === binding.revision
+      && cached.session === expectedSession && cached.sortKey === JSON.stringify(sort) ? cached : null;
+    const envelope = retained
+      ? retained.envelope : await window.MCPKnxProject.adminRequest('knx_project_page',
+        {...binding, offset, sort});
     if (request !== generation || state.oauth !== expectedSession) return;
-    const envelope = result?.structuredContent;
     if (!envelope?.ok) {
       if (envelope?.data?.error === 'unauthenticated') clearSession();
       throw new Error(envelope?.data?.message || label('error'));
@@ -210,13 +243,26 @@
       || summary.target_binding !== binding.target || summary.knx_revision !== binding.revision) {
       throw new Error(label('targetChanged'));
     }
-    const count = priorCount + envelope.data.findings.length;
-    frame = {...binding, cursor: envelope.data.next_cursor, count, inputCursor: cursor,
+    if (offset && !envelope.data.findings.length) { trail=[0]; return compare(0, true); }
+    if (frame && frame.fingerprint !== envelope.data.project_fingerprint) { pages.clear(); trail = [0]; }
+    // Keep a bounded set of already authorized pages only in this live tab.
+    if (!retained) {
+      const bytes = JSON.stringify(envelope).length * 2;
+      while (pages.size && (pages.size >= 20 || [...pages.values()].reduce((sum,item)=>sum+item.bytes,0)+bytes > 8*1024*1024))
+        pages.delete(pages.keys().next().value);
+      pages.set(offset, {envelope, bytes, loadedAt:Date.now(), ...binding,
+        session:expectedSession,sortKey:JSON.stringify(sort)});
+    }
+    trail = [...new Set([...trail,offset])].sort((a,b)=>a-b);
+    const count = offset + envelope.data.findings.length;
+    frame = {...binding, offset, sort, nextOffset:envelope.data.next_cursor ? count : null, count,
       fingerprint: envelope.data.project_fingerprint, modelVersion: envelope.data.model_version,
       evidence: envelope.data.findings.map(item => item.comparison).filter(Boolean),
       stale: envelope.stale, session: expectedSession, generation};
     render(envelope, summary, count);
+    rememberView();
     page.dispatchEvent(new CustomEvent('knx-project-state'));
+    return true;
   };
   const exportSnapshot = () => {
     if (!frame || frame.stale || !state.oauth || state.oauth !== frame.session) return null;
@@ -226,7 +272,7 @@
   };
   window.MCPKnxProject = Object.freeze({snapshot: exportSnapshot,
     adminRequest: async (action, payload) => {
-      if (!['knx_correction_apply', 'knx_correction_xml_preview', 'knx_correction_xml_download'].includes(action))
+      if (!['knx_project_page', 'knx_correction_apply', 'knx_correction_xml_preview', 'knx_correction_xml_download'].includes(action))
         throw new Error('knx_correction_invalid');
       const unavailable = () => {const error = new Error('knx_project_evidence_required');
         error.code = 'knx_project_evidence_required'; return error;};
@@ -240,6 +286,9 @@
       const response = await auth.fetchWithTimeout('knx.cgi', {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/x-www-form-urlencoded', 'X-Loxone-Authorization':`Bearer ${token}`},
         body:new URLSearchParams({action, payload:JSON.stringify(payload)})}, 60000);
+      if (response.status === 401) {
+        const error = new Error('HTTP 401'); error.httpStatus = 401; throw error;
+      }
       const result = await response.json();
       if (!response.ok || !result.ok) {
         const error = new Error('correction_unavailable'); error.code = result.error?.code; throw error;
@@ -253,10 +302,8 @@
     if (!snapshot || snapshot.binding !== binding) throw new Error('knx_revision_conflict');
     const expected = frame;
     try {
-      const result = await mcp.callTool('loxone_analyze_project', {scope: 'knx',
-        analyses: ['ets_project_comparison'], limit: 50,
-        ...(expected.inputCursor ? {cursor: expected.inputCursor} : {})});
-      const envelope = result?.structuredContent;
+      const envelope = await window.MCPKnxProject.adminRequest('knx_project_page',
+        {target:expected.target,revision:expected.revision,offset:expected.offset,sort:expected.sort});
       if (envelope?.data?.error === 'unauthenticated') clearSession();
       const current = knx.snapshot();
       if (!envelope?.ok || envelope.stale || !current
@@ -273,8 +320,26 @@
     }
     return snapshot;
   }});
-  elements.run.addEventListener('click', () => void run(() => compare()));
-  elements.next.addEventListener('click', () => void run(() => compare(frame?.cursor)));
+  elements.run.addEventListener('click', () => void run(() => compare(0, true)));
+  elements.next.addEventListener('click', () => { if (frame?.nextOffset != null) void run(() => compare(frame.nextOffset)); });
+  elements.previous.addEventListener('click', () => { if (frame?.offset) {
+    const prior = trail.filter(offset => offset < frame.offset).sort((a,b)=>b-a)[0];
+    void run(() => compare(prior ?? Math.max(0,frame.offset-50)));
+  }});
+  knx.tables?.bind('knx-project-rows', async () => {
+    if (!frame) return true;
+    let applied = false; trail=[0];
+    await run(async () => { applied = await compare(0, true) === true; });
+    return applied;
+  });
+  const restoreView = () => {
+    const current = knx.snapshot();
+    if (!savedView || busy || restoring || !state.oauth || !current
+        || page.getAttribute('aria-busy') === 'true') return;
+    const retained = savedView; savedView = null;
+    if (retained.target !== current.target) { rememberView(); return; }
+    void run(() => compare(retained.offset, true));
+  };
   elements.connect.addEventListener('click', () => {
     if (busy || page.getAttribute('aria-busy') === 'true') return;
     const popup = window.location.protocol === 'https:' ? auth.openAuthorizationPopup() : null;
@@ -283,9 +348,6 @@
       const session = await auth.authorize(popup);
       if (request !== generation) return;
       explorerState.setSession(session);
-      const tools = await mcp.initialize();
-      if (request !== generation || state.oauth !== session) return;
-      explorerState.setTools(tools);
       scheduleExpiry(); message(label('connected'));
     });
   });
@@ -302,8 +364,9 @@
       clearResult(); message(label('targetChanged'), 'warning');
     }
     controls();
+    restoreView();
   });
-  page.addEventListener('knx-idle', controls);
+  page.addEventListener('knx-idle', () => { controls(); restoreView(); });
   controls();
   message(label('restoringSession'), 'working');
   const restore = async () => {
@@ -315,14 +378,10 @@
         resource: discovery.resourceMetadata.resource, scope: 'loxone:read', accessToken: '', expiresAt: 0});
       await auth.refreshAccessToken();
       if (request !== generation) return;
-      const session = state.oauth;
-      const tools = await mcp.initialize();
-      if (request !== generation || state.oauth !== session) return;
-      explorerState.setTools(tools);
       scheduleExpiry(); message(label('connected'));
     } catch (error) { if (request === generation) { clearSession(); originWarning(error); } }
     finally { restoring = false; controls(); }
   };
   // Session discovery does not depend on the local catalog. User actions still do.
-  void run(restore, {independent: true});
+  void run(restore, {independent: true}).then(restoreView);
 })();

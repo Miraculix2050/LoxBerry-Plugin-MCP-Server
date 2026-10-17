@@ -39,6 +39,7 @@ from mcpserver.knx.store import KnxStore
 from mcpserver.knx.xml_adapter import parse_xml
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.runtime import RuntimeUnavailable
+from mcpserver.tools import _project_query as admitted_project_query
 
 TARGET = "https://first.example"
 SESSION = "b" * 64
@@ -456,3 +457,116 @@ def test_bridge_uses_only_one_family_read_admission_for_effect_and_release(bridg
         result = client.post(PATH, content=body, headers=headers).json()
     assert result["ok"] and result["data"]["outcome"] == "applied"
     assert ordinary[0] == 1 and loader.await_count == 3
+
+
+@pytest.mark.parametrize("case", ["ok", "revision", "sort", "offset", "proof", "scope", "revoked"])
+def test_sorted_project_read_preserves_independent_authority_and_typed_errors(bridge, case):
+    service, app, _, headers, _, store, selection, configs, _ = bridge
+    before = configs.path.read_bytes()
+    access = service.provider.load_access_token.return_value
+    target = hashlib.sha256(TARGET.encode()).hexdigest()
+    revision = selection["catalog_revision"]
+    response = {
+        "ok": True,
+        "stale": False,
+        "data": {
+            "summaries": {
+                "ets_project_comparison": {"target_binding": target, "knx_revision": revision}
+            },
+            "findings": [],
+        },
+    }
+
+    async def read(*args, **kwargs):
+        if case == "revoked":
+            service.store.mutate(lambda data: data["families"]["family"].update(revoked=True))
+        return SimpleNamespace(model_dump=lambda **_: response)
+
+    service.comparison = SimpleNamespace(run=AsyncMock(side_effect=read))
+    payload = dict(
+        target=target,
+        revision=revision,
+        offset=50,
+        sort={"field": "observation", "direction": "descending"},
+    )
+    if case == "revision":
+        payload["revision"] += 1
+    if case == "sort":
+        payload["sort"]["field"] = "not_a_column"
+    if case == "offset":
+        payload["offset"] = True
+    if case == "scope":
+        access.scopes.clear()
+    body = canonical(dict(action="knx_project_page", payload=payload))
+    headers[PROOF_HEADER] = proof(helper_key(service.store), SESSION, body, int(time.time()))
+    if case == "proof":
+        headers.pop(PROOF_HEADER)
+    with TestClient(app, client=("127.0.0.1", 12345)) as client:
+        result = client.post(PATH, content=body, headers=headers).json()
+    assert result["ok"] == (case == "ok")
+    if case == "ok":
+        assert service.comparison.run.await_args.kwargs["admin_access"] is access
+        assert service.comparison.run.await_args.kwargs["admin_table"]["offset"] == 50
+    elif case in {"revision", "sort", "offset"}:
+        assert result["error"]["code"] == (
+            "knx_revision_conflict" if case == "revision" else "knx_page_invalid"
+        )
+    if case in {"sort", "offset", "proof", "scope"}:
+        assert service.comparison.run.await_count == 0
+    assert configs.path.read_bytes() == before
+    assert store.page(TARGET)["revision"] == revision
+
+
+@pytest.mark.asyncio
+async def test_project_page_with_one_real_runtime_admission_permit_cannot_deadlock(
+    bridge, monkeypatch
+):
+    from test_knx_project_tools import project
+
+    import mcpserver.tools as tools
+    from mcpserver.loxone.runtime import LoxoneRuntime
+
+    service, _, _, _, _, store, selection, _, _ = bridge
+    shared = asyncio.Semaphore(1)
+    validator = AsyncMock(return_value=True)
+    runtime = LoxoneRuntime(
+        service.runtime.endpoint,
+        SimpleNamespace(),
+        call_admission=shared,
+        max_parallel_calls=1,
+        validate_access=validator,
+    )
+    runtime.snapshot = AsyncMock(return_value=SimpleNamespace(connected=True))
+    runtime.projects = SimpleNamespace(
+        query=AsyncMock(return_value=project()), authorize=AsyncMock()
+    )
+    service.runtime = runtime
+    service.admission = shared
+    monkeypatch.setattr(tools, "_project_query", admitted_project_query)
+    access = service.provider.load_access_token.return_value
+    value = dict(
+        action="knx_project_page",
+        payload=dict(
+            target=hashlib.sha256(TARGET.encode()).hexdigest(),
+            revision=selection["catalog_revision"],
+            offset=0,
+            sort={"field": "imported_name", "direction": "ascending"},
+        ),
+    )
+    body = canonical(value)
+    key = helper_key(service.store)
+    for _ in range(2):
+        result = await asyncio.wait_for(
+            service.execute(
+                value, SESSION, key, proof(key, SESSION, body, int(time.time())), body, access
+            ),
+            timeout=5,
+        )
+        assert result["ok"], result
+        assert not shared.locked()
+    assert runtime.projects.query.await_count == 2
+    assert runtime.snapshot.await_count == 2
+    assert len(runtime._project_rate) == 2
+    assert len(runtime._rate[access.family_id]) == 2
+    assert validator.await_count >= 2
+    assert store.page(TARGET)["revision"] == selection["catalog_revision"]

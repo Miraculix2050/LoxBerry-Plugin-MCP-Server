@@ -292,3 +292,31 @@ def test_database_setup_failures_are_storage_errors(tmp_path, monkeypatch, failu
     ):
         with pytest.raises(KnxError, match="^knx_storage_failed$"):
             operation()
+
+
+def test_table_name_keys_use_one_snapshot_without_hydrating_records(tmp_path):
+    store = KnxStore(tmp_path / "metadata.sqlite3")
+    store.restore(
+        "target",
+        0,
+        {
+            "schema_version": 1,
+            "records": [
+                dict(
+                    address_id=1,
+                    address="0/0/1",
+                    address_format="three_level",
+                    imported={"name": "ETS", "description": "x" * 4096},
+                    overrides={"name": "Manual"},
+                )
+            ],
+        },
+    )
+    metadata = ProjectMetadata(store.path)
+    assert metadata.table_names("target", 1, "imported") == {1: "ets"}
+    assert metadata.table_names("target", 1, "manual") == {1: "manual"}
+    assert not metadata.cache
+    assert metadata.table_names("other", 0, "manual") == {}
+    for revision, source in [(0, "manual"), (1, "description")]:
+        with pytest.raises(KnxError):
+            metadata.table_names("target", revision, source)

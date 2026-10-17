@@ -185,6 +185,7 @@ class KnxStore:
         count_only: bool = False,
         include_labels: bool = False,
         include_groups: bool = False,
+        table_sort: object = None,
     ) -> dict[str, Any]:
         if type(offset) is not int or not 0 <= offset <= MAX_ADDRESSES:
             raise KnxError("knx_page_invalid")
@@ -201,6 +202,43 @@ class KnxStore:
         ):
             raise KnxError("knx_page_invalid")
         selection = query_filters(filters)
+        from .read_model import table_order
+
+        field, descending = table_order(
+            table_sort,
+            (
+                "address",
+                "main_group",
+                "middle_group",
+                "imported_name",
+                "manual_name",
+                "description",
+                "sources",
+            ),
+        )
+        expressions = {
+            "address": "a.address",
+            "main_group": "(SELECT CAST(g.prefix AS INTEGER) FROM import_groups g "
+            "WHERE g.target=a.target AND g.format=a.format "
+            "AND g.prefix=CAST((a.address >> 11) AS TEXT))",
+            "middle_group": "(SELECT (a.address >> 8) FROM import_groups g "
+            "WHERE g.target=a.target AND g.format=a.format "
+            "AND a.format='three_level' AND g.prefix="
+            "CAST((a.address >> 11) AS TEXT)||'/'||CAST((a.address >> 8)&7 AS TEXT))",
+            "imported_name": "json_extract(a.imported,'$.name')",
+            "manual_name": "json_extract(a.overrides,'$.name')",
+            "description": "CASE WHEN json_type(a.overrides,'$.description') IS NOT NULL "
+            "THEN json_extract(a.overrides,'$.description') "
+            "ELSE json_extract(a.imported,'$.description') END",
+            "sources": "((a.imported != '{}') * 2 + (a.overrides != '{}'))",
+        }
+        expression = expressions[field]
+        collation = (
+            " COLLATE NOCASE" if field in {"imported_name", "manual_name", "description"} else ""
+        )
+        order = expression + collation + (" DESC" if descending else " ASC")
+        if field != "address":
+            order = "(" + expression + ") IS NULL," + order + ",a.address"
         where, arguments = query_sql(selection)
         if address_id is not None:
             where += " AND a.address=?"
@@ -223,7 +261,7 @@ class KnxStore:
                     "SELECT a.address,a.format,a.original,a.imported,a.overrides,s.source "
                     "FROM addresses AS a LEFT JOIN ets_sources AS s "
                     "ON s.target=a.target AND s.address=a.address "
-                    "WHERE a.target=?" + where + " ORDER BY a.address LIMIT ? OFFSET ?",
+                    "WHERE a.target=?" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                     [target, *arguments, limit, offset],
                 ).fetchall()
             )
@@ -369,9 +407,15 @@ class KnxStore:
             return revision
 
     def export(
-        self, target: str, offset: int = 0, *, filters: object = None, expected: object = None
+        self,
+        target: str,
+        offset: int = 0,
+        *,
+        filters: object = None,
+        expected: object = None,
+        table_sort: object = None,
     ) -> dict[str, Any]:
-        page = self.page(target, offset, filters=filters, expected=expected)
+        page = self.page(target, offset, filters=filters, expected=expected, table_sort=table_sort)
         return {
             "schema_version": 1,
             "records": [

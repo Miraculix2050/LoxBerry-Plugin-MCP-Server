@@ -239,3 +239,74 @@ async def test_selected_imported_labels_stay_below_manual_exact_prefix(tmp_path,
     result = await runner.run("knx", ["address_hierarchy"])
     assert not result.ok and result.data.error == "temporarily_unavailable"
     assert [(e.prefix, e.label) for e in captured] == [("1/2", "ETS middle"), ("1", "Manual")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field", ["address", "relation", "loxone_names", "imported_name", "manual_name", "observation"]
+)
+async def test_private_admin_ordering_is_global_and_leaves_public_mcp_order_unchanged(
+    tmp_path, monkeypatch, field
+):
+    query = project()
+    metadata = ProjectMetadata(tmp_path / "metadata.sqlite3")
+    store = metadata.store
+    target = "target"
+    records = [
+        dict(
+            address_id=n,
+            address=f"0/0/{n}",
+            address_format="three_level",
+            imported={"name": f"N{80 - n:03d}"},
+            overrides={"name": f"M{80 - n:03d}"},
+        )
+        for n in range(60)
+    ]
+    store.restore(target, 0, {"schema_version": 1, "records": records})
+
+    @asynccontextmanager
+    async def slot():
+        yield
+
+    runtime = SimpleNamespace(
+        endpoint=SimpleNamespace(origin=target),
+        worker_slot=slot,
+        projects=SimpleNamespace(authorize=AsyncMock()),
+    )
+    access = SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity")
+    loader = AsyncMock(return_value=(query, SimpleNamespace(connected=True)))
+    monkeypatch.setattr(tools, "_project_query", loader)
+    monkeypatch.setattr(tools, "_access", lambda: access)
+    runner = tools._ProjectAnalysisRunner(runtime, metadata=metadata)
+    pages = []
+    offset = 0
+    reads = 0
+    while True:
+        result = await runner.run(
+            "knx",
+            ["ets_project_comparison"],
+            limit=50,
+            admin_access=access,
+            admin_table={"offset": offset, "sort": {"field": field, "direction": "ascending"}},
+        )
+        assert result.ok, result.data
+        pages.extend(result.data.findings)
+        reads += 1
+        offset += len(result.data.findings)
+        if result.data.next_cursor is None:
+            break
+        assert reads < 10
+    assert len(pages) == 62 and len({row.finding_id for row in pages}) == 62
+    if field in {"imported_name", "manual_name"}:
+        source = "imported" if field == "imported_name" else "manual"
+        values = [
+            getattr(row.comparison.local_metadata, source).get("name", "")
+            if row.comparison.local_metadata
+            else ""
+            for row in pages
+        ]
+        assert values == sorted(values)
+    public = await runner.run("knx", ["ets_project_comparison"], limit=50)
+    assert public.ok and public.data.findings[0].group_address == "0/0/0"
+    assert loader.await_count == reads + 1
+    assert runtime.projects.authorize.await_count >= reads + 1

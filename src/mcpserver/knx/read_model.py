@@ -9,6 +9,20 @@ from typing import Any
 from .model import KnxError, address, metadata, text
 
 
+def table_order(value: object, fields: tuple[str, ...]) -> tuple[str, bool]:
+    """Validate an Admin table presentation independently of public MCP queries."""
+    if value is None:
+        return fields[0], False
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"field", "direction"}
+        or value.get("field") not in fields
+        or value.get("direction") not in ("ascending", "descending")
+    ):
+        raise KnxError("knx_page_invalid")
+    return value["field"], value["direction"] == "descending"
+
+
 def datapoint(raw: str) -> dict[str, Any]:
     """Recognize identifiers without claiming membership in a KNX type registry."""
     subtype = re.fullmatch(r"DPST-([0-9]{1,5})-([0-9]{1,5})", raw)

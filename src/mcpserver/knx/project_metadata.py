@@ -102,6 +102,30 @@ class ProjectMetadata:
             ).fetchone()
             return frozenset(json.loads(row[0]))
 
+    def table_names(self, target: str, revision: int, source: str) -> dict[int, str]:
+        """Read only name keys in one snapshot; do not hydrate/cache every catalog record."""
+        if source not in {"imported", "manual"}:
+            raise KnxError("knx_page_invalid")
+        if not self._exists():
+            if revision:
+                raise KnxError("knx_revision_conflict")
+            return {}
+        column = "imported" if source == "imported" else "overrides"
+        with self._connection() as db:
+            db.execute("BEGIN")
+            self.store.check(db, target, revision)
+            values = {}
+            for number, name in db.execute(
+                "SELECT address,json_extract("
+                + column
+                + ",'$.name') FROM addresses WHERE target=?",
+                (target,),
+            ):
+                if name is not None and not isinstance(name, str):
+                    raise KnxError("knx_storage_failed")
+                values[number] = (name or "").casefold()
+            return values
+
     def lookup(self, target: str, revision: int, numbers: set[int]) -> dict[int, Any]:
         if len(numbers) > _BATCH or any(type(n) is not int or not 0 <= n <= 65535 for n in numbers):
             raise KnxError("knx_page_invalid")

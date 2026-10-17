@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from collections.abc import Generator, Iterable, Iterator
 from contextlib import closing
 from typing import Any
@@ -13,7 +14,7 @@ from .drafts import DraftStore
 from .import_model import MAX_GROUPS, ImportSelection
 from .import_service import select_candidates
 from .model import FIELDS, MAX_ADDRESSES, KnxError, metadata
-from .read_model import datapoint
+from .read_model import datapoint, table_order
 from .store import KnxStore
 
 PAGE_SIZE = 50
@@ -138,6 +139,42 @@ class FileComparison:
         }
 
     def page(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("sort") is None:
+            return self._page(payload)
+        field, reverse = table_order(
+            payload["sort"], ("address", "change", "before", "after", "manual")
+        )
+        # SQLite's private temporary database is removed on close. Keep only a
+        # small page cache in RAM instead of retaining every source dictionary.
+        try:
+            with closing(sqlite3.connect("")) as ordered:
+                ordered.execute("PRAGMA page_size=4096")
+                ordered.execute("PRAGMA cache_size=-512")
+                ordered.execute("PRAGMA temp_store=FILE")
+                ordered.execute("PRAGMA max_page_count=32768")
+                ordered.execute("CREATE TABLE rows (sort_key TEXT, ordinal INTEGER, value TEXT)")
+                result = self._page(payload, ordered, field)
+                direction = "DESC" if reverse else "ASC"
+                result["rows"] = [
+                    json.loads(row[0])
+                    for row in ordered.execute(
+                        "SELECT value FROM rows ORDER BY sort_key COLLATE NOCASE "
+                        + direction
+                        + ",ordinal LIMIT ? OFFSET ?",
+                        (PAGE_SIZE, result["offset"]),
+                    )
+                ]
+                result["has_more"] = result["offset"] + len(result["rows"]) < result["total"]
+                return result
+        except sqlite3.Error:
+            raise KnxError("knx_storage_failed") from None
+
+    def _page(
+        self,
+        payload: dict[str, Any],
+        ordered: sqlite3.Connection | None = None,
+        sort_field: str = "address",
+    ) -> dict[str, Any]:
         revision, offset = payload.get("revision"), payload.get("offset", 0)
         if (
             type(revision) is not int
@@ -185,19 +222,38 @@ class FileComparison:
             counts[kind][change] += 1
             if change == "unchanged":
                 return
-            if offset <= total < offset + PAGE_SIZE:
-                rows.append(
-                    {
-                        "kind": kind,
-                        "identity": identity,
-                        "change": change,
-                        "before": before,
-                        "after": after,
-                        "changed_fields": fields,
-                        "manual": manual,
-                        **display,
-                    }
-                )
+            if ordered is not None or offset <= total < offset + PAGE_SIZE:
+                row = {
+                    "kind": kind,
+                    "identity": identity,
+                    "change": change,
+                    "before": before,
+                    "after": after,
+                    "changed_fields": fields,
+                    "manual": manual,
+                    **display,
+                }
+                if ordered is None:
+                    rows.append(row)
+                else:
+                    if sort_field == "address":
+                        identity = (
+                            row.get("after_address")
+                            or row.get("before_address")
+                            or row.get("prefix", "")
+                        )
+                        key = "/".join(f"{int(part):05d}" for part in identity.split("/"))
+                    elif sort_field == "change":
+                        key = change
+                    else:
+                        source = row[sort_field]
+                        key = (
+                            str(source.get("name", "")) + "\n" + json.dumps(source, sort_keys=True)
+                        )
+                    ordered.execute(
+                        "INSERT INTO rows VALUES(?,?,?)",
+                        (key, total, json.dumps(row, separators=(",", ":"))),
+                    )
             total += 1
 
         with self.store.connection() as db:

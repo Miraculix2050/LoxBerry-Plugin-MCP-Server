@@ -14,7 +14,9 @@ def _value(value: dict[str, Any], key: str, maximum: int) -> dict[str, Any]:
     return {"state": "value", "value": raw[:maximum], "truncated": len(raw) > maximum}
 
 
-def project_draft(raw: dict[str, Any], offset: int, limit: int, detail: bool) -> dict[str, Any]:
+def project_draft(
+    raw: dict[str, Any], offset: int, limit: int, detail: bool, table_sort: object = None
+) -> dict[str, Any]:
     if "drafts" in raw:
         return {
             "target_id": raw["target_id"],
@@ -30,9 +32,43 @@ def project_draft(raw: dict[str, Any], offset: int, limit: int, detail: bool) ->
         }
     draft = raw["draft"]
     changes = draft["changes"]
+    indexed = list(enumerate(changes))
+    if table_sort is not None:
+        from .read_model import table_order
+
+        field, reverse = table_order(
+            table_sort,
+            (
+                "address",
+                "field",
+                "destination",
+                "imported",
+                "manual",
+                "proposed",
+                "decision",
+            ),
+        )
+
+        def order(pair: tuple[int, dict[str, Any]]) -> Any:
+            index, row = pair
+            if field == "address":
+                return tuple(
+                    int(part) for part in str(row.get("address", row.get("prefix"))).split("/")
+                ), index
+            if field in {"imported", "manual"}:
+                value = row["sources"][field].get(row["field"], "")
+            elif field == "proposed":
+                value = row.get("value", "")
+            elif field == "field":
+                value = row["field"] + "/" + row["operation"]
+            else:
+                value = row[field]
+            return str(value).casefold(), index
+
+        indexed.sort(key=order, reverse=reverse)
     maximum = 4096 if detail else 128
     rows = []
-    for row in changes[offset : offset + limit]:
+    for _, row in indexed[offset : offset + limit]:
         rows.append(
             {
                 "change_id": row["change_id"],
@@ -69,7 +105,7 @@ def project_draft(raw: dict[str, Any], offset: int, limit: int, detail: bool) ->
         if draft["project_binding"]
         else None,
     )
-    return {
+    result = {
         "target_id": raw["target_id"],
         "drafts": [],
         "draft": summary,
@@ -81,3 +117,6 @@ def project_draft(raw: dict[str, Any], offset: int, limit: int, detail: bool) ->
         "applies_changes": False,
         "exports_file": False,
     }
+    if table_sort is not None:
+        result["change_offsets"] = [index for index, _ in indexed[offset : offset + limit]]
+    return result

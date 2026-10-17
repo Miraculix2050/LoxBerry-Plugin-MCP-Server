@@ -203,13 +203,16 @@
   const inspect = async (draft, offset = 0) => {
     rememberSelection(draft, offset);
     const data = await api('knx_correction_inspect', {target, draft_id: draft.draft_id,
-      draft_revision: draft.draft_revision, offset});
+      draft_revision: draft.draft_revision, offset,
+      sort:window.MCPKnx?.tables?.selection('knx-corrections-values',
+        ['address','field','destination','imported','manual','proposed','decision']) || null});
     if (!selected || selected.draft_id !== data.draft.draft_id
         || selected.draft_revision !== data.draft.draft_revision) exportSelection.clear();
     selected = {...data.draft, next_offset: data.next_offset, offset}; viewStale = false;
     values.textContent = '';
     values.dataset.emptyMessage = section.dataset.noChanges;
     for (const [index, item] of data.changes.entries()) {
+      const sourceOffset = data.change_offsets?.[index] ?? offset + index;
       const row = document.createElement('tr');
       for (const value of [item.identity, `${item.field} / ${item.operation}`, item.destination,
         display(item.imported), display(item.manual), display(item.proposed)]) cell(row, value);
@@ -228,7 +231,7 @@
         }
         if (!pendingApply && ['not_required', 'not_checked'].includes(data.project_status) && item.decision === 'accepted'
             && item.destination === 'local_metadata') {
-          actions.append(button(section.dataset.applyLocal, () => applyLocal(item, offset + index)));
+          actions.append(button(section.dataset.applyLocal, () => applyLocal(item, sourceOffset)));
         }
         for (const decision of ['accepted', 'rejected', 'proposed']) {
           const text = {accepted: section.dataset.accept, rejected: section.dataset.reject,
@@ -240,7 +243,7 @@
         const summary = document.createElement('summary'); summary.textContent = section.dataset.edit;
         const content = document.createElement('div'); edit.append(summary, content);
         edit.addEventListener('toggle', () => {
-          if (!viewStale && edit.open && !content.childElementCount) void run(() => editor(content, item, offset + index));
+          if (!viewStale && edit.open && !content.childElementCount) void run(() => editor(content, item, sourceOffset));
         });
         actions.append(edit);
       }
@@ -265,6 +268,7 @@
       const row = document.createElement('tr');
       for (const value of [draft.draft_id.slice(0, 12), draft.draft_revision,
         new Date(draft.expires_at * 1000).toLocaleString(), draft.change_count]) cell(row, value);
+      row.children[2].dataset.sortValue = String(draft.expires_at);
       knownDrafts.set(draft.draft_id, {draft, revision: row.children[1]});
       const td = document.createElement('td');
       const button = document.createElement('button');
@@ -321,6 +325,13 @@
     updatePending(null); await reload();
   }));
   page.addEventListener('knx-idle', controls);
+  window.MCPKnx?.tables?.bind('knx-corrections-values', async () => {
+    if (!selected) return true;
+    if (viewStale) return false;
+    let applied = false;
+    await run(async () => { await inspect(selected, 0); applied = true; });
+    return applied;
+  });
   new MutationObserver(controls).observe(page, {attributes: true, attributeFilter: ['aria-busy']});
   controls();
   if (window.MCPKnx?.initialSections) {

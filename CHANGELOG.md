@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add accessible, persistent KNX table-header sorting across paginated datasets.
+  Preserve record/action identities and the exact sorted JSON-export page. Add
+  Previous navigation and bounded, session-bound reuse of read comparison pages;
+  reload the selected project-comparison view freshly after page reload. Keep
+  failed views visible but unavailable as export evidence. Use the authenticated
+  private Admin bridge without changing public MCP schemas (#523).
+
 - Restore the selected KNX correction draft/page after reload using fresh server
   data. Keep views visible but block stale actions after uncertain decisions or
   failed refreshes; distinguish confirmed saves from lost responses. Avoid the

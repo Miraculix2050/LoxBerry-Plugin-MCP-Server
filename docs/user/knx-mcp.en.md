@@ -53,6 +53,31 @@ provenance for affected addresses; reimport the original ETS XML file before a
 later XML correction export. JSON exchange replaces neither ETS import nor a
 complete backup.
 
+## Sorting and project-comparison navigation
+
+Data-column headings are buttons. Click once for ascending order and again for
+descending order; arrows show the direction. Keyboard navigation is supported.
+The selected order survives a reload in the same tab. Action columns without a
+data value are excluded. The XML-selection column can be sorted by checked state.
+
+Group addresses, file comparison, project comparison and correction drafts are
+sorted before pagination, across the entire dataset. JSON export still uses
+exactly the displayed address page with its filters and sort order. Checkboxes
+and editing actions remain attached to the original records. Sorting changes
+neither address data nor decisions.
+
+In **ETS/Loxone project comparison**, **Previous** and **Next** show result pages
+with their entry range. Previously read pages may be reused in the open tab for
+up to one minute, bounded to 20 pages and 8 MiB. New server requests check access
+and the project again; **Run comparison** always reads fresh results. Project
+evidence is still checked freshly before XML preview/download.
+
+After reload, only target binding, page position and sorting are restored; result
+content and credentials are not persisted in browser storage. Results are read
+freshly. If the dataset shrinks, navigation starts from the beginning again. A
+temporary read failure keeps the previous view visible but prevents its use as
+current export evidence until a successful refresh.
+
 ## Correction drafts in the browser
 
 The selected correction draft and its displayed page survive a reload of the
