@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v12">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v13">
 <div class="mcp-knx-announcements">
  <p id="knx-drafts-announcement" role="status" data-loading="<TMPL_VAR KNX.DRAFTS_LOADING ESCAPE=HTML>"></p>
  <p id="knx-write-announcement" role="status" data-loading="<TMPL_VAR KNX.WRITE_LOADING ESCAPE=HTML>"></p>
@@ -228,6 +228,8 @@
  <details class="mcp-card" data-persist-collapse open id="knx-label-section">
   <summary><h2><TMPL_VAR SETUP.KNX_TAXONOMY></h2> <span id="knx-label-badge" class="mcp-service-badge" title="<TMPL_VAR KNX.LABEL_COUNT_HELP ESCAPE=HTML>" hidden></span> <span class="mcp-knx-loading" data-knx-catalog-loading aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
   <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.GROUP_ADVANCED_HELP></p>
+  <details id="knx-advanced-labels" data-persist-collapse><summary><TMPL_VAR KNX.GROUP_ADVANCED></summary>
   <form id="knx-taxonomy-form" class="mcp-form">
    <fieldset class="mcp-configuration-fields" disabled>
     <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" rows="5" maxlength="16384"></textarea></label>
@@ -240,6 +242,7 @@
     </div>
    </fieldset>
   </form>
+  </details>
  </div></details>
 
  <details class="mcp-card" data-persist-collapse open id="knx-address-section">
@@ -313,6 +316,45 @@
   <p id="knx-json-preview"></p><button class="lb-button" id="knx-json-apply" type="button" hidden><TMPL_VAR KNX.JSON_APPLY></button>
   </div>
  </details>
+ <details id="knx-group-management" data-persist-collapse
+  data-edit="<TMPL_VAR KNX.GROUP_EDIT ESCAPE=HTML>"
+  data-remove="<TMPL_VAR KNX.GROUP_REMOVE ESCAPE=HTML>"
+  data-remove-confirm="<TMPL_VAR KNX.GROUP_REMOVE_CONFIRM ESCAPE=HTML>"
+  data-conflict="<TMPL_VAR KNX.GROUP_ADVANCED_CONFLICT ESCAPE=HTML>"
+  data-stale="<TMPL_VAR KNX.GROUP_STALE ESCAPE=HTML>"
+  data-loading="<TMPL_VAR KNX.GROUP_LOADING ESCAPE=HTML>"
+  data-saved-refresh-failed="<TMPL_VAR KNX.GROUP_SAVED_REFRESH_FAILED ESCAPE=HTML>"
+  data-main="<TMPL_VAR KNX.GROUP_MAIN ESCAPE=HTML>"
+  data-middle="<TMPL_VAR KNX.GROUP_MIDDLE ESCAPE=HTML>"
+  data-imported="<TMPL_VAR KNX.IMPORT_NAME ESCAPE=HTML>"
+  data-local="<TMPL_VAR KNX.GROUP_LOCAL_LABEL ESCAPE=HTML>">
+  <summary><h3><TMPL_VAR KNX.GROUP_MANAGEMENT></h3></summary>
+  <p class="mcp-help"><TMPL_VAR KNX.GROUP_HELP></p>
+  <form id="knx-group-search" class="mcp-form"><div class="mcp-grid">
+   <label class="mcp-field"><span><TMPL_VAR KNX.SEARCH></span><input id="knx-group-query" type="search" maxlength="128"></label>
+  </div><button class="lb-button" type="submit"><TMPL_VAR KNX.SEARCH_APPLY></button>
+  <button class="lb-button" id="knx-group-refresh" type="button"><TMPL_VAR KNX.GROUP_REFRESH></button></form>
+  <p id="knx-group-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.GROUP_MANAGEMENT ESCAPE=HTML>">
+   <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.GROUP_PREFIX></th><th><TMPL_VAR KNX.FORMAT></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.GROUP_LOCAL_LABEL></th><th><TMPL_VAR KNX.GROUP_ADDRESS_COUNT></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-group-rows" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table>
+  </div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-group-previous" type="button" disabled><TMPL_VAR KNX.PREVIOUS></button><span id="knx-group-count"></span><button class="lb-button" id="knx-group-next" type="button" disabled><TMPL_VAR KNX.NEXT></button></div>
+  <section class="mcp-knx-work-area" aria-labelledby="knx-group-editor-title">
+   <h4 id="knx-group-editor-title"><TMPL_VAR KNX.GROUP_CREATE_EDIT></h4>
+   <form id="knx-group-form" class="mcp-form"><fieldset class="mcp-configuration-fields" disabled>
+    <div class="mcp-grid">
+     <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select id="knx-group-format"><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.GROUP_PREFIX></span><input id="knx-group-prefix" required maxlength="5" pattern="(?:0|[1-9]|[12][0-9]|3[01])(?:/[0-7])?"></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.GROUP_LOCAL_LABEL></span><input id="knx-group-label" required maxlength="80"></label>
+    </div>
+    <p id="knx-group-source" class="mcp-help"></p>
+    <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.GROUP_SAVE></button><button class="lb-button" type="reset"><TMPL_VAR KNX.GROUP_NEW></button></div>
+   </fieldset></form>
+  </section>
+ </details>
+ <details id="knx-individual-addresses" data-persist-collapse open>
+  <summary><h3><TMPL_VAR KNX.INDIVIDUAL_ADDRESSES></h3></summary>
   <p class="mcp-help"><TMPL_VAR KNX.LOCAL_SOURCE_HELP></p>
   <section id="knx-filter-section" class="mcp-knx-work-area mcp-knx-filter" aria-labelledby="knx-filter-title">
    <h3 id="knx-filter-title"><TMPL_VAR KNX.FILTER_TITLE></h3>
@@ -354,6 +396,7 @@
    </fieldset>
   </form>
   </section>
+ </details>
  </div></details>
  <details class="mcp-card" data-persist-collapse open id="knx-project-section"
   data-not-run="<TMPL_VAR KNX.PROJECT_NOT_RUN ESCAPE=HTML>"
@@ -484,7 +527,7 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v20" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v22" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v6" defer></script>
 <script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v11" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>

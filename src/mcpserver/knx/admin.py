@@ -72,6 +72,7 @@ def dispatch_knx(
 
     allowed = {
         "knx_page",
+        "knx_groups_page",
         "knx_put",
         "knx_delete",
         "knx_export",
@@ -487,6 +488,33 @@ def _run(
     taxonomy_revision = hashlib.sha256(
         json.dumps(taxonomy_document, sort_keys=True).encode()
     ).hexdigest()
+    if action == "knx_groups_page":
+        if not payload.keys() <= {
+            "target",
+            "offset",
+            "query_revision",
+            "taxonomy_revision",
+            "query",
+            "sort",
+        }:
+            raise KnxError("knx_page_invalid")
+        if payload.get("offset", 0) and (
+            "query_revision" not in payload or payload.get("taxonomy_revision") != taxonomy_revision
+        ):
+            raise KnxError("knx_revision_conflict")
+        return {
+            "target": token,
+            "taxonomy": taxonomy_document,
+            "taxonomy_revision": taxonomy_revision,
+            **store.admin_groups(
+                target,
+                taxonomy_document,
+                offset=payload.get("offset", 0),
+                expected=payload.get("query_revision"),
+                query=payload.get("query", ""),
+                table_sort=payload.get("sort"),
+            ),
+        }
     if action == "knx_taxonomy":
         if payload.get("taxonomy_revision") != taxonomy_revision:
             raise AdminError("KNX labels changed; reload", code="knx_revision_conflict")

@@ -80,6 +80,32 @@ current export evidence until a successful refresh.
 
 ## Correction drafts in the browser
 
+### Managing main and middle groups
+
+Under **Group addresses**, ETS import and JSON exchange precede separate
+**Main and middle groups** and **Individual addresses** views. Group data loads
+only when opened; collapsed groups add no request. Open states survive reload.
+
+The group list includes all imported groups, including empty groups, and local
+group labels. Default prefix sorting is hierarchical, with main groups before
+their middle groups; all data columns sort before pagination. Counts describe
+stored associated addresses, not devices or bus usage. Preserved import format
+and documented import ranges remain authoritative even after changing an
+individual address's local spelling. Two-level addresses have no middle groups.
+
+To create a local group, enter format, prefix (e.g. `6` or three-level `6/2`) and
+label, then save. **Edit local label** updates the same saved address label;
+imported name and local label remain separate. **Remove** deletes only the local
+label; imported groups and child addresses remain. A local-only group without a
+label disappears from the list. Concurrent saved changes cause a conflict rather
+than being overwritten.
+
+Existing text editing remains under **KNX address labels → Advanced editing**
+for bulk changes and full-address labels. Save or discard pending text edits
+before saving structured group changes. Both views share the existing maximum
+of 128 active labels. Local group creation does not create ETS groups; the XML
+correction exporter does not create, move or restructure groups in ETS.
+
 The selected correction draft and its displayed page survive a reload of the
 same tab when browser storage is available. Only the target-bound selection is
 stored. The page retrieves the draft and its current revision freshly from the

@@ -229,12 +229,14 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require
 const w=new JSDOM(fs.readFileSync(0,'utf8'),
   {url:'https://local.example/knx.cgi',runScripts:'outside-only'}).window;
 const el=id=>w.document.getElementById(id);
-const sections=['knx-import-section','knx-json-section','knx-filter-section',
-  'knx-results-section','knx-editor-section'];
+const sections=['knx-import-section','knx-json-section','knx-group-management',
+  'knx-individual-addresses'];
 for(let i=1;i<sections.length;i++){
   assert.equal(el(sections[i]).parentElement,el(sections[0]).parentElement);
   assert(el(sections[i-1]).compareDocumentPosition(el(sections[i]))&4);
 }
+for(const id of ['knx-filter-section','knx-results-section','knx-editor-section'])
+  assert.equal(el(id).parentElement,el('knx-individual-addresses'));
 assert.equal(el('knx-import-section').nextElementSibling.id,'knx-json-section');
 assert.equal(el('knx-json-section').open,false);
 assert(el('knx-json-section').hasAttribute('data-persist-collapse'));
@@ -280,6 +282,7 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r))
         input=template,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
         cwd=root,
     )

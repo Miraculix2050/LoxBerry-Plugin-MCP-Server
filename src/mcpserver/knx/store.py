@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .model import MAX_ADDRESSES, KnxError, address, metadata
+from .model import MAX_ADDRESSES, KnxError, address, metadata, text
 from .read_model import (
     details,
     group_prefixes,
@@ -365,6 +365,123 @@ class KnxStore:
                 "groups": []
                 if count_only
                 else [imported_group(row) for row in matches[offset : offset + limit]],
+            }
+
+    def admin_groups(
+        self,
+        target: str,
+        manual: list[dict[str, str]],
+        *,
+        offset: object = 0,
+        expected: object = None,
+        query: object = "",
+        table_sort: object = None,
+    ) -> dict[str, Any]:
+        """Private bounded group view; counts use preserved import spelling/ranges."""
+        from bisect import bisect_left, bisect_right
+
+        from .import_model import MAX_GROUPS
+        from .read_model import table_order
+
+        if type(offset) is not int or not 0 <= offset <= MAX_GROUPS + 128:
+            raise KnxError("knx_page_invalid")
+        query = text(query, 128).strip().casefold()
+        field, reverse = table_order(
+            table_sort, ("prefix", "format", "imported_name", "manual_label", "address_count")
+        )
+        with self.connection() as db:
+            db.execute("BEGIN")
+            revision = self.revision(db, target)
+            if expected is not None:
+                self.check(db, target, expected)
+            raw = db.execute(
+                "SELECT format,prefix,fields,source,selected FROM import_groups "
+                "WHERE target=? ORDER BY format,prefix LIMIT ?",
+                (target, MAX_GROUPS + 1),
+            ).fetchall()
+            if len(raw) > MAX_GROUPS:
+                raise KnxError("knx_group_limit")
+            groups: dict[tuple[str, str], dict[str, Any]] = {}
+            for row in raw:
+                group = imported_group(row)
+                groups[(group["address_format"], group["prefix"])] = {
+                    "address_format": group["address_format"],
+                    "prefix": group["prefix"],
+                    "level": group["level"],
+                    "imported_name": group["fields"].get("name"),
+                    "manual_label": None,
+                    "range_start": group["range_start"],
+                    "range_end": group["range_end"],
+                }
+            for label in manual:
+                fmt, prefix = label["address_format"], label["prefix"]
+                parts = [int(part) for part in prefix.split("/")]
+                if len(parts) >= (3 if fmt == "three_level" else 2):
+                    continue  # Full-address labels stay available in advanced editing.
+                start = parts[0] << 11
+                if len(parts) == 2:
+                    start |= parts[1] << 8
+                group = groups.setdefault(
+                    (fmt, prefix),
+                    {
+                        "address_format": fmt,
+                        "prefix": prefix,
+                        "level": "main" if len(parts) == 1 else "middle",
+                        "imported_name": None,
+                        "range_start": start,
+                        "range_end": start + (2047 if len(parts) == 1 else 255),
+                    },
+                )
+                group["manual_label"] = label["label"]
+            numbers: dict[str, list[int]] = {"two_level": [], "three_level": []}
+            for number, fmt in db.execute(
+                "SELECT a.address,coalesce(json_extract(s.source,'$.address_format'),a.format) "
+                "FROM addresses a LEFT JOIN ets_sources s "
+                "ON s.target=a.target AND s.address=a.address "
+                "WHERE a.target=? ORDER BY a.address",
+                (target,),
+            ):
+                if fmt not in numbers:
+                    raise KnxError("knx_storage_failed")
+                numbers[fmt].append(number)
+            matches = []
+            for group in groups.values():
+                values = numbers[group["address_format"]]
+                group["address_count"] = bisect_right(values, group["range_end"]) - bisect_left(
+                    values, group["range_start"]
+                )
+                if (
+                    query
+                    not in "\x00".join(
+                        str(group.get(key) or "")
+                        for key in ("prefix", "imported_name", "manual_label")
+                    ).casefold()
+                ):
+                    continue
+                matches.append(group)
+
+            def order(group: dict[str, Any]) -> Any:
+                identity = (
+                    group["address_format"],
+                    tuple(int(p) for p in group["prefix"].split("/")),
+                )
+                if field == "prefix":
+                    return identity
+                if field == "format":
+                    return group["address_format"], identity
+                value = group[field]
+                return (
+                    value is None,
+                    value.casefold() if isinstance(value, str) else value or 0,
+                    identity,
+                )
+
+            matches.sort(key=order, reverse=reverse)
+            return {
+                "revision": revision,
+                "total": len(matches),
+                "offset": offset,
+                "groups": matches[offset : offset + 50],
             }
 
     def put(self, target: str, expected: object, value: object) -> int:
