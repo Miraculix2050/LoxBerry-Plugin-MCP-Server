@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .model import MAX_ADDRESSES, KnxError, address, metadata
-from .read_model import details, query_filters, query_sql, sql_deviates
+from .read_model import details, imported_group, query_filters, query_sql, sql_deviates
 
 
 def _search_document(number: int, original: str, imported: str, overrides: str) -> str:
@@ -177,6 +177,7 @@ class KnxStore:
         address_id: int | None = None,
         count_only: bool = False,
         include_labels: bool = False,
+        include_groups: bool = False,
     ) -> dict[str, Any]:
         if type(offset) is not int or not 0 <= offset <= MAX_ADDRESSES:
             raise KnxError("knx_page_invalid")
@@ -185,6 +186,7 @@ class KnxStore:
         if (
             type(count_only) is not bool
             or type(include_labels) is not bool
+            or type(include_groups) is not bool
             or (
                 address_id is not None
                 and (type(address_id) is not int or not 0 <= address_id < MAX_ADDRESSES)
@@ -231,13 +233,100 @@ class KnxStore:
                     {"address_format": fmt, "prefix": prefix, "label": json.loads(fields)["name"]}
                     for fmt, prefix, fields in selected
                 ]
+            items = [self.project(row) for row in rows]
+            if include_groups and items:
+                identities = {
+                    (item["address_format"], "/".join(item["address"].split("/")[:depth]))
+                    for item in items
+                    for depth in range(1, len(item["address"].split("/")))
+                }
+                conditions = " OR ".join("(format=? AND prefix=?)" for _ in identities)
+                groups = {
+                    group["group_id"]: group
+                    for row in db.execute(
+                        "SELECT format,prefix,fields,source,selected FROM import_groups "
+                        "WHERE target=? AND (" + conditions + ")",
+                        [target, *(value for pair in identities for value in pair)],
+                    )
+                    for group in [imported_group(row)]
+                }
+                for item in items:
+                    item["imported_groups"] = [
+                        groups[identifier]
+                        for depth in range(1, len(item["address"].split("/")))
+                        if (
+                            identifier := item["address_format"]
+                            + ":"
+                            + "/".join(item["address"].split("/")[:depth])
+                        )
+                        in groups
+                        and groups[identifier]["range_start"]
+                        <= item["address_id"]
+                        <= groups[identifier]["range_end"]
+                    ]
             return {
                 "revision": revision,
                 "total": total,
                 "offset": offset,
                 "filters": selection,
-                "items": [self.project(row) for row in rows],
+                "items": items,
                 **({"imported_labels": labels} if include_labels else {}),
+            }
+
+    def group_page(
+        self,
+        target: str,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        filters: object = None,
+        expected: object = None,
+        count_only: bool = False,
+    ) -> dict[str, Any]:
+        """Read every stored import group, including empty and inactive groups."""
+        from .import_model import MAX_GROUPS
+
+        if type(offset) is not int or not 0 <= offset <= MAX_ADDRESSES:
+            raise KnxError("knx_page_invalid")
+        if type(limit) is not int or not 1 <= limit <= 100 or type(count_only) is not bool:
+            raise KnxError("knx_page_invalid")
+        selection = query_filters(filters)
+        with self.connection() as db:
+            db.execute("BEGIN")
+            revision = self.revision(db, target)
+            if expected is not None:
+                self.check(db, target, expected)
+            stored = db.execute(
+                "SELECT format,prefix,fields,source,selected FROM import_groups "
+                "WHERE target=? ORDER BY format,CAST(prefix AS INTEGER),"
+                "CASE WHEN instr(prefix,'/')=0 THEN -1 "
+                "ELSE CAST(substr(prefix,instr(prefix,'/')+1) AS INTEGER) END LIMIT ?",
+                (target, MAX_GROUPS + 1),
+            ).fetchall()
+            if len(stored) > MAX_GROUPS:
+                raise KnxError("knx_group_limit")
+            matches = []
+            for row in stored:
+                fields = json.loads(row[2])
+                if selection["source"] in {"manual", "both"} or selection["deviations_only"]:
+                    continue
+                if (
+                    selection["query"].casefold()
+                    not in "\x00".join(
+                        [row[1], fields.get("name", ""), fields.get("description", "")]
+                    ).casefold()
+                ):
+                    continue
+                matches.append(row)
+            return {
+                "revision": revision,
+                "total": len(matches),
+                "offset": offset,
+                "active_prefix_ids": [f"{row[0]}:{row[1]}" for row in stored if row[4]],
+                "filters": selection,
+                "groups": []
+                if count_only
+                else [imported_group(row) for row in matches[offset : offset + limit]],
             }
 
     def put(self, target: str, expected: object, value: object) -> int:

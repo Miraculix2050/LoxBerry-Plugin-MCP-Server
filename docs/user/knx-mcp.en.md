@@ -52,7 +52,28 @@ trace only when structural context is needed.
 
 Use the discovered `loxberry_get_knx_catalog` for standalone local inventory:
 `kind="addresses"` reads ETS/manual records; `kind="prefix_labels"` reads active
-style-bound labels even without addresses. It requires separate OAuth consent
+style-bound labels even without addresses.
+`kind="imported_groups"` instead returns all stored imported main and middle
+groups, including empty groups and groups not selected as active address labels.
+Start with `view="summary"` and follow every entries page for a complete review.
+`query` searches prefix, name and description; `source="manual"`/`"both"` or
+`deviations_only=true` return no groups because this inventory has only imported
+sources. `address` is allowed only for `kind="addresses"`.
+
+Each group includes `group_id`, address format, prefix, level, imported fields,
+numeric bounds and `active_label`. `range_source="ets_xml"` identifies stored
+XML bounds; `"address_prefix"` identifies bounds derived from the prefix, for
+example for CSV. Address queries link matching groups through `group_ids` to
+deduplicated `group_context`. Existing `prefix_ids`/`prefix_context` remain limited
+to active labels. Manual labels do not overwrite imported group names. The
+address table displays main and middle groups with prefix and imported name;
+unknown groups remain unknown, and two-level addresses have no middle group.
+Completeness refers to the stored import inventory, not a guaranteed complete
+ETS project. Merge imports may retain groups from previous files. Group names
+support review candidates against a confirmed addressing convention but do not
+prove correct function assignment or signal relationships.
+
+It requires separate OAuth consent
 to `loxberry:knx:read`, Admin enablement on the KNX page and an explicit approval
 for the exact client, identity, Miniserver and local target. It is disabled by
 default. Loxone login, diagnostic and operation approvals do not grant access.

@@ -75,10 +75,12 @@ def catalog_page(
         address_id=address_id,
         count_only=count_only,
         include_labels=True,
+        include_groups=True,
     )
     prefixes = prefix_projection(page.pop("imported_labels"), manual_labels(config, target))
     records = []
     used_prefixes: set[str] = set()
+    group_context: dict[str, Any] = {}
     for row in page["items"]:
         number, canonical = address(row["address"], row["address_format"])
         if number != row["address_id"]:
@@ -91,6 +93,8 @@ def catalog_page(
         ]
         applicable = [identifier for identifier in applicable if identifier in prefixes]
         used_prefixes.update(applicable)
+        groups = row.get("imported_groups", [])
+        group_context.update((group["group_id"], group) for group in groups)
         records.append(
             {
                 "address_id": number,
@@ -108,6 +112,7 @@ def catalog_page(
                 "dpt_details": row["dpt_details"],
                 "deviations": row["deviations"],
                 "prefix_ids": applicable,
+                "group_ids": [group["group_id"] for group in groups],
                 "import_format": row["import_info"].get("file_format"),
             }
         )
@@ -117,11 +122,37 @@ def catalog_page(
         "total_matching": page["total"],
         "records": records,
         "prefix_context": [prefixes[key] for key in sorted(used_prefixes)],
+        "group_context": list(group_context.values()),
         "active_prefix_count": len(prefixes),
         "offset": offset,
         "returned": len(records),
         "filters": page["filters"],
         "count_scope": "matching_local_records",
+        "source_scope": "local_knx_metadata",
+        "loxone_names_included": False,
+    }
+
+
+def catalog_group_page(
+    store: KnxStore, config: PluginConfig, target: str, **options: Any
+) -> dict[str, Any]:
+    page = store.group_page(target, **options)
+    return {
+        "revision": page["revision"],
+        "labels_revision": labels_revision(config, target),
+        "total_matching": page["total"],
+        "records": [],
+        "imported_groups": page["groups"],
+        "prefix_context": [],
+        "group_context": [],
+        "active_prefix_count": len(
+            set(page["active_prefix_ids"])
+            | {f"{row['address_format']}:{row['prefix']}" for row in manual_labels(config, target)}
+        ),
+        "offset": page["offset"],
+        "returned": len(page["groups"]),
+        "filters": page["filters"],
+        "count_scope": "matching_imported_groups",
         "source_scope": "local_knx_metadata",
         "loxone_names_included": False,
     }

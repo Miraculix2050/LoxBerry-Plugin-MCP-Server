@@ -592,6 +592,7 @@ def _run(
         page = store.page(
             target,
             payload.get("offset", 0),
+            include_groups=True,
             filters=payload.get("filters") if action == "knx_page" else None,
             expected=payload.get("query_revision") if action == "knx_page" else None,
         )

@@ -199,7 +199,12 @@
     rows.replaceChildren();
     for (const item of data.items) {
       const tr = document.createElement('tr');
-      for (const value of [item.address, item.imported.name || '', item.overrides.name || '', item.effective.description || '']) {
+      const groupText = (level) => {
+        if (level === 'middle' && item.address_format === 'two_level') return '—';
+        const group = (item.imported_groups || []).find(entry => entry.level === level);
+        return group ? `${group.prefix} — ${group.fields.name}` : page.dataset.unknown;
+      };
+      for (const value of [item.address, groupText('main'), groupText('middle'), item.imported.name || '', item.overrides.name || '', item.effective.description || '']) {
         const td = document.createElement('td'); td.textContent = value; tr.append(td);
       }
       const sources = document.createElement('td'); sources.append(sourceDetails(item)); tr.append(sources);

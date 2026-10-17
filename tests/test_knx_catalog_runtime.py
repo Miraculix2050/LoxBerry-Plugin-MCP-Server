@@ -41,6 +41,83 @@ async def test_typed_tool_preserves_sparse_sources_and_discovery(reader, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_imported_groups_are_paged_bounded_and_independent_of_labels(reader, monkeypatch):
+    from mcp.server.fastmcp import FastMCP
+
+    from mcpserver.knx import catalog_tools
+
+    runtime, access = reader
+    target = runtime.config_store.load().loxone_endpoint
+    with runtime.store.connection() as db:
+        db.executemany(
+            "INSERT INTO import_groups VALUES(?,?,?,?,?,?)",
+            [
+                (
+                    target,
+                    "three_level",
+                    f"{i // 8}/{i % 8}",
+                    json.dumps({"name": "N" * 255, "description": "ä" * 4096}),
+                    "{}",
+                    0,
+                )
+                for i in range(140)
+            ],
+        )
+        db.commit()
+    monkeypatch.setattr(catalog_tools, "_access", lambda: access)
+    server = FastMCP("imported group contract")
+    catalog_tools.register_catalog_tool(server, runtime)
+    tool = server._tool_manager.get_tool("loxberry_get_knx_catalog")
+    assert "imported_groups" in tool.parameters["properties"]["kind"]["enum"]
+    summary = await server._tool_manager.call_tool(
+        "loxberry_get_knx_catalog",
+        {
+            "kind": "imported_groups",
+            "view": "summary",
+        },
+    )
+    assert summary.ok and summary.data.total_matching == 140
+    assert summary.data.imported_groups == [] and summary.data.next_cursor is None
+    seen, cursor = [], None
+    for _ in range(25):
+        result = await server._tool_manager.call_tool(
+            "loxberry_get_knx_catalog",
+            {
+                "kind": "imported_groups",
+                "limit": 100,
+                "cursor": cursor,
+            },
+        )
+        assert result.ok and len(result.model_dump_json().encode()) <= 65536
+        data = result.model_dump()["data"]
+        assert data["count_scope"] == "matching_imported_groups"
+        assert data["active_prefix_count"] == 0
+        assert all(not group["active_label"] for group in data["imported_groups"])
+        assert data["returned"] > 0
+        seen.extend(group["group_id"] for group in data["imported_groups"])
+        cursor = data["next_cursor"]
+        if cursor is None:
+            break
+    assert len(seen) == len(set(seen)) == 140
+    first = runtime.read(access, kind="imported_groups", limit=1)
+    with pytest.raises(ValueError):
+        runtime.read(access, kind="prefix_labels", limit=1, cursor=first["next_cursor"])
+    with pytest.raises(ValueError):
+        runtime.read(access, kind="imported_groups", address="0/0/0")
+    runtime.store.put(
+        target,
+        3,
+        {"address": "0/0/0", "address_format": "three_level", "fields": {"name": "Changed"}},
+    )
+    with pytest.raises(KnxError, match="revision_conflict"):
+        runtime.read(access, kind="imported_groups", limit=1, cursor=first["next_cursor"])
+    config = runtime.config_store.load()
+    runtime.config_store.save(replace(config, loxberry_knx_read_enabled=False))
+    with pytest.raises(PermissionError):
+        runtime.read(access, kind="imported_groups")
+
+
+@pytest.mark.asyncio
 async def test_typed_tool_fails_closed_without_grant_and_sanitizes_storage(reader, monkeypatch):
     from mcp.server.fastmcp import FastMCP
 

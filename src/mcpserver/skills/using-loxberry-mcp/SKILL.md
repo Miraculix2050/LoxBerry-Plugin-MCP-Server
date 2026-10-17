@@ -55,7 +55,14 @@ derivation follows from the listing.
    a summary, sample or all delivered pages; never call a page sample a full audit.
 4. **Inspect local inventory:** if discovered, `loxberry_get_knx_catalog` reads
    standalone ETS/manual addresses (`kind="addresses"`) or active style-bound
-   prefix labels (`kind="prefix_labels"`). It requires separately consented
+   prefix labels (`kind="prefix_labels"`). Use `kind="imported_groups"` for all
+   stored imported main/middle groups, including inactive and empty groups.
+   Address `group_ids` link to `group_context` independently of active labels;
+   `prefix_ids`/`prefix_context` retain their active-label meaning. Inspect
+   `range_source` to distinguish stored XML bounds from prefix-derived bounds.
+   Follow all pages before claiming full stored coverage; merge imports can
+   retain older groups. Function-assignment checks require a confirmed addressing
+   convention; group names alone do not prove a defect. It requires separately consented
    `loxberry:knx:read`, Admin enablement and exact target-bound approval; a Loxone
    login or diagnostics approval is insufficient. Start with `view="summary"`,
    narrow literal `query`, `source`, `deviations_only` or exact `address`, then

@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from .model import KnxError, address, text
+from .model import KnxError, address, metadata, text
 
 
 def datapoint(raw: str) -> dict[str, Any]:
@@ -98,4 +98,28 @@ def details(imported: dict[str, Any], overrides: dict[str, Any]) -> dict[str, An
             }
             for source, fields in (("imported", imported), ("manual", overrides))
         },
+    }
+
+
+def imported_group(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Project stored groups without the active-label length/count restrictions."""
+    fmt, prefix, fields, source, selected = row
+    parts = [int(part) for part in prefix.split("/")]
+    lower = parts[0] << 11
+    bits = 11
+    if len(parts) == 2:
+        lower += parts[1] << 8
+        bits = 8
+    attributes = json.loads(source).get("attributes", {})
+    xml_range = "RangeStart" in attributes and "RangeEnd" in attributes
+    return {
+        "group_id": f"{fmt}:{prefix}",
+        "address_format": fmt,
+        "prefix": prefix,
+        "level": "main" if len(parts) == 1 else "middle",
+        "fields": metadata(json.loads(fields)),
+        "range_start": int(attributes["RangeStart"]) if xml_range else lower,
+        "range_end": int(attributes["RangeEnd"]) if xml_range else lower + (1 << bits) - 1,
+        "range_source": "ets_xml" if xml_range else "address_prefix",
+        "active_label": bool(selected),
     }

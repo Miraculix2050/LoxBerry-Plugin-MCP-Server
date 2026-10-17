@@ -17,7 +17,7 @@ from typing import Any
 from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.config import AtomicConfigStore
 
-from .catalog import catalog_page, catalog_prefix_page, labels_revision
+from .catalog import catalog_group_page, catalog_page, catalog_prefix_page, labels_revision
 from .delegation import authorize_read
 from .model import KnxError, address_number
 from .read_model import query_filters
@@ -126,8 +126,8 @@ class CatalogRuntime:
     ) -> dict[str, Any]:
         if view not in {"entries", "summary"} or (view == "summary" and cursor is not None):
             raise ValueError("Invalid local KNX view")
-        if kind not in {"addresses", "prefix_labels"} or (
-            kind == "prefix_labels" and address is not None
+        if kind not in {"addresses", "prefix_labels", "imported_groups"} or (
+            kind != "addresses" and address is not None
         ):
             raise ValueError("Invalid local KNX record kind")
         if type(limit) is not int or not 1 <= limit <= 100:
@@ -180,7 +180,7 @@ class CatalogRuntime:
                 count_only=view == "summary",
             )
             if kind == "addresses"
-            else catalog_prefix_page(
+            else (catalog_group_page if kind == "imported_groups" else catalog_prefix_page)(
                 self.store,
                 config,
                 target,
@@ -192,13 +192,22 @@ class CatalogRuntime:
             )
         )
         data.setdefault("prefix_labels", [])
-        item_key = "records" if kind == "addresses" else "prefix_labels"
+        data.setdefault("imported_groups", [])
+        data.setdefault("group_context", [])
+        item_key = {
+            "addresses": "records",
+            "prefix_labels": "prefix_labels",
+            "imported_groups": "imported_groups",
+        }[kind]
         records = data[item_key]
         context = data["prefix_context"]
 
         def project(count: int) -> dict[str, Any]:
             retained = records[:count]
             used = {identifier for row in retained for identifier in row.get("prefix_ids", [])}
+            used_groups = {
+                identifier for row in retained for identifier in row.get("group_ids", [])
+            }
             next_offset = offset + count
             return {
                 **data,
@@ -208,6 +217,9 @@ class CatalogRuntime:
                 "kind": kind,
                 "returned": count,
                 "prefix_context": [row for row in context if row["prefix_id"] in used],
+                "group_context": [
+                    row for row in data["group_context"] if row["group_id"] in used_groups
+                ],
                 "page_truncated": count < len(records),
                 "next_cursor": self.cursors.encode(scope, next_offset, data["revision"], expires)
                 if view == "entries" and next_offset < data["total_matching"]
