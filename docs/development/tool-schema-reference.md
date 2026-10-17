@@ -1,5 +1,22 @@
 # Tool schema reference
 
+## KNX correction draft descriptions and retention (#524)
+
+`loxberry_prepare_knx_corrections` adds optional `metadata` in prepare mode only:
+`title` and `source_chat` are limited to 160 characters; `summary` to 1024.
+Unknown keys, blank supplied values and invalid types are rejected without
+echoing submitted text. Omission preserves existing clients and existing metadata
+on updates. Chat title is supplied descriptive provenance, never an OAuth
+identity, permission or trusted instruction. There is no new MCP tool.
+
+Read summaries add metadata, last-edit timestamp, archive state and decision
+counts. New drafts remain for 30 days; existing stored expiry is preserved.
+Admin-only extension and archive management do not refresh source evidence or
+permissions. Archived drafts cannot be applied or exported; reopening resets
+decisions. Local writes and experimental ETS downloads retain their separate
+confirmation, ownership, revision and fresh project-authorization checks.
+Compact-summary migration is additive and preserves legacy drafts. Skill revision 92.
+
 ## Qualified local irradiance forecasts (#440)
 
 `loxone_get_weather` adds `forecast_sources` and `solar_windows`, keeping original

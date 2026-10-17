@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- KNX correction workflow (#524): distinguish proposal confirmation, local apply
+  and experimental ETS export; add explicit batch confirmation and export columns.
+  New drafts remain for 30 days with bounded descriptive origin metadata and
+  Admin extension/archive/reopen/delete; freshness and authorization stay separate.
+
 - Add accessible, persistent KNX table-header sorting across paginated datasets.
   Preserve record/action identities and the exact sorted JSON-export page. Add
   Previous navigation and bounded, session-bound reuse of read comparison pages;

@@ -15,6 +15,7 @@ from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeUnavailable
 from mcpserver.tools import ErrorData, ToolEnvelope, _access, _error, _project_query, _result
 
 from .catalog_runtime import CatalogRuntime, CatalogUnavailable
+from .correction_drafts import descriptive_metadata
 from .correction_projection import project_draft
 from .correction_runtime import CorrectionRuntime
 from .model import KnxError
@@ -71,6 +72,10 @@ class DraftSummary(BaseModel):
     created_at: int
     change_count: int
     project_binding_digest: str | None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    updated_at: int | None = None
+    archived: bool = False
+    decision_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class DraftReadData(BaseModel):
@@ -180,7 +185,8 @@ def register_correction_tools(
     @server.tool(
         name="loxberry_get_knx_correction_drafts",
         description=(
-            "Inspect own 24-hour KNX proposals, including stale drafts. Independent Admin "
+            "Inspect own KNX proposals (new drafts: 30 days), including stale drafts. "
+            "Independent Admin "
             "draft/read approval required. No apply/export; project evidence is unchecked "
             "unless explicitly requested. Use request_id to reconcile uncertain creation; "
             "absence does not prove failure while a worker is still running. Continue with "
@@ -276,11 +282,32 @@ def register_correction_tools(
                 }
             ),
         ] = None,
+        metadata: Annotated[
+            Any,
+            Field(
+                json_schema_extra={
+                    "type": ["object", "null"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                        "summary": {"type": "string", "minLength": 1, "maxLength": 1024},
+                        "source_chat": {"type": "string", "minLength": 1, "maxLength": 160},
+                    },
+                    "description": (
+                        "Optional unverified title, reason and originating chat title; "
+                        "no chat ID or inferred OAuth identity."
+                    ),
+                }
+            ),
+        ] = None,
     ) -> DraftPreparationEnvelope:
         # Validate private change values here, returning only fixed diagnostics;
         # SDK validation errors must not echo proposed descriptions or names.
         try:
             if (draft_id is None) != (draft_revision is None):
+                raise KnxError("knx_correction_invalid")
+            parsed_metadata = descriptive_metadata(metadata) if metadata is not None else None
+            if mode == "review" and metadata is not None:
                 raise KnxError("knx_correction_invalid")
             parsed: list[dict[str, Any]] = []
             parsed_decisions: list[dict[str, Any]] = []
@@ -324,6 +351,7 @@ def register_correction_tools(
                     draft_revision=draft_revision,
                     mode=mode,
                     decisions=parsed_decisions,
+                    metadata=parsed_metadata,
                 ),
                 use_project_evidence or any("project_object_id" in row for row in parsed),
             ),

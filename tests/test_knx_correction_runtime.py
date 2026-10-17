@@ -118,6 +118,26 @@ async def test_creation_reconciles_without_id_and_does_not_apply(client):
 
 
 @pytest.mark.asyncio
+async def test_optional_origin_metadata_is_publicly_descriptive_and_owner_bound(client):
+    server, runtime = client
+    args = arguments(runtime)
+    args["metadata"] = {
+        "title": "Name cleanup",
+        "summary": "Discussed with user",
+        "source_chat": "Building review",
+    }
+    created = await call(server, PREPARE, args)
+    assert created["ok"]
+    listed = await call(server, READ, {})
+    assert listed["data"]["drafts"][0]["metadata"] == args["metadata"]
+    assert (await call(server, PREPARE, args))["data"] == created["data"]
+    args["metadata"]["title"] = "Different"
+    assert (await call(server, PREPARE, args))["data"]["error"] == "knx_correction_request_conflict"
+    invalid = dict(args, request_id="e" * 32, metadata={"chat_id": "private"})
+    assert (await call(server, PREPARE, invalid))["data"]["error"] == "invalid_input"
+
+
+@pytest.mark.asyncio
 async def test_continuation_rejects_revision_change_and_marks_truncation(client):
     server, runtime = client
     args = arguments(runtime)

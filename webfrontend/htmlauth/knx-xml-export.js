@@ -28,6 +28,9 @@
     document.getElementById('knx-xml-preview').disabled = blocked || !eligible || !selected;
     const handoff = current && preview?.correction_handoff && current.target === preview.target
       && current.revision === preview.revision;
+    const origin = document.getElementById('knx-xml-origin');
+    if (origin) origin.textContent = handoff ? origin.dataset.draft : origin.dataset.comparison;
+    const table = rows.closest('.mcp-table-wrap'); if(table) table.hidden = Boolean(handoff);
     document.getElementById('knx-xml-download').disabled = blocked || !(eligible || handoff) || !preview || !confirm.checked;
     document.getElementById('knx-xml-clear').disabled = blocked
       || (!retainedPreview && (!eligible || !(selected || edited || preview)));
