@@ -350,7 +350,8 @@ Bestätigte KNX/EIB-Projektobjekte ergänzen begrenzte, quellengestützte Metada
 Endpunkte und KNX-Logikblöcke. Die Endpunktrichtung lautet `bus_to_loxone` oder
 `loxone_to_bus`; sie ist keine Aussage über die physische Gerätefunktion. Gruppenadressen
 behalten ihren Originaltext und erhalten nur bei gültigem Format eine kanonische Form. `EIBType`
-bleibt ein unaufgelöster Quellcode, keine geratene DPT. `EIBextsensor` und `EIBtextsensor`
+bleibt als Rohcode erhalten. Nur die versionierte, mit Config-Objekten abgeglichene
+Zuordnung ergänzt belegte DPT-Haupttypen. `EIBextsensor` und `EIBtextsensor`
 führen vom Bus zu Loxone; `EIBextactor` und `EIBtextactor` führen von Loxone zum Bus.
 Gültige Adressvarianten `:0` und `:1` bleiben für die beiden externen Typen getrennt;
 die Adresse nennt `EibAddr` oder nur bei `EIBextsensor`, falls dieses Feld fehlt,
@@ -361,7 +362,9 @@ Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern eine komp
 KNX-Zusammenfassung mit Original- und kanonischer Adresse, Quellfeld und Variante. Segmente,
 Namen, einen vorhandenen Rohdatentyp sowie begrenzte Connector-IDs und -Schlüssel mit
 Anzahlen ein- und ausgehender Signalverbindungen liefert `loxone_describe_project_object`.
-Fehlendes `EIBType` bei den neu modellierten Typen lässt den Datentyp unbekannt.
+Im verifizierten Format erhalten Sensor/Aktor ohne `EIBType` separat den impliziten
+DPT1-Standard ohne EIS-Typ; Textobjekte erhalten DPT16 über den Objekttyp.
+Ungeprüfte Versionen und erweiterte Typen bleiben ohne belegte Zuordnung.
 Der Filter `knx_group_address` akzeptiert gültige zwei- oder dreistufige Adressen und die
 Varianten `:0`/`:1`. Ungültige Syntax oder Zahlenbereiche liefern `invalid_input`; eine gültige
 Adresse ohne Treffer ergibt eine erfolgreiche leere Suchseite. Auch gültige Originalformen
@@ -404,7 +407,9 @@ Quellobjekt-Vorkommen werden getrennt von logischen Endpunkt-, Logikblock- und
 Linienzahlen gezählt; zusätzliche, über Modellquellen zusammengefasste Vorkommen
 sind eigens ausgewiesen. Unklare KNX-Kandidaten und ausgelassene Typgruppen machen
 die Abdeckung unvollständig. Objektdetails kennzeichnen `EIBType` als rohen
-Loxone-Config-Wert und melden, dass normalisierte DPT-Evidenz derzeit fehlt.
+Loxone-Config-Wert. Die separate `normalized_dpt_evidence` nennt belegte Haupttypen,
+EIS, Format-/Config-Version, Mappingversion und Herkunft; ETS-Untertypen bleiben
+unabhängig. Haupttypübereinstimmung bestätigt keine Geräte-/Telegrammkompatibilität.
 Mit `address_hierarchy` lassen sich gemessene ein-, zwei- und dreistufige
 Adresspräfixe seitenweise abrufen. Jeder Präfixeintrag trennt logische Endpunkte,
 rohe Modellquellenvorkommen, kanonische Adressen und Flankenvarianten und zeigt

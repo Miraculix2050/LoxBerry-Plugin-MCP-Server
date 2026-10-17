@@ -46,8 +46,8 @@ references stay unresolved. No Miniserver identity is inferred from ZIP filename
 `python -m mcpserver.loxone.project.config_knx <local-file.Loxone>` reads local
 Config XML through the bounded parser and prints datatype evidence only. It
 does not upload, modify or import a project into the running server. This path
-is separate from the Miniserver worker and does not change its MCP contracts,
-model version, `normalized_code` or `normalized_dpt_evidence`.
+is separate from the Miniserver worker. The independently paired Miniserver
+mapping is described below.
 
 Mapping `config-knx-v2` is enabled only for ControlList Version `274` and the
 unambiguous Document ConfigVersion `17020828`, observed in the user-supplied
@@ -75,7 +75,8 @@ numeric code zero or EIS type. `EIBactor` with code `6` remains separately
 EIS7/DPT1 with `mapped_explicit_code` provenance. Both have DPT1 as their main
 type, while their source evidence stays distinct. Empty or whitespace values,
 unknown/conflicting codes, unsupported versions and unobserved pairs remain
-unresolved. The default never applies to extended endpoint types or Miniserver data.
+unresolved. The offline default never applies to extended endpoint types. Miniserver defaults
+require their separate paired format verification.
 EIBtextsensor/EIBtextactor without EIBType map separately to EIS15/DPT16 by
 object type. Names and dropdown positions never select a datatype. EIS8/12/13
 are not supported selections for ordinary sensors/actors; no arithmetic rule
@@ -98,8 +99,9 @@ is used when present; only `EIBextsensor` uses `EibAddrPulse` when `EibAddr` is 
 address projection names the field actually used. Other suffixes are invalid;
 the suffix does not establish rising or falling edge semantics. Exact variant
 search matches only that variant, while a canonical-base search may return both.
-`EIBType` is retained when present as an unresolved source code; the model does not infer an
-EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
+`EIBType` is retained verbatim. Only the versioned, paired
+[datatype mapping](knx-datatype-evidence.md) adds normalized DPT main-type evidence;
+unpaired codes, missing/ambiguous versions and unsupported families remain unresolved. Unknown attributes remain internal and are never a raw MCP
 projection. Describe bounds connector IDs and keys plus incoming and outgoing
 signal counts; those counts report configured graph wiring, not bus traffic.
 Missing `EIBType` on the three newly modeled families is not diagnosed as a
@@ -168,8 +170,9 @@ devices. Marker-bearing objects without a confirmed `EIB*` type are counted only
 source-type groups are returned. `groups_omitted` and `complete` disclose omitted
 groups or ambiguous candidates; long labels have a bounded, hash-suffixed form.
 Object details identify raw `EIBType` as `loxone_config` evidence. The separate
-`normalized_dpt_evidence` field is null until an authoritative, versioned source is
-implemented; `normalized_code` remains null. No DPT or EIS meaning is inferred.
+`normalized_dpt_evidence` field holds the separate paired Miniserver main-type
+mapping where supported, otherwise null. A unique main type sets `normalized_code`;
+ETS/manual subtypes remain separate and compatibility stays unestablished.
 The `address_hierarchy` analysis emits one paginated fact per observed canonical
 prefix and bounded local pattern/outlier candidates. Prefixes are partitioned by
 two- or three-level address format; a three-level leaf retains the original

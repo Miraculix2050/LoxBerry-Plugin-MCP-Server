@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .decoder import decode_loxcc
+from .knx_datatypes import verified_knx_format
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
 from .semantics import (
@@ -19,7 +20,7 @@ from .semantics import (
     signal_use_rules,
 )
 
-PROJECT_MODEL_VERSION = 13
+PROJECT_MODEL_VERSION = 14
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
 _DIAGNOSTIC_LABEL_LIMIT = 100
@@ -250,6 +251,7 @@ def build_graph(
     bundle_by_id: dict[str, list[GraphNode]] = defaultdict(list)
     node: GraphNode | None
     for namespace, project in projects:
+        dpt_mapping_verified = verified_knx_format(project)
         local: dict[int, GraphNode] = {}
         by_id: dict[str, list[GraphNode]] = defaultdict(list)
         for index, element in enumerate(project.elements):
@@ -263,7 +265,7 @@ def build_graph(
                 element.value("U"),
                 element.value("Type"),
                 element.attributes,
-                classify_knx(element),
+                classify_knx(element, dpt_mapping_verified=dpt_mapping_verified),
             )
             local[index] = node
             nodes.append(node)

@@ -15,7 +15,7 @@ from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 from .taxonomy import AddressTaxonomyEntry
 
-ANALYSIS_VERSION = 12
+ANALYSIS_VERSION = 13
 _FINDING_ID_VERSION = 6
 ANALYSES = frozenset(
     {
@@ -1273,7 +1273,10 @@ def analyze_knx(
         "limitations": [
             {
                 "code": "normalized_dpt_unavailable",
-                "count": sum(item.datatype is not None for item in endpoints),
+                "count": sum(
+                    item.node.knx is None or item.node.knx.normalized_dpt_evidence is None
+                    for item in endpoints
+                ),
             },
             {"code": "semantic_domain_unavailable", "count": len(endpoints)},
             {

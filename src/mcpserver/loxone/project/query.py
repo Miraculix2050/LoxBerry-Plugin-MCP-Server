@@ -436,7 +436,21 @@ class ProjectQuery:
                 if knx.datatype is not None
                 else None
             ),
-            "normalized_dpt_evidence": None,
+            "normalized_dpt_evidence": (
+                {
+                    "source_format": knx.normalized_dpt_evidence.source_format,
+                    "mapping_version": knx.normalized_dpt_evidence.mapping_version,
+                    "format_version": knx.normalized_dpt_evidence.format_version,
+                    "config_version": knx.normalized_dpt_evidence.config_version,
+                    "status": knx.normalized_dpt_evidence.status,
+                    "eis": knx.normalized_dpt_evidence.eis,
+                    "dpt_main_types": list(knx.normalized_dpt_evidence.dpt_main_types),
+                    "subtype": None,
+                    "compatibility": "not_established",
+                }
+                if knx.normalized_dpt_evidence is not None
+                else None
+            ),
             "truncated_fields": list(knx.truncated_fields),
             "usage_observations": observations,
             "usage_observations_truncated": observations_truncated,
