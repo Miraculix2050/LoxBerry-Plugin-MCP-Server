@@ -460,7 +460,7 @@
     const groupPrefix = document.getElementById('knx-group-prefix');
     const groupLabel = document.getElementById('knx-group-label');
     const groupStatus = document.getElementById('knx-group-status');
-    let groupData = null, groupBase = null, groupStale = true;
+    let groupData = null, groupBase = null, groupStale = true, groupQuery = '';
     let requested = false;
     const groupControls = () => {
       const blocked = busy || !state;
@@ -480,7 +480,9 @@
         await run(async () => {
           try {await operation();applied=true;groupSection.dataset.loadFailed='false';}
           catch(error){groupStale=true;groupSection.dataset.loadFailed='true';
-            groupStatus.textContent=groupSection.dataset.stale;throw error;}
+            groupStatus.textContent=error.groupSaved ? groupSection.dataset.savedRefreshFailed : groupSection.dataset.stale;
+            if(error.groupSaved){message(groupSection.dataset.savedRefreshFailed);applied=true;}
+            else throw error;}
         });
       } finally {groupSection.removeAttribute('aria-busy');groupControls();}
       return applied;
@@ -495,15 +497,15 @@
         `${groupSection.dataset.imported}: ${item.imported_name ?? page.dataset.unknown}`;
       groupControls();groupLabel.focus();
     };
-    const loadGroups = async (offset=0) => {
+    const loadGroups = async (offset=0, query=groupQuery) => {
       if (!state) return;
-      const payload = {target:state.target,offset,query:document.getElementById('knx-group-query').value,
+      const payload = {target:state.target,offset,query,
         sort:tables.selection('knx-group-rows',['prefix','format','imported_name','manual_label','address_count'])};
       if (offset && groupData) Object.assign(payload,{query_revision:groupData.revision,
         taxonomy_revision:groupData.taxonomy_revision});
       const data = await api('knx_groups_page',payload);
       if (data.target !== state.target) throw new Error('knx_target_conflict');
-      groupData = data;groupStale=false;requested=true;
+      groupData = data;groupQuery=query;groupStale=false;requested=true;
       groupRows.replaceChildren();
       for (const item of data.groups) {
         const row=document.createElement('tr');row.dataset.level=item.level;
@@ -518,13 +520,18 @@
         if (item.manual_label !== null) {
           const remove=document.createElement('button');remove.type='button';remove.className='lb-button';
           remove.textContent=groupSection.dataset.remove;
-          remove.addEventListener('click',()=>void groupRun(async()=>{
+          remove.addEventListener('click',async()=>{
+            if(busy || groupStale)return;
             if(groupDirty || labelsDirty){groupStatus.textContent=groupSection.dataset.conflict;return;}
+            const baseline={target:groupData.target,taxonomy_revision:groupData.taxonomy_revision,
+              entries:groupData.taxonomy.filter(entry=>!(entry.address_format===item.address_format && entry.prefix===item.prefix))};
             if(!await ask(`${groupSection.dataset.removeConfirm}\n${item.prefix}: ${item.manual_label}`))return;
-            const entries=groupData.taxonomy.filter(entry=>!(entry.address_format===item.address_format && entry.prefix===item.prefix));
-            render(await api('knx_taxonomy',{target:groupData.target,taxonomy_revision:groupData.taxonomy_revision,entries}));
-            await loadGroups(0);message(page.dataset.saved);
-          }));actions.append(remove);
+            await groupRun(async()=>{
+              render(await api('knx_taxonomy',baseline));
+              message(page.dataset.saved);
+              try{await loadGroups(0);}catch(error){error.groupSaved=true;throw error;}
+            });
+          });actions.append(remove);
         }
         row.append(actions);groupRows.append(row);
       }
@@ -563,13 +570,14 @@
         const entries=groupBase.entries.filter(saved=>!(saved.address_format===entry.address_format && saved.prefix===entry.prefix));
         entries.push(entry);
         const data=await api('knx_taxonomy',{target:groupBase.target,taxonomy_revision:groupBase.taxonomy_revision,entries});
-        groupDirty=false;groupForm.reset();render(data);await loadGroups(0);message(page.dataset.saved);
+        groupDirty=false;groupForm.reset();render(data);message(page.dataset.saved);
+        try{await loadGroups(0);}catch(error){error.groupSaved=true;throw error;}
       });
     });
     for (const [key,delta] of [['previous',-50],['next',50]])
       document.getElementById(`knx-group-${key}`).addEventListener('click',()=>void groupRun(()=>loadGroups(groupData.offset+delta)));
     document.getElementById('knx-group-search').addEventListener('submit',event=>{
-      event.preventDefault();void groupRun(()=>loadGroups(0));
+      event.preventDefault();void groupRun(()=>loadGroups(0,document.getElementById('knx-group-query').value));
     });
     document.getElementById('knx-group-refresh').addEventListener('click',()=>void groupRun(()=>loadGroups(0)));
     tables.bind('knx-group-rows',()=>groupRun(()=>loadGroups(0)));

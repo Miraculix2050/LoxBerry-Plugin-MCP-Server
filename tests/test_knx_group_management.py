@@ -111,23 +111,32 @@ def test_admin_group_labels_reuse_taxonomy_revision_without_deleting_addresses(
         dispatch_knx("knx_groups_page", dict(target=token, offset=50), configs)
 
 
-def test_group_ui_lazy_loads_preserves_editor_and_uses_saved_revision():
+@pytest.mark.parametrize("fail_refresh", [False, True])
+def test_group_ui_lazy_loads_preserves_editor_and_uses_saved_revision(fail_refresh):
     script = r"""
 const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
 const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
 const w=new JSDOM(html,{url:'https://group.example/knx.cgi',runScripts:'outside-only'}).window;
 const el=id=>w.document.getElementById(id),calls=[];
+el('knx-group-management').dataset.savedRefreshFailed='Saved; reload failed';
+let failRefresh=false;
 const state={target:'a'.repeat(64),revision:1,total:0,offset:0,items:[],
  taxonomy:[],taxonomy_revision:'original',imported_labels:[]};
 let revision='original';
 w.fetch=async(_,o)=>{
  const action=o.body.get('action'),p=JSON.parse(o.body.get('payload'));calls.push({action,p});
  let data={...state};
- if(action==='knx_groups_page')data={...state,taxonomy_revision:revision,groups:[{
+ if(action==='knx_groups_page'){
+   if(failRefresh){failRefresh=false;
+     return{ok:false,json:async()=>({ok:false,error:{code:'failure'}})};}
+   data={...state,total:60,taxonomy_revision:revision,groups:[{
    prefix:'1/2',address_format:'three_level',level:'middle',imported_name:'<img> source',
-   manual_label:null,address_count:0}]};
+   manual_label:state.taxonomy[0]?.label ?? null,address_count:0}]};
+ }
  if(action==='knx_taxonomy'){
-   assert.equal(p.taxonomy_revision,'original');assert.equal(p.entries[0].label,'New label');
+   assert.equal(p.taxonomy_revision,p.entries.length?'original':'external');
+   if(p.entries.length)assert.equal(p.entries[0].label,'New label');
+   state.taxonomy=p.entries;failRefresh=FAIL_REFRESH;
    data={...state,taxonomy:p.entries,taxonomy_revision:'saved'};
  }
  return{ok:true,json:async()=>({ok:true,data})};
@@ -152,13 +161,27 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r))
  el('knx-back').click();assert.equal(dialog.open,true);dialog.close('cancel');await settle();
  revision='external';el('knx-group-refresh').click();await settle();
  assert.equal(el('knx-group-label').value,'New label');
+ el('knx-group-query').value='Unsubmitted search';
+ el('knx-group-next').click();await settle();
+ assert.equal(calls.at(-1).p.query,'');assert.equal(calls.at(-1).p.offset,50);
  el('knx-group-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
  await settle();
  assert.equal(calls.filter(c=>c.action==='knx_taxonomy').length,1);
  assert.equal(el('knx-group-prefix').readOnly,false);
+ if(FAIL_REFRESH){
+   assert.equal(el('knx-group-status').textContent,'Saved; reload failed');
+   assert.equal(el('knx-status').textContent,'Saved; reload failed');
+   el('knx-group-refresh').click();await settle();
+ }
+ el('knx-group-rows').querySelectorAll('button')[1].click();await settle();
+ assert.equal(dialog.open,true);
+ assert.equal(el('knx-confirm').querySelector('button[value="continue"]').disabled,false);
+ dialog.close('cancel');await settle();
+ assert.equal(calls.filter(c=>c.action==='knx_taxonomy').length,1);
  assert.equal(el('knx-advanced-labels').open,false);
  w.close();
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
+    script = script.replace("FAIL_REFRESH", "true" if fail_refresh else "false")
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
