@@ -243,3 +243,69 @@ def project_page(
             }
         )
     return result
+
+
+def table_findings(
+    findings: list[Any],
+    selection: object,
+    query: ProjectQuery,
+    metadata: ProjectMetadata,
+    target: str,
+    revision: int,
+) -> list[Any]:
+    """Order bounded compact observations before Admin pagination, not source projections."""
+    from mcpserver.knx.read_model import table_order
+
+    field, reverse = table_order(
+        selection,
+        (
+            "address",
+            "relation",
+            "loxone_names",
+            "imported_name",
+            "manual_name",
+            "observation",
+        ),
+    )
+    index = query.graph_index
+    assert index is not None
+    names: dict[int, str] = {}
+    if field in {"imported_name", "manual_name"}:
+        source = "imported" if field == "imported_name" else "manual"
+        names = metadata.table_names(target, revision, source)
+
+    def key(row: int) -> tuple[Any, int]:
+        number, flags = row & 65535, row >> 16
+        value: Any = number
+        if field == "relation":
+            value = ("import_only", "common", "observed_project_only")[flags & 3]
+        elif field == "observation":
+            value = (bool(flags & 4), bool(flags & (16 | 32)), bool(flags & 8))
+        elif field == "loxone_names":
+            value = tuple(
+                (_primary_name(query, node)[0] or "").casefold()
+                for node in index.knx_by_address.get(number, ())[:_MAX_OBJECTS]
+            )
+        elif field in {"imported_name", "manual_name"}:
+            value = names.get(number, "")
+        return value, number
+
+    return sorted(findings, key=key, reverse=reverse)
+
+
+async def table_findings_bounded(*args: Any) -> list[Any]:
+    """Retain the sorting worker lease through real completion after cancellation."""
+    task = asyncio.create_task(asyncio.to_thread(table_findings, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not task.cancelled():
+            task.exception()
+        raise

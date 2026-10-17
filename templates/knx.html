@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v11">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v12">
 <div class="mcp-knx-announcements">
  <p id="knx-drafts-announcement" role="status" data-loading="<TMPL_VAR KNX.DRAFTS_LOADING ESCAPE=HTML>"></p>
  <p id="knx-write-announcement" role="status" data-loading="<TMPL_VAR KNX.WRITE_LOADING ESCAPE=HTML>"></p>
@@ -7,7 +7,7 @@
  <p id="knx-read-announcement" role="status" data-loading="<TMPL_VAR KNX.READ_LOADING ESCAPE=HTML>"></p>
  <p id="knx-project-announcement" role="status"></p>
 </div>
-<main class="mcp-page mcp-knx" id="knx-page"
+<main class="mcp-page mcp-knx" id="knx-page" data-sort-by="<TMPL_VAR KNX.SORT_BY ESCAPE=HTML>" data-sort-ascending="<TMPL_VAR KNX.SORT_ASCENDING ESCAPE=HTML>" data-sort-descending="<TMPL_VAR KNX.SORT_DESCENDING ESCAPE=HTML>"
  data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
  data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
  data-error-export="<TMPL_VAR KNX.ERROR_EXPORT ESCAPE=HTML>"
@@ -50,6 +50,7 @@
  <div class="mcp-actions"><a class="lb-button" id="knx-back" href="index.cgi"><TMPL_VAR KNX.BACK></a></div>
  <h1><TMPL_VAR KNX.TITLE></h1>
  <p><TMPL_VAR KNX.SOURCE_HELP></p>
+ <p class="mcp-help"><TMPL_VAR KNX.SORT_HELP></p>
  <p id="knx-target"></p>
  <p id="knx-status" role="status" aria-live="polite"></p>
  <details class="mcp-card" data-persist-collapse open id="knx-read-delegation"
@@ -77,7 +78,7 @@
   <p id="knx-read-status" role="status" aria-live="polite"><TMPL_VAR KNX.LOADING></p>
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.READ_TITLE ESCAPE=HTML>"><table class="mcp-table">
    <thead><tr><th><TMPL_VAR KNX.READ_CLIENT></th><th><TMPL_VAR KNX.READ_BINDING></th>
-    <th><TMPL_VAR KNX.READ_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <th><TMPL_VAR KNX.READ_STATE></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
    <tbody id="knx-read-bindings" data-empty-message="<TMPL_VAR KNX.NO_BINDINGS ESCAPE=HTML>"></tbody>
   </table></div>
  </div></details>
@@ -106,7 +107,7 @@
   <p id="knx-drafts-status" role="status" aria-live="polite"></p>
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.DRAFTS_TITLE ESCAPE=HTML>"><table class="mcp-table">
    <thead><tr><th><TMPL_VAR KNX.DRAFTS_CLIENT></th><th><TMPL_VAR KNX.DRAFTS_BINDING></th>
-    <th><TMPL_VAR KNX.DRAFTS_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <th><TMPL_VAR KNX.DRAFTS_STATE></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
    <tbody id="knx-drafts-bindings" data-empty-message="<TMPL_VAR KNX.NO_BINDINGS ESCAPE=HTML>"></tbody>
   </table></div>
  </div></details>
@@ -137,7 +138,7 @@
   <p id="knx-write-status" role="status" aria-live="polite"></p>
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.WRITE_TITLE ESCAPE=HTML>"><table class="mcp-table">
    <thead><tr><th><TMPL_VAR KNX.WRITE_CLIENT></th><th><TMPL_VAR KNX.WRITE_BINDING></th>
-    <th><TMPL_VAR KNX.WRITE_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <th><TMPL_VAR KNX.WRITE_STATE></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
    <tbody id="knx-write-bindings"></tbody>
   </table></div>
  </div></details>
@@ -177,14 +178,14 @@
   <p id="knx-corrections-status" role="status" aria-live="polite"></p>
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_TITLE ESCAPE=HTML>">
    <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.CORRECTIONS_ID></th><th><TMPL_VAR KNX.CORRECTIONS_REVISION></th>
-    <th><TMPL_VAR KNX.CORRECTIONS_EXPIRES></th><th><TMPL_VAR KNX.CORRECTIONS_COUNT></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <th><TMPL_VAR KNX.CORRECTIONS_EXPIRES></th><th><TMPL_VAR KNX.CORRECTIONS_COUNT></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
     <tbody id="knx-corrections-list" data-empty-message="<TMPL_VAR KNX.NO_DRAFTS ESCAPE=HTML>"></tbody></table>
   </div>
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_VALUES ESCAPE=HTML>">
    <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.CORRECTIONS_FIELD></th>
     <th><TMPL_VAR KNX.CORRECTIONS_DESTINATION></th><th><TMPL_VAR KNX.CORRECTIONS_IMPORTED></th>
     <th><TMPL_VAR KNX.CORRECTIONS_MANUAL></th><th><TMPL_VAR KNX.CORRECTIONS_PROPOSED></th>
-    <th><TMPL_VAR KNX.CORRECTIONS_DECISION></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <th><TMPL_VAR KNX.CORRECTIONS_DECISION></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
     <tbody id="knx-corrections-values" data-empty-message="<TMPL_VAR KNX.SELECT_DRAFT ESCAPE=HTML>"></tbody></table>
   </div>
   <button class="lb-button" type="button" id="knx-corrections-export" hidden><TMPL_VAR KNX.CORRECTIONS_EXPORT></button>
@@ -295,7 +296,7 @@
   </section>
   <section id="knx-results-section" aria-labelledby="knx-results-title">
    <h3 id="knx-results-title"><TMPL_VAR KNX.ADDRESS_LIST></h3>
-   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.MAIN_GROUP></th><th><TMPL_VAR KNX.MIDDLE_GROUP></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
+   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.MAIN_GROUP></th><th><TMPL_VAR KNX.MIDDLE_GROUP></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
   <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
   </section>
   <section id="knx-editor-section" class="mcp-knx-work-area" aria-labelledby="knx-editor-title"
@@ -346,6 +347,7 @@
   data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
   data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
   data-error="<TMPL_VAR EXPLORER.ERROR ESCAPE=HTML>"
+  data-refresh-failed="<TMPL_VAR KNX.PROJECT_REFRESH_FAILED ESCAPE=HTML>"
   data-popup-blocked="<TMPL_VAR EXPLORER.POPUP_BLOCKED ESCAPE=HTML>"
   data-auth-cancelled="<TMPL_VAR EXPLORER.AUTH_CANCELLED ESCAPE=HTML>"
   data-token-expired="<TMPL_VAR EXPLORER.TOKEN_EXPIRED ESCAPE=HTML>"
@@ -374,7 +376,7 @@
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.PROJECT_TITLE ESCAPE=HTML>"><table class="mcp-table"><thead><tr>
    <th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.PROJECT_RELATION></th><th><TMPL_VAR KNX.PROJECT_LOXONE_NAMES></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.PROJECT_OBSERVATION></th>
   </tr></thead><tbody id="knx-project-rows" data-empty-message="<TMPL_VAR KNX.PROJECT_NOT_RUN ESCAPE=HTML>"></tbody></table></div>
-  <div class="mcp-actions"><span id="knx-project-count"></span><button class="lb-button" id="knx-project-next" type="button" disabled><TMPL_VAR KNX.NEXT></button></div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-project-previous" type="button" disabled><TMPL_VAR KNX.PREVIOUS></button><span id="knx-project-count"></span><button class="lb-button" id="knx-project-next" type="button" disabled><TMPL_VAR KNX.NEXT></button></div>
  </div></details>
  <details class="mcp-card" data-persist-collapse open id="knx-compare-section"
   data-not-run="<TMPL_VAR KNX.COMPARE_NOT_RUN ESCAPE=HTML>"
@@ -449,15 +451,14 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v19" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v20" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v6" defer></script>
-<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v9" defer></script>
+<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v10" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1" defer></script>
 <script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
 <script src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
-<script src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
-<script src="knx-project.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-bridge-v6" defer></script>
-<script src="knx-compare.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-compare-v3" defer></script>
+<script src="knx-project.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-bridge-v7" defer></script>
+<script src="knx-compare.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-compare-v4" defer></script>
 
 <script src="knx-xml-export.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-xml-handoff-v4" defer></script>

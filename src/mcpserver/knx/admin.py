@@ -107,15 +107,25 @@ def dispatch_knx(
         "knx_correction_apply",
         "knx_correction_xml_preview",
         "knx_correction_xml_download",
+        "knx_project_page",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
     outcome = "rejected"
     try:
+        if action == "knx_project_page" and (
+            query is not None or not os.environ.get("HTTP_X_LOXONE_AUTHORIZATION")
+        ):
+            raise AdminError("Project evidence required", code="knx_project_evidence_required")
         if (
             query is None
             and action
-            in {"knx_correction_apply", "knx_correction_xml_preview", "knx_correction_xml_download"}
+            in {
+                "knx_correction_apply",
+                "knx_correction_xml_preview",
+                "knx_correction_xml_download",
+                "knx_project_page",
+            }
             and bool(os.environ.get("HTTP_X_LOXONE_AUTHORIZATION", ""))
         ):
             from .admin_bridge import forward
@@ -278,6 +288,7 @@ def _run(
             "revision",
             "taxonomy_revision",
             "offset",
+            "sort",
         },
         "knx_compare_discard": {"target", "draft_id"},
         "knx_xml_preview": {"target", "revision", "choices", "project_binding"},
@@ -321,7 +332,7 @@ def _run(
     }:
         from .correction_drafts import CorrectionDraftStore, _identifier
 
-        fields = {"target", "draft_id", "draft_revision", "offset", "detail"}
+        fields = {"target", "draft_id", "draft_revision", "offset", "detail", "sort"}
         if action == "knx_correction_apply":
             fields = {
                 "target",
@@ -436,7 +447,11 @@ def _run(
         return {
             "target": token,
             **project_draft(
-                {"target_id": token, "draft": draft}, offset, 1 if detail else 10, detail
+                {"target_id": token, "draft": draft},
+                offset,
+                1 if detail else 10,
+                detail,
+                payload.get("sort") if not detail else None,
             ),
         }
     repository = ImportRepository(store)
@@ -578,6 +593,7 @@ def _run(
                     payload.get("offset", 0),
                     filters=payload.get("filters"),
                     expected=payload.get("query_revision"),
+                    table_sort=payload.get("sort"),
                 ),
                 "target": token,
             }
@@ -595,6 +611,7 @@ def _run(
             include_groups=True,
             filters=payload.get("filters") if action == "knx_page" else None,
             expected=payload.get("query_revision") if action == "knx_page" else None,
+            table_sort=payload.get("sort"),
         )
     except KnxError as exc:
         raise AdminError("KNX operation rejected", code=exc.code) from None

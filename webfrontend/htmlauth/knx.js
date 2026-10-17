@@ -1,6 +1,77 @@
 (() => {
   'use strict';
   const page = document.getElementById('knx-page');
+  // Keep row nodes (and their input state/listeners) intact when sorting small tables.
+  const tables = (() => {
+    const key = 'mcp-knx-table-order-v1', orders = new Map(), handlers = new Map();
+    const collator = new Intl.Collator(document.documentElement.lang || undefined, {numeric:true, sensitivity:'base'});
+    let retained = {};
+    try { const raw = sessionStorage.getItem(key); if (raw?.length < 4096) retained = JSON.parse(raw); }
+    catch (_) { /* Sorting remains usable without browser storage. */ }
+    const persist = () => {
+      try { sessionStorage.setItem(key, JSON.stringify(Object.fromEntries(orders))); }
+      catch (_) { /* Preferences are optional. */ }
+    };
+    const get = id => orders.get(id) || null;
+    const local = (body) => {
+      const order = get(body.id);
+      if (!order || handlers.has(body.id)) return;
+      const rows = [...body.rows];
+      const value = row => {
+        const cell = row.cells[order.column];
+        if (cell?.dataset.sortValue !== undefined) return cell.dataset.sortValue;
+        const control = cell?.querySelector('input,textarea,select');
+        return control?.type === 'checkbox' ? Number(control.checked) : control?.value ?? cell?.textContent ?? '';
+      };
+      const sorted = [...rows].sort((a,b) => (order.direction === 'ascending' ? 1 : -1)
+        * collator.compare(String(value(a)), String(value(b))));
+      if (sorted.some((row,index) => row !== rows[index])) body.append(...sorted);
+    };
+    for (const body of page.querySelectorAll('table tbody[id]')) {
+      const headings = body.closest('table').querySelectorAll('thead th');
+      const prior = retained?.[body.id];
+      if (Number.isInteger(prior?.column) && prior.column >= 0 && prior.column < headings.length
+          && !headings[prior.column].hasAttribute('data-knx-unsortable')
+          && ['ascending','descending'].includes(prior.direction)) orders.set(body.id, prior);
+      const sync = () => headings.forEach((heading,index) => {
+        const active = get(body.id)?.column === index;
+        if (active) heading.setAttribute('aria-sort', get(body.id).direction);
+        else heading.removeAttribute('aria-sort');
+        const control = heading.querySelector('button');
+        if (control) control.setAttribute('aria-label', `${page.dataset.sortBy} ${control.textContent.trim()}, `
+          + (active && get(body.id).direction === 'ascending' ? page.dataset.sortDescending : page.dataset.sortAscending));
+      });
+      headings.forEach((heading,column) => {
+        if (heading.hasAttribute('data-knx-unsortable')) return;
+        const control = document.createElement('button');
+        control.type = 'button'; control.className = 'mcp-knx-sort';
+        control.textContent = heading.textContent;
+        heading.replaceChildren(control);
+        control.addEventListener('click', async () => {
+          if (page.getAttribute('aria-busy') === 'true'
+              || body.closest('[aria-busy="true"]')) return;
+          const previous = get(body.id);
+          orders.set(body.id, {column, direction:previous?.column === column
+            && previous.direction === 'ascending' ? 'descending' : 'ascending'});
+          sync(); persist();
+          if (handlers.has(body.id)) {
+            let applied = false;
+            try { applied = await handlers.get(body.id)() !== false; }
+            catch (_) { /* The owning section reports its read error. */ }
+            if (!applied) {
+              if (previous) orders.set(body.id,previous); else orders.delete(body.id);
+              sync(); persist();
+            }
+          } else local(body);
+        });
+      });
+      sync();
+      new MutationObserver(() => local(body)).observe(body, {childList:true,subtree:true,characterData:true});
+    }
+    return Object.freeze({get, bind:(id, handler) => handlers.set(id, handler),
+      selection:(id,fields) => { const order=get(id); return order
+        ? {field:fields[order.column],direction:order.direction} : null; }});
+  })();
   let resolveInitialSections;
   const initialSections = new Promise(resolve => { resolveInitialSections = resolve; });
   const collapseStorageKey = 'mcpserver.knx.sections.v1';
@@ -90,6 +161,9 @@
     return entry ? page.dataset[entry[0]] : page.dataset.failed;
   };
   const api = async (action, payload = {}) => {
+    if (['knx_page','knx_put','knx_delete','knx_restore','knx_taxonomy','knx_export'].includes(action))
+      payload = {...payload, sort:tables.selection('knx-addresses',
+        ['address','main_group','middle_group','imported_name','manual_name','description','sources'])};
     const hints = action === 'knx_page' ? [...page.querySelectorAll('[data-knx-catalog-loading]')] : [];
     const loading = (active) => {
       if (hints.length) {
@@ -369,7 +443,15 @@
     document.getElementById('knx-json-preview').textContent = '';
     message(page.dataset.saved);
   }));
-  window.MCPKnx = Object.freeze({api, run, ask, render, initialSections, snapshot: () => state,
+  tables.bind('knx-addresses', async () => {
+    let applied = false;
+    if (state) await run(async () => {
+      render(await api('knx_page', {target:state.target,query_revision:state.revision,filters:state.filters,offset:0}));
+      applied = true;
+    });
+    return applied;
+  });
+  window.MCPKnx = Object.freeze({api, run, ask, render, tables, initialSections, snapshot: () => state,
     setImportDirty: (value) => { importDirty = value; }, message});
   void run(async () => {
     try {

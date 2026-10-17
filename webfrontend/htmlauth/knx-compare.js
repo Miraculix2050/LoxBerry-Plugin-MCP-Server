@@ -125,19 +125,24 @@
         document.getElementById(prefix + 'info').textContent = ''; render();
       });
   }
-  const compare = offset => void core.run(async () => {
+  const compare = async offset => {
+    let applied = false;
+    await core.run(async () => {
     if (stale() || !inputs.right || (mode.value === 'file' && !inputs.left))
       throw new Error('knx_revision_conflict');
     const state = core.snapshot();
     const response = await core.api('knx_compare_page', {target: state.target, revision: state.revision,
       taxonomy_revision: state.taxonomy_revision,
       left_id: mode.value === 'file' ? inputs.left.draft_id : 'current',
-      right_id: inputs.right.draft_id, offset});
+      right_id: inputs.right.draft_id, offset,
+      sort:core.tables?.selection('knx-compare-rows', ['address','change','before','after','manual']) || null});
     if (!matches(response) || core.snapshot().target !== state.target
         || core.snapshot().revision !== state.revision
           || core.snapshot().taxonomy_revision !== state.taxonomy_revision) throw new Error('knx_revision_conflict');
-    frame = response; render();
-  });
+    frame = response; render(); applied = true;
+    });
+    return applied;
+  };
   document.getElementById('knx-compare-run').addEventListener('click', () => compare(0));
   document.getElementById('knx-compare-previous').addEventListener('click', () => compare(Math.max(0, frame.offset - 50)));
   document.getElementById('knx-compare-next').addEventListener('click', () => compare(frame.offset + 50));
@@ -152,5 +157,6 @@
     frame = null; render(); core.message(ui.dataset.cleared);
   }));
   page.addEventListener('knx-state', controls); page.addEventListener('knx-idle', controls);
+  core.tables?.bind('knx-compare-rows', () => frame && !stale() ? compare(0) : !frame);
   controls();
 })();

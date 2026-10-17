@@ -257,6 +257,11 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx .mcp-knx-work-area > .mcp-help { margin: 0 0 .65rem; }
 .mcp-knx .mcp-table th, .mcp-knx .mcp-table td { padding: .35rem .5rem; vertical-align: top; }
 .mcp-knx .mcp-table td p { margin: .25rem 0; }
+.mcp-knx-sort { appearance: none; border: 0; border-radius: .2rem; padding: .15rem 1.1rem .15rem 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; cursor: pointer; position: relative; }
+.mcp-knx-sort::after { content: '↕'; position: absolute; right: 0; opacity: .55; }
+.mcp-knx [aria-sort="ascending"] .mcp-knx-sort::after { content: '↑'; opacity: 1; }
+.mcp-knx [aria-sort="descending"] .mcp-knx-sort::after { content: '↓'; opacity: 1; }
+.mcp-knx-sort:focus-visible { outline: 2px solid #198754; outline-offset: 2px; }
 .mcp-knx .lb-button { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 2.25rem; padding: .35rem .65rem; font-size: 1rem; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
 .mcp-knx .mcp-table .lb-button { margin: .1rem .25rem .1rem 0; }
 .mcp-knx #knx-project-access-scopes > summary { cursor: pointer; font-weight: 600; }

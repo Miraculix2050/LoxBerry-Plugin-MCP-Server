@@ -28,12 +28,19 @@ w.MCPKnx={snapshot:()=>saved};
 w.confirm=w.alert=w.prompt=()=>{throw new Error('Native dialog forbidden');};
 for(const name of ['explorer-core.js','explorer-state.js'])
   w.eval(fs.readFileSync('webfrontend/htmlauth/'+name,'utf8'));
-let authOptions, requests=[], mode='ok', pendingResolve, adminCall;
+let authOptions, requests=[], mode='ok', pendingResolve, adminCall, comparisonTransport;
 w.McpExplorerAuth={create(options){authOptions=options;return{
   discover:async()=>({authorizationMetadata:{},resourceMetadata:{resource:'local'}}),
   refreshAccessToken:async()=>options.explorerState.updateToken({access_token:'synthetic',scope:'loxone:read',
     expires_in:60,expires_at:Date.now()/1000+60}),accessToken:async()=>'synthetic',fetchWithTimeout:async(url,options)=>{
- adminCall={url,options};return{ok:true,json:async()=>({ok:true,data:{outcome:'applied'}})};
+ adminCall={url,options};
+ if(options.body.get('action')==='knx_project_page') {
+   const args=JSON.parse(options.body.get('payload'));
+   const result=await comparisonTransport.callTool('loxone_analyze_project',
+     {scope:'knx',analyses:['ets_project_comparison'],limit:50,...args});
+   return{ok:true,json:async()=>({ok:true,data:result.structuredContent})};
+ }
+ return{ok:true,json:async()=>({ok:true,data:{outcome:'applied'}})};
  },
   explorerSession:async()=>{},openAuthorizationPopup:()=>null,authorize:async()=>{}
 };}};
@@ -54,7 +61,8 @@ const envelope=()=>({ok:true,stale:false,observed_at:'synthetic',
       source_groups_omitted:0,diagnostic_groups_omitted:0,incomplete_project_names:4}}},
   project_fingerprint:'f',model_version:13,coverage_by_source_type:{},source_diagnostics:{},
   analysis_truncated:false,truncation_reasons:[],page_truncated:false}});
-w.McpExplorerClient={create(){return{initialize:async()=>[],callTool:async(name,args)=>{
+comparisonTransport={initialize:async()=>[],
+ callTool:async(name,args)=>{
   requests.push({name,args});
   if(mode==='pending')return await new Promise(resolve=>{pendingResolve=resolve;});
   if(mode==='restricted')return{structuredContent:{ok:false,data:{error:'permission_denied'}}};
@@ -62,7 +70,7 @@ w.McpExplorerClient={create(){return{initialize:async()=>[],callTool:async(name,
     data:{error:'unauthenticated',message:'Fresh access denied'}}};
   const data=envelope();if(mode==='empty')data.data.findings=[];
   return{structuredContent:data};
-}};}};
+}};
 const el=id=>w.document.getElementById('knx-project-'+id);
 const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
 const click=async(id)=>{el(id).click();await settle();};
@@ -132,12 +140,16 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.match(el('summary').textContent,/Last file: Partial/);
   assert.equal(el('next').disabled,false);
   await click('next');
-  assert.equal(requests[1].args.cursor,'cursor');
+  assert.equal(requests[1].args.offset,1);
   assert.equal(el('next').disabled,true);
   assert.match(el('count').textContent,/2\u20132 \/ 2/);
+  const pageCalls=requests.length;
+  await click('previous');assert.equal(requests.length,pageCalls);
+  assert.match(el('count').textContent,/1\u20131 \/ 2/);
+  await click('next');assert.equal(requests.length,pageCalls);
   const correction=w.MCPKnxProject.snapshot();
   await w.MCPKnxProject.validate(correction.binding);
-  assert.equal(requests.at(-1).args.cursor,'cursor');
+  assert.equal(requests.at(-1).args.offset,1);
   item.comparison.project_objects[0].loxone_name='Changed since preview';
   await assert.rejects(()=>w.MCPKnxProject.validate(correction.binding),/knx_revision_conflict/);
   item.comparison.project_objects[0].loxone_name='Loxone primary A';
@@ -198,6 +210,7 @@ w.McpExplorerAuth={create:()=>({
   authorize:()=>new Promise(resolve=>{authorizeResolve=resolve;}),
   openAuthorizationPopup:()=>({}),refreshAccessToken:async()=>{},accessToken:async()=>'synthetic',
   explorerSession:async()=>{},fetchWithTimeout:async(_url,options)=>{
+    if(_url==='knx.cgi')return{status:401,ok:false};
     const request=JSON.parse(options.body),denied=request.method==='tools/call';
     const result=request.method==='initialize'?{protocolVersion:w.McpExplorerCore.PROTOCOL_VERSION}:
       request.method==='tools/list'?{tools:[]}:{};

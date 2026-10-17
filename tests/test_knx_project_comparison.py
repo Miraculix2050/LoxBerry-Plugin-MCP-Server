@@ -766,3 +766,23 @@ async def test_repeated_request_cancellation_retains_worker_until_thread_ends(mo
     with pytest.raises(asyncio.CancelledError):
         await task
     assert finished.is_set() and not lease["active"]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_table_sort_retains_worker_until_thread_finishes(monkeypatch):
+    started, release = threading.Event(), threading.Event()
+
+    def work(*args):
+        started.set()
+        release.wait(5)
+        return []
+
+    monkeypatch.setattr(comparison_adapter, "table_findings", work)
+    task = asyncio.create_task(comparison_adapter.table_findings_bounded())
+    assert await asyncio.to_thread(started.wait, 2)
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task

@@ -53,6 +53,35 @@ XML-Rekonstruktionsherkunft; vor einem späteren XML-Korrekturexport die
 ursprüngliche ETS-XML-Datei erneut importieren. Der Austausch ersetzt weder
 ETS-Import noch eine vollständige Sicherung.
 
+## Sortieren und im Projektabgleich blättern
+
+Die Überschriften der Datenspalten sind Schaltflächen. Ein Klick sortiert
+aufsteigend, ein weiterer absteigend; die Pfeile zeigen die Richtung. Sie sind
+auch per Tastatur bedienbar. Sortierung und Richtung bleiben im selben Tab bei
+Reload erhalten. Aktionsspalten ohne eigenen Datenwert werden nicht sortiert.
+Die XML-Auswahl lässt sich nach ihrem Auswahlzustand sortieren.
+
+Gruppenadressen, Dateivergleich, Projektabgleich und Korrekturentwürfe werden vor
+der Seitenauswahl sortiert. Damit gilt die Reihenfolge für den gesamten Bestand,
+nicht nur für die sichtbaren Zeilen. Der JSON-Export verwendet weiterhin genau
+die aktuell angezeigte Adressseite mit ihren Filtern und ihrer Sortierung.
+Auswahlfelder und Bearbeitungsaktionen bleiben dem ursprünglichen Datensatz
+zugeordnet. Die Sortierung ändert keine Adressdaten oder Entscheidungen.
+
+Im **ETS/Loxone-Projektabgleich** zeigen **Zurück** und **Weiter** die jeweilige
+Ergebnisseite mit einem Eintragsbereich. Bereits gelesene Seiten können im
+geöffneten Tab für höchstens eine Minute wiederverwendet werden. Der Puffer ist
+auf 20 Seiten und 8 MiB begrenzt. Neue Serverabfragen prüfen Zugriff und Projekt
+erneut; **Abgleich starten** liest auch zuvor gelesene Ergebnisse frisch.
+Vor XML-Vorschau/Download wird die Projektevidenz weiterhin frisch geprüft.
+
+Nach Reload werden nur Zielbindung, Seitenposition und Sortierung
+wiederhergestellt; Ergebnisinhalte und Zugangsdaten werden nicht im
+Browserspeicher abgelegt. Die Ergebnisse werden frisch gelesen. Hat sich der
+Bestand verkleinert, beginnt die Anzeige wieder vorn. Bei einem temporären
+Lesefehler bleibt die letzte Ansicht sichtbar, steht aber bis zur erfolgreichen
+Aktualisierung nicht als aktuelle Exportgrundlage zur Verfügung.
+
 ## Korrekturentwürfe im Browser
 
 Der ausgewählte Korrekturentwurf und seine angezeigte Seite bleiben beim

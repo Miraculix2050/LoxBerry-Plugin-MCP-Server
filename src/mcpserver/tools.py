@@ -6232,6 +6232,8 @@ class _ProjectAnalysisRunner:
         ambiguous_names: bool | None = None,
         address: str | None = None,
         source_details: bool = False,
+        admin_access: StoredAccessToken | None = None,
+        admin_table: dict[str, Any] | None = None,
     ) -> _PreparedProjectAnalysisEnvelope:
         try:
             version: int
@@ -6265,11 +6267,22 @@ class _ProjectAnalysisRunner:
                 )
             if view == "summary" and cursor is not None:
                 raise ValueError("summary has no continuation; select findings for pagination")
-            project, snapshot = await _project_query(self.runtime)
+            if admin_table is not None and (
+                scope != "knx"
+                or selected != {ETS_COMPARISON}
+                or cursor is not None
+                or view != "full"
+            ):
+                raise ValueError("Admin table requires an unfiltered ETS comparison")
+            project, snapshot = (
+                await _project_query(self.runtime, admin_access)
+                if admin_access is not None
+                else await _project_query(self.runtime)
+            )
             if self.runtime is None or self.runtime.projects is None:
                 raise RuntimeUnavailable("the service is not configured")
             projects = self.runtime.projects
-            access = _access()
+            access = admin_access if admin_access is not None else _access()
             if ETS_COMPARISON in selected and self.metadata is None:
                 raise ProjectError("project_metadata_unavailable")
             taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
@@ -6323,7 +6336,9 @@ class _ProjectAnalysisRunner:
                             [knx_target, knx_revision],
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
-                            presentation,
+                            [presentation, admin_table.get("sort")]
+                            if admin_table is not None
+                            else presentation,
                             [
                                 (entry.address_format, entry.prefix, entry.label)
                                 for entry in taxonomy
@@ -6423,10 +6438,28 @@ class _ProjectAnalysisRunner:
                 if filtered or view != "full"
                 else findings
             )
+            page_cursor = cursor
+            if admin_table is not None:
+                from mcpserver.loxone.project.ets_comparison import table_findings_bounded
+
+                offset = admin_table.get("offset", 0)
+                if type(offset) is not int or not 0 <= offset <= 65536:
+                    raise ValueError("Invalid Admin table offset")
+                assert self.metadata is not None
+                async with self.runtime.worker_slot():
+                    retained = await table_findings_bounded(
+                        retained,
+                        admin_table.get("sort"),
+                        project,
+                        self.metadata,
+                        knx_target,
+                        knx_revision,
+                    )
+                page_cursor = self.cursors.encode(cursor_scope, offset) if offset else None
             page = (
                 {"items": [], "next_cursor": None}
                 if view == "summary"
-                else _page(self.cursors, cursor_scope, retained, cursor, limit)
+                else _page(self.cursors, cursor_scope, retained, page_cursor, limit)
             )
             page["findings"] = page.pop("items")
             if ETS_COMPARISON in selected and view != "summary":
@@ -6482,7 +6515,7 @@ class _ProjectAnalysisRunner:
             envelope = _result(
                 _PreparedProjectAnalysisEnvelope, projected, stale=not snapshot.connected
             )
-            if not _fit_project_analysis_page(envelope, self.cursors, cursor_scope, cursor):
+            if not _fit_project_analysis_page(envelope, self.cursors, cursor_scope, page_cursor):
                 return _error(
                     _PreparedProjectAnalysisEnvelope,
                     "temporarily_unavailable",

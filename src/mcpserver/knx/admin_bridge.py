@@ -34,7 +34,12 @@ MAX_REQUEST = 64 * 1024
 MAX_RESPONSE = 21 * 1024 * 1024
 PROOF_TTL = 60
 ACTIONS = frozenset(
-    {"knx_correction_apply", "knx_correction_xml_preview", "knx_correction_xml_download"}
+    {
+        "knx_correction_apply",
+        "knx_correction_xml_preview",
+        "knx_correction_xml_download",
+        "knx_project_page",
+    }
 )
 SESSION_HEADER = "X-LoxBerry-KNX-Admin-Session"
 PROOF_HEADER = "X-LoxBerry-KNX-Admin-Proof"
@@ -134,6 +139,7 @@ class AdminProjectBridge:
         self.metadata_path, self.admission = metadata_path, admission
         self.slots = asyncio.Semaphore(configs.load().max_parallel_calls)
         self.workers: set[asyncio.Task[dict[str, Any]]] = set()
+        self.comparison: Any = None
 
     def fresh(self, access: StoredAccessToken) -> None:
         """Fresh local OAuth validity at effects, without reading Admin config again."""
@@ -200,7 +206,7 @@ class AdminProjectBridge:
             return JSONResponse({"ok": True, "data": result})
         except (PermissionError, ProjectError, RuntimeUnavailable):
             code = "knx_project_evidence_required"
-        except AdminError as exc:
+        except (AdminError, KnxError) as exc:
             code = exc.code
         except (PersistenceUncertain, TimeoutError):
             code = "write_outcome_uncertain"
@@ -253,6 +259,63 @@ class AdminProjectBridge:
             or value["payload"].get("target") != hashlib.sha256(target.encode()).hexdigest()
         ):
             raise AdminError("Target changed", code="knx_target_conflict")
+        if value["action"] == "knx_project_page":
+            from mcpserver.tools import _ProjectAnalysisRunner
+
+            from .project_metadata import ProjectMetadata
+            from .read_model import table_order
+
+            payload = value["payload"]
+            if (
+                type(payload.get("offset", 0)) is not int
+                or not 0 <= payload.get("offset", 0) <= 65536
+            ):
+                raise KnxError("knx_page_invalid")
+            if (
+                not payload.keys() <= {"target", "revision", "offset", "sort"}
+                or type(payload.get("revision")) is not int
+            ):
+                raise KnxError("knx_page_invalid")
+            table_order(
+                payload.get("sort"),
+                (
+                    "address",
+                    "relation",
+                    "loxone_names",
+                    "imported_name",
+                    "manual_name",
+                    "observation",
+                ),
+            )
+            if self.comparison is None:
+                self.comparison = _ProjectAnalysisRunner(
+                    self.runtime, self.configs, ProjectMetadata(self.metadata_path)
+                )
+            # The analysis runner admits each project/worker phase through the
+            # runtime's shared semaphore. Do not acquire that same permit here.
+            envelope = await self.comparison.run(
+                "knx",
+                ["ets_project_comparison"],
+                limit=50,
+                admin_access=access,
+                admin_table={"offset": payload.get("offset", 0), "sort": payload.get("sort")},
+            )
+            result: dict[str, Any] = envelope.model_dump(mode="json")
+            data = result.get("data")
+            summary = (
+                data.get("summaries", {}).get("ets_project_comparison", {})
+                if isinstance(data, dict)
+                else {}
+            )
+            if result["ok"] and (
+                summary.get("target_binding") != payload["target"]
+                or summary.get("knx_revision") != payload["revision"]
+            ):
+                raise KnxError("knx_revision_conflict")
+            if not verify(key, session, body, supplied, int(time.time())):
+                raise PermissionError("Admin approval expired")
+            await asyncio.to_thread(self.fresh, access)
+            return result
         query, _ = await _project_query(self.runtime, access)
 
         loop = asyncio.get_running_loop()
