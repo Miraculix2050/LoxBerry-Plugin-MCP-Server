@@ -5,11 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcpserver.config import PluginConfig
-from mcpserver.loxone.project.ets_comparison import _object
-from mcpserver.loxone.project.query import ProjectQuery
 
 from .catalog import labels_revision, manual_labels
 from .correction_drafts import CorrectionDraftStore
@@ -19,6 +17,9 @@ from .model import KnxError
 from .project_metadata import ProjectMetadata
 from .store import KnxStore
 from .xml_export import XmlCorrectionExport
+
+if TYPE_CHECKING:
+    from mcpserver.loxone.project.query import ProjectQuery
 
 
 def project_binding(query: ProjectQuery) -> str:
@@ -103,6 +104,8 @@ class CorrectionService:
                 for name in ("imported", "manual")
             }
             if "project_object_id" in row:
+                from mcpserver.loxone.project.ets_comparison import _object
+
                 if query is None or query.graph_index is None:
                     raise KnxError("knx_project_evidence_required")
                 if row["project_object_id"] not in query.graph_index.knx_by_address.get(number, ()):

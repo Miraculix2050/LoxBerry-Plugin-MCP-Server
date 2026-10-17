@@ -53,6 +53,21 @@ provenance for affected addresses; reimport the original ETS XML file before a
 later XML correction export. JSON exchange replaces neither ETS import nor a
 complete backup.
 
+## Correction drafts in the browser
+
+The selected correction draft and its displayed page survive a reload of the
+same tab when browser storage is available. Only the target-bound selection is
+stored. The page retrieves the draft and its current revision freshly from the
+server; removed or expired drafts are not restored. Complete displayed target
+values can be edited immediately; truncated values are fetched in full first.
+
+**Accept** confirms a proposal in the draft without applying it to local metadata
+or ETS. If a confirmed save is followed by a failed view refresh, the page says
+so explicitly. If the decision itself could not be confirmed, select **Refresh
+drafts** and check the saved state. The last view remains visible on temporary
+failures, but its actions stay blocked until a fresh read succeeds. An uncertain
+write is never replayed automatically.
+
 ## MCP workflow
 
 Inspect the current tool schema and retrieve `loxone_get_skill_guide(section="core")`,

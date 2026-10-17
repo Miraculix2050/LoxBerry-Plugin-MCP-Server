@@ -144,6 +144,9 @@
  <details class="mcp-card" data-persist-collapse open id="knx-corrections"
   data-no-changes="<TMPL_VAR KNX.NO_CHANGES ESCAPE=HTML>"
   data-select-draft="<TMPL_VAR KNX.SELECT_DRAFT ESCAPE=HTML>"
+  data-selection-unavailable="<TMPL_VAR KNX.CORRECTIONS_SELECTION_UNAVAILABLE ESCAPE=HTML>"
+  data-saved-refresh-failed="<TMPL_VAR KNX.CORRECTIONS_SAVED_REFRESH_FAILED ESCAPE=HTML>"
+  data-decision-unconfirmed="<TMPL_VAR KNX.CORRECTIONS_DECISION_UNCONFIRMED ESCAPE=HTML>"
   data-failed="<TMPL_VAR KNX.CORRECTIONS_FAILED ESCAPE=HTML>"
   data-inspect="<TMPL_VAR KNX.CORRECTIONS_INSPECT ESCAPE=HTML>"
   data-missing="<TMPL_VAR KNX.CORRECTIONS_MISSING ESCAPE=HTML>"
@@ -448,7 +451,7 @@
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v19" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v6" defer></script>
-<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v8" defer></script>
+<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v9" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1" defer></script>
 <script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
