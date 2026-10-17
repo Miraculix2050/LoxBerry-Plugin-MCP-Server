@@ -43,6 +43,8 @@
   updateEmptyTables();
   const status = document.getElementById('knx-status');
   const form = document.getElementById('knx-record-form');
+  const editor = document.getElementById('knx-editor-section');
+  const editorTitle = document.getElementById('knx-editor-title');
   const labels = document.getElementById('knx-taxonomy-form');
   const textarea = document.getElementById('knx-taxonomy-entries');
   const rows = document.getElementById('knx-addresses');
@@ -221,6 +223,7 @@
         for (const key of ['address', 'address_format']) form.elements.namedItem(key).value = item[key];
         for (const key of ['name', 'description']) form.elements.namedItem(key).value = item.effective[key] || '';
         form.elements.namedItem('dpts').value = (item.effective.dpts || []).join(', ');
+        editorTitle.textContent = editor.dataset.editTitle.replace('{address}', item.address);
         recordDirty = false; form.elements.namedItem('name').focus();
         renderEditorSources();
       });
@@ -287,6 +290,7 @@
       return;
     }
     editingFields = {}; editingImport = {}; touched.clear(); recordRevision = null;
+    editorTitle.textContent = editor.dataset.newTitle;
     form.elements.namedItem('address').readOnly = false; renderEditorSources();
   });
   form.addEventListener('submit', (event) => {

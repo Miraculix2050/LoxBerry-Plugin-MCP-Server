@@ -249,7 +249,12 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx input:not([type="checkbox"]), .mcp-knx select, .mcp-knx textarea { box-sizing: border-box; min-width: 0; max-width: 100%; }
 .mcp-knx .mcp-collapsible-content > p { margin: .2rem 0; }
 .mcp-knx .mcp-service-badge { margin-inline-start: .4rem; vertical-align: middle; }
-.mcp-knx #knx-import-section > summary { font-size: 1rem; }
+.mcp-knx #knx-import-section > summary, .mcp-knx #knx-json-section > summary { font-size: 1rem; }
+.mcp-knx .mcp-knx-work-area { min-width: 0; padding: .85rem; border: 1px solid #d2d7dc; border-radius: .3rem; }
+.mcp-knx .mcp-knx-filter { background: #f5f7f9; }
+.mcp-knx #knx-results-section { min-width: 0; }
+.mcp-knx .mcp-knx-work-area > h3, .mcp-knx #knx-results-title { margin: 0 0 .65rem; font-size: 1.05rem; }
+.mcp-knx .mcp-knx-work-area > .mcp-help { margin: 0 0 .65rem; }
 .mcp-knx .mcp-table th, .mcp-knx .mcp-table td { padding: .35rem .5rem; vertical-align: top; }
 .mcp-knx .mcp-table td p { margin: .25rem 0; }
 .mcp-knx .lb-button { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 2.25rem; padding: .35rem .65rem; font-size: 1rem; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }

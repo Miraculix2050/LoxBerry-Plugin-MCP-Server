@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import configparser
+import html
+import re
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def test_import_review_and_source_overrides_use_html_controls() -> None:
@@ -201,3 +206,81 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
     subprocess.run(
         ["node", "-e", script], check=True, cwd=Path(__file__).resolve().parents[1], timeout=30
     )
+
+
+@pytest.mark.parametrize("language", ["de", "en"])
+def test_group_address_sections_and_localized_editor_titles(language):
+    root = Path(__file__).resolve().parents[1]
+    translations = configparser.ConfigParser(interpolation=None, strict=False)
+    translations.optionxform = str
+    translations.read(root / f"templates/lang/language_{language}.ini", encoding="utf-8")
+    values = {
+        f"{section}.{key}": value
+        for section in translations.sections()
+        for key, value in translations[section].items()
+    }
+    template = re.sub(
+        r"<TMPL_VAR\s+([A-Z0-9_.]+)(?:\s+ESCAPE=HTML)?>",
+        lambda match: html.escape(values.get(match[1], "fixture"), quote=True),
+        (root / "templates/knx.html").read_text(encoding="utf-8"),
+    )
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const w=new JSDOM(fs.readFileSync(0,'utf8'),
+  {url:'https://local.example/knx.cgi',runScripts:'outside-only'}).window;
+const el=id=>w.document.getElementById(id);
+const sections=['knx-import-section','knx-json-section','knx-filter-section',
+  'knx-results-section','knx-editor-section'];
+for(let i=1;i<sections.length;i++){
+  assert.equal(el(sections[i]).parentElement,el(sections[0]).parentElement);
+  assert(el(sections[i-1]).compareDocumentPosition(el(sections[i]))&4);
+}
+assert.equal(el('knx-import-section').nextElementSibling.id,'knx-json-section');
+assert.equal(el('knx-json-section').open,false);
+assert(el('knx-json-section').hasAttribute('data-persist-collapse'));
+for(const id of ['knx-json-import','knx-json-export','knx-json-preview','knx-json-apply'])
+  assert(el('knx-json-section').contains(el(id)));
+assert(el('knx-filter-section').contains(el('knx-search-form')));
+assert(el('knx-results-section').contains(el('knx-addresses')));
+assert(el('knx-editor-section').contains(el('knx-record-form')));
+assert(el('knx-filter-section').classList.contains('mcp-knx-filter'));
+const help=el('knx-json-section').textContent, german=process.argv[1]==='de';
+assert(help.includes(german?'Adressseite':'address page'));
+assert(el('knx-json-section').textContent.includes(process.argv[1]==='de'?'Haupt-/Mittelgruppen':'main/middle'));
+assert(help.includes(german?'Rekonstruktionsherkunft':'reconstruction provenance'));
+const ids=[...w.document.querySelectorAll('[id]')].map(e=>e.id);
+assert.equal(ids.length,new Set(ids).size);
+const state={target:'synthetic',target_display:'fixture',revision:1,taxonomy_revision:'labels',
+  taxonomy:[],imported_labels:[],offset:0,total:1,items:[{address_id:2563,address:'1/2/3',
+  address_format:'three_level',imported:{name:'Imported'},overrides:{},effective:{name:'Imported'},
+  imported_groups:[{level:'main',prefix:'1',fields:{name:'Main'}},
+    {level:'middle',prefix:'1/2',fields:{name:'Middle'}}]}]};
+w.fetch=async()=>({ok:true,json:async()=>({ok:true,data:structuredClone(state)})});
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
+(async()=>{
+  w.eval(fs.readFileSync('webfrontend/htmlauth/knx.js','utf8'));await settle();
+  const title=el('knx-editor-title'),editor=el('knx-editor-section');
+  assert.equal(title.textContent,editor.dataset.newTitle);
+  const cells=el('knx-addresses').querySelector('tr').children;
+  assert.equal(cells[1].textContent,'1 — Main');assert.equal(cells[2].textContent,'1/2 — Middle');
+  const search=el('knx-search-query');search.value='Imported';
+  el('knx-search-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  await settle();assert.equal(title.textContent,editor.dataset.newTitle);
+  el('knx-addresses').querySelector('button').click();await settle();
+  assert.equal(title.textContent,editor.dataset.editTitle.replace('{address}','1/2/3'));
+  assert.equal(w.document.activeElement,el('knx-record-form').elements.namedItem('name'));
+  el('knx-record-form').reset();await settle();
+  assert.equal(title.textContent,editor.dataset.newTitle);
+  assert.equal(el('knx-record-form').elements.namedItem('address').readOnly,false);
+  w.close();
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", script, language],
+        input=template,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=root,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Separate KNX address filters, saved-address results and editing into labeled
+  areas; identify the selected address in the editor heading. Move JSON exchange
+  directly below ETS import in a collapsed, persistent subsection and explain
+  page/filter scope, upsert behavior and excluded labels/groups/XML provenance
+  without changing the exchange format (#518).
+
 - Add paired, version-gated Miniserver KNX datatype evidence to live MCP Describe.
   Preserve raw EIBType, implicit DPT1 defaults and explicit EIS7/DPT1 provenance;
   keep DPT main types separate from ETS/manual subtypes and compatibility unknown.
