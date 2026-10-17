@@ -134,7 +134,8 @@
   let recordRevision = null;
   let labelsRevision = null;
   let importDirty = false;
-  const dirty = () => labelsDirty || recordDirty || draft !== null || importDirty;
+  let groupDirty = false;
+  const dirty = () => labelsDirty || recordDirty || groupDirty || draft !== null || importDirty;
   let draft = null;
   let editingFields = {};
   let editingImport = {};
@@ -451,6 +452,141 @@
     });
     return applied;
   });
+  const groupSection = document.getElementById('knx-group-management');
+  if (groupSection) {
+    const groupRows = document.getElementById('knx-group-rows');
+    const groupForm = document.getElementById('knx-group-form');
+    const groupFormat = document.getElementById('knx-group-format');
+    const groupPrefix = document.getElementById('knx-group-prefix');
+    const groupLabel = document.getElementById('knx-group-label');
+    const groupStatus = document.getElementById('knx-group-status');
+    let groupData = null, groupBase = null, groupStale = true;
+    let requested = false;
+    const groupControls = () => {
+      const blocked = busy || !state;
+      groupForm.querySelector('fieldset').disabled = blocked || groupStale || !groupData || groupData.target !== state?.target;
+      groupRows.querySelectorAll('button').forEach(control => {control.disabled = blocked || groupStale;});
+      document.getElementById('knx-group-previous').disabled = blocked || groupStale || !groupData?.offset;
+      document.getElementById('knx-group-next').disabled = blocked || groupStale || !groupData
+        || groupData.offset + 50 >= groupData.total;
+      groupFormat.disabled = blocked || groupPrefix.readOnly;
+    };
+    const groupRun = async operation => {
+      if (busy) return false;
+      let applied = false;
+      groupSection.setAttribute('aria-busy','true');
+      groupStatus.textContent = groupSection.dataset.loading;
+      try {
+        await run(async () => {
+          try {await operation();applied=true;groupSection.dataset.loadFailed='false';}
+          catch(error){groupStale=true;groupSection.dataset.loadFailed='true';
+            groupStatus.textContent=groupSection.dataset.stale;throw error;}
+        });
+      } finally {groupSection.removeAttribute('aria-busy');groupControls();}
+      return applied;
+    };
+    const groupEdit = item => {
+      if (groupDirty) {groupStatus.textContent=groupSection.dataset.conflict;return;}
+      groupBase = {target:groupData.target,taxonomy_revision:groupData.taxonomy_revision,
+        entries:groupData.taxonomy.map(entry=>({...entry}))};
+      groupFormat.value = item.address_format; groupPrefix.value = item.prefix;
+      groupPrefix.readOnly = true; groupLabel.value = item.manual_label || '';
+      document.getElementById('knx-group-source').textContent =
+        `${groupSection.dataset.imported}: ${item.imported_name ?? page.dataset.unknown}`;
+      groupControls();groupLabel.focus();
+    };
+    const loadGroups = async (offset=0) => {
+      if (!state) return;
+      const payload = {target:state.target,offset,query:document.getElementById('knx-group-query').value,
+        sort:tables.selection('knx-group-rows',['prefix','format','imported_name','manual_label','address_count'])};
+      if (offset && groupData) Object.assign(payload,{query_revision:groupData.revision,
+        taxonomy_revision:groupData.taxonomy_revision});
+      const data = await api('knx_groups_page',payload);
+      if (data.target !== state.target) throw new Error('knx_target_conflict');
+      groupData = data;groupStale=false;requested=true;
+      groupRows.replaceChildren();
+      for (const item of data.groups) {
+        const row=document.createElement('tr');row.dataset.level=item.level;
+        for (const value of [`${item.prefix} · ${item.level === 'main' ? groupSection.dataset.main : groupSection.dataset.middle}`,
+          item.address_format === 'three_level' ? '1/2/3':'1/123',item.imported_name ?? '—',
+          item.manual_label ?? '—',item.address_count]) {
+          const cell=document.createElement('td');cell.textContent=String(value);row.append(cell);
+        }
+        const actions=document.createElement('td'), edit=document.createElement('button');
+        edit.type='button';edit.className='lb-button';edit.textContent=groupSection.dataset.edit;
+        edit.addEventListener('click',()=>groupEdit(item));actions.append(edit);
+        if (item.manual_label !== null) {
+          const remove=document.createElement('button');remove.type='button';remove.className='lb-button';
+          remove.textContent=groupSection.dataset.remove;
+          remove.addEventListener('click',()=>void groupRun(async()=>{
+            if(groupDirty || labelsDirty){groupStatus.textContent=groupSection.dataset.conflict;return;}
+            if(!await ask(`${groupSection.dataset.removeConfirm}\n${item.prefix}: ${item.manual_label}`))return;
+            const entries=groupData.taxonomy.filter(entry=>!(entry.address_format===item.address_format && entry.prefix===item.prefix));
+            render(await api('knx_taxonomy',{target:groupData.target,taxonomy_revision:groupData.taxonomy_revision,entries}));
+            await loadGroups(0);message(page.dataset.saved);
+          }));actions.append(remove);
+        }
+        row.append(actions);groupRows.append(row);
+      }
+      document.getElementById('knx-group-count').textContent = data.total
+        ? `${data.offset+1}–${Math.min(data.offset+50,data.total)} / ${data.total}`:'0';
+      groupStatus.textContent='';groupControls();
+    };
+    for (const field of [groupFormat,groupPrefix,groupLabel]) field.addEventListener('input',()=>{
+      if (!groupBase && groupData) groupBase={target:groupData.target,taxonomy_revision:groupData.taxonomy_revision,
+        entries:groupData.taxonomy.map(entry=>({...entry}))};
+      groupDirty=true;
+    });
+    groupFormat.addEventListener('change',()=>{
+      groupPrefix.pattern = groupFormat.value === 'two_level'
+        ? '(?:0|[1-9]|[12][0-9]|3[01])':'(?:0|[1-9]|[12][0-9]|3[01])(?:/[0-7])?';
+    });
+    groupForm.addEventListener('reset',event=>{
+      if(groupDirty){
+        event.preventDefault();
+        void ask(page.dataset.unsaved).then(accepted=>{
+          if(accepted){groupDirty=false;groupForm.reset();}
+        });return;
+      }
+      groupDirty=false;groupBase=null;groupPrefix.readOnly=false;
+      document.getElementById('knx-group-source').textContent='';
+      queueMicrotask(()=>{groupFormat.dispatchEvent(new Event('change'));groupControls();});
+    });
+    groupForm.addEventListener('submit',event=>{
+      event.preventDefault();
+      void groupRun(async()=>{
+        if(labelsDirty){groupStatus.textContent=groupSection.dataset.conflict;return;}
+        if(!groupBase || groupBase.target!==state.target)throw new Error('knx_target_conflict');
+        const entry={address_format:groupFormat.value,prefix:groupPrefix.value,label:groupLabel.value.trim()};
+        const parts=entry.prefix.split('/');
+        if(parts.length>(entry.address_format==='two_level'?1:2))throw new Error('knx_field_invalid');
+        const entries=groupBase.entries.filter(saved=>!(saved.address_format===entry.address_format && saved.prefix===entry.prefix));
+        entries.push(entry);
+        const data=await api('knx_taxonomy',{target:groupBase.target,taxonomy_revision:groupBase.taxonomy_revision,entries});
+        groupDirty=false;groupForm.reset();render(data);await loadGroups(0);message(page.dataset.saved);
+      });
+    });
+    for (const [key,delta] of [['previous',-50],['next',50]])
+      document.getElementById(`knx-group-${key}`).addEventListener('click',()=>void groupRun(()=>loadGroups(groupData.offset+delta)));
+    document.getElementById('knx-group-search').addEventListener('submit',event=>{
+      event.preventDefault();void groupRun(()=>loadGroups(0));
+    });
+    document.getElementById('knx-group-refresh').addEventListener('click',()=>void groupRun(()=>loadGroups(0)));
+    tables.bind('knx-group-rows',()=>groupRun(()=>loadGroups(0)));
+    const lazyGroups = () => {
+      groupControls();
+      if(groupSection.open && state && !busy && !requested){requested=true;void groupRun(()=>loadGroups(0));}
+    };
+    groupSection.addEventListener('toggle',lazyGroups);
+    page.addEventListener('knx-idle',lazyGroups);
+    page.addEventListener('knx-state',()=>{
+      if(groupData && (groupData.target!==state?.target || groupData.revision!==state?.revision
+          || groupData.taxonomy_revision!==state?.taxonomy_revision)){
+        groupStale=true;groupStatus.textContent=groupSection.dataset.stale;
+      }
+      groupControls();
+    });
+  }
   window.MCPKnx = Object.freeze({api, run, ask, render, tables, initialSections, snapshot: () => state,
     setImportDirty: (value) => { importDirty = value; }, message});
   void run(async () => {

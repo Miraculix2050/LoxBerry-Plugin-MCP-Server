@@ -84,6 +84,36 @@ Aktualisierung nicht als aktuelle Exportgrundlage zur Verfügung.
 
 ## Korrekturentwürfe im Browser
 
+### Haupt- und Mittelgruppen verwalten
+
+Unter **Gruppenadressen** bleiben ETS-Import und JSON-Austausch vor den beiden
+eigenen Ansichten **Haupt- und Mittelgruppen** und **Einzeladressen**. Die
+Gruppenansicht lädt erst beim Öffnen; ein eingeklappter Bereich verursacht keine
+zusätzliche Gruppenabfrage. Öffnungszustände bleiben beim Neuladen erhalten.
+
+Die Gruppenliste enthält alle importierten Gruppen einschließlich leerer Gruppen
+und lokale Gruppenlabels. Die Standardsortierung ordnet Präfixe hierarchisch
+(Hauptgruppe vor Mittelgruppen); alle Datenspalten sind vor der Pagination
+sortierbar. Gezählt werden gespeicherte zugehörige Einzeladressen, keine Geräte
+oder Busnutzung. Importformat und dokumentierte Importgrenzen bleiben maßgeblich,
+auch wenn die lokale Schreibweise einer Einzeladresse später geändert wurde.
+Zweistufige Adressen haben Hauptgruppen und keine Mittelgruppen.
+
+**Lokale Gruppe anlegen**: Format und Präfix, z. B. `6` oder dreistufig `6/2`,
+sowie eine Bezeichnung eingeben und speichern. **Lokale Bezeichnung bearbeiten**
+ergänzt oder ändert dasselbe gespeicherte Adresslabel. Importname und lokale
+Bezeichnung werden getrennt angezeigt. **Entfernen** löscht nur das lokale
+Label; Importgruppe und Einzeladressen bleiben bestehen. Rein lokale Gruppen
+ohne Label verschwinden aus der Gruppenliste. Änderungen außerhalb der aktuellen
+Ansicht führen beim Speichern zu einer Konfliktmeldung statt Überschreiben.
+
+Die bisherige Texteingabe unter **KNX-Adresslabels → Erweiterte Bearbeitung**
+bleibt für Sammeländerungen und Labels vollständiger Einzeladressen verfügbar.
+Offene Texteingaben zuerst speichern oder verwerfen, bevor die strukturierte
+Gruppenbearbeitung speichert. Beide Ansichten teilen die bestehenden höchstens
+128 aktiven Labels. Neue lokale Gruppen erzeugen keine ETS-Gruppen; Anlegen,
+Verschieben oder Umstrukturieren in ETS ist kein XML-Korrekturexport.
+
 Der ausgewählte Korrekturentwurf und seine angezeigte Seite bleiben beim
 Neuladen desselben Tabs erhalten, sofern der Browserspeicher verfügbar ist.
 Gespeichert wird nur die zielgebundene Auswahl. Die Seite lädt den Entwurf mit

@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a lazy, paginated KNX main/middle-group view including empty imported
+  groups, source-preserving address counts and global header sorting. Create,
+  edit and remove local group labels using existing taxonomy conflict checks;
+  retain imported sources and individual addresses. Keep bulk label input as
+  advanced editing and persist separate group/address view states (#525).
+
 - KNX correction workflow (#524): distinguish proposal confirmation, local apply
   and experimental ETS export; add explicit batch confirmation and export columns.
   New drafts remain for 30 days with bounded descriptive origin metadata and

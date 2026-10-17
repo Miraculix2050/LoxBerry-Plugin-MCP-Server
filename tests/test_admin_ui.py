@@ -791,7 +791,7 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
     assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v17" in _admin_source()
-    assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v12" in template
+    assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v13" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi
     assert "knx_taxonomy" in cgi
