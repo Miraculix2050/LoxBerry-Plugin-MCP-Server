@@ -145,7 +145,8 @@ class CorrectionRuntime:
                     service.inspect(identifier, config, target, query=query) if identifier else None
                 )
                 if old is not None and (
-                    old["catalog_stale"]
+                    old.get("archived", False)
+                    or old["catalog_stale"]
                     or old["manual_stale"]
                     or old["project_status"] not in {"not_required", "current"}
                 ):
@@ -178,6 +179,7 @@ class CorrectionRuntime:
                         plan["changes"],
                         project_binding=plan["project_binding"],
                         request_id=arguments["request_id"],
+                        metadata=arguments.get("metadata"),
                     )
                     operation_revision = 1
                 else:
@@ -187,6 +189,7 @@ class CorrectionRuntime:
                         arguments["draft_revision"],
                         plan["changes"],
                         request_id=arguments["request_id"],
+                        metadata=arguments.get("metadata"),
                     )
                     result = drafts.inspect_correction(identifier, target)
                 return {

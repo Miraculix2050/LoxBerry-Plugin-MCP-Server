@@ -100,6 +100,10 @@ def project_draft(
         )
     }
     summary.update(
+        metadata=draft.get("metadata", {}),
+        updated_at=draft.get("updated_at", draft["created_at"]),
+        archived=draft.get("archived", False),
+        decision_counts=draft.get("decision_counts", {}),
         change_count=len(changes),
         project_binding_digest=hashlib.sha256(draft["project_binding"].encode()).hexdigest()
         if draft["project_binding"]

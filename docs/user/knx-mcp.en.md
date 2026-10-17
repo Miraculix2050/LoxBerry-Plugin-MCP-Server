@@ -95,6 +95,49 @@ write is never replayed automatically.
 
 ## MCP workflow
 
+### From comparison to correction
+
+1. Import the original ETS XML under **Group addresses → ETS import**. CSV and
+   JSON do not supply reconstructible XML provenance.
+2. Connect and run **ETS/Loxone project comparison**. Differences are review
+   candidates, not proven defects; comparison changes no data.
+3. For direct ETS export, display the desired result page and select addresses
+   and explicit target values under **Experimental ETS XML correction export**.
+   Choices cover only that result page, not all pages.
+4. Alternatively inspect a **correction draft**, compare sources and destination,
+   edit target values and **confirm** individual, selected or all remaining
+   proposals. Batch confirmation displays the selection first and records only
+   decisions; it does not apply local values or create an ETS file.
+5. Save confirmed local address/label changes separately after full-value
+   confirmation. Select confirmed ETS rows in the dedicated export column and
+   open their preview. Local changes do not automatically become ETS proposals.
+6. Review the XML preview, confirm experimental use and download. The origin
+   message distinguishes draft export from direct comparison selection. Test in
+   a backed-up ETS project copy first: genuine ETS compatibility remains
+   unconfirmed (#419). None of these steps writes Loxone Config.
+
+### Finding and retaining drafts
+
+New correction drafts remain for 30 days; existing drafts keep their stored
+deadline. **Extend** retains a still-existing draft for at least another 30 days.
+Editing or archiving does not extend retention. Expired drafts are cleaned up
+and cannot be restored. **Archive** blocks confirmation, apply and export but
+keeps the draft readable until its displayed deadline. **Reopen** resets decisions
+to proposed. Changed sources still require a new proposal; extension refreshes
+neither source evidence nor permissions. Archives share the existing eight slots/
+32 MiB budget. **Delete** frees a slot without changing previously applied values.
+Deletion confirmations remain bound to the original Admin session for seven days
+without field values (128 global receipts, no eviction). A full receipt budget
+blocks further deletion until expiry. After an uncertain response, refresh the
+draft list first; never retry automatically.
+
+Optional `metadata` on the existing preparation tool supplies `title` (160
+characters), `summary` (1024) and `source_chat` (160, readable chat title). Admins
+can also edit these descriptions. They are unverified author descriptions, not
+identity, instructions or permission; never infer chat titles from OAuth app
+names. The overview displays title/deadline; the selected view displays creation,
+last-edit time and decision counts.
+
 Inspect the current tool schema and retrieve `loxone_get_skill_guide(section="core")`,
 then `section="knx"` for a KNX task. Equivalent resources are
 `skill://using-loxberry-mcp/core.md` and `skill://using-loxberry-mcp/knx.md`.
@@ -295,7 +338,8 @@ verify project access or apply changes. MCP can record concrete agreed decisions
 catalog/manual/draft revisions and a stable request ID. Unselected decisions remain
 unchanged. Apply prefix labels separately from addresses; select accepted export proposals on the Admin page.
 
-Drafts have an absolute 24-hour lifetime, at most 50 changes each, and share the
+New drafts have a 30-day lifetime (existing deadlines remain unchanged),
+at most 50 changes each, and share the
 existing global eight-draft/32-MiB budget with imports, comparisons and XML
 previews. Edits do not renew expiry. MCP sees only its own target-bound drafts;
 Admin inspection does not transfer ownership to other clients. Stale drafts

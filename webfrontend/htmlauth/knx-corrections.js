@@ -15,6 +15,11 @@
   let viewStale = false;
   const knownDrafts = new Map();
   const exportSelection = new Set();
+  const reviewSelection = new Map();
+  const context = document.getElementById('knx-correction-context');
+  const metadataFields = ['title', 'summary', 'chat'].map(key => document.getElementById(`knx-draft-${key}`));
+  const metadataEdits = new Map();
+  const metadataKeys = ['title','summary','source_chat'];
   const exportButton = document.getElementById('knx-corrections-export');
   let pendingApply = null;
   const reconcile = document.getElementById('knx-corrections-reconcile');
@@ -84,9 +89,15 @@
     });
     values.querySelectorAll('input, select, textarea').forEach(control => {
       const removal = control.tagName === 'TEXTAREA'
-        && control.closest('form')?.querySelector('select')?.value !== 'set';
+        && control.closest('form')?.querySelector('select')?.value === 'remove_override';
       control.disabled = blocked || viewStale || removal;
     });
+    const inactive = blocked || viewStale || !selected || selected.archived || selected.stale;
+    for (const key of ['selected', 'all']) {
+      const control = document.getElementById(`knx-draft-confirm-${key}`);
+      if (control) control.disabled = inactive || (key === 'selected' && !reviewSelection.size);
+    }
+    context?.querySelectorAll('input,textarea').forEach(control => {control.disabled = blocked || viewStale;});
   };
   const mutation = async (action, extra) => {
     if (viewStale || page.getAttribute('aria-busy') === 'true') throw new Error('correction_changed');
@@ -102,6 +113,7 @@
           || !Number.isInteger(result.draft_revision)) throw new Error('correction_changed');
       entry.draft.draft_revision = result.draft_revision;
       entry.revision.textContent = String(result.draft_revision);
+      reviewSelection.clear(); exportSelection.clear();
       await inspect(entry.draft, selected.offset);
     } catch (error) {
       error.correctionPhase = acknowledged ? 'refresh' : 'decision'; throw error;
@@ -174,7 +186,8 @@
     operation.addEventListener('change', toggle); toggle();
     const save = document.createElement('button'); save.type = 'submit'; save.className = 'lb-button';
     save.textContent = section.dataset.saveEdit;
-    form.append(operationLabel, valueLabel, save);
+    if (operation.options.length > 1) form.append(operationLabel);
+    form.append(valueLabel, save);
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const edit = {operation: operation.value};
@@ -207,18 +220,55 @@
       sort:window.MCPKnx?.tables?.selection('knx-corrections-values',
         ['address','field','destination','imported','manual','proposed','decision']) || null});
     if (!selected || selected.draft_id !== data.draft.draft_id
-        || selected.draft_revision !== data.draft.draft_revision) exportSelection.clear();
-    selected = {...data.draft, next_offset: data.next_offset, offset}; viewStale = false;
+        || selected.draft_revision !== data.draft.draft_revision) {exportSelection.clear();reviewSelection.clear();}
+    selected = {...data.draft, next_offset: data.next_offset, offset,
+      stale: data.catalog_stale || data.manual_stale || data.project_status === 'changed'}; viewStale = false;
+    if (context) {
+      context.hidden = false;
+      const meta = selected.metadata || {};
+      const draftEdit = metadataEdits.get(selected.draft_id);
+      if (draftEdit && JSON.stringify(draftEdit.baseline) === JSON.stringify(meta)) {
+        draftEdit.revision = selected.draft_revision;
+      }
+      metadataFields.forEach((field,index) => {
+        field.value = draftEdit ? draftEdit.values[index] : meta[metadataKeys[index]] || '';
+      });
+      const counts = selected.decision_counts || {};
+      document.getElementById('knx-correction-metadata').textContent = [
+        selected.draft_id, `${section.dataset.created}: ${new Date(selected.created_at * 1000).toLocaleString()}`,
+        `${section.dataset.updated}: ${new Date((selected.updated_at || selected.created_at) * 1000).toLocaleString()}`,
+        ...['proposed','accepted','rejected'].map(key=>`${section.dataset[key]}: ${counts[key] || 0}`),
+        selected.archived ? section.dataset.archived : '',
+      ].filter(Boolean).join(' · ');
+      document.getElementById('knx-draft-archive').hidden = Boolean(selected.archived);
+      document.getElementById('knx-draft-restore').hidden = !selected.archived;
+    }
     values.textContent = '';
     values.dataset.emptyMessage = section.dataset.noChanges;
     for (const [index, item] of data.changes.entries()) {
       const sourceOffset = data.change_offsets?.[index] ?? offset + index;
       const row = document.createElement('tr');
-      for (const value of [item.identity, `${item.field} / ${item.operation}`, item.destination,
+      const destination = item.destination === 'ets_export' ? section.dataset.etsTarget
+        : item.kind === 'prefix' ? section.dataset.labelTarget : section.dataset.localTarget;
+      for (const value of [item.identity, `${item.field} / ${item.operation}`, destination,
         display(item.imported), display(item.manual), display(item.proposed)]) cell(row, value);
+      if (item.evidence_note?.state === 'value') {
+        const reason = document.createElement('p'); reason.className = 'mcp-help';
+        reason.textContent = display(item.evidence_note); row.lastElementChild.append(reason);
+      }
       cell(row, section.dataset[item.decision || 'proposed']);
+      const reviewCell = document.createElement('td'), exportCell = document.createElement('td');
+      row.append(reviewCell, exportCell);
       const actions = document.createElement('td');
-      if (!data.catalog_stale && !data.manual_stale) {
+      if (!data.catalog_stale && !data.manual_stale && !selected.archived) {
+        const reviewChoice = document.createElement('input'); reviewChoice.type = 'checkbox';
+        reviewChoice.setAttribute('aria-label', `${section.dataset.reviewSelect}: ${item.identity} · ${item.field}`);
+        reviewChoice.checked = reviewSelection.has(item.change_id);
+        reviewChoice.addEventListener('change', () => {
+          if (reviewChoice.checked) reviewSelection.set(item.change_id,item); else reviewSelection.delete(item.change_id);
+          controls();
+        });
+        reviewCell.append(reviewChoice);
         if (item.decision === 'accepted' && item.destination === 'ets_export') {
           const choice = document.createElement('input'); choice.type = 'checkbox';
           choice.setAttribute('aria-label', `${section.dataset.selectExport}: ${item.identity} · ${item.field}`);
@@ -227,7 +277,7 @@
             if (choice.checked) exportSelection.add(item.change_id); else exportSelection.delete(item.change_id);
             exportButton.hidden = !exportSelection.size;
           });
-          actions.append(choice);
+          exportCell.append(choice);
         }
         if (!pendingApply && ['not_required', 'not_checked'].includes(data.project_status) && item.decision === 'accepted'
             && item.destination === 'local_metadata') {
@@ -250,23 +300,27 @@
       row.append(actions);
       values.append(row);
     }
-    status.textContent = [data.catalog_stale || data.manual_stale ? section.dataset.stale : '',
+    status.textContent = [selected.archived ? section.dataset.archived : '', data.catalog_stale || data.manual_stale ? section.dataset.stale : '',
       data.project_status === 'not_checked' ? section.dataset.unchecked : ''].filter(Boolean).join(' ');
     more.hidden = data.next_offset === null;
     exportButton.hidden = !exportSelection.size || data.catalog_stale || data.manual_stale;
   };
   const renderDrafts = (data) => {
+    if (target && target !== data.target && metadataEdits.size) throw new Error('knx_target_conflict');
+    for (const id of metadataEdits.keys()) {
+      if (!data.drafts.some(draft=>draft.draft_id === id)) metadataEdits.delete(id);
+    }
     const keepView = selected && data.target === target
       && data.drafts.some(item => item.draft_id === selected.draft_id);
     target = data.target; list.textContent = ''; knownDrafts.clear();
-    if (!keepView) { selected = null; values.textContent = ''; }
+    if (!keepView) { selected = null; values.textContent = ''; if(context)context.hidden = true; }
     viewStale = Boolean(keepView);
     exportSelection.clear(); exportButton.hidden = true;
     values.dataset.emptyMessage = section.dataset.selectDraft;
     more.hidden = true; status.textContent = '';
     for (const draft of data.drafts) {
       const row = document.createElement('tr');
-      for (const value of [draft.draft_id.slice(0, 12), draft.draft_revision,
+      for (const value of [draft.metadata?.title || draft.draft_id.slice(0, 12), draft.draft_revision,
         new Date(draft.expires_at * 1000).toLocaleString(), draft.change_count]) cell(row, value);
       row.children[2].dataset.sortValue = String(draft.expires_at);
       knownDrafts.set(draft.draft_id, {draft, revision: row.children[1]});
@@ -299,6 +353,65 @@
     if (restore) await restoreSelection(drafts);
     return drafts;
   };
+  const manage = async (operation, metadata = null) => {
+    if (!selected || viewStale) return;
+    if (operation === 'delete' && !await window.MCPKnx.ask(section.dataset.deleteConfirm)) return;
+    const payload = {target, draft_id:selected.draft_id, draft_revision:selected.draft_revision,
+      operation, request_id:requestId()};
+    if (metadata !== null) {
+      payload.metadata = metadata;
+      payload.draft_revision = metadataEdits.get(selected.draft_id)?.revision ?? selected.draft_revision;
+    }
+    await api('knx_correction_manage', payload);
+    if (operation === 'metadata' || operation === 'delete') metadataEdits.delete(selected.draft_id);
+    reviewSelection.clear(); exportSelection.clear();
+    if (operation === 'delete') {selected = null;rememberSelection();}
+    await reload();
+  };
+  for (const action of ['extend','archive','restore','delete']) {
+    document.getElementById(`knx-draft-${action}`)?.addEventListener('click', () => void run(()=>manage(action)));
+  }
+  document.getElementById('knx-correction-metadata-form')?.addEventListener('submit', event => {
+    event.preventDefault();
+    const metadata = {};
+    metadataFields.forEach((field,index)=>{if(field.value.trim())metadata[['title','summary','source_chat'][index]]=field.value.trim();});
+    void run(()=>manage('metadata',metadata));
+  });
+  for (const field of metadataFields) field?.addEventListener('input', () => {
+    if (!selected) return;
+    const previous = metadataEdits.get(selected.draft_id);
+    metadataEdits.set(selected.draft_id, {values:metadataFields.map(input=>input.value),
+      baseline:previous?.baseline || {...selected.metadata},
+      revision:previous?.revision ?? selected.draft_revision});
+  });
+  document.getElementById('knx-draft-description-reset')?.addEventListener('click', () => {
+    metadataEdits.clear();
+    if (selected) metadataFields.forEach((field,index)=>{field.value=selected.metadata?.[metadataKeys[index]] || '';});
+  });
+  const confirmBatch = async (all) => {
+    if (!selected || selected.archived || selected.stale || viewStale) return;
+    let changes = [...reviewSelection.values()];
+    if (all) {
+      changes = []; let offset = 0, pages = 0;
+      do {
+        const data = await api('knx_correction_inspect', {target,draft_id:selected.draft_id,
+          draft_revision:selected.draft_revision,offset});
+        if (data.catalog_stale || data.manual_stale || data.draft.archived
+            || data.draft.draft_revision !== selected.draft_revision) throw new Error('correction_changed');
+        changes.push(...data.changes.filter(item=>item.decision === 'proposed'));
+        if (data.next_offset !== null && (!Number.isInteger(data.next_offset)
+            || data.next_offset <= offset)) throw new Error('correction_changed');
+        offset = data.next_offset; pages++;
+      } while (offset !== null && pages < 5);
+      if (offset !== null) throw new Error('correction_changed');
+    }
+    if (!changes.length || changes.length > 50) return;
+    const summary = changes.map(item => `${item.identity} · ${item.field} → ${display(item.proposed)}`).join('\n');
+    if (!await window.MCPKnx.ask(`${section.dataset.batchConfirm}\n\n${summary}`)) return;
+    await mutation('knx_correction_review', {decisions:changes.map(item=>({change_id:item.change_id,decision:'accepted'}))});
+  };
+  for (const key of ['selected','all']) document.getElementById(`knx-draft-confirm-${key}`)
+    ?.addEventListener('click', ()=>void run(()=>confirmBatch(key === 'all')));
   more.addEventListener('click', () => { if (selected) void run(() => inspect(selected, selected.next_offset)); });
   document.getElementById('knx-corrections-reload').addEventListener('click', () => void run(reload));
   exportButton.addEventListener('click', () => void run(async () => {

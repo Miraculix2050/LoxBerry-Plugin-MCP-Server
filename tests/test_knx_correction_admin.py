@@ -20,6 +20,87 @@ from mcpserver.knx.model import KnxError
 from mcpserver.knx.store import KnxStore
 
 
+def test_admin_retention_management_cannot_apply_archived_or_restore_approval(
+    tmp_path, monkeypatch
+):
+    target = "https://first.example"
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "b" * 64)
+    config = replace(PluginConfig.defaults(), loxone_endpoint=target)
+    configs = AtomicConfigStore(tmp_path / "config.json")
+    configs.save(config)
+    original_config = (tmp_path / "config.json").read_bytes()
+    store = KnxStore(tmp_path / "knx" / "metadata.sqlite3")
+    store.put(
+        target, 0, dict(address="1/2/3", address_format="three_level", fields={"name": "Old"})
+    )
+    owner = CorrectionDraftStore(tmp_path / "knx" / "drafts.sqlite3", "a" * 64)
+    service = CorrectionService(store, owner)
+    plan = service.plan(
+        config,
+        target,
+        1,
+        labels_revision(config, target),
+        [
+            dict(
+                destination="local_metadata",
+                kind="address",
+                address="1/2/3",
+                address_format="three_level",
+                field="name",
+                operation="set",
+                value="New",
+            )
+        ],
+    )
+    created = owner.create_correction(
+        target,
+        1,
+        plan["manual_revision"],
+        [{**row, "decision": "accepted"} for row in plan["changes"]],
+    )
+    manage = dict(
+        target=hashlib.sha256(target.encode()).hexdigest(),
+        draft_id=created["draft_id"],
+        draft_revision=1,
+        request_id="1" * 32,
+        operation="archive",
+    )
+    assert dispatch_knx("knx_correction_manage", manage, configs)["managed"]
+    with pytest.raises(KnxError, match="knx_correction_archived"):
+        service.approved_selection(
+            created["draft_id"],
+            config,
+            target,
+            2,
+            1,
+            plan["manual_revision"],
+            [created["changes"][0]["change_id"]],
+        )
+    dispatch_knx(
+        "knx_correction_manage",
+        dict(manage, draft_revision=2, request_id="2" * 32, operation="restore"),
+        configs,
+    )
+    restored = owner.inspect_correction(created["draft_id"], target)
+    assert restored["changes"][0]["decision"] == "proposed"
+    assert (tmp_path / "config.json").read_bytes() == original_config
+    assert store.page(target)["items"][0]["effective"]["name"] == "Old"
+    with pytest.raises(AdminError) as denied:
+        dispatch_knx("knx_correction_manage", dict(manage, target="f" * 64), configs)
+    assert denied.value.code == "knx_target_conflict"
+    deletion = dict(manage, draft_revision=3, request_id="3" * 32, operation="delete")
+    assert dispatch_knx("knx_correction_manage", deletion, configs)["managed"]
+    assert dispatch_knx("knx_correction_manage", deletion, configs)["managed"]
+    with pytest.raises(AdminError) as conflict:
+        dispatch_knx("knx_correction_manage", dict(deletion, draft_revision=2), configs)
+    assert conflict.value.code == "knx_correction_request_conflict"
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "d" * 64)
+    with pytest.raises(AdminError) as other_session:
+        dispatch_knx("knx_correction_manage", deletion, configs)
+    assert other_session.value.code == "knx_draft_unavailable"
+
+
 @pytest.mark.parametrize("kind", ["address", "prefix"])
 def test_admin_applies_only_confirmed_accepted_local_selection(tmp_path, monkeypatch, caplog, kind):
     caplog.set_level("INFO", logger="mcpserver.knx.admin")

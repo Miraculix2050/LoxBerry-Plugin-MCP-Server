@@ -104,6 +104,7 @@ def dispatch_knx(
         "knx_correction_inspect",
         "knx_correction_review",
         "knx_correction_edit",
+        "knx_correction_manage",
         "knx_correction_apply",
         "knx_correction_xml_preview",
         "knx_correction_xml_download",
@@ -171,6 +172,7 @@ def dispatch_knx(
         if action in {
             "knx_correction_review",
             "knx_correction_edit",
+            "knx_correction_manage",
             "knx_correction_apply",
             "knx_correction_xml_preview",
             "knx_correction_xml_download",
@@ -328,11 +330,14 @@ def _run(
         "knx_correction_inspect",
         "knx_correction_review",
         "knx_correction_edit",
+        "knx_correction_manage",
         "knx_correction_apply",
     }:
         from .correction_drafts import CorrectionDraftStore, _identifier
 
         fields = {"target", "draft_id", "draft_revision", "offset", "detail", "sort"}
+        if action == "knx_correction_manage":
+            fields = {"target", "draft_id", "draft_revision", "operation", "request_id", "metadata"}
         if action == "knx_correction_apply":
             fields = {
                 "target",
@@ -364,6 +369,16 @@ def _run(
         )
         if action == "knx_correction_page":
             return {"target": token, "drafts": corrections.list_admin(target)}
+        if action == "knx_correction_manage" and payload.get("operation") == "delete":
+            if "metadata" in payload:
+                raise KnxError("knx_correction_invalid")
+            corrections.delete_admin(
+                payload.get("draft_id"),
+                target,
+                payload.get("draft_revision"),
+                payload.get("request_id"),
+            )
+            return {"target": token, "managed": True}
         from .correction_projection import project_draft
         from .correction_service import CorrectionService
 
@@ -374,6 +389,16 @@ def _run(
             if action == "knx_correction_apply" and payload.get("action") == "reconcile"
             else corrections.admin_reader(correction_id, target),
         )
+        if action == "knx_correction_manage":
+            correction_service.drafts.manage(
+                correction_id,
+                target,
+                payload.get("draft_revision"),
+                payload.get("operation"),
+                payload.get("request_id"),
+                payload.get("metadata"),
+            )
+            return {"target": token, "managed": True}
         if action == "knx_correction_apply":
             from .correction_apply import CorrectionApply
 

@@ -101,6 +101,51 @@ Schreibaktion wird nicht automatisch wiederholt.
 
 ## MCP-Ablauf
 
+### Vom Abgleich zur Korrektur
+
+1. Unter **Gruppenadressen → ETS-Import** die ursprüngliche ETS-XML-Datei
+   importieren. CSV und JSON enthalten keine ausreichende XML-Rekonstruktionsherkunft.
+2. **ETS/Loxone-Projektabgleich** verbinden und starten. Unterschiede sind
+   Prüfkandidaten, keine bewiesenen Fehler. Der Vergleich verändert keine Daten.
+3. Für einen direkten ETS-Export die gewünschte Ergebnisseite anzeigen und im
+   **Experimentellen ETS-XML-Korrekturexport** Adressen sowie konkrete Zielwerte
+   auswählen. Die Auswahl umfasst nur diese Ergebnisseite, nicht alle Seiten.
+4. Alternativ einen **Korrekturentwurf** ansehen: Quellen und Änderungsziel prüfen,
+   Zielwerte bearbeiten und einzelne, ausgewählte oder alle noch vorgeschlagenen
+   Änderungen **bestätigen**. Die Sammelbestätigung zeigt die Auswahl vorher an;
+   sie speichert nur Entscheidungen, keine lokalen Werte und keine ETS-Datei.
+5. Bestätigte lokale Adress-/Labeländerungen separat mit vollständigem Wert
+   speichern. Bestätigte ETS-Zeilen in der eigenen Exportspalte auswählen und
+   ihre Vorschau öffnen. Lokale Änderungen werden nicht automatisch ETS-Vorschläge.
+6. XML-Vorschau prüfen, experimentellen Hinweis bestätigen und herunterladen.
+   Die Herkunftsanzeige unterscheidet Entwurf und direkte Vergleichsauswahl.
+   Zuerst in einer gesicherten ETS-Projektkopie testen; echte ETS-Kompatibilität
+   ist weiterhin unbestätigt (#419). Kein Schritt schreibt Loxone Config.
+
+### Entwürfe wiederfinden und aufbewahren
+
+Neue Korrekturentwürfe bleiben 30 Tage erhalten. Bestehende Entwürfe behalten ihre
+gespeicherte Frist. **Verlängern** erhält einen noch vorhandenen Entwurf mindestens
+weitere 30 Tage; Bearbeiten oder Archivieren verlängert nichts. Abgelaufene
+Entwürfe werden bereinigt und sind nicht wiederherstellbar. **Archivieren** sperrt
+Bestätigung, Übernahme und Export, lässt die Ansicht aber bis zur angezeigten
+Frist zu. **Wieder öffnen** setzt Entscheidungen auf vorgeschlagen zurück.
+Geänderte Quellen benötigen weiterhin einen neuen Vorschlag. Verlängern frischt
+weder Quellenbelege noch Berechtigungen auf. Archivierte Entwürfe teilen die
+vorhandenen acht Speicherplätze/32 MiB; **Löschen** gibt einen Platz frei und
+verändert keine bereits gespeicherten lokalen Werte.
+Löschbestätigungen bleiben ohne Feldwerte sieben Tage in der ursprünglichen
+Admin-Sitzung prüfbar (höchstens 128 globale Belege, keine Verdrängung).
+Eine volle Belegliste sperrt weiteres Löschen bis zum Ablauf; nach einem
+unklaren Ergebnis zuerst die Entwurfsliste aktualisieren, nicht automatisch wiederholen.
+
+Optionales `metadata` im bestehenden Vorbereitungswerkzeug enthält `title`
+(160 Zeichen), `summary` (1024) und `source_chat` (160, lesbarer Chatname).
+Die Admin-Seite kann diese Angaben ergänzen. Es sind ungeprüfte Beschreibungen
+des Autors, keine Identität, Anweisung oder Berechtigung; Chatnamen nicht aus
+OAuth-Anwendungsnamen ableiten. Die Übersicht zeigt Titel und Frist, die
+ausgewählte Ansicht Erstellung, letzte Bearbeitung und Entscheidungszahlen.
+
 Das aktuelle Tool-Schema prüfen und `loxone_get_skill_guide(section="core")`,
 für KNX anschließend `section="knx"` abrufen. Entsprechende Ressourcen sind
 `skill://using-loxberry-mcp/core.md` und `skill://using-loxberry-mcp/knx.md`.
@@ -324,7 +369,7 @@ aktuelle Ziel-/Katalog-/Präfix-/Entwurfsrevisionen und eine stabile Request-ID 
 Nicht ausgewählte Entscheidungen bleiben erhalten. Präfixlabels getrennt von
 Adressen übernehmen; die bestätigte Exportübergabe folgt separat.
 
-Entwürfe gelten absolut 24 Stunden, enthalten höchstens 50 Änderungen und teilen
+Neue Entwürfe bleiben 30 Tage erhalten (bestehende Fristen bleiben unverändert), enthalten höchstens 50 Änderungen und teilen
 die globale Grenze von acht Entwürfen/32 MiB mit Importen, Vergleichen und
 XML-Vorschauen. Bearbeitung verlängert die Laufzeit nicht. MCP sieht nur eigene
 zielgebundene Entwürfe; Admin-Ansicht überträgt anderen Clients kein Eigentum.

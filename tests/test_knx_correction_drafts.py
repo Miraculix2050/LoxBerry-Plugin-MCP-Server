@@ -15,6 +15,90 @@ def proposal(value="Additional name"):
     return [{"destination": "local", "address_id": 1, "field": "name", "value": value}]
 
 
+def test_retention_metadata_archive_restore_and_explicit_extension(tmp_path, monkeypatch):
+    clock = [1000]
+    monkeypatch.setattr("mcpserver.knx.drafts.time.time", lambda: clock[0])
+    store = CorrectionDraftStore(tmp_path / "drafts.sqlite3", "a" * 64)
+    metadata = {"title": "Lighting", "summary": "Agreed names", "source_chat": "KNX review"}
+    created = store.create_correction(
+        "target",
+        7,
+        "b" * 64,
+        [{**proposal()[0], "decision": "accepted"}],
+        metadata=metadata,
+        request_id="1" * 32,
+    )
+    assert created["expires_at"] == 1000 + 30 * 86400
+    assert store.list_admin("target")[0]["metadata"] == metadata
+    assert store.list_corrections("target")[0]["decision_counts"]["accepted"] == 1
+    clock[0] += 86400
+    identifier = created["draft_id"]
+    store.manage(identifier, "target", 1, "archive", "2" * 32)
+    archived = store.inspect_correction(identifier, "target")
+    assert archived["archived"] and archived["expires_at"] == created["expires_at"]
+    with pytest.raises(KnxError, match="knx_correction_archived"):
+        store.update_correction(identifier, "target", 2, proposal())
+    store.manage(identifier, "target", 2, "extend", "3" * 32)
+    extended = store.inspect_correction(identifier, "target")
+    assert extended["expires_at"] == clock[0] + 30 * 86400
+    clock[0] += 100
+    store.manage(identifier, "target", 2, "extend", "3" * 32)  # Exact replay is not a renewal.
+    assert store.inspect_correction(identifier, "target")["expires_at"] == extended["expires_at"]
+    store.manage(identifier, "target", 3, "restore", "4" * 32)
+    restored = store.inspect_correction(identifier, "target")
+    assert not restored["archived"] and restored["changes"][0]["decision"] == "proposed"
+    assert restored["catalog_revision"] == 7 and restored["metadata"] == metadata
+    assert restored["updated_at"] == clock[0]
+    with pytest.raises(KnxError, match="knx_revision_conflict"):
+        store.delete_admin(identifier, "target", 1, "5" * 32)
+    with pytest.raises(KnxError, match="knx_draft_unavailable"):
+        CorrectionDraftStore(store.path, "f" * 64).manage(
+            identifier, "other-target", 4, "archive", "5" * 32
+        )
+    store.delete_admin(identifier, "target", 4, "5" * 32)
+    store.delete_admin(identifier, "target", 4, "5" * 32)
+    with pytest.raises(KnxError, match="knx_correction_request_conflict"):
+        store.delete_admin(identifier, "target", 3, "5" * 32)
+    assert store.list_corrections("target") == []
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"chat_id": "123"},
+        {"title": "x" * 161},
+        {"source_chat": ""},
+        {"summary": "x" * 1025},
+        {"title": 42},
+    ],
+)
+def test_descriptive_metadata_is_bounded_and_not_a_claimed_identity(tmp_path, metadata):
+    store = CorrectionDraftStore(tmp_path / "drafts.sqlite3", "a" * 64)
+    with pytest.raises(KnxError):
+        store.create_correction("target", 7, "b" * 64, proposal(), metadata=metadata)
+
+
+def test_legacy_index_migration_preserves_expiry_and_decisions(tmp_path, monkeypatch):
+    store = CorrectionDraftStore(tmp_path / "drafts.sqlite3", "a" * 64)
+    created = store.create_correction(
+        "target", 7, "b" * 64, [{**proposal()[0], "decision": "accepted"}]
+    )
+    with store.connection() as db:
+        # Simulate an old store without the additive compact-summary column.
+        db.execute("ALTER TABLE correction_index DROP COLUMN summary")
+        db.execute(
+            "UPDATE drafts SET expires=?,options=json_remove(options,"
+            "'$.metadata','$.updated_at','$.archived') WHERE id=?",
+            (created["created_at"] + 86400, created["draft_id"]),
+        )
+        db.execute("UPDATE correction_index SET expires_at=?", (created["created_at"] + 86400,))
+    reopened = CorrectionDraftStore(store.path, "a" * 64)
+    assert reopened.list_corrections("target")[0]["decision_counts"]["accepted"] == 1
+    legacy = reopened.inspect_correction(created["draft_id"], "target")
+    assert legacy["metadata"] == {} and not legacy["archived"]
+    assert legacy["expires_at"] == created["created_at"] + 86400
+
+
 def test_uncertain_creation_resolves_only_live_owner_target_request(tmp_path, monkeypatch):
     clock = [1000]
     monkeypatch.setattr("mcpserver.knx.drafts.time.time", lambda: clock[0])
@@ -123,7 +207,7 @@ def test_compact_listing_does_not_decode_changes_or_leak_another_owner(tmp_path,
     def forbidden(*args, **kwargs):
         raise AssertionError("Summary must not decode proposal contents")
 
-    monkeypatch.setattr("mcpserver.knx.correction_drafts.json.loads", forbidden)
+    monkeypatch.setattr("mcpserver.knx.correction_drafts._decode", forbidden)
     summary = store.list_corrections("target")
     assert len(summary) == 1 and summary[0]["draft_id"] == created["draft_id"]
     assert summary[0]["change_count"] == 1

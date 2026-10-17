@@ -242,6 +242,8 @@ class CorrectionService:
         query: ProjectQuery | None,
     ) -> dict[str, Any]:
         draft = self.inspect(identifier, config, target, query=query)
+        if draft.get("archived", False):
+            raise KnxError("knx_correction_archived")
         if (
             type(expected) is not int
             or expected != draft["draft_revision"]
