@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -97,7 +98,7 @@ async def test_invalid_replacement_schema_fails_closed_without_running_tool() ->
     tool.output_schema = {"type": "invalid-schema-type"}
     assert (await _call(server, [1])).isError
     assert not calls
-    assert server._output_validators["answer"][0] == SCHEMA
+    assert json.loads(server._output_validators["answer"][0]) == SCHEMA
 
 
 @pytest.mark.asyncio
@@ -204,3 +205,21 @@ async def test_wire_results_and_tool_definitions_match_pinned_sdk() -> None:
         expected = await _call(original, items)
         actual = await _call(optimized, items)
         assert actual.model_dump() == expected.model_dump()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("constraint", ["const", "enum"])
+async def test_schema_key_distinguishes_json_boolean_from_number(constraint) -> None:
+    server = OutputValidatedFastMCP("test")
+    schema = deepcopy(SCHEMA)
+    schema["properties"]["items"] = {constraint: [1] if constraint == "const" else [[1]]}
+    tool = _register(server, schema)
+    assert not (await _call(server, [1])).isError
+    original = server._output_validators["answer"][1]
+    tool.output_schema["properties"]["items"][constraint] = (
+        [True] if constraint == "const" else [[True]]
+    )
+    assert (await _call(server, [1])).isError
+    assert server._output_validators["answer"][1] is not original
+    tool.fn = lambda items: {"items": [True]}
+    assert not (await _call(server, [1])).isError

@@ -22,7 +22,7 @@ class OutputValidatedFastMCP(FastMCP):
     """
 
     def _setup_handlers(self) -> None:
-        self._output_validators: dict[str, tuple[dict[str, Any], Validator]] = {}
+        self._output_validators: dict[str, tuple[str, Validator]] = {}
         super()._setup_handlers()
         self._mcp_server.call_tool(validate_input=False)(self._validated_tool_call)
 
@@ -31,14 +31,17 @@ class OutputValidatedFastMCP(FastMCP):
         self._output_validators.pop(name, None)
 
     def _output_validator(self, name: str, schema: dict[str, Any]) -> Validator:
+        # Python equality conflates JSON booleans and numbers (True == 1).
+        # A canonical JSON key preserves their distinct const/enum semantics.
+        key = json.dumps(schema, sort_keys=True, separators=(",", ":"), allow_nan=False)
         cached = self._output_validators.get(name)
-        if cached is None or cached[0] != schema:
+        if cached is None or cached[0] != key:
             # An independent snapshot detects replacement AND in-place edits.
             # Never cache a schema that failed its full meta-schema check.
             snapshot = deepcopy(schema)
             validator_type = validator_for(snapshot)
             validator_type.check_schema(snapshot)
-            cached = (snapshot, validator_type(snapshot))
+            cached = (key, validator_type(snapshot))
             self._output_validators[name] = cached
         return cached[1]
 
