@@ -847,6 +847,12 @@ extracted from the matching version heading.
   object descriptions, and upstream/downstream signal or reference traces. They use
   `loxone:read`, never return raw project XML, and keep ambiguous mappings explicit.
 
+- Add an offline, read-only KNX datatype report for the evidenced Loxone Config
+  XML version. Treat omitted EIBType on ordinary sensors/actors as the agreed
+  implicit DPT1 Config default without an EIS type; keep explicit EIBType=6 as
+  EIS7/DPT1 with separate provenance. Preserve empty/unknown codes and multiple
+  candidate DPT main types; keep Miniserver datatype interpretation unchanged.
+
 ## 0.4.0-beta.3 - 2026-08-15
 
 - Enable the bounded read-only feature families for fresh installations, prefill

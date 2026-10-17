@@ -1,0 +1,24 @@
+<ControlList Version="274" LxAV="87">
+  <C Type="Document" ConfigVersion="17020828" />
+  <C Type="EIBsensor" />
+  <C Type="EIBsensor" EIBType="2" />
+  <C Type="EIBsensor" EIBType="3" />
+  <C Type="EIBsensor" EIBType="4" />
+  <C Type="EIBsensor" EIBType="5" />
+  <C Type="EIBsensor" EIBType="8" />
+  <C Type="EIBsensor" EIBType="9" />
+  <C Type="EIBsensor" EIBType="10" />
+  <C Type="EIBsensor" EIBType="13" />
+  <C Type="EIBtextsensor" />
+  <C Type="EIBactor" />
+  <C Type="EIBactor" EIBType="1" />
+  <C Type="EIBactor" EIBType="2" />
+  <C Type="EIBactor" EIBType="3" />
+  <C Type="EIBactor" EIBType="4" />
+  <C Type="EIBactor" EIBType="5" />
+  <C Type="EIBactor" EIBType="6" />
+  <C Type="EIBactor" EIBType="8" />
+  <C Type="EIBactor" EIBType="9" />
+  <C Type="EIBactor" EIBType="10" />
+  <C Type="EIBtextactor" />
+</ControlList>
