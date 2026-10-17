@@ -207,7 +207,11 @@ def test_admin_import_preview_binding_and_explicit_application(
     config = AtomicConfigStore(tmp_path / "config.json")
     config.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
     state = dispatch_knx("knx_page", {}, config)
-    raw = document('<GroupAddress Address="1/2/3" Name="ETS"/>')
+    raw = document(
+        '<GroupRange Name="Main" RangeStart="2048" RangeEnd="4095">'
+        '<GroupRange Name="Middle" RangeStart="2560" RangeEnd="2815">'
+        '<GroupAddress Address="1/2/3" Name="ETS"/></GroupRange></GroupRange>'
+    )
     preview = dispatch_knx(
         "knx_import_load",
         {"target": state["target"], "file": base64.b64encode(raw).decode()},
@@ -227,6 +231,8 @@ def test_admin_import_preview_binding_and_explicit_application(
     applied = dispatch_knx("knx_import_apply", apply_payload(updated), config)
     assert applied["revision"] == 1
     assert applied["items"][0]["imported"] == {"name": "ETS"}
+    assert [group["prefix"] for group in applied["items"][0]["imported_groups"]] == ["1", "1/2"]
+    assert applied["imported_labels"] == []
     assert not applied["draft_cleanup_pending"]
     with pytest.raises(AdminError) as expired:
         dispatch_knx("knx_import_apply", apply_payload(updated), config)

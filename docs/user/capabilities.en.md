@@ -718,7 +718,9 @@ comparison files and results** clears this admin session's comparison drafts
 while retaining its import preview and all confirmed KNX metadata.
 
 **ETS/Loxone project comparison** requires a separate Loxone login with project
-access. For standalone local ETS/manual addresses and active prefix labels,
+access. Alongside standalone local ETS/manual addresses and active prefix labels,
+all stored imported main/middle groups are also available through
+`kind="imported_groups"`, independently of active labels.
 `loxberry_get_knx_catalog` requires separate, default-off target-bound Admin
 delegation and `loxberry:knx:read` consent. See [KNX through MCP](knx-mcp.en.md)
 for bounded views, filters, source interpretation and continuation rules.

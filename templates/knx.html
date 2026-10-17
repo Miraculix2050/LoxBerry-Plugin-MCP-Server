@@ -296,7 +296,7 @@
     <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SAVE_RECORD></button><button class="lb-button" type="reset"><TMPL_VAR KNX.NEW_RECORD></button></div>
    </fieldset>
   </form>
-  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.MAIN_GROUP></th><th><TMPL_VAR KNX.MIDDLE_GROUP></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
   <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
  </div></details>
  <details class="mcp-card" data-persist-collapse open id="knx-project-section"
@@ -426,7 +426,7 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v16" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v18" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v6" defer></script>
 <script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v8" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>

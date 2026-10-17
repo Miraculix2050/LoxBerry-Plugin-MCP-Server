@@ -268,7 +268,9 @@ const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>
 const dom = new JSDOM(html, {url: 'http://localhost/knx.cgi', runScripts: 'outside-only'});
 const w = dom.window;
 const record = {address_id: 2563, address: '1/2/3', address_format: 'three_level',
-  effective: {name: 'Additional'}, overrides: {name: 'Additional'}, imported: {}};
+  effective: {name: 'Additional'}, overrides: {name: 'Additional'}, imported: {},
+  imported_groups: [{level: 'main', prefix: '1', fields: {name: '<Main>'}},
+    {level: 'middle', prefix: '1/2', fields: {name: 'Middle & group'}}]};
 let state = {target: 'target', revision: 1, taxonomy_revision: 'labels', offset: 0,
   total: 1, items: [record],
   imported_labels: [{address_format: 'three_level', prefix: '1/2', label: 'Imported'},
@@ -295,6 +297,24 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx.js', 'utf8'));
   await tick();
   assert.equal(w.document.getElementById('knx-count').textContent, '1\u20131 / 1');
+  const cells = w.document.querySelector('#knx-addresses tr').cells;
+  assert.equal(cells.length, 8);
+  assert.equal(cells[1].textContent, '1 — <Main>');
+  assert.equal(cells[1].querySelector('main'), null);
+  assert.equal(cells[2].textContent, '1/2 — Middle & group');
+  const originalGroups = record.imported_groups;
+  record.imported_groups = []; record.address_format = 'two_level';
+  w.MCPKnx.render(state);
+  assert.equal(w.document.querySelector('#knx-addresses tr').cells[1].textContent, 'label');
+  assert.equal(w.document.querySelector('#knx-addresses tr').cells[2].textContent, '—');
+  record.imported_groups = originalGroups; record.address_format = 'three_level';
+  w.MCPKnx.render(state);
+  record.import_info = {address_format: 'three_level'}; record.address_format = 'two_level';
+  w.MCPKnx.render(state);
+  assert.equal(w.document.querySelector('#knx-addresses tr').cells[2].textContent,
+    '1/2 — Middle & group');
+  record.import_info = {}; record.address_format = 'three_level';
+  w.MCPKnx.render(state);
   const labels = w.document.getElementById('knx-taxonomy-entries');
   const form = w.document.getElementById('knx-record-form');
   assert.equal(w.document.getElementById('knx-label-badge').textContent, '2');

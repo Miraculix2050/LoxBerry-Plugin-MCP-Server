@@ -264,7 +264,7 @@ def test_database_failure_is_not_an_empty_search(tmp_path):
         KnxStore(path).page("target", filters={"query": "absent"})
 
 
-@pytest.mark.parametrize("summary,expected_reads", [(False, 4), (True, 3)])
+@pytest.mark.parametrize("summary,expected_reads", [(False, 5), (True, 3)])
 def test_catalog_reads_are_constant_and_share_one_snapshot(
     store, monkeypatch, summary, expected_reads
 ):
@@ -285,6 +285,103 @@ def test_catalog_reads_are_constant_and_share_one_snapshot(
         == expected_reads
     )
     assert len([statement for statement in statements if statement == "BEGIN"]) == 1
+
+
+def test_all_imported_groups_keep_sources_bounds_and_address_context(store):
+    from mcpserver.knx.catalog import catalog_group_page
+
+    with store.connection() as db:
+        for fmt, prefix, name, attrs in [
+            ("three_level", "1", "Imported main", {"RangeStart": "2049", "RangeEnd": "4095"}),
+            ("three_level", "1/2", "x" * 255, {}),
+            ("three_level", "2", "Empty group", {}),
+            ("two_level", "1", "Other format", {}),
+        ]:
+            db.execute(
+                "INSERT INTO import_groups VALUES(?,?,?,?,?,?)",
+                (
+                    "target",
+                    fmt,
+                    prefix,
+                    json.dumps({"name": name, "description": ""}),
+                    json.dumps({"attributes": attrs}),
+                    0,
+                ),
+            )
+        db.execute("INSERT INTO targets(target) VALUES(?)", ("foreign",))
+        db.execute(
+            "INSERT INTO import_groups VALUES(?,?,?,?,?,?)",
+            (
+                "foreign",
+                "three_level",
+                "1",
+                '{"name":"Foreign"}',
+                "{}",
+                0,
+            ),
+        )
+        db.commit()
+    config = replace(
+        PluginConfig.defaults(),
+        knx_address_taxonomy_endpoint="target",
+        knx_address_taxonomy=(AddressTaxonomyEntry("1", "Manual", "three_level"),),
+    )
+    page = catalog_group_page(store, config, "target")
+    assert page["total_matching"] == 4
+    assert page["active_prefix_count"] == 1
+    main, middle, empty, other = page["imported_groups"]
+    assert main["fields"]["name"] == "Imported main"
+    assert main["range_start"] == 2049 and main["range_end"] == 4095
+    assert main["range_source"] == "ets_xml" and not main["active_label"]
+    assert middle["range_start"] == 2560 and middle["range_end"] == 2815
+    assert middle["range_source"] == "address_prefix"
+    assert middle["fields"] == {"name": "x" * 255, "description": ""}
+    assert empty["prefix"] == "2" and other["address_format"] == "two_level"
+    addresses = catalog_page(store, config, "target", address_id=2563)
+    assert addresses["records"][0]["group_ids"] == ["three_level:1", "three_level:1/2"]
+    assert addresses["group_context"] == [main, middle]
+    assert (
+        catalog_group_page(store, config, "target", filters={"query": "Empty"})["total_matching"]
+        == 1
+    )
+    for filters in ({"source": "manual"}, {"source": "both"}, {"deviations_only": True}):
+        assert catalog_group_page(store, config, "target", filters=filters)["total_matching"] == 0
+    summary = catalog_group_page(store, config, "target", count_only=True)
+    assert summary["total_matching"] == 4 and summary["imported_groups"] == []
+
+
+def test_xml_import_projects_exact_ranges_without_selecting_labels(tmp_path):
+    from mcpserver.knx.catalog import catalog_group_page
+    from mcpserver.knx.import_repository import ImportRepository
+    from mcpserver.knx.import_service import select_candidates
+    from mcpserver.knx.xml_adapter import NAMESPACE, parse_xml
+
+    store = KnxStore(tmp_path / "metadata.sqlite3")
+    document = parse_xml(
+        (
+            f'<GroupAddress-Export xmlns="{NAMESPACE}">'
+            '<GroupRange Name="Main" RangeStart="2049" RangeEnd="4095">'
+            '<GroupRange Name="Middle" RangeStart="2560" RangeEnd="2815">'
+            '<GroupAddress Address="1/2/3" Name="Function"/>'
+            "</GroupRange></GroupRange></GroupAddress-Export>"
+        ).encode()
+    )
+    ImportRepository(store).apply("target", 0, document, select_candidates(document), set(), {})
+    config = PluginConfig.defaults()
+    groups = catalog_group_page(store, config, "target")["imported_groups"]
+    assert groups[0]["range_start"] == 2049
+    assert groups[0]["range_source"] == "ets_xml"
+    assert all(not group["active_label"] for group in groups)
+    assert catalog_page(store, config, "target")["group_context"] == groups
+    store.put(
+        "target",
+        1,
+        {"address": "1/515", "address_format": "two_level", "fields": {"name": "Local spelling"}},
+    )
+    row = store.page("target", include_groups=True)["items"][0]
+    assert row["address"] == "1/515" and row["import_info"]["address_format"] == "three_level"
+    assert row["imported_groups"] == groups
+    assert catalog_page(store, config, "target")["group_context"] == groups
 
 
 def test_large_search_returns_only_one_page(tmp_path):

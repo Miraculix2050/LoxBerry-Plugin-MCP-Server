@@ -10,6 +10,13 @@ extracted from the matching version heading.
   keep DPT main types separate from ETS/manual subtypes and compatibility unknown.
   Bump project model to 14, KNX analysis to 13 and guide revision to 90.
 
+- Show imported KNX main/middle groups with prefix and name in the address table.
+  Extend the existing read-only MCP catalog with all stored imported groups,
+  independent of active prefix labels, and matching address group context.
+  Preserve imported format across local address spelling changes, source
+  distinctions, authorization and bounded continuation; update guide revision
+  to 91 (#411).
+
 - Reduce ETS/project comparison work with a batched common-address name projection
   and bounded numeric output keys. Preserve exact source-name semantics, full
   counts, revision checks and paginated metadata hydration (#458).

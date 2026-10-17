@@ -786,7 +786,9 @@ bestätigten KNX-Metadaten.
 
 **ETS/Loxone-Projektabgleich** benötigt eine separate Loxone-Anmeldung mit
 Projektzugriff. Für eigenständige lokale ETS-/manuelle Adressen und aktive
-Präfixlabels benötigt `loxberry_get_knx_catalog` eine separate, standardmäßig
+Präfixlabels sowie alle gespeicherten importierten Haupt-/Mittelgruppen
+(`kind="imported_groups"`, unabhängig von aktiven Labels) benötigt
+`loxberry_get_knx_catalog` eine separate, standardmäßig
 ausgeschaltete und zielgebundene Admin-Freigabe sowie Zustimmung zu
 `loxberry:knx:read`. [KNX über MCP](knx-mcp.de.md) erläutert begrenzte Ansichten,
 Filter, Quelleninterpretation und Folgeseiten.

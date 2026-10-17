@@ -59,7 +59,9 @@ def inventory_recipe(
             "for this focus. Request view='detail' with an exact base address only where needed. "
         )
         + "If separately approved local coverage is needed, use loxberry_get_knx_catalog "
-        "view='summary' first, then filtered/exact entries or kind='prefix_labels'; a Loxone "
+        "view='summary' first, then filtered/exact entries, kind='prefix_labels' for active "
+        "labels or kind='imported_groups' for all stored imported main/middle groups. "
+        "Address group_ids link to group_context independently of active labels; a Loxone "
         "login does not authorize this catalog. It contains no Loxone names. Prefixes are "
         "hierarchy context only. For DPT questions inspect the relevant source declarations. "
         "State whether you examined only a summary, a representative sample, or all requested "
