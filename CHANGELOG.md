@@ -847,6 +847,10 @@ extracted from the matching version heading.
   object descriptions, and upstream/downstream signal or reference traces. They use
   `loxone:read`, never return raw project XML, and keep ambiguous mappings explicit.
 
+- Add an offline, read-only KNX datatype report for the evidenced Loxone Config
+  XML version. Preserve missing/unknown codes and multiple candidate DPT main
+  types; keep Miniserver datatype interpretation unchanged.
+
 ## 0.4.0-beta.3 - 2026-08-15
 
 - Enable the bounded read-only feature families for fresh installations, prefill

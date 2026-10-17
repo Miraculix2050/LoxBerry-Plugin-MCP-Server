@@ -1,5 +1,23 @@
 # KNX-Informationen über MCP
 
+## Lokale Config-Datei: EIBType-Zuordnung
+
+Entwickler können eine lokale `.Loxone`-XML-Projektdatei nur lesend auswerten:
+`python -m mcpserver.loxone.project.config_knx "Pfad/zum/Projekt.Loxone"`.
+Der Aufruf erfolgt in der eingerichteten Python-Entwicklungsumgebung. Die Datei
+wird weder hochgeladen noch geändert; die Ausgabe enthält Objekttyp, XML-Index,
+rohen EIBType, Zuordnungsstatus und EIS/DPT-Haupttypen, keine Projektnamen oder IDs.
+
+Die Zuordnung ist für das geprüfte Format `274` mit ConfigVersion `17020828`
+belegt, beispielsweise `EIBType=4` → EIS5/DPT9. Fehlende skalare Werte bleiben
+unbekannt; Textsensoren/-aktoren werden getrennt über ihren Objekttyp erkannt.
+Mehrere mögliche DPT-Haupttypen bleiben erhalten, ein Untertyp wird nicht
+abgeleitet. Andere Versionen werden als ungeprüft ausgegeben. Diese Auswertung
+gilt für Config-Projektdateien; das MCP-Mapping der Miniserver-Daten bleibt
+unverändert. Details stehen im [Projektformat](../development/project-format.md#separate-offline-config-file-evidence).
+
+## MCP-Ablauf
+
 Das aktuelle Tool-Schema prüfen und `loxone_get_skill_guide(section="core")`,
 für KNX anschließend `section="knx"` abrufen. Entsprechende Ressourcen sind
 `skill://using-loxberry-mcp/core.md` und `skill://using-loxberry-mcp/knx.md`.

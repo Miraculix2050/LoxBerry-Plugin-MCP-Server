@@ -1,5 +1,15 @@
 # Project fixture provenance
 
+config-knx-datatypes.xml is a minimal derivative of the user-supplied Loxone
+Config project EIBTypeZuordnungen.Loxone inspected on 2026-10-17. It retains
+only ControlList Version=274/LxAV=87, Document ConfigVersion=17020828, endpoint
+Type and explicit EIBType values, including omissions. Names, IDs, addresses,
+credentials and every unrelated attribute were removed. The user created the
+datatype selections explicitly. The sensor named Jalousie in the source omits
+EIBType; it does not establish EIS7 sensor support. This is Config-file evidence,
+not evidence about decoded Miniserver sps.LoxCC data. EIS/DPT main-type relations
+are documented at https://www.loxone.com/dede/kb/eibknx-datentypen/.
+
 observed-topology.xml reproduces the ControlList/C/Co/In and U/K/Input/Ref
 relationships observed in the authorized 2026-09-18 in-memory target inspection.
 Every identifier and block type was replaced with a synthetic value; labels,
