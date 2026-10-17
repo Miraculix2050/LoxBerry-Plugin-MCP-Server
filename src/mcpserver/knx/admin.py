@@ -288,6 +288,7 @@ def _run(
             "revision",
             "taxonomy_revision",
             "offset",
+            "sort",
         },
         "knx_compare_discard": {"target", "draft_id"},
         "knx_xml_preview": {"target", "revision", "choices", "project_binding"},

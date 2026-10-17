@@ -1,6 +1,8 @@
 """Global Admin table ordering retains source identity and bounded pagination."""
 
+import hashlib
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,38 @@ from mcpserver.knx.correction_projection import project_draft
 from mcpserver.knx.model import KnxError
 from mcpserver.knx.read_model import table_order
 from mcpserver.knx.store import KnxStore
+
+
+@pytest.mark.parametrize("order", [None, {"field": "address", "direction": "descending"}])
+def test_file_comparison_admin_accepts_browser_sort_payload(tmp_path, monkeypatch, order):
+    from mcpserver.config import AtomicConfigStore, PluginConfig
+    from mcpserver.knx.admin import dispatch_knx
+    from mcpserver.knx.file_comparison import FileComparison
+
+    endpoint = "https://comparison.example"
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "a" * 64)
+    configs = AtomicConfigStore(tmp_path / "config.json")
+    configs.save(replace(PluginConfig.defaults(), loxone_endpoint=endpoint))
+    calls = []
+
+    def page(self, payload):
+        calls.append(payload)
+        return {"items": []}
+
+    monkeypatch.setattr(FileComparison, "page", page)
+    payload = {
+        "target": hashlib.sha256(endpoint.encode()).hexdigest(),
+        "sort": order,
+        "left_id": "current",
+        "right_id": "b" * 48,
+        "revision": 0,
+        "taxonomy_revision": "c" * 64,
+        "offset": 0,
+    }
+    result = dispatch_knx("knx_compare_page", payload, configs)
+    assert result["items"] == []
+    assert calls[0]["sort"] == order
 
 
 @pytest.mark.parametrize(
