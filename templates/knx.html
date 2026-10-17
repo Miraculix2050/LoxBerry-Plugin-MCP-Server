@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v10">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v11">
 <div class="mcp-knx-announcements">
  <p id="knx-drafts-announcement" role="status" data-loading="<TMPL_VAR KNX.DRAFTS_LOADING ESCAPE=HTML>"></p>
  <p id="knx-write-announcement" role="status" data-loading="<TMPL_VAR KNX.WRITE_LOADING ESCAPE=HTML>"></p>
@@ -266,7 +266,21 @@
    <div class="mcp-actions"><button class="lb-button" id="knx-ets-apply" type="button"><TMPL_VAR KNX.APPLY_IMPORT></button><button class="lb-button" id="knx-ets-discard" type="button"><TMPL_VAR KNX.CANCEL_IMPORT></button></div>
   </div>
  </div></details>
+ <details class="mcp-card" data-persist-collapse id="knx-json-section">
+  <summary><h3><TMPL_VAR KNX.JSON_EXCHANGE></h3></summary>
+  <div class="mcp-collapsible-content">
+   <p class="mcp-help"><TMPL_VAR KNX.JSON_EXCHANGE_HELP></p>
+   <p class="mcp-help"><TMPL_VAR KNX.JSON_IMPORT_HELP></p>
+   <p class="mcp-help"><TMPL_VAR KNX.JSON_LIMITS_HELP></p>
+  <button class="lb-button" id="knx-json-export" type="button"><TMPL_VAR KNX.JSON_EXPORT></button>
+  <label class="lb-button"><TMPL_VAR KNX.JSON_IMPORT><input id="knx-json-import" type="file" accept=".json,application/json"></label>
+  <p id="knx-json-preview"></p><button class="lb-button" id="knx-json-apply" type="button" hidden><TMPL_VAR KNX.JSON_APPLY></button>
+  </div>
+ </details>
   <p class="mcp-help"><TMPL_VAR KNX.LOCAL_SOURCE_HELP></p>
+  <section id="knx-filter-section" class="mcp-knx-work-area mcp-knx-filter" aria-labelledby="knx-filter-title">
+   <h3 id="knx-filter-title"><TMPL_VAR KNX.FILTER_TITLE></h3>
+   <p class="mcp-help"><TMPL_VAR KNX.FILTER_HELP></p>
   <form id="knx-search-form" class="mcp-form">
    <div class="mcp-grid">
     <label class="mcp-field"><span><TMPL_VAR KNX.SEARCH></span><input id="knx-search-query" maxlength="128" type="search"></label>
@@ -275,9 +289,16 @@
    </div>
    <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SEARCH_APPLY></button><button class="lb-button" id="knx-search-clear" type="button"><TMPL_VAR KNX.SEARCH_CLEAR></button></div>
   </form>
-  <button class="lb-button" id="knx-json-export" type="button"><TMPL_VAR KNX.JSON_EXPORT></button>
-  <label class="lb-button"><TMPL_VAR KNX.JSON_IMPORT><input id="knx-json-import" type="file" accept=".json,application/json"></label>
-  <p id="knx-json-preview"></p><button class="lb-button" id="knx-json-apply" type="button" hidden><TMPL_VAR KNX.JSON_APPLY></button>
+  </section>
+  <section id="knx-results-section" aria-labelledby="knx-results-title">
+   <h3 id="knx-results-title"><TMPL_VAR KNX.ADDRESS_LIST></h3>
+   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.MAIN_GROUP></th><th><TMPL_VAR KNX.MIDDLE_GROUP></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+  </section>
+  <section id="knx-editor-section" class="mcp-knx-work-area" aria-labelledby="knx-editor-title"
+   data-new-title="<TMPL_VAR KNX.ADDRESS_CREATE ESCAPE=HTML>"
+   data-edit-title="<TMPL_VAR KNX.ADDRESS_EDIT ESCAPE=HTML>">
+   <h3 id="knx-editor-title"><TMPL_VAR KNX.ADDRESS_CREATE></h3>
   <form id="knx-record-form" class="mcp-form">
    <fieldset class="mcp-configuration-fields" disabled>
     <div class="mcp-grid">
@@ -296,8 +317,7 @@
     <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SAVE_RECORD></button><button class="lb-button" type="reset"><TMPL_VAR KNX.NEW_RECORD></button></div>
    </fieldset>
   </form>
-  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.MAIN_GROUP></th><th><TMPL_VAR KNX.MIDDLE_GROUP></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
-  <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+  </section>
  </div></details>
  <details class="mcp-card" data-persist-collapse open id="knx-project-section"
   data-not-run="<TMPL_VAR KNX.PROJECT_NOT_RUN ESCAPE=HTML>"
@@ -426,7 +446,7 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v18" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v19" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v6" defer></script>
 <script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v8" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>

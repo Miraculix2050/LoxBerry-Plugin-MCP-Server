@@ -34,6 +34,25 @@ EIS7/DPT1. Only paired combinations are enabled; empty/conflicting codes,
 unverified versions and extended families remain unresolved. Main-type agreement
 never confirms device/telegram compatibility.
 
+## Address administration: search, editing and JSON exchange
+
+Under **Group addresses**, **JSON exchange** appears directly below ETS import
+and starts collapsed. As with other sections, its expanded state is retained
+in the browser. **Search and filter** only changes the display. Saved group
+addresses, including imported main/middle groups, appear below, followed by a
+separate area for adding or editing an address. During editing, its heading
+identifies the selected address.
+
+JSON exchanges local address metadata, including imported values and manual
+additions. Export includes only the displayed, filtered table page, not the
+complete inventory. Import shows a preview first; only explicit application
+adds included addresses or overwrites their metadata. Other addresses remain
+unchanged. Address labels, the imported group hierarchy and reconstructable ETS
+XML source data are excluded. JSON import removes existing XML reconstruction
+provenance for affected addresses; reimport the original ETS XML file before a
+later XML correction export. JSON exchange replaces neither ETS import nor a
+complete backup.
+
 ## MCP workflow
 
 Inspect the current tool schema and retrieve `loxone_get_skill_guide(section="core")`,

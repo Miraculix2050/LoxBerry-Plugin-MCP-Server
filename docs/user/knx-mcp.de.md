@@ -33,6 +33,26 @@ Aktorcode 6 bleibt EIS7/DPT1. Nur im Paarvergleich bestätigte Kombinationen sin
 aktiv; leere/widersprüchliche Codes, ungeprüfte Versionen und erweiterte Familien
 bleiben ungeklärt. Gleiche Haupttypen bestätigen keine Geräte-/Telegrammkompatibilität.
 
+## Adressverwaltung: Suchen, Bearbeiten und JSON-Austausch
+
+Unter **Gruppenadressen** stehen ETS-Import und direkt darunter der zunächst
+eingeklappte **JSON-Austausch**. Der Öffnungszustand bleibt wie bei den übrigen
+Abschnitten im Browser erhalten. **Suchen und filtern** verändert nur die
+Anzeige. Darunter folgen die gespeicherten Gruppenadressen mit importierter
+Haupt-/Mittelgruppe und ein eigener Bereich zum Hinzufügen oder Bearbeiten.
+Beim Bearbeiten nennt dessen Überschrift die ausgewählte Adresse.
+
+JSON dient zum Austausch lokaler Adressmetadaten einschließlich importierter
+Werte und manueller Ergänzungen. Exportiert wird nur die angezeigte, gefilterte
+Tabellenseite, kein vollständiger Bestand. Der Import zeigt zuerst eine Vorschau;
+erst die ausdrückliche Übernahme ergänzt enthaltene Adressen oder überschreibt
+deren Metadaten. Nicht enthaltene Adressen bleiben erhalten. Adresslabels,
+importierte Gruppenhierarchie und rekonstruierbare ETS-XML-Quelldaten gehören
+nicht dazu. Für betroffene Adressen entfernt der JSON-Import die bisherige
+XML-Rekonstruktionsherkunft; vor einem späteren XML-Korrekturexport die
+ursprüngliche ETS-XML-Datei erneut importieren. Der Austausch ersetzt weder
+ETS-Import noch eine vollständige Sicherung.
+
 ## MCP-Ablauf
 
 Das aktuelle Tool-Schema prüfen und `loxone_get_skill_guide(section="core")`,
