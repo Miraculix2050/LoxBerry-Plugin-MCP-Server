@@ -562,7 +562,7 @@ def _run(
             return {"discarded": True}
         outcome = service.apply(identifier, payload.get("preview_token"))
         return {
-            **store.page(target),
+            **store.page(target, include_groups=True),
             "target": token,
             "target_display": target,
             "taxonomy": taxonomy_document,
