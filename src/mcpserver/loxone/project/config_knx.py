@@ -13,7 +13,7 @@ from pathlib import Path
 from .models import DEFAULT_LIMITS, ProjectError
 from .parser import parse_project
 
-MAPPING_VERSION = "config-knx-v1"
+MAPPING_VERSION = "config-knx-v2"
 _CODES = {
     "1": (2, (3,)),
     "2": (3, (10,)),
@@ -50,7 +50,8 @@ def inspect_config_knx(data: bytes) -> dict[str, object]:
     """Inspect a local .Loxone XML file, not decoded or packed Miniserver data.
 
     Only the observed format/configuration version pair enables the mapping.
-    Missing scalar codes and conflicting attributes remain unresolved.
+    Absent scalar codes use the Config DPT1 default without inferring an EIS.
+    Explicit empty/unknown codes and conflicting attributes remain unresolved.
     """
     project = parse_project(data)
     root = project.elements[0]
@@ -85,8 +86,8 @@ def inspect_config_knx(data: bytes) -> dict[str, object]:
             elif code in _SUPPORTED[source_type]:
                 status = "mapped_explicit_code"
                 eis, dpts = _CODES[code]
-            elif not present:
-                status = "missing_code"
+            elif not present and source_type in {"EIBsensor", "EIBactor"}:
+                status, dpts = "mapped_implicit_config_default", (1,)
         records.append(ConfigKnxDatatype(index, source_type, code, status, eis, dpts))
     return {
         "source_format": "loxone_config_xml",

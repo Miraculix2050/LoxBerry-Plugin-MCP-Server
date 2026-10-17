@@ -9,8 +9,12 @@ wird weder hochgeladen noch geändert; die Ausgabe enthält Objekttyp, XML-Index
 rohen EIBType, Zuordnungsstatus und EIS/DPT-Haupttypen, keine Projektnamen oder IDs.
 
 Die Zuordnung ist für das geprüfte Format `274` mit ConfigVersion `17020828`
-belegt, beispielsweise `EIBType=4` → EIS5/DPT9. Fehlende skalare Werte bleiben
-unbekannt; Textsensoren/-aktoren werden getrennt über ihren Objekttyp erkannt.
+belegt, beispielsweise `EIBType=4` → EIS5/DPT9. Bei `EIBsensor` und `EIBactor`
+ohne `EIBType` gilt der vereinbarte implizite Config-Standard DPT1, ohne EIS-Typ
+oder erfundenen Rohcode (`mapped_implicit_config_default`). Ein Aktor mit
+`EIBType=6` bleibt separat EIS7/DPT1 (`mapped_explicit_code`). Leere, unbekannte
+oder widersprüchliche Attributwerte bleiben ungeklärt. Textsensoren/-aktoren
+werden getrennt über ihren Objekttyp erkannt. Die Zuordnung heißt `config-knx-v2`.
 Mehrere mögliche DPT-Haupttypen bleiben erhalten, ein Untertyp wird nicht
 abgeleitet. Andere Versionen werden als ungeprüft ausgegeben. Diese Auswertung
 gilt für Config-Projektdateien; das MCP-Mapping der Miniserver-Daten bleibt

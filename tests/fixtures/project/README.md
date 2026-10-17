@@ -6,8 +6,12 @@ only ControlList Version=274/LxAV=87, Document ConfigVersion=17020828, endpoint
 Type and explicit EIBType values, including omissions. Names, IDs, addresses,
 credentials and every unrelated attribute were removed. The user created the
 datatype selections explicitly. The sensor named Jalousie in the source omits
-EIBType; it does not establish EIS7 sensor support. This is Config-file evidence,
-not evidence about decoded Miniserver sps.LoxCC data. EIS/DPT main-type relations
+EIBType; it does not establish EIS7 sensor support. The user explicitly approved
+interpreting omitted EIBType on EIBsensor and
+EIBactor as the implicit DPT1 Config default, without assigning an EIS type.
+An explicit actor EIBType=6 retains its separate EIS7/DPT1 interpretation.
+The fixture remains unchanged to preserve the source omissions. This is Config-file
+evidence, not evidence about decoded Miniserver sps.LoxCC data. EIS/DPT main-type relations
 are documented at https://www.loxone.com/dede/kb/eibknx-datentypen/.
 
 observed-topology.xml reproduces the ControlList/C/Co/In and U/K/Input/Ref

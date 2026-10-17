@@ -9,9 +9,13 @@ uploaded nor modified; output contains object type, XML index, raw EIBType,
 mapping status and EIS/DPT main types, without project names or IDs.
 
 The mapping is evidenced for format `274` with ConfigVersion `17020828`, for
-example `EIBType=4` → EIS5/DPT9. Missing scalar values remain unknown; text
-sensors/actors are recognized separately by object type. Multiple candidate
-DPT main types remain intact, without deriving a subtype. Other versions are
+example `EIBType=4` → EIS5/DPT9. For `EIBsensor` and `EIBactor` without an
+`EIBType` attribute, the agreed implicit Config default is DPT1, without an
+EIS type or invented raw code (`mapped_implicit_config_default`). An actor with
+`EIBType=6` remains separately EIS7/DPT1 (`mapped_explicit_code`). Empty, unknown
+or conflicting attribute values remain unresolved. Text sensors/actors are
+recognized separately by object type. The mapping is named `config-knx-v2`.
+Multiple candidate DPT main types remain intact, without deriving a subtype. Other versions are
 reported as unverified. This inspection applies to Config project files;
 the MCP interpretation of Miniserver data remains unchanged. See the
 [project format](../development/project-format.md#separate-offline-config-file-evidence).

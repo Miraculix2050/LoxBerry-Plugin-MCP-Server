@@ -42,14 +42,43 @@ def test_observed_config_fixture() -> None:
         "10": (11, (12, 13)),
         "13": (14, (5, 6)),
     }
-    assert sum(r["status"] == "missing_code" for r in records) == 2
+    defaults = [r for r in records if r["status"] == "mapped_implicit_config_default"]
+    assert {r["source_type"] for r in defaults} == {"EIBsensor", "EIBactor"}
+    assert len(defaults) == 2
+    assert all(r["source_value"] is None and r["eis"] is None for r in defaults)
+    assert all(r["dpt_main_types"] == (1,) for r in defaults)
     assert sum(r["status"] == "mapped_object_type" for r in records) == 2
 
 
-@pytest.mark.parametrize("code", ["0", "7", "11", "12", "14", "99", "04", ""])
-def test_unobserved_codes_remain_unresolved(code: str) -> None:
-    result = inspect_config_knx(config(f'<C Type="EIBactor" EIBType="{code}"/>'))
+@pytest.mark.parametrize("source_type", ["EIBsensor", "EIBactor"])
+@pytest.mark.parametrize("code", ["0", "7", "11", "12", "14", "99", "04", "", " "])
+def test_unobserved_codes_remain_unresolved(source_type: str, code: str) -> None:
+    result = inspect_config_knx(config(f'<C Type="{source_type}" EIBType="{code}"/>'))
     assert result["records"][0]["eis"] is None
+    assert result["records"][0]["dpt_main_types"] == ()
+    assert result["records"][0]["status"] == "unresolved"
+
+
+@pytest.mark.parametrize("source_type", ["EIBsensor", "EIBactor"])
+def test_absent_code_uses_dpt1_default_without_eis(source_type: str) -> None:
+    record = inspect_config_knx(config(f'<C Type="{source_type}" Title="EIS5 DPT9"/>'))["records"][
+        0
+    ]
+    assert record["status"] == "mapped_implicit_config_default"
+    assert record["source_value"] is None
+    assert record["eis"] is None
+    assert record["dpt_main_types"] == (1,)
+
+
+def test_eis7_keeps_explicit_provenance() -> None:
+    records = inspect_config_knx(config('<C Type="EIBactor"/><C Type="EIBactor" EIBType="6"/>'))[
+        "records"
+    ]
+    assert records[0]["dpt_main_types"] == records[1]["dpt_main_types"] == (1,)
+    assert records[0]["eis"] is None
+    assert records[1]["eis"] == 7
+    assert records[1]["source_value"] == "6"
+    assert records[1]["status"] == "mapped_explicit_code"
 
 
 @pytest.mark.parametrize(
@@ -59,15 +88,23 @@ def test_unobserved_codes_remain_unresolved(code: str) -> None:
         '<C Type="EIBactor" EIBType="13"/>',
         '<C Type="EIBtextactor" EIBType="4"/>',
         '<C Type="EIBactor" EIBType="4" EIBType="5"/>',
-        '<C Type="EIBsensor" Title="EIS5 DPT9"/>',
+        '<C Type="EIBsensor" EIBType="4" EIBType="5"/>',
     ],
 )
 def test_no_inference_from_names_conflicts_or_other_families(body: str) -> None:
-    assert inspect_config_knx(config(body))["records"][0]["eis"] is None
+    record = inspect_config_knx(config(body))["records"][0]
+    assert record["eis"] is None
+    assert record["dpt_main_types"] == ()
+    assert record["status"] == "unresolved"
+
+
+def test_default_excludes_extended_families() -> None:
+    result = inspect_config_knx(config('<C Type="EIBextsensor"/><C Type="EIBextactor"/>'))
+    assert result["records"] == []
 
 
 def test_version_and_source_boundary() -> None:
-    body = '<C Type="EIBactor" EIBType="4"/>'
+    body = '<C Type="EIBactor" EIBType="4"/><C Type="EIBsensor"/><C Type="EIBactor"/>'
     for data in (
         config(body, "other"),
         config(body).replace(b'Version="274"', b'Version="275"'),
@@ -81,7 +118,8 @@ def test_version_and_source_boundary() -> None:
     ):
         result = inspect_config_knx(data)
         assert result["version_verified"] is False
-        assert result["records"][0]["status"] == "unsupported_version"
+        assert all(r["status"] == "unsupported_version" for r in result["records"])
+        assert all(r["dpt_main_types"] == () for r in result["records"])
     with pytest.raises(ProjectError):
         inspect_config_knx(b"\xee\xcc\xbb\xaa")
     with pytest.raises(ProjectError):
@@ -90,12 +128,20 @@ def test_version_and_source_boundary() -> None:
         inspect_config_knx(b'<!DOCTYPE x [<!ENTITY y "z">]><ControlList/>')
 
 
-def test_miniserver_classifier_keeps_raw_code() -> None:
-    element = parse_project(b'<C Type="EIBactor" EibAddr="1/2/3" EIBType="4"/>').elements[0]
+@pytest.mark.parametrize("source_type", ["EIBsensor", "EIBactor"])
+@pytest.mark.parametrize("code", [None, "4", "6"])
+def test_miniserver_classifier_keeps_raw_code(source_type: str, code: str | None) -> None:
+    attribute = "" if code is None else f' EIBType="{code}"'
+    element = parse_project(
+        f'<C Type="{source_type}" EibAddr="1/2/3"{attribute}/>'.encode()
+    ).elements[0]
     semantics = classify_knx(element)
     assert semantics is not None
+    if code is None:
+        assert semantics.datatype is None
+        return
     assert semantics.datatype is not None
-    assert semantics.datatype.source_value == "4"
+    assert semantics.datatype.source_value == code
     assert semantics.datatype.normalized_code is None
     assert semantics.datatype.system == "unknown"
 

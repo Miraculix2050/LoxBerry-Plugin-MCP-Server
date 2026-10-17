@@ -49,7 +49,7 @@ does not upload, modify or import a project into the running server. This path
 is separate from the Miniserver worker and does not change its MCP contracts,
 model version, `normalized_code` or `normalized_dpt_evidence`.
 
-Mapping `config-knx-v1` is enabled only for ControlList Version `274` and the
+Mapping `config-knx-v2` is enabled only for ControlList Version `274` and the
 unambiguous Document ConfigVersion `17020828`, observed in the user-supplied
 2026-10-17 Config test project. The minimal fixture records source types and
 codes without private project data. Explicit scalar mappings are:
@@ -67,9 +67,15 @@ codes without private project data. Explicit scalar mappings are:
 | 10 | 11 | 12, 13 |
 | 13 | 14 | 5, 6 |
 
-Only observed source-type/code pairs are mapped. Missing scalar attributes,
+Explicit codes map only for observed source-type/code pairs. In this verified
+Config format, `EIBsensor` and `EIBactor` without an `EIBType` attribute use
+DPT main type 1 with status `mapped_implicit_config_default`, `source_value=null`
+and `eis=null`. This is the explicitly agreed Config default, not an inferred
+numeric code zero or EIS type. `EIBactor` with code `6` remains separately
+EIS7/DPT1 with `mapped_explicit_code` provenance. Both have DPT1 as their main
+type, while their source evidence stays distinct. Empty or whitespace values,
 unknown/conflicting codes, unsupported versions and unobserved pairs remain
-unresolved; in particular an omitted attribute does not establish code zero.
+unresolved. The default never applies to extended endpoint types or Miniserver data.
 EIBtextsensor/EIBtextactor without EIBType map separately to EIS15/DPT16 by
 object type. Names and dropdown positions never select a datatype. EIS8/12/13
 are not supported selections for ordinary sensors/actors; no arithmetic rule
