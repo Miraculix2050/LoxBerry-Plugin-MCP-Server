@@ -311,7 +311,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
   w.MCPKnx.render(state);
   record.import_info = {address_format: 'three_level'}; record.address_format = 'two_level';
   w.MCPKnx.render(state);
-  assert.equal(w.document.querySelector('#knx-addresses tr').cells[2].textContent, '1/2 — Middle & group');
+  assert.equal(w.document.querySelector('#knx-addresses tr').cells[2].textContent,
+    '1/2 — Middle & group');
   record.import_info = {}; record.address_format = 'three_level';
   w.MCPKnx.render(state);
   const labels = w.document.getElementById('knx-taxonomy-entries');
