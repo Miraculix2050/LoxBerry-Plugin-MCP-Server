@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reuse checked MCP output validators per server and tool schema while retaining
+  complete validation of every structured answer, schema-change detection and
+  per-call authorization. No new performance measurements are claimed (#529).
+
 - Add a lazy, paginated KNX main/middle-group view including empty imported
   groups, source-preserving address counts and global header sorting. Create,
   edit and remove local group labels using existing taxonomy conflict checks;
