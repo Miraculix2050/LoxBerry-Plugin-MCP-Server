@@ -135,7 +135,8 @@ async def test_metadata_search_description_cursor_and_fresh_authorization(
     first = await find(limit=1)
     assert first.ok and first.data.next_cursor
     follow = await find(limit=1, cursor=first.data.next_cursor)
-    assert follow.ok and follow.data.items[0].project_node_id != item.project_node_id
+    assert follow.ok
+    assert follow.data.items[0].project_node_id != first.data.items[0].project_node_id
     assert max(len(args[2]) for args in lookups) <= 1
     revision = catalog.put(
         target,
