@@ -94,6 +94,15 @@ Interpret sources separately:
   proves no device topology, bus traffic or program path. Names and neighboring
   addresses do not establish physical roles or historical causation.
 
+For datatype questions, describe the selected objects and inspect separate
+`normalized_dpt_evidence`. Paired versioned Miniserver rules can establish DPT
+main types: raw code 4 maps to main type 9, while 9.004 must come independently
+from an ETS/manual declaration in `metadata.dpt_details`. Missing ordinary
+sensor/actor codes may carry the evidenced implicit DPT1 default without EIS;
+explicit actor code6 remains EIS7/DPT1. Keep multiple main-type candidates and
+unresolved versions/codes visible. Main-type agreement never establishes
+subtype, device/telegram compatibility, physical roles or actual bus traffic.
+
 Report observations, review candidates and missing evidence separately. Request
 device documentation, ETS communication-object associations or actual bus/history
 evidence only when needed for the user's question. With no import, partial source
@@ -262,15 +271,21 @@ Use a canonical group address only when present; equal addresses do not prove a
 program path. Find and trace expose compact KNX metadata including the original
 address, its source field, and any `EIBextsensor` or `EIBextactor` edge variant.
 Use describe for address segments, bounded connector wiring evidence, and any
-`EIBType`. Treat `EIBType` as an unresolved source
-code, not as a guessed DPT or EIS meaning.
+`EIBType`. Preserve its raw value. Describe can add versioned
+`normalized_dpt_evidence` from paired Config/Miniserver format evidence.
+Read DPT main types separately from ETS/manual subtypes in `metadata.dpt_details`.
+For example raw code 4 maps to main type 9, never to subtype 9.004 by itself.
+An absent ordinary sensor/actor code can carry the separately evidenced implicit
+DPT1 default without EIS or an invented raw code. Unknown/ambiguous versions and
+unpaired codes stay unresolved. Main-type agreement is not device/telegram
+compatibility; preserve `compatibility=not_established` and all candidates.
 Describe can contain several `usage_observations` only where exact reviewed
 block/connector rules prove them; they are not a global meaning of the group
 address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 12 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 13 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as

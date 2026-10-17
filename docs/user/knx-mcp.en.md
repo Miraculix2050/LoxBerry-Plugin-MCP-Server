@@ -16,9 +16,23 @@ EIS type or invented raw code (`mapped_implicit_config_default`). An actor with
 or conflicting attribute values remain unresolved. Text sensors/actors are
 recognized separately by object type. The mapping is named `config-knx-v2`.
 Multiple candidate DPT main types remain intact, without deriving a subtype. Other versions are
-reported as unverified. This inspection applies to Config project files;
-the MCP interpretation of Miniserver data remains unchanged. See the
-[project format](../development/project-format.md#separate-offline-config-file-evidence).
+reported as unverified. This inspection applies to Config project files. The
+separately verified live MCP mapping is documented in the
+[datatype evidence](../development/knx-datatype-evidence.md).
+
+## Live MCP: Loxone main type and ETS subtype
+
+For paired source-type/code combinations in Miniserver format `274` with
+ConfigVersion `17020828`, Describe returns `normalized_dpt_evidence`: source format,
+mapping version, EIS and candidate DPT main types. Sensor/actor `EIBType=4` yields
+main type 9; `datatype.source_value` stays `4`, `system=dpt_main_type` and
+`normalized_code=9`. ETS `DPST-9-4` remains separately `9.004` in
+`metadata.dpt_details`. A subtype is never derived from EIBType. Multiple main
+types remain candidates without selection. An absent sensor/actor attribute adds
+separate DPT1 evidence without EIS or an invented raw code; actor code6 remains
+EIS7/DPT1. Only paired combinations are enabled; empty/conflicting codes,
+unverified versions and extended families remain unresolved. Main-type agreement
+never confirms device/telegram compatibility.
 
 ## MCP workflow
 

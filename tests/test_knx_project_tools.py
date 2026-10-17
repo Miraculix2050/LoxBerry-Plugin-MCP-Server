@@ -19,12 +19,19 @@ from mcpserver.loxone.project.query import ProjectQuery
 from mcpserver.loxone.project.taxonomy import parse_taxonomy
 
 
-def project():
+def project(verified=False):
     parsed = parse_project(
         b'<P><C Type="EIBactor" U="actor" Title="Loxone primary" Desc="Project description" '
         b'EibAddr="1/2/3" EIBType="5"/><C Type="EIBactor" U="other" '
         b'Title="Other Loxone" EibAddr="1/2/4"/></P>'
     )
+    if verified:
+        parsed = parse_project(
+            b'<ControlList Version="274"><C Type="Document" ConfigVersion="17020828"/>'
+            + b'<C Type="EIBsensor" U="actor" Title="Loxone primary" Desc="Project description" '
+            b'EibAddr="1/2/3" EIBType="4"/><C Type="EIBactor" U="other" '
+            b'Title="Other Loxone" EibAddr="1/2/4"/></ControlList>'
+        )
     snapshot = ProjectSnapshot(
         "a" * 64,
         5,
@@ -57,7 +64,10 @@ def test_metadata_schema_preserves_optional_fields_and_typed_dpt_sources():
 
 
 @pytest.mark.asyncio
-async def test_metadata_search_description_cursor_and_fresh_authorization(tmp_path, monkeypatch):
+@pytest.mark.parametrize("verified", [False, True])
+async def test_metadata_search_description_cursor_and_fresh_authorization(
+    tmp_path, monkeypatch, verified
+):
     monkeypatch.setenv("LBPDATA", str(tmp_path))
     catalog = KnxStore(tmp_path / "knx" / "metadata.sqlite3")
     target = "http://miniserver.example"
@@ -67,10 +77,10 @@ async def test_metadata_search_description_cursor_and_fresh_authorization(tmp_pa
         {
             "address": "1/2/3",
             "address_format": "three_level",
-            "fields": {"name": "Straße metadata", "description": "", "dpts": ["1.001", "bad"]},
+            "fields": {"name": "Straße metadata", "description": "", "dpts": ["9.004", "bad"]},
         },
     )
-    view = project()
+    view = project(verified)
     main_thread = threading.get_ident()
     original_lookup = ProjectMetadata.lookup
     lookups = []
@@ -110,14 +120,23 @@ async def test_metadata_search_description_cursor_and_fresh_authorization(tmp_pa
     assert detail.ok
     assert detail.data.knx.title == "Loxone primary"
     assert detail.data.knx.description == "Project description"
-    assert detail.data.knx.datatype.source_value == "5"
-    assert detail.data.knx.normalized_dpt_evidence is None
+    assert detail.data.knx.datatype.source_value == ("4" if verified else "5")
+    if verified:
+        assert detail.data.knx.datatype.normalized_code == "9"
+        evidence = detail.data.knx.normalized_dpt_evidence
+        assert evidence.dpt_main_types == [9] and evidence.subtype is None
+        assert evidence.compatibility == "not_established"
+    else:
+        assert detail.data.knx.normalized_dpt_evidence is None
+    ets = detail.data.knx.metadata.dpt_details["manual"]["items"][0]
+    assert ets["normalized"] == "9.004" and ets["subtype"] == 4
     assert detail.data.knx.metadata.manual["description"] == ""
     assert detail.data.knx.metadata.dpt_details["manual"]["items"][1]["status"] == "invalid_format"
     first = await find(limit=1)
     assert first.ok and first.data.next_cursor
     follow = await find(limit=1, cursor=first.data.next_cursor)
-    assert follow.ok and follow.data.items[0].project_node_id != item.project_node_id
+    assert follow.ok
+    assert follow.data.items[0].project_node_id != first.data.items[0].project_node_id
     assert max(len(args[2]) for args in lookups) <= 1
     revision = catalog.put(
         target,

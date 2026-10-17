@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add paired, version-gated Miniserver KNX datatype evidence to live MCP Describe.
+  Preserve raw EIBType, implicit DPT1 defaults and explicit EIS7/DPT1 provenance;
+  keep DPT main types separate from ETS/manual subtypes and compatibility unknown.
+  Bump project model to 14, KNX analysis to 13 and guide revision to 90.
+
 - Reduce ETS/project comparison work with a batched common-address name projection
   and bounded numeric output keys. Preserve exact source-name semantics, full
   counts, revision checks and paginated metadata hydration (#458).

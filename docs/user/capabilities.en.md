@@ -291,7 +291,7 @@ analysis coverage or establish physical actuator compatibility.
 `loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
-the default scope (version 12). Changing Explorer scope clears selection and cursor.
+the default scope (version 13). Changing Explorer scope clears selection and cursor.
 Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
 within uniquely observed project transport/device ancestry in one source.
 Repeated mappings or differing explicit raw attributes are review candidates,
@@ -318,7 +318,8 @@ prove source shape only; live sensor/device compatibility is unverified (issues 
 Confirmed KNX/EIB project objects add bounded source-backed metadata for bus lines, endpoints and
 KNX logic blocks. Endpoint direction is `bus_to_loxone` or `loxone_to_bus`; it is not a claim
 about the physical device role. Group addresses retain their original text and only expose a
-canonical form when it is valid. `EIBType` remains an unresolved source code, not an inferred DPT.
+canonical form when it is valid. `EIBType` remains a raw source code. Only the
+versioned mapping paired against Config objects adds evidenced DPT main types.
 `EIBextsensor` and `EIBtextsensor` are bus-to-Loxone endpoints;
 `EIBextactor` and `EIBtextactor` are Loxone-to-bus endpoints. Validated `:0` and
 `:1` address variants remain distinct; the address reports whether it came from
@@ -329,8 +330,9 @@ searching the canonical base may return both.
 Equal group addresses do not create a graph relationship or prove causality. Find and trace return
 a compact KNX summary with original and canonical addresses, source field, and variant; use
 `loxone_describe_project_object` for address segments, names, any raw datatype code,
-and bounded connector IDs, keys, and incoming/outgoing signal counts. A missing
-`EIBType` on the newly modeled families leaves the datatype unknown.
+and bounded connector IDs, keys, and incoming/outgoing signal counts. In the verified
+format, absent EIBType on ordinary sensors/actors adds separate implicit DPT1 evidence
+without EIS; text types add DPT16. Unverified versions and extended families remain unmapped.
 The `knx_group_address` filter accepts valid two- or three-level addresses and `:0`/`:1`
 variants. Invalid syntax or numeric ranges return `invalid_input`; a valid address without
 matches returns a successful empty search page. Valid original forms are still compared exactly
@@ -351,7 +353,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 12 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 13 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without direct configured
 wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived
@@ -368,8 +370,9 @@ Project status and analysis also expose `coverage_by_source_type`. Raw source-ob
 counts are separate from logical endpoint, logic-block and line counts; additional
 occurrences merged across model sources are counted explicitly. Unknown KNX-like
 objects and omitted type groups make coverage incomplete. Object details identify
-`EIBType` as raw Loxone Config evidence and report that normalized DPT evidence is
-currently unavailable.
+`EIBType` as raw Loxone Config evidence. Separate `normalized_dpt_evidence` identifies
+main types, EIS, format/Config version, mapping version and provenance. ETS subtypes
+remain independent; main-type agreement never establishes device/telegram compatibility.
 Select `address_hierarchy` to page through measured one-, two- and three-level
 address prefixes. Each prefix fact separates logical endpoints, raw model-source
 occurrences, canonical addresses and edge variants, and includes bounded original

@@ -620,11 +620,17 @@ the original metadata `address` and `address_format`,
 separate `imported`/`manual` fields, `import_info`, `deviations` and sourced
 `dpt_details`. Missing fields remain unknown; empty values remain explicit.
 DPT status recognizes identifier syntax only and does not replace raw Loxone EIBType
-or establish assignment/registry validity. Search includes additional names and
+or establish assignment/registry validity. The versioned
+`normalized_dpt_evidence` mapping is independent of these declarations.
+Describe preserves raw EIBType; evidenced unique main types use
+`system=dpt_main_type` and a main-only `normalized_code`. The separate evidence
+contains format/Config/mapping versions, EIS, candidate main types and implicit
+versus explicit provenance. ETS/manual subtypes remain in `metadata.dpt_details`;
+no subtype or compatibility is inferred from main-type agreement. Search includes names and
 descriptions by numeric address while retaining Loxone titles as primary. KNX
 revision changes invalidate continuation cursors. No new MCP write/export tool exists.
 
-Project model version 13, KNX analysis version 12 and Opening connector rules 5 apply.
+Project model version 14, KNX analysis version 13 and Opening connector rules 5 apply.
 The canonical skill introduced this metadata in revision 54. Exact stored connector keys `OutputAPI` and `API` expose
 optional `api_connector` with `semantics=connection_metadata_only`,
 `value_available=false` and `rule_id=api_connector_metadata_v1`. No aliases are added.

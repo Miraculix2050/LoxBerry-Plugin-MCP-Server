@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .knx_datatypes import KnxDptEvidence, knx_dpt_evidence
 from .parser import ProjectElement
 from .state_flow import (
     STATE_RULE_ID as STATE_RULE_ID,
@@ -53,7 +54,7 @@ class KnxGroupAddress:
 
 @dataclass(frozen=True, slots=True)
 class KnxDatatype:
-    """A raw project datatype code; its EIS/DPT meaning is intentionally unresolved."""
+    """Original datatype code with separately evidenced main-type normalization."""
 
     source_field: str
     source_value: str
@@ -74,6 +75,7 @@ class KnxSemantics:
     group_address: KnxGroupAddress | None
     datatype: KnxDatatype | None
     truncated_fields: tuple[str, ...]
+    normalized_dpt_evidence: KnxDptEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,11 +168,14 @@ def is_valid_group_address_filter(value: str) -> bool:
     return address is not None and address.canonical is not None
 
 
-def classify_knx(element: ProjectElement) -> KnxSemantics | None:
+def classify_knx(
+    element: ProjectElement, *, dpt_mapping_verified: bool = False
+) -> KnxSemantics | None:
     """Return only semantics proven by the exact Loxone project type and attributes."""
     source_type = element.value("Type")
     if source_type is None:
         return None
+    evidence = knx_dpt_evidence(element, verified=dpt_mapping_verified)
     truncated: list[str] = []
     title = _bounded(element.value("Title"), "title", 200, truncated)
     description = _bounded(element.value("Desc"), "description", 500, truncated)
@@ -192,6 +197,7 @@ def classify_knx(element: ProjectElement) -> KnxSemantics | None:
             group_address,
             datatype,
             tuple(truncated),
+            evidence,
         )
 
     if source_type == "EIBline":
@@ -200,6 +206,13 @@ def classify_knx(element: ProjectElement) -> KnxSemantics | None:
     if direction is not None:
         datatype_value = _bounded(element.value("EIBType"), "datatype.source_value", 200, truncated)
         datatype = KnxDatatype("EIBType", datatype_value) if datatype_value is not None else None
+        if datatype is not None and evidence is not None:
+            datatype = KnxDatatype(
+                "EIBType",
+                datatype.source_value,
+                "dpt_main_type",
+                str(evidence.dpt_main_types[0]) if len(evidence.dpt_main_types) == 1 else None,
+            )
         address_field = "EibAddr"
         address_value = element.value(address_field)
         if source_type == "EIBextsensor" and address_value is None:

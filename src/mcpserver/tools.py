@@ -1141,8 +1141,22 @@ class ProjectKnxDatatypeData(BaseModel):
     source_field: str
     source_value: str
     source_kind: Literal["loxone_config"] = "loxone_config"
-    system: Literal["unknown"]
-    normalized_code: None = None
+    system: Literal["unknown", "dpt_main_type"]
+    normalized_code: str | None = Field(
+        default=None, description="A single evidenced DPT main type only; never an ETS subtype."
+    )
+
+
+class ProjectKnxDptEvidenceData(BaseModel):
+    source_format: Literal["miniserver_loxcc"]
+    mapping_version: Literal["miniserver-knx-v1"]
+    format_version: Literal["274"]
+    config_version: Literal["17020828"]
+    status: Literal["mapped_explicit_code", "mapped_implicit_config_default", "mapped_object_type"]
+    eis: int | None = Field(ge=1, le=15)
+    dpt_main_types: list[int] = Field(min_length=1, max_length=2)
+    subtype: None = None
+    compatibility: Literal["not_established"]
 
 
 class ProjectSignalUseObservationData(BaseModel):
@@ -1246,7 +1260,7 @@ class ProjectKnxData(BaseModel):
     internal_name: str | None
     group_address: ProjectKnxGroupAddressData | None
     datatype: ProjectKnxDatatypeData | None
-    normalized_dpt_evidence: None = None
+    normalized_dpt_evidence: ProjectKnxDptEvidenceData | None = None
     metadata: ProjectKnxMetadataData | None = None
     truncated_fields: list[
         Literal[

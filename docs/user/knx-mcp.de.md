@@ -17,8 +17,21 @@ oder widersprüchliche Attributwerte bleiben ungeklärt. Textsensoren/-aktoren
 werden getrennt über ihren Objekttyp erkannt. Die Zuordnung heißt `config-knx-v2`.
 Mehrere mögliche DPT-Haupttypen bleiben erhalten, ein Untertyp wird nicht
 abgeleitet. Andere Versionen werden als ungeprüft ausgegeben. Diese Auswertung
-gilt für Config-Projektdateien; das MCP-Mapping der Miniserver-Daten bleibt
-unverändert. Details stehen im [Projektformat](../development/project-format.md#separate-offline-config-file-evidence).
+gilt für Config-Projektdateien. Die separat verifizierte Live-MCP-Zuordnung
+ist im [Typnachweis](../development/knx-datatype-evidence.md) dokumentiert.
+
+## Live-MCP: Loxone-Haupttyp und ETS-Untertyp
+
+Für abgeglichene Typ-/Code-Paare im Miniserverformat `274` mit ConfigVersion
+`17020828` liefert Describe `normalized_dpt_evidence`: Quellformat, Mappingversion,
+EIS und mögliche DPT-Haupttypen. `EIBType=4` bei Sensor/Aktor ergibt Haupttyp 9;
+`datatype.source_value` bleibt `4`, `system=dpt_main_type`, `normalized_code=9`.
+ETS `DPST-9-4` bleibt separat `9.004` in `metadata.dpt_details`. Der Untertyp wird
+nicht aus EIBType abgeleitet. Mehrere Haupttypen bleiben Kandidaten ohne Auswahl.
+Sensor/Aktor ohne Attribut erhält separat DPT1 ohne EIS und ohne erfundenen Rohcode;
+Aktorcode 6 bleibt EIS7/DPT1. Nur im Paarvergleich bestätigte Kombinationen sind
+aktiv; leere/widersprüchliche Codes, ungeprüfte Versionen und erweiterte Familien
+bleiben ungeklärt. Gleiche Haupttypen bestätigen keine Geräte-/Telegrammkompatibilität.
 
 ## MCP-Ablauf
 
