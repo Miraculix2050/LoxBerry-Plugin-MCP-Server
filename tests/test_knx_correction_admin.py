@@ -189,6 +189,23 @@ for module in ('mcpserver.knx.correction_service', 'mcpserver.loxone.project.ana
     assert result.returncode == 0, result.stderr
 
 
+def test_correction_inspection_service_has_no_eager_project_analysis_import():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import mcpserver.knx.correction_service; "
+            "assert 'mcpserver.loxone.project.analysis' not in sys.modules; "
+            "assert 'mcpserver.loxone.project.ets_comparison' not in sys.modules",
+        ],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_admin_inspects_same_owner_draft_without_transferring_ownership(tmp_path, monkeypatch):
     target = "https://first.example"
     token = hashlib.sha256(target.encode()).hexdigest()
@@ -395,7 +412,7 @@ w.fetch = async (_, options) => {
     if (action === 'knx_correction_review') decision=payload.decisions[0].decision;
     else {proposed=payload.edit.value;decision='proposed';}
     draft.draft_revision++;
-    data={draft_revision:draft.draft_revision};
+    data={target:'b'.repeat(64),draft_id:draft.draft_id,draft_revision:draft.draft_revision};
   } else data={draft:{...draft},next_offset:null,catalog_stale:false,manual_stale:false,
     project_status:'not_required',changes:[{change_id:'d'.repeat(24),identity:'1/2/3',
       destination:'local_metadata',field:'description',operation:'set',decision,
@@ -579,3 +596,154 @@ def test_bridged_storage_failure_audit_matches_operation(
         dispatch_knx("knx_correction_apply", {"action": mode}, configs)
     assert f"mode={mode} outcome={outcome}" in caplog.text
     assert "Synthetic storage failure" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "reload",
+        "bootstrap",
+        "missing",
+        "target",
+        "blocked",
+        "malformed",
+        "shortened",
+        "expired",
+        "read_failure",
+    ],
+)
+def test_selected_draft_survives_reload_using_only_fresh_server_data(scenario):
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const source=fs.readFileSync('webfrontend/htmlauth/knx-corrections.js','utf8');
+const mode=process.argv[1],key='mcp-knx-admin-draft-view-v1',saved=new Map();
+const calls=[];let generation=1;
+const create=()=>{
+ const w=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}).window;
+ Object.defineProperty(w,'sessionStorage',{value:{getItem:k=>{
+  if(mode==='blocked')throw Error('blocked');return saved.get(k)||null;},
+  setItem:(k,v)=>{if(mode==='blocked')throw Error('blocked');saved.set(k,v);},
+  removeItem:k=>saved.delete(k)}});
+ const target=generation===2&&mode==='target'?'c'.repeat(64):'b'.repeat(64);
+ const draft={draft_id:'a'.repeat(48),draft_revision:generation,expires_at:2000000000,
+  change_count:generation===2&&mode==='shortened'?5:21};
+ const page={target,drafts:generation===2&&mode==='missing'?[]:[draft]};
+ w.document.getElementById('knx-corrections').dataset.selectionUnavailable='Unavailable';
+ if(generation===2&&mode==='bootstrap')w.MCPKnx={initialSections:Promise.resolve({
+  knx_correction_page:{ok:true,data:page}})};
+ w.fetch=async(_,options)=>{
+  const action=options.body.get('action'),payload=JSON.parse(options.body.get('payload'));
+  calls.push({action,payload,generation});
+  if(generation===2&&action==='knx_correction_inspect'&&mode==='read_failure')
+   throw Error('offline');
+  if(generation===2&&action==='knx_correction_inspect'&&mode==='expired')
+   return{ok:true,json:async()=>({ok:false,error:{code:'knx_draft_expired'}})};
+  if(action==='knx_correction_inspect')assert.equal(payload.draft_revision,generation);
+  const field={state:'value',value:generation===1?'old value':'fresh value',truncated:false};
+  const data=action==='knx_correction_page'?page:{draft,next_offset:payload.offset===0?10:null,
+   catalog_stale:false,manual_stale:false,project_status:'not_required',changes:[{
+    change_id:'d'.repeat(24),identity:'1/2/3',field:'name',operation:'set',destination:'ets_export',
+    decision:'accepted',imported:field,manual:field,proposed:field}]};
+  return{ok:true,json:async()=>({ok:true,data})};
+ };
+ w.eval(source);return w;
+};
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
+(async()=>{
+ let w=create();await settle();w.document.querySelector('#knx-corrections-list button').click();
+ await settle();w.document.getElementById('knx-corrections-more').click();await settle();
+ if(mode!=='blocked'){
+  const record=JSON.parse(saved.get(key));
+  assert.deepEqual(Object.keys(record).sort(),['draft_id','offset','target']);assert.equal(record.offset,10);
+ }
+ w.close();generation=2;if(mode==='malformed')saved.set(key,'{"offset":-1}');
+ w=create();await settle();
+ const reads=calls.filter(c=>c.generation===2&&c.action==='knx_correction_inspect');
+ if(['missing','target','blocked','malformed'].includes(mode)){
+  assert.equal(reads.length,0);
+  assert.equal(w.document.querySelectorAll('#knx-corrections-values tr').length,0);
+  if(['missing','target'].includes(mode))assert.equal(saved.has(key),false);
+ }else if(mode==='expired'){
+  assert.equal(saved.has(key),false);
+  assert.equal(w.document.getElementById('knx-corrections-status').textContent,'Unavailable');
+ }else if(mode==='read_failure'){
+  assert(saved.has(key));
+  assert.equal(w.document.querySelectorAll('#knx-corrections-values tr').length,0);
+  assert.equal(w.document.getElementById('knx-corrections').dataset.loadFailed,'true');
+ }else{
+  assert.equal(reads.length,1);assert.equal(reads[0].payload.offset,mode==='shortened'?0:10);
+  assert(w.document.getElementById('knx-corrections-values').textContent.includes('fresh value'));
+  const choice=w.document.querySelector('#knx-corrections-values input[type=checkbox]');
+  assert.equal(choice.checked,false);
+ }
+ w.close();
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", script, scenario], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("failure", ["write", "refresh"])
+def test_decision_failure_preserves_view_and_never_replays_uncertain_write(failure):
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const w=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}).window;
+const ui=w.document.getElementById('knx-corrections'),mode=process.argv[1],calls=[];
+Object.assign(ui.dataset,{accept:'Accept',accepted:'Accepted',proposed:'Proposed',
+ savedRefreshFailed:'Saved; refresh failed',decisionUnconfirmed:'Unconfirmed'});
+const target='b'.repeat(64),draft={draft_id:'a'.repeat(48),draft_revision:1,expires_at:2000000000,
+ change_count:1,catalog_revision:1,manual_revision:'labels'};
+let fail=true,decision='proposed';
+w.fetch=async(_,options)=>{
+ const action=options.body.get('action'),payload=JSON.parse(options.body.get('payload'));
+ calls.push(action);
+ if(action==='knx_correction_review'){
+  decision='accepted';draft.draft_revision++;
+  if(mode==='write')throw Error('response lost');
+  return{ok:true,json:async()=>({ok:true,data:{target,draft_id:draft.draft_id,
+   draft_revision:draft.draft_revision}})};
+ }
+ if(action==='knx_correction_inspect'&&draft.draft_revision>1&&fail)throw Error('read failed');
+ const field={state:'value',value:'Complete target',truncated:false};
+ const data=action==='knx_correction_page'?{target,drafts:[{...draft}]}:
+  {draft:{...draft},next_offset:null,
+  catalog_stale:false,manual_stale:false,project_status:'not_required',changes:[{
+   change_id:'d'.repeat(24),identity:'1/2/3',field:'name',operation:'set',destination:'local_metadata',
+   decision,imported:field,manual:field,proposed:field}]};
+ return{ok:true,json:async()=>({ok:true,data})};
+};
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
+(async()=>{
+ w.eval(fs.readFileSync('webfrontend/htmlauth/knx-corrections.js','utf8'));await settle();
+ w.document.querySelector('#knx-corrections-list button').click();await settle();
+ const before=calls.length;w.document.querySelector('#knx-corrections-values summary').click();
+ await settle();assert.equal(calls.length,before); // Complete editor values need no request.
+ assert.equal(w.document.querySelector('#knx-corrections-values textarea').value,'Complete target');
+ [...w.document.querySelectorAll('#knx-corrections-values button')]
+  .find(b=>b.textContent==='Accept').click();
+ await settle();assert.equal(calls.filter(a=>a==='knx_correction_review').length,1);
+ assert.equal(calls.filter(a=>a==='knx_correction_page').length,1); // No redundant list refresh.
+ assert.equal(w.document.querySelectorAll('#knx-corrections-values tr').length,1);
+ assert([...w.document.querySelectorAll('#knx-corrections-values button')].every(b=>b.disabled));
+ assert.equal(w.document.getElementById('knx-corrections-status').textContent,
+  mode==='write'?'Unconfirmed':'Saved; refresh failed');
+ // Core catalog operations must not re-enable stale correction actions.
+ const page=w.document.getElementById('knx-page');page.setAttribute('aria-busy','true');
+ await settle();
+ page.querySelectorAll('input,select,textarea,button').forEach(control=>control.disabled=false);
+ page.removeAttribute('aria-busy');page.dispatchEvent(new w.Event('knx-idle'));await settle();
+ assert([...w.document.querySelectorAll('#knx-corrections-values button')].every(b=>b.disabled));
+ fail=false;w.document.getElementById('knx-corrections-reload').click();await settle();
+ assert.equal(calls.filter(a=>a==='knx_correction_review').length,1);
+ assert(w.document.getElementById('knx-corrections-values').textContent.includes('Accepted'));
+ assert.equal(ui.dataset.loadFailed,'false');w.close();
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", script, failure], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Restore the selected KNX correction draft/page after reload using fresh server
+  data. Keep views visible but block stale actions after uncertain decisions or
+  failed refreshes; distinguish confirmed saves from lost responses. Avoid the
+  redundant post-decision list request, reuse complete editor values and defer
+  project-analysis imports until project-backed proposal planning is required.
+
 - Separate KNX address filters, saved-address results and editing into labeled
   areas; identify the selected address in the editor heading. Move JSON exchange
   directly below ETS import in a collapsed, persistent subsection and explain

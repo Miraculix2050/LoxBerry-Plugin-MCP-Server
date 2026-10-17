@@ -53,6 +53,23 @@ XML-Rekonstruktionsherkunft; vor einem späteren XML-Korrekturexport die
 ursprüngliche ETS-XML-Datei erneut importieren. Der Austausch ersetzt weder
 ETS-Import noch eine vollständige Sicherung.
 
+## Korrekturentwürfe im Browser
+
+Der ausgewählte Korrekturentwurf und seine angezeigte Seite bleiben beim
+Neuladen desselben Tabs erhalten, sofern der Browserspeicher verfügbar ist.
+Gespeichert wird nur die zielgebundene Auswahl. Die Seite lädt den Entwurf mit
+seiner aktuellen Revision frisch vom Server; entfernte oder abgelaufene Entwürfe
+werden nicht wiederhergestellt. Vollständig angezeigte Zielwerte lassen sich
+sofort bearbeiten; gekürzte Werte werden zuerst vollständig nachgeladen.
+
+**Annehmen** bestätigt einen Vorschlag im Entwurf und übernimmt ihn noch nicht
+in lokale Metadaten oder ETS. Kann nach einer bestätigten Speicherung die Ansicht
+nicht nachgeladen werden, zeigt die Seite dies ausdrücklich. Fehlt schon die
+Bestätigung der Entscheidung, **Entwürfe aktualisieren** wählen und den
+gespeicherten Stand prüfen. Die letzte Ansicht bleibt bei temporären Fehlern
+sichtbar, ihre Aktionen sind bis zum frischen Lesen gesperrt. Eine unsichere
+Schreibaktion wird nicht automatisch wiederholt.
+
 ## MCP-Ablauf
 
 Das aktuelle Tool-Schema prüfen und `loxone_get_skill_guide(section="core")`,
