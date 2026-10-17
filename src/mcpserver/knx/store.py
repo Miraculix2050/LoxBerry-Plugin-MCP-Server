@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from .model import MAX_ADDRESSES, KnxError, address, metadata
-from .read_model import details, imported_group, query_filters, query_sql, sql_deviates
+from .read_model import (
+    details,
+    group_prefixes,
+    imported_group,
+    query_filters,
+    query_sql,
+    sql_deviates,
+)
 
 
 def _search_document(number: int, original: str, imported: str, overrides: str) -> str:
@@ -235,11 +242,7 @@ class KnxStore:
                 ]
             items = [self.project(row) for row in rows]
             if include_groups and items:
-                identities = {
-                    (item["address_format"], "/".join(item["address"].split("/")[:depth]))
-                    for item in items
-                    for depth in range(1, len(item["address"].split("/")))
-                }
+                identities = {identity for item in items for identity in group_prefixes(item)}
                 conditions = " OR ".join("(format=? AND prefix=?)" for _ in identities)
                 groups = {
                     group["group_id"]: group
@@ -253,13 +256,8 @@ class KnxStore:
                 for item in items:
                     item["imported_groups"] = [
                         groups[identifier]
-                        for depth in range(1, len(item["address"].split("/")))
-                        if (
-                            identifier := item["address_format"]
-                            + ":"
-                            + "/".join(item["address"].split("/")[:depth])
-                        )
-                        in groups
+                        for fmt, prefix in group_prefixes(item)
+                        if (identifier := fmt + ":" + prefix) in groups
                         and groups[identifier]["range_start"]
                         <= item["address_id"]
                         <= groups[identifier]["range_end"]

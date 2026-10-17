@@ -123,3 +123,13 @@ def imported_group(row: tuple[Any, ...]) -> dict[str, Any]:
         "range_source": "ets_xml" if xml_range else "address_prefix",
         "active_label": bool(selected),
     }
+
+
+def group_prefixes(item: dict[str, Any]) -> list[tuple[str, str]]:
+    """Import hierarchy follows its preserved format, not a later local spelling."""
+    fmt = item["import_info"].get("address_format", item["address_format"])
+    number = item["address_id"]
+    main = str(number >> 11)
+    return [(fmt, main)] + (
+        [(fmt, main + "/" + str((number >> 8) & 7))] if fmt == "three_level" else []
+    )

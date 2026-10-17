@@ -200,8 +200,9 @@
     for (const item of data.items) {
       const tr = document.createElement('tr');
       const groupText = (level) => {
-        if (level === 'middle' && item.address_format === 'two_level') return '—';
         const group = (item.imported_groups || []).find(entry => entry.level === level);
+        const format = item.import_info?.address_format || item.address_format;
+        if (!group && level === 'middle' && format === 'two_level') return '—';
         return group ? `${group.prefix} — ${group.fields.name}` : page.dataset.unknown;
       };
       for (const value of [item.address, groupText('main'), groupText('middle'), item.imported.name || '', item.overrides.name || '', item.effective.description || '']) {

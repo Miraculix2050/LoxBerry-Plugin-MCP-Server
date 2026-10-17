@@ -67,7 +67,9 @@ example for CSV. Address queries link matching groups through `group_ids` to
 deduplicated `group_context`. Existing `prefix_ids`/`prefix_context` remain limited
 to active labels. Manual labels do not overwrite imported group names. The
 address table displays main and middle groups with prefix and imported name;
-unknown groups remain unknown, and two-level addresses have no middle group.
+unknown groups remain unknown, and two-level import representations have no
+middle group. A later local change of address representation retains the group
+assignment from the stored import format.
 Completeness refers to the stored import inventory, not a guaranteed complete
 ETS project. Merge imports may retain groups from previous files. Group names
 support review candidates against a confirmed addressing convention but do not

@@ -13,7 +13,9 @@ extracted from the matching version heading.
 - Show imported KNX main/middle groups with prefix and name in the address table.
   Extend the existing read-only MCP catalog with all stored imported groups,
   independent of active prefix labels, and matching address group context.
-  Preserve source distinctions, authorization and bounded continuation (#411).
+  Preserve imported format across local address spelling changes, source
+  distinctions, authorization and bounded continuation; update guide revision
+  to 91 (#411).
 
 - Reduce ETS/project comparison work with a batched common-address name projection
   and bounded numeric output keys. Preserve exact source-name semantics, full

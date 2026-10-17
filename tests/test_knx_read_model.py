@@ -373,6 +373,15 @@ def test_xml_import_projects_exact_ranges_without_selecting_labels(tmp_path):
     assert groups[0]["range_source"] == "ets_xml"
     assert all(not group["active_label"] for group in groups)
     assert catalog_page(store, config, "target")["group_context"] == groups
+    store.put(
+        "target",
+        1,
+        {"address": "1/515", "address_format": "two_level", "fields": {"name": "Local spelling"}},
+    )
+    row = store.page("target", include_groups=True)["items"][0]
+    assert row["address"] == "1/515" and row["import_info"]["address_format"] == "three_level"
+    assert row["imported_groups"] == groups
+    assert catalog_page(store, config, "target")["group_context"] == groups
 
 
 def test_large_search_returns_only_one_page(tmp_path):

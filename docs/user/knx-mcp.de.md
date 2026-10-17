@@ -69,7 +69,9 @@ Gruppen über `group_ids` mit dem deduplizierten `group_context`. Bestehende
 `prefix_ids`/`prefix_context` bleiben auf aktive Labels beschränkt. Manuelle
 Labels überschreiben die importierten Gruppennamen nicht. Die Adresstabelle
 zeigt Haupt- und Mittelgruppe mit Präfix und Importnamen; unbekannte Gruppen
-bleiben als unbekannt sichtbar, bei zweistufigen Adressen entfällt die Mittelgruppe.
+bleiben als unbekannt sichtbar, bei zweistufiger Importdarstellung entfällt die
+Mittelgruppe. Eine spätere lokale Änderung der Adressdarstellung erhält die
+Gruppenzuordnung anhand des gespeicherten Importformats.
 Die Vollständigkeit bezieht sich auf den gespeicherten Importbestand, nicht auf
 ein garantiert vollständiges ETS-Projekt. Beim ergänzenden Import können Gruppen
 aus früheren Dateien erhalten bleiben. Bereichsnamen ermöglichen fachliche
