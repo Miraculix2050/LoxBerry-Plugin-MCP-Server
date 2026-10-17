@@ -291,7 +291,7 @@ analysis coverage or establish physical actuator compatibility.
 `loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
-the default scope (version 12). Changing Explorer scope clears selection and cursor.
+the default scope (version 13). Changing Explorer scope clears selection and cursor.
 Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
 within uniquely observed project transport/device ancestry in one source.
 Repeated mappings or differing explicit raw attributes are review candidates,
@@ -353,7 +353,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 12 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 13 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without direct configured
 wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived

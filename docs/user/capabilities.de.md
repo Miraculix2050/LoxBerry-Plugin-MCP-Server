@@ -320,7 +320,7 @@ erweitern weder die Analyseabdeckung noch belegen sie physische Aktorkompatibili
 `loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
-Standard-Scope (Version 12). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Standard-Scope (Version 13). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
 Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
 Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
 Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
@@ -386,7 +386,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 12 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 13 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
