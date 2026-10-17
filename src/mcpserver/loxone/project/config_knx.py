@@ -56,12 +56,17 @@ def inspect_config_knx(data: bytes) -> dict[str, object]:
     root = project.elements[0]
     if root.tag != "ControlList":
         raise ProjectError("config_knx_format_unsupported")
-    versions = {
-        element.value("ConfigVersion")
+    documents = [
+        element
         for element in project.elements
         if element.tag == "C" and element.value("Type") == "Document"
-    }
-    verified = root.value("Version") == "274" and versions == {"17020828"}
+    ]
+    verified = (
+        [value for key, value in root.attributes if key == "Version"] == ["274"]
+        and len(documents) == 1
+        and [value for key, value in documents[0].attributes if key == "ConfigVersion"]
+        == ["17020828"]
+    )
     records: list[ConfigKnxDatatype] = []
     for index, element in enumerate(project.elements):
         source_type = element.value("Type")

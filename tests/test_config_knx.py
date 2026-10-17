@@ -72,6 +72,12 @@ def test_version_and_source_boundary() -> None:
         config(body, "other"),
         config(body).replace(b'Version="274"', b'Version="275"'),
         config(body + '<C Type="Document" ConfigVersion="other"/>'),
+        config(body + '<C Type="Document" ConfigVersion="17020828"/>'),
+        config(body).replace(b'Version="274"', b'Version="274" Version="274"'),
+        config(body).replace(
+            b'ConfigVersion="17020828"',
+            b'ConfigVersion="17020828" ConfigVersion="17020828"',
+        ),
     ):
         result = inspect_config_knx(data)
         assert result["version_verified"] is False
