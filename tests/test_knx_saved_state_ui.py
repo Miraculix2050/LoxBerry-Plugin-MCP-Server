@@ -170,9 +170,11 @@ const make=(mode='normal',url='https://local.example/knx.cgi')=>{
   const ids=[...view.w.document.querySelectorAll('details[data-persist-collapse]')].map(e=>e.id);
   const expected=['knx-read-delegation','knx-drafts-delegation','knx-write-delegation',
     'knx-corrections','knx-label-section','knx-address-section','knx-import-section','knx-json-section',
+    'knx-advanced-labels','knx-group-management','knx-individual-addresses',
     'knx-project-section','knx-compare-section','knx-xml-section'];
+  const collapsed=new Set(['knx-json-section','knx-advanced-labels','knx-group-management']);
   assert.deepEqual(ids.slice().sort(),expected.sort());
-  assert(ids.every(id=>view.card(id).open===(id!=='knx-json-section')));
+  assert(ids.every(id=>view.card(id).open===!collapsed.has(id)));
   await setOpen(view,'knx-json-section',true);view.dom.window.close();view=make();
   assert.equal(view.card('knx-json-section').open,true);
   await setOpen(view,'knx-json-section',false);
@@ -204,7 +206,7 @@ const make=(mode='normal',url='https://local.example/knx.cgi')=>{
   view.dom.window.close();assert.equal(saved.get(admin),'{"help":false}');
   for(const malformed of ['{','null','[]','"invalid"','{"knx-label-section":"false"}']){
     saved.set(key,malformed);view=make();
-    assert(ids.every(id=>view.card(id).open===(id!=='knx-json-section')));view.dom.window.close();
+    assert(ids.every(id=>view.card(id).open===!collapsed.has(id)));view.dom.window.close();
   }
   saved.set(key,'{"knx-label-section":false}');
   for(const mode of ['blocked','write-blocked']){
