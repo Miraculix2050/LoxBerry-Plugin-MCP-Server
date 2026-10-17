@@ -46,6 +46,34 @@ def test_file_comparison_admin_accepts_browser_sort_payload(tmp_path, monkeypatc
     assert calls[0]["sort"] == order
 
 
+@pytest.mark.parametrize("field", ["main_group", "middle_group"])
+def test_group_order_uses_imported_format_after_local_spelling_change(tmp_path, field):
+    from mcpserver.knx.import_repository import ImportRepository
+    from mcpserver.knx.import_service import select_candidates
+    from mcpserver.knx.xml_adapter import parse_xml
+
+    store = KnxStore(tmp_path / "metadata.sqlite3")
+    document = parse_xml(
+        xml(
+            '<GroupRange Name="First" RangeStart="2048" RangeEnd="4095">'
+            '<GroupRange Name="Middle" RangeStart="2560" RangeEnd="2815">'
+            '<GroupAddress Address="1/2/3" Name="First"/></GroupRange></GroupRange>'
+            '<GroupRange Name="Second" RangeStart="4096" RangeEnd="6143">'
+            '<GroupRange Name="Middle" RangeStart="4608" RangeEnd="4863">'
+            '<GroupAddress Address="2/2/3" Name="Second"/></GroupRange></GroupRange>'
+        )
+    )
+    ImportRepository(store).apply("target", 0, document, select_candidates(document), set(), {})
+    store.put(
+        "target", 1, dict(address="1/515", address_format="two_level", fields={"name": "Local"})
+    )
+    ordered = store.page(
+        "target", table_sort={"field": field, "direction": "ascending"}, include_groups=True
+    )
+    assert [item["address"] for item in ordered["items"]] == ["1/515", "2/2/3"]
+    assert ordered["items"][0]["import_info"]["address_format"] == "three_level"
+
+
 @pytest.mark.parametrize(
     "value",
     [

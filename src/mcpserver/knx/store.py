@@ -219,11 +219,13 @@ class KnxStore:
         expressions = {
             "address": "a.address",
             "main_group": "(SELECT CAST(g.prefix AS INTEGER) FROM import_groups g "
-            "WHERE g.target=a.target AND g.format=a.format "
+            "WHERE g.target=a.target AND g.format="
+            "coalesce(json_extract(s.source,'$.address_format'),a.format) "
             "AND g.prefix=CAST((a.address >> 11) AS TEXT))",
             "middle_group": "(SELECT (a.address >> 8) FROM import_groups g "
-            "WHERE g.target=a.target AND g.format=a.format "
-            "AND a.format='three_level' AND g.prefix="
+            "WHERE g.target=a.target AND g.format="
+            "coalesce(json_extract(s.source,'$.address_format'),a.format) "
+            "AND g.format='three_level' AND g.prefix="
             "CAST((a.address >> 11) AS TEXT)||'/'||CAST((a.address >> 8)&7 AS TEXT))",
             "imported_name": "json_extract(a.imported,'$.name')",
             "manual_name": "json_extract(a.overrides,'$.name')",
