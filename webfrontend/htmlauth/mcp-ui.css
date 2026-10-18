@@ -40,6 +40,12 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-field { display: grid; gap: .3rem; min-width: 0; }
 .mcp-field-stack { display: grid; gap: .85rem; }
 .mcp-field input, .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
+#solar-recorder-settings { min-inline-size: 0; max-inline-size: 100%; }
+#solar-recorder-settings[open] { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+#solar-recorder-settings > select, #solar-recorder-settings > input[type="text"] { box-sizing: border-box; width: 100%; min-width: 0; }
+#solar-recorder-settings .lb-button { box-sizing: border-box; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+#solar-recorder-configured { min-width: 0; margin: 0; padding-inline-start: 1.25rem; }
+#solar-recorder-configured li { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; min-width: 0; }
 .mcp-manual-endpoint[hidden] { display: none; }
 [hidden] { display: none !important; }
 .mcp-help { margin: 0; color: #4b5563; }

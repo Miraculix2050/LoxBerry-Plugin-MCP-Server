@@ -367,6 +367,7 @@
         input.addEventListener('input', () => setField(name, true, input.value === '' ? 0 : Number(input.value)));
       } else if (type === 'array' && effective.items &&
           core.schemaType(effective.items, rootSchema) === 'object' &&
+          core.effectiveSchema(effective.items, rootSchema).properties &&
           Object.keys(core.effectiveSchema(effective.items, rootSchema).properties || {}).length <= 20 &&
           Object.values(core.effectiveSchema(effective.items, rootSchema).properties || {}).every((child) => {
             const childType = core.schemaType(child, rootSchema);

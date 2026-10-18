@@ -219,6 +219,13 @@
     const effective = effectiveSchema(schema, rootSchema);
     if (typeof effective.type === 'string') return effective.type;
     if (effective.properties) return 'object';
+    const variants = effective.anyOf || effective.oneOf;
+    if (Array.isArray(variants)) {
+      const objects = variants.map((item) => resolveRef(item, rootSchema))
+        .filter((item) => item.type !== 'null');
+      // Reuse the JSON-object editor without merging or relaxing branch validation.
+      if (objects.length && objects.every((item) => item.type === 'object' || item.properties)) return 'object';
+    }
     if (effective.enum && effective.enum.length) return typeof effective.enum[0];
     return undefined;
   }

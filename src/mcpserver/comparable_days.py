@@ -78,12 +78,14 @@ class RadiationRule(Enum):
     """Closed adapter contract: proven hourly radiation energy, never a raw delivery."""
 
     HOURLY_ENERGY_WH_M2 = "radiation.hourly_interval_energy_wh_m2.v1"
+    ESTIMATED_SAMPLE_ENERGY = "radiation.bounded_trapezoidal_irradiance.v1"
 
 
 class TemperatureRule(Enum):
     """Closed adapter contract: Celsius sample at each matching hour start."""
 
     CELSIUS_HOUR_START = "temperature.celsius_hour_start_sample.v1"
+    CELSIUS_NEAR_HOUR_START = "temperature.celsius_within_60s_of_hour_start.v1"
 
 
 class PVRule(Enum):
@@ -167,7 +169,12 @@ def _summary(
         return None, "radiation_quantity_unit_interval_unverified"
     if not isinstance(source.temperature_rule, TemperatureRule):
         return None, "temperature_observation_position_unverified"
-    if source.temperature_position != "hour_start":
+    expected_temperature_position = (
+        "within_60s_of_hour_start"
+        if source.temperature_rule is TemperatureRule.CELSIUS_NEAR_HOUR_START
+        else "hour_start"
+    )
+    if source.temperature_position != expected_temperature_position:
         return None, "temperature_observation_position_unverified"
     if not source.source_generation or not source.installation_ref:
         return None, "source_identity_unverified"
@@ -204,6 +211,10 @@ def _summary(
             return None, "duplicate_or_overlapping_intervals"
     radiation = [item.radiation_wh_m2 for item in selected]
     temperature = [item.temperature_c for item in selected]
+    if any(v is None for v in radiation):
+        return None, "radiation_intervals_incomplete"
+    if any(v is None for v in temperature):
+        return None, "temperature_observations_incomplete"
     if any(v is None or isinstance(v, bool) or not isfinite(v) or v < 0 for v in radiation):
         return None, "radiation_values_invalid"
     if any(v is None or isinstance(v, bool) or not isfinite(v) for v in temperature):

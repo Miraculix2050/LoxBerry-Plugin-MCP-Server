@@ -39,6 +39,7 @@ Role = Literal[
     "grid_import",
     "grid_export",
     "house_consumption",
+    "self_consumption",
     "storage_charge",
     "storage_discharge",
     "consumer",

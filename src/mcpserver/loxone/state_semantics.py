@@ -632,6 +632,10 @@ class StateSemanticsResolver:
         # Meter exact channels are documented; arbitrary formats/types get no unit inference.
         if control.control_type == "Meter" and series.output in {"actual", "total", "totalNeg"}:
             match = re.fullmatch(r"%[0-9]*(?:\.[0-9]+)?f?\s*(kWh|Wh|kW|W)", series.format)
+            if match is None:
+                # Exact native Meter channels also advertise decimal-place
+                # patterns such as 0,000kWh. No arbitrary analog format inference.
+                match = re.fullmatch(r"0(?:[.,]0{1,6})?\s*(kWh|Wh|kW|W)", series.format)
             if match:
                 candidate = match[1]
                 if (
@@ -680,7 +684,11 @@ class StateSemanticsResolver:
                         "measurement_role",
                         "reset_semantics",
                     ),
-                    rule_id="Meter.series.v1",
+                    rule_id=(
+                        "Meter.series.native_numeric_format.v1"
+                        if re.fullmatch(r"0(?:[.,]0{1,6})?\s*(kWh|Wh|kW|W)", series.format)
+                        else "Meter.series.v1"
+                    ),
                     document_version="17.1",
                 )
             )

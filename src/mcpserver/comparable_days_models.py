@@ -119,6 +119,100 @@ class ClassComparableDayOptions(Contract):
         return self
 
 
+class NumericalComparableDayOptions(ComparableDayOptions):
+    method: Literal["numerical"]
+    pv_export_balance_confirmed: bool = Field(
+        default=False,
+        description=(
+            "Explicitly confirm PV minus export represents self-consumption at the same "
+            "boundary, excluding storage discharge and other generation. Matching confirmed "
+            "profile boundaries and declared export direction are also required."
+        ),
+    )
+
+
+class DayMetricPair(Contract):
+    day: DayString
+    energy_wh: Nonnegative
+    absolute_difference_wh: FiniteFloat | None
+    relative_difference: FiniteFloat | None
+
+
+class DayMetricGroup(Contract):
+    count: int = Field(ge=3, le=30)
+    median_wh: Nonnegative
+    minimum_wh: Nonnegative
+    maximum_wh: Nonnegative
+    absolute_difference_wh: FiniteFloat
+    relative_difference: FiniteFloat | None
+
+
+class DayMetricComparison(Contract):
+    status: Literal["partial", "insufficient_evidence"] = "insufficient_evidence"
+    method: Literal["unavailable", "direct_observed", "pv_minus_export"] = "unavailable"
+    unit: Literal["Wh"] = "Wh"
+    reference_wh: Nonnegative | None = None
+    pairs: list[DayMetricPair] = Field(default_factory=list, max_length=30)
+    group: DayMetricGroup | None = None
+    exclusions: list[ComparableDayExclusion] = Field(default_factory=list, max_length=31)
+    limitations: list[Reason] = Field(default_factory=list, max_length=16)
+
+
+class DayDeviation(Contract):
+    day: DayString
+    metric: Literal["pv_yield", "self_consumption"]
+    absolute_difference_wh: FiniteFloat
+    relative_difference: FiniteFloat | None
+
+
+class NativeForecastContext(Contract):
+    captured_at: str
+    predicted_at: str | None
+    cycle_from: str | None
+    cycle_until: str | None
+    status: Literal["available", "unavailable", "incomplete"]
+    unit: Literal["kWh"] = "kWh"
+    period_kwh: Nonnegative | None
+    today_kwh: Nonnegative | None
+    tomorrow_kwh: Nonnegative | None
+    after_kwh: Nonnegative | None
+    inputperiod_hours: Nonnegative | None
+    value_origin: Literal["forecast"] = "forecast"
+    comparison_status: Literal["native_period_bounds_unverified"] = (
+        "native_period_bounds_unverified"
+    )
+
+
+class SolarSourceSummary(Contract):
+    control_uuid: str
+    state_uuid: str | None = None
+    kind: Literal["irradiance", "temperature", "pv_forecast"]
+    unit: Literal["W/m²", "°C", "kWh"]
+    input_points: int = Field(ge=0, le=100_000)
+    normalized_hours: int = Field(ge=0, le=744)
+    recording_enabled: bool = False
+    value_origin: Literal[
+        "observed_source_states", "estimated_from_observed_source_states", "forecast"
+    ]
+    qualification_origin: Literal["administrator_confirmed_source_contract"] = (
+        "administrator_confirmed_source_contract"
+    )
+    maximum_sample_offset_seconds: Nonnegative | None = None
+
+
+class NumericalComparableDaysResult(ComparableDaysResult):
+    weather_adjustment: Literal["peer_selection_only"] = "peer_selection_only"
+    radiation_origin: Literal["observed_interval_energy", "estimated_from_source_samples"]
+    temperature_position: Literal["hour_start", "within_60s_of_hour_start"]
+    self_consumption: DayMetricComparison
+    ranked_deviations: list[DayDeviation] = Field(max_length=60)
+    forecast_context: list[NativeForecastContext] = Field(max_length=8)
+    forecast_context_truncated: bool
+    forecast_limitations: list[Reason] = Field(max_length=8)
+    solar_sources: list[SolarSourceSummary] = Field(max_length=16)
+    configuration_guidance: list[Reason] = Field(max_length=8)
+
+
 RadiationClass = Annotated[int, Field(ge=0, le=3)]
 
 

@@ -4,6 +4,34 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const {createHarness, readTool, writeTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
 
+test('object alternatives reuse JSON fields without dropping source rows or branch validation', async (t) => {
+  const choice = {anyOf: [
+    {type: 'object', additionalProperties: false, required: ['method'], properties: {method: {const: 'classes'}}},
+    {type: 'object', additionalProperties: false, required: ['method'], properties: {method: {const: 'numerical'}}},
+    {type: 'null'},
+  ]};
+  const tool = {...readTool, name: 'object_union', inputSchema: {type: 'object', required: ['sources', 'options'],
+    properties: {sources: {type: 'array', items: choice}, options: choice}}};
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('json-tab'));
+  h.byId('json').value = JSON.stringify({sources: [{method: 'classes'}], options: {method: 'numerical'}});
+  h.byId('json').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  const fields = [...h.byId('form').querySelectorAll('textarea')];
+  assert.equal(fields.length, 2);
+  assert.deepEqual(JSON.parse(fields[0].value), [{method: 'classes'}]);
+  assert.deepEqual(JSON.parse(fields[1].value), {method: 'numerical'});
+  await h.click(h.byId('run'));
+  assert.deepEqual(h.requests.filter((item) => item.body?.method === 'tools/call').at(-1).body.params.arguments,
+    {sources: [{method: 'classes'}], options: {method: 'numerical'}});
+  fields[1].value = JSON.stringify({method: 'unrecognized'});
+  fields[1].dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(h.byId('run'));
+  assert.equal(h.requests.filter((item) => item.body?.method === 'tools/call').length, 1);
+});
+
 test('shipped scripts restore a session and execute an unknown read-only tool', async (t) => {
   const h = createHarness({deferLogout: true});
   t.after(h.close);
