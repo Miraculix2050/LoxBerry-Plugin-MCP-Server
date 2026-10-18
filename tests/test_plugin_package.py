@@ -280,6 +280,12 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
             "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml", b"interface: {}\n"
         )
 
+    with zipfile.ZipFile(wheel) as archive:
+        for name in archive.namelist():
+            if name.endswith((".md", ".txt")):
+                target = source_root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(name).replace(b"\n", b"\r\n"))
     verify_project_wheel_input(wheel, source_root)
     verify_project_wheel_archive(wheel.read_bytes(), source_root)
 

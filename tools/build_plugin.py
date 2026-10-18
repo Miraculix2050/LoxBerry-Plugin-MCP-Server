@@ -184,7 +184,14 @@ def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
         members = [
             name
             for name in wheel.namelist()
-            if name.startswith("mcpserver/") and (name.endswith(".py") or name in sources)
+            if name.startswith("mcpserver/")
+            and (
+                name.endswith(".py")
+                or (
+                    name.startswith("mcpserver/skills/using-loxberry-mcp/")
+                    and name.endswith((".md", ".txt"))
+                )
+            )
         ]
         if len(members) != len(set(members)) or set(members) != set(sources):
             raise SystemExit("project wheel Python source set differs from current source")
