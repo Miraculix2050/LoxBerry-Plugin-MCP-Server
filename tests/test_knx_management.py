@@ -76,7 +76,12 @@ def test_fixed_loopback_forwarder_bounds_body_and_keeps_signed_binding(monkeypat
         def getresponse(self):
             if outcome == "transport":
                 raise OSError("private diagnostic")
-            return SimpleNamespace(read=lambda cap: raw[:cap])
+            return SimpleNamespace(
+                read=lambda cap: raw[:cap],
+                getheader=lambda *_: (
+                    "bridge_handler_ms;dur=1.250, secret;dur=3, bridge_key_ms;dur=nan"
+                ),
+            )
 
         def close(self):
             closed.append(True)
@@ -84,9 +89,21 @@ def test_fixed_loopback_forwarder_bounds_body_and_keeps_signed_binding(monkeypat
     monkeypatch.setattr(bridge, "HTTPConnection", Connection)
     configs = SimpleNamespace(load=lambda: SimpleNamespace(public_origin="https://public.example"))
     if outcome == "success":
-        assert bridge.forward("knx_project_page", {"revision": 1}, configs) == {
+        timing = {}
+        assert bridge.forward("knx_project_page", {"revision": 1}, configs, timing=timing) == {
             "result": "synthetic"
         }
+        assert timing["bridge_handler_ms"] == 1.25
+        assert "secret" not in timing and "bridge_key_ms" not in timing
+        assert timing["forward_response_bytes"] == len(raw)
+        assert {
+            "forward_config_ms",
+            "forward_proof_ms",
+            "forward_send_ms",
+            "forward_headers_ms",
+            "forward_read_ms",
+            "forward_decode_ms",
+        } <= timing.keys()
     else:
         with pytest.raises(AdminError) as failed:
             bridge.forward("knx_project_page", {"revision": 1}, configs)

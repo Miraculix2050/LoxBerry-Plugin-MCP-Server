@@ -64,6 +64,7 @@ def dispatch_knx(
     authorize_effect: Callable[[], object] | None = None,
     admin_session: str | None = None,
     metadata_path: Path | None = None,
+    timing: dict[str, float | int] | None = None,
 ) -> dict[str, Any]:
     from mcpserver.admin import AdminError
 
@@ -129,7 +130,7 @@ def dispatch_knx(
         ):
             from .admin_bridge import forward
 
-            result = forward(action, payload, config_store)
+            result = forward(action, payload, config_store, timing=timing)
         else:
             result = config_store.transaction(
                 lambda config, save: _run(

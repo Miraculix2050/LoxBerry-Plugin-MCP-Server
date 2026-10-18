@@ -8,7 +8,6 @@ import time
 
 _MODULE_IMPORT_STARTED_NS = time.time_ns()
 
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -27,7 +26,6 @@ from typing import TYPE_CHECKING, Any, Final
 from urllib.request import Request, urlopen
 from uuid import UUID
 
-from mcpserver import __version__
 from mcpserver.admin_errors import AdminError as AdminError
 from mcpserver.persistence import PersistenceUncertain
 
@@ -878,6 +876,8 @@ def _save_knx_taxonomy(payload: object) -> dict[str, Any]:
 
 def _emergency_stop_cache(config: PluginConfig) -> EmergencyOptionsCache | None:
     """Bind cached options to the current configured Miniserver credentials."""
+    import asyncio
+
     from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_options_cache import EmergencyOptionsCache
     from mcpserver.loxone.service_access import LoxBerryServiceCredentials
@@ -910,6 +910,8 @@ def _cached_emergency_stop_options() -> dict[str, Any]:
 def _discover_emergency_stop_options(
     config: PluginConfig, *, manual_retry: bool, early_probe: bool = False
 ) -> dict[str, Any]:
+    import asyncio
+
     from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_stop import VirtualStatusOptions, virtual_status_options
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
@@ -2086,6 +2088,7 @@ def _revoke_many(
 
 
 def _diagnostic() -> dict[str, Any]:
+    from mcpserver import __version__
     from mcpserver.loxone.client import MiniserverEndpoint
 
     snapshot = _admin_read_snapshot()
@@ -2153,7 +2156,7 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
     if action.startswith("knx_"):
         from mcpserver.knx.admin import dispatch_knx
 
-        return dispatch_knx(action, payload, _config_store())
+        return dispatch_knx(action, payload, _config_store(), timing=timing)
     if action == "page_snapshot":
         sections: dict[str, dict[str, Any]] = {}
         for section_action in (
@@ -2319,6 +2322,8 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
     if action == "set_logging":
         return _set_logging(payload)
     if action == "status":
+        from mcpserver import __version__
+
         return {
             "version": __version__,
             "sessions": _sessions(),
@@ -2331,6 +2336,8 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
     if action == "set_service_enabled":
         return _set_service_enabled(payload)
     if action == "test_connection":
+        import asyncio
+
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":
         snapshot = _admin_read_snapshot()
@@ -2367,6 +2374,7 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
 
 
 def main() -> None:
+    main_entered_ns = time.time_ns()
     request_started = time.perf_counter_ns()
     timing: dict[str, float | int] = {}
     action: str | None = None
@@ -2380,7 +2388,13 @@ def main() -> None:
         request = json.loads(raw)
         action = request.get("action") if isinstance(request, dict) else None
         with admin_lifecycle_logging():
+            dispatch_started = time.perf_counter_ns()
             response = {"ok": True, "data": dispatch(request, timing=timing)}
+            if action in {"knx_page", "knx_read_page", "knx_project_page"}:
+                timing["helper_input_ms"] = (dispatch_started - request_started) / 1_000_000
+                timing["helper_dispatch_ms"] = (
+                    time.perf_counter_ns() - dispatch_started
+                ) / 1_000_000
     except AdminError as exc:
         response = {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -2396,12 +2410,36 @@ def main() -> None:
         timing["serialization_ms"] = (time.perf_counter_ns() - serialize_started) / 1_000_000
         timing["serialized_bytes"] = len(serialized.encode("utf-8"))
     sys.stdout.write(serialized + "\n")
-    if action in ("get_config", "page_snapshot", "event_history_chart_prepare"):
+    if action in {"knx_page", "knx_read_page", "knx_project_page"}:
+        sys.stdout.flush()
+    if action in (
+        "get_config",
+        "page_snapshot",
+        "event_history_chart_prepare",
+        "knx_page",
+        "knx_read_page",
+        "knx_project_page",
+    ):
         helper_started = os.getenv("MCPSERVER_ADMIN_STARTED_NS", "")
         try:
             bootstrap_ms = (int(_MODULE_IMPORT_STARTED_NS) - int(helper_started)) / 1_000_000
         except ValueError:
             bootstrap_ms = None
+        if action in {"knx_page", "knx_read_page", "knx_project_page"}:
+            timing["module_definitions_ms"] = (
+                main_entered_ns - _MODULE_IMPORT_FINISHED_NS
+            ) / 1_000_000
+            timing["helper_total_ms"] = (
+                bootstrap_ms + (time.time_ns() - _MODULE_IMPORT_STARTED_NS) / 1_000_000
+                if bootstrap_ms is not None
+                else 0
+            )
+            timing["helper_serialize_ms"] = (time.perf_counter_ns() - serialize_started) / 1_000_000
+            timing["module_import_ms"] = (
+                _MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS
+            ) / 1_000_000
+            if bootstrap_ms is not None and 0 <= bootstrap_ms <= 60000:
+                timing["process_bootstrap_ms"] = bootstrap_ms
         if action in ("get_config", "page_snapshot"):
             timing.update(
                 {
