@@ -20,12 +20,8 @@ def normalize_history_control_id(value: object) -> str:
     """
     if not isinstance(value, str) or not 1 <= len(value) <= 128:
         raise ValueError("History control identifier is invalid")
-    base, separator, suffix = value.partition("/")
+    base, separator, _suffix = value.partition("/")
     if not separator:
         return normalize_loxone_uuid(value)
     normalize_loxone_uuid(base)  # Validate syntax without rewriting the runtime key.
-    if any(part in {"", ".", ".."} for part in suffix.split("/")) or any(
-        character.isspace() or not character.isprintable() for character in suffix
-    ):
-        raise ValueError("History control identifier is invalid")
     return value

@@ -902,11 +902,15 @@ async def test_disabled_monitor_backfills_existing_legacy_store_without_stream(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("shared_state", [False, True])
 async def test_monitor_records_updates_following_the_initial_baseline_in_one_batch(
     monkeypatch: pytest.MonkeyPatch,
+    shared_state: bool,
 ) -> None:
-    source = ("control", "state")
-    recorded: list[tuple[object, object]] = []
+    parent = "00000000-0000-0000-0000000000000001"
+    source = (parent + "/AI1", "state")
+    sources = (source, (parent + "/AI2", "state")) if shared_state else (source,)
+    recorded: list[tuple[tuple[str, str], object, object]] = []
     transition_recorded = threading.Event()
 
     class Store:
@@ -917,7 +921,8 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
             self, _sources: object, *, started_at: float, initial_values: object
         ) -> None:
             assert started_at > 0
-            assert initial_values == {source: (started_at, 0.0)}
+            assert _sources == sources
+            assert initial_values == {item: (started_at, 0.0) for item in sources}
 
         def record_transition(
             self,
@@ -928,8 +933,9 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
             new_value: object,
             **_: object,
         ) -> None:
-            recorded.append((old_value, new_value))
-            transition_recorded.set()
+            recorded.append(((_control_uuid, _state_uuid), old_value, new_value))
+            if len(recorded) == len(sources):
+                transition_recorded.set()
 
         def end_coverage(self, _sources: object, *, ended_at: float, outcome: str) -> None:
             assert ended_at > 0
@@ -948,7 +954,19 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
                 categories=(),
                 controls=(
                     Control(
-                        *source[:1], "Control", "Switch", None, None, None, (("State", source[1]),)
+                        parent,
+                        "Parent",
+                        "LightControllerV2",
+                        None,
+                        None,
+                        None,
+                        (),
+                        subcontrols=tuple(
+                            Control(
+                                control, "Control", "Switch", None, None, None, (("State", state),)
+                            )
+                            for control, state in sources
+                        ),
                     ),
                 ),
             )
@@ -991,7 +1009,7 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
         PluginConfig(
             loxone_endpoint="https://miniserver.example",
             event_history_enabled=True,
-            event_history_sources=(source,),
+            event_history_sources=sources,
         ),
         Store(),  # type: ignore[arg-type]
         Credentials(),
@@ -1003,7 +1021,7 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert recorded == [(0.0, 1.0)]
+    assert recorded == [(item, 0.0, 1.0) for item in sources]
     assert await monitor.validate_source(*source) == ("Control", "Switch", "State")
     assert attempts == [
         ("runtime_event_stream", "session_establishment", True),

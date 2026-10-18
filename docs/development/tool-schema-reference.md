@@ -11,7 +11,9 @@ add/remove/purge tools. Suffixes do not prove parent or connector identity.
 Fresh whole-control visibility and exact state membership still gate reads;
 unknown/hidden/mismatched controls return `not_found`. Retained removed sources
 remain readable only while visible; no evidence returns the existing `not_found`.
-Cursors retain exact source/family binding. No new tool, permission, database
+Cursors retain exact source/family binding. If explicitly configured pairs share
+a state UUID, capture waits for unique state baselines and records each pair
+separately; unconfigured parents or siblings are never added. No new tool, permission, database
 schema, automatic source activation or migration is introduced. Guide revision 101.
 
 ## Native PVPF forecast (#510)

@@ -1652,9 +1652,9 @@ class EventHistoryMonitor:
                     _LOGGER.warning("component=event_history outcome=no_configured_sources_visible")
                     await asyncio.sleep(60)
                     continue
-                state_sources = {
-                    state_uuid: (control_uuid, state_uuid) for control_uuid, state_uuid in active
-                }
+                state_sources: dict[str, list[tuple[str, str]]] = {}
+                for source in active:
+                    state_sources.setdefault(source[1], []).append(source)
                 baselines: dict[str, object] = {}
                 baseline_times: dict[str, float] = {}
                 batches = session.state_events()
@@ -1729,8 +1729,8 @@ class EventHistoryMonitor:
                                     )
                                     self._set_status("unavailable", "unsupported_weather_value")
                             continue
-                        source = state_sources.get(event.uuid)
-                        if source is None:
+                        event_sources = state_sources.get(event.uuid)
+                        if event_sources is None:
                             continue
                         try:
                             value = _value(event.value)
@@ -1741,7 +1741,7 @@ class EventHistoryMonitor:
                         if not coverage_active:
                             baselines[event.uuid] = value
                             baseline_times[event.uuid] = observed_at
-                            if len(baselines) == len(active):
+                            if len(baselines) == len(state_sources):
                                 started_at = observed_at
                                 await asyncio.to_thread(
                                     self.store.begin_coverage,
@@ -1761,14 +1761,15 @@ class EventHistoryMonitor:
                         if previous == value:
                             continue
                         try:
-                            await asyncio.to_thread(
-                                self.store.record_transition,
-                                source[0],
-                                source[1],
-                                observed_at=observed_at,
-                                old_value=previous,
-                                new_value=value,
-                            )
+                            for source in event_sources:
+                                await asyncio.to_thread(
+                                    self.store.record_transition,
+                                    source[0],
+                                    source[1],
+                                    observed_at=observed_at,
+                                    old_value=previous,
+                                    new_value=value,
+                                )
                         except ValueError as exc:
                             raise _UnsupportedEventValue(
                                 "configured state does not produce a supported scalar value"

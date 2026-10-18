@@ -36,7 +36,10 @@ def access(*scopes):
     )
 
 
-@pytest.mark.parametrize("suffix", ["AI1", "ai1", "generated-key", "AI1/channel:2"])
+@pytest.mark.parametrize(
+    "suffix",
+    ["AI1", "ai1", "generated-key", "AI1/channel:2", "zone 1", "../AI1", "", "/AI1", "AI1\n"],
+)
 def test_suffix_identity_is_opaque_and_exact(suffix):
     value = PARENT + "/" + suffix
     assert normalize_history_control_id(value) == value
@@ -51,11 +54,6 @@ def test_suffix_identity_is_opaque_and_exact(suffix):
         1,
         "",
         "bad/AI1",
-        PARENT + "/",
-        PARENT + "//AI1",
-        PARENT + "/../AI1",
-        PARENT + "/AI1\n",
-        PARENT + "/AI 1",
         PARENT + "/" + "x" * 128,
     ],
 )
@@ -71,7 +69,12 @@ def test_plain_uuid_compatibility_and_config_round_trip(tmp_path):
     config = PluginConfig(
         loxone_history_enabled=True,
         event_history_enabled=True,
-        event_history_sources=((CHILD, STATE), (SIBLING, STATE)),
+        event_history_sources=(
+            (CHILD, STATE),
+            (SIBLING, STATE),
+            (PARENT + "/zone 1", STATE),
+            (PARENT + "/../AI1", STATE),
+        ),
     )
     store.save(config)
     assert store.load().event_history_sources == config.event_history_sources
@@ -113,7 +116,7 @@ def history(tmp_path, monkeypatch):
     store.initialize()
     now = time.time()
     for control, values in ((PARENT, (90, 91)), (SIBLING, (80, 81)), (CHILD, (10, 11))):
-        store.begin_coverage(((control, STATE),), started_at=now - 60)
+        store.begin_coverage(((control, STATE),), started_at=now - 120)
         for index, value in enumerate(values):
             store.record_transition(
                 control, STATE, observed_at=now - 30 + index, old_value=value - 1, new_value=value
