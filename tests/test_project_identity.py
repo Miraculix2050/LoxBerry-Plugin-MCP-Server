@@ -320,7 +320,16 @@ def test_explicit_child_derivation_respects_cross_source_parent_identity(conflic
     model = snapshot(block(), block(kind="Mode" if conflict else "Actor"))
     child = UUID + "/AI1"
     structure = normalize_structure(
-        {"controls": {UUID: {"type": "Actor", "subControls": {child: {"type": "Switch"}}}}},
+        {
+            "msInfo": {"serialNr": "synthetic"},
+            "controls": {
+                UUID: {
+                    "name": "Parent",
+                    "type": "Actor",
+                    "subControls": {child: {"name": "Child", "type": "Switch"}},
+                }
+            },
+        },
         username="reader",
     )
     query = ProjectQuery(ProjectView(model, map_runtime(model, structure)), {})
