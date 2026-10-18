@@ -54,7 +54,7 @@ def test_forecasts_only_sum_common_complete_intervals_and_do_not_fill_gaps():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["real", "hypothetical"])
-@pytest.mark.parametrize("changed", [False, True])
+@pytest.mark.parametrize("changed", [False, True, "forecast"])
 @pytest.mark.parametrize("locked", [False, True])
 @pytest.mark.parametrize("source_count", [1, 2])
 async def test_profileless_plan_authorization_publication_and_zero_history(
@@ -108,6 +108,8 @@ async def test_profileless_plan_authorization_publication_and_zero_history(
             (visible[second_uuid], initial, f.model_copy(update={"control_uuid": second_uuid}))
         )
     source = AsyncMock(return_value=batch)
+    if changed == "forecast":
+        source.side_effect = ControlOperationError("not_found", "PV forecast target not accessible")
     monkeypatch.setattr(module, "read_pv_forecasts", source)
     reader = Mock(side_effect=AssertionError("no profile access for request-local loads"))
     monkeypatch.setattr(module, "ProfileStore", reader)
@@ -133,7 +135,7 @@ async def test_profileless_plan_authorization_publication_and_zero_history(
     reader.assert_not_called()
     history.assert_not_called()
     source.assert_awaited_once()
-    assert count == 2
+    assert count == (1 if changed == "forecast" else 2)
 
 
 def test_four_source_limit_and_unknown_common_supply_are_rejected():

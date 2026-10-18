@@ -183,7 +183,16 @@ async def calculate_context_plan(
         signature = selected_source_signature(initial, source_ids)
     # No nested admission: forecast transport and historical reads own their slots.
     forecasts = []
-    batch = await read_pv_forecasts(runtime, access, [s.control_uuid for s in context.forecasts])
+    try:
+        batch = await read_pv_forecasts(
+            runtime, access, [s.control_uuid for s in context.forecasts]
+        )
+    except ControlOperationError as exc:
+        if exc.code == "not_found":
+            raise ControlOperationError(
+                "temporarily_unavailable", "Planning context changed"
+            ) from None
+        raise
     for _, structure, forecast in batch:
         if structure.identity != initial.identity:
             raise ControlOperationError("temporarily_unavailable", "Planning installation changed")
