@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import pickle
 import struct
@@ -23,6 +24,8 @@ MAX_RESULT = 64 * 1024 * 1024
 MAX_ANALYSIS_INPUT = 64 * 1024 * 1024
 _ANALYSIS_TIMINGS = struct.Struct("!4d")
 _ANALYSIS_TIMING_MARKER = b"\x00MCPTIME\x00"
+_SNAPSHOT_TIMINGS = struct.Struct("!7d")
+_SNAPSHOT_TIMING_MARKER = b"\x00MCPSNAPSHOT\x00"
 
 
 def _reduce_graph_node(node: GraphNode) -> tuple[type[GraphNode], tuple[object, ...]]:
@@ -57,6 +60,11 @@ def _analysis_payload(
     The dispatch table is local to this pickler, never a global copyreg mutation.
     Constructors restore the same immutable types in the isolated child.
     """
+    return _model_payload((view, analyses, taxonomy, scope))
+
+
+def _model_payload(value: object) -> bytes:
+    """Serialize immutable graph models without frozen-slot introspection."""
     stream = BytesIO()
     pickler = pickle.Pickler(stream, protocol=5)
     pickler.dispatch_table = {
@@ -64,7 +72,7 @@ def _analysis_payload(
         GraphEdge: _reduce_graph_edge,
         SemanticEdge: _reduce_semantic_edge,
     }
-    pickler.dump((view, analyses, taxonomy, scope))
+    pickler.dump(value)
     return stream.getvalue()
 
 
@@ -111,6 +119,17 @@ async def process_project(
             # Only this local worker serializes these bytes; never deserialize
             # network payloads. The worker creates closed, immutable model types.
             result = pickle.loads(chunks)
+            diagnostic = await stderr_task
+            size = len(_SNAPSHOT_TIMING_MARKER) + _SNAPSHOT_TIMINGS.size
+            if len(diagnostic) == size and diagnostic.startswith(_SNAPSHOT_TIMING_MARKER):
+                for phase, seconds in zip(
+                    ("unpack", "build", "serialize", "decode", "tokenize", "graph", "diagnostics"),
+                    _SNAPSHOT_TIMINGS.unpack(diagnostic[len(_SNAPSHOT_TIMING_MARKER) :]),
+                    strict=True,
+                ):
+                    logging.getLogger(__name__).info(
+                        "component=project_load phase=%s duration_ms=%.1f", phase, seconds * 1000
+                    )
             if isinstance(result, ProjectError):
                 raise result
             if not isinstance(result, ProjectBundle | ProjectSnapshot):
@@ -292,13 +311,30 @@ def main() -> None:
             resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         data = sys.stdin.buffer.read(limits.download_bytes + 1)
+        started = perf_counter()
         bundle = unpack_project(data, limits)
+        unpacked = perf_counter()
+        timings: dict[str, float] = {}
         result: ProjectBundle | ProjectSnapshot | ProjectError = (
-            bundle if sys.argv[1] == "bundle" else build_snapshot(bundle, limits)
+            bundle if sys.argv[1] == "bundle" else build_snapshot(bundle, limits, timings=timings)
         )
-        payload = pickle.dumps(result, protocol=5)
+        built = perf_counter()
+        payload = _model_payload(result)
+        serialized = perf_counter()
         if len(payload) > MAX_RESULT:
             raise ProjectError("project_worker_limit")
+        sys.stderr.buffer.write(
+            _SNAPSHOT_TIMING_MARKER
+            + _SNAPSHOT_TIMINGS.pack(
+                unpacked - started,
+                built - unpacked,
+                serialized - built,
+                *(
+                    timings.get(phase, 0.0)
+                    for phase in ("decode", "tokenize", "graph", "diagnostics")
+                ),
+            )
+        )
     except ProjectError as exc:
         payload = pickle.dumps(exc)
     except Exception:

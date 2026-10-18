@@ -1,5 +1,21 @@
 # KNX information through MCP
 
+## Loading and refreshing address administration
+
+On opening, the page loads the catalog, grants and draft overview together.
+An expanded main/middle-group view is included in this request. The saved login
+is restored in parallel. A selected correction draft is also included using the
+current overview; target, draft revision, sort and page must match. A remembered
+project comparison is restored in parallel; comparison rows appear only after
+checking the current catalog binding. Loading indicators remain
+visible until their respective sections are ready.
+
+In a visible tab, saved MCP grants are checked together every ten seconds.
+This background check does not overwrite unsaved inputs. Project comparisons
+continue downloading fresh project data under the caller's own Loxone permissions.
+Rebuilding the model can take longer, particularly after a service restart;
+a complete page-loading time below five seconds has not yet been established.
+
 ## Local Config file: EIBType mapping
 
 Developers can inspect a local `.Loxone` XML project file read-only:

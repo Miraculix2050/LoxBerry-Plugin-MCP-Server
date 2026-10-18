@@ -5,6 +5,7 @@ import re
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from time import perf_counter
 
 from .decoder import decode_loxcc
 from .identity import IdentityEvidence, logical_runtime_nodes
@@ -633,7 +634,10 @@ def _source_diagnostics(
 
 
 def build_snapshot(
-    bundle: ProjectBundle, limits: ProjectLimits = DEFAULT_LIMITS
+    bundle: ProjectBundle,
+    limits: ProjectLimits = DEFAULT_LIMITS,
+    *,
+    timings: dict[str, float] | None = None,
 ) -> ProjectSnapshot:
     total_bytes = 0
     total_elements = 0
@@ -643,11 +647,17 @@ def build_snapshot(
     anomalies: list[tuple[str, int | None, str]] = []
     unmodeled_node_keys: set[str] = set()
     for member in bundle.files:
+        started = perf_counter()
         data = decode_loxcc(member.content, limits)
+        if timings is not None:
+            timings["decode"] = timings.get("decode", 0.0) + perf_counter() - started
         total_bytes += len(data)
         if total_bytes > limits.decoded_bytes:
             raise ProjectError("project_decoded_limit")
+        started = perf_counter()
         project = parse_project(data, limits)
+        if timings is not None:
+            timings["tokenize"] = timings.get("tokenize", 0.0) + perf_counter() - started
         total_elements += len(project.elements)
         total_attributes += sum(len(element.attributes) for element in project.elements)
         if total_elements > limits.elements or total_attributes > limits.attributes:
@@ -685,7 +695,11 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
+    started = perf_counter()
     graph = build_graph(tuple(parsed_projects), limits)
+    if timings is not None:
+        timings["graph"] = perf_counter() - started
+    started = perf_counter()
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
     runtime_aliases, runtime_sources, identity_evidence = logical_runtime_nodes(
         graph, unmodeled_node_keys=frozenset(unmodeled_node_keys)
@@ -714,12 +728,15 @@ def build_snapshot(
     logical_nodes = tuple(
         node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
     )
+    diagnostics = _source_diagnostics(graph, tuple(anomalies))
+    if timings is not None:
+        timings["diagnostics"] = perf_counter() - started
     return ProjectSnapshot(
         bundle.fingerprint,
         PROJECT_MODEL_VERSION,
         tuple(projects),
         graph,
-        _source_diagnostics(graph, tuple(anomalies)),
+        diagnostics,
         logical_aliases,
         logical_source_ids,
         alias_lookup,

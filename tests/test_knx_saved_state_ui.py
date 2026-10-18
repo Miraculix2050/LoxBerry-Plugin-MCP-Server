@@ -5,6 +5,41 @@ import subprocess
 import pytest
 
 
+def test_all_delegation_sections_share_one_pending_background_read():
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const w=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}).window;
+const prefixes=['knx-read','knx-drafts','knx-write'];
+const data={target:'t',enabled:false,policy_revision:'original',bindings:[]};
+w.MCPKnx={initialSections:Promise.resolve(Object.fromEntries(prefixes.map(p=>
+ [p.replace('-','_')+'_page',{ok:true,data:{...data}}])))};
+let serial=0,resume,calls=0;const timers=new Map();
+w.setTimeout=fn=>{timers.set(++serial,fn);return serial;};w.clearTimeout=id=>timers.delete(id);
+Object.defineProperty(w.document,'hidden',{get:()=>false});
+w.fetch=async(_,o)=>{
+ calls++;assert.equal(o.body.get('action'),'knx_read_page');
+ assert.equal(JSON.parse(o.body.get('payload')).include_delegations,true);
+ await new Promise(resolve=>resume=resolve);
+ return{ok:true,json:async()=>({ok:true,data:{delegations:Object.fromEntries(prefixes.map(p=>
+ [p.replace('-','_')+'_page',{ok:true,data:{...data,enabled:true,policy_revision:'external'}}]))}})};
+};
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
+(async()=>{
+ w.eval(fs.readFileSync('webfrontend/htmlauth/knx-read-delegation.js','utf8'));await settle();
+ const checkbox=w.document.getElementById('knx-read-enabled');
+ checkbox.dispatchEvent(new w.Event('change'));
+ const pending=[...timers.values()];timers.clear();pending.forEach(fn=>fn());await settle();
+ assert.equal(calls,1);resume();await settle();
+ for(const p of prefixes)assert.equal(w.document.getElementById(p+'-badge').dataset.kind,'success');
+ assert.equal(checkbox.checked,false);assert.equal(timers.size,3);
+ w.close();
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("prefix", ["knx-read", "knx-drafts", "knx-write"])
 def test_saved_badge_polling_preserves_edits_revision_and_visible_tab_boundaries(prefix):
     script = r"""
@@ -33,7 +68,9 @@ w.fetch=async(_,options)=>{
     assert.equal(payload.policy_revision,expectedRevision); // Preserve the original edit revision.
     return{ok:false,json:async()=>({ok:false})};
   }
-  return{ok:true,json:async()=>({ok:true,data:{target:'t',enabled:saved,policy_revision:revision,bindings:[]}})};
+  const data={target:'t',enabled:saved,policy_revision:revision,bindings:[]};
+  if(payload.include_delegations)data.delegations=Object.fromEntries(['knx_read','knx_drafts','knx_write'].map(p=>[p+'_page',{ok:true,data:{...data}}]));
+  return{ok:true,json:async()=>({ok:true,data})};
 };
 const settle=async()=>{for(let i=0;i<6;i++)await new Promise(r=>setImmediate(r));};
 const fire=async()=>{assert.equal(timers.size,1);const [id,t]=[...timers][0];
@@ -108,7 +145,9 @@ w.fetch=async(_,options)=>{
   const action=options.body.get('action');calls.push(action);
   active++;maxActive=Math.max(maxActive,active);
   if(pause)await new Promise(resolve=>resume=resolve);
-  active--;return{ok:true,json:async()=>({ok:true,data})};
+  active--;const output={...data};
+  if(JSON.parse(options.body.get('payload')).include_delegations)output.delegations=Object.fromEntries(['knx_read','knx_drafts','knx_write'].map(p=>[p+'_page',{ok:true,data:{...data}}]));
+  return{ok:true,json:async()=>({ok:true,data:output})};
 };
 const dialog=w.document.getElementById('knx-confirm');
 dialog.showModal=()=>{dialog.returnValue='continue';dialog.dispatchEvent(new w.Event('close'));};
@@ -126,8 +165,7 @@ const settle=async()=>{for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r)
   assert.equal(calls.length,2);
   pause=false;resume();await settle();
   const actionPrefix=prefix.replace('-','_');
-  assert.deepEqual(calls.map(action=>action.slice(actionPrefix.length)),
-    ['_page','_page','_enable','_page','_grant','_revoke']);
+  assert.deepEqual(calls,[actionPrefix+'_page','knx_read_page',actionPrefix+'_enable',actionPrefix+'_page',actionPrefix+'_grant',actionPrefix+'_revoke']);
   assert.equal(maxActive,1);assert(!el('reload').disabled);assert(!el('enabled').disabled);
   assert.equal(timers.size,1);dom.window.close();
 })().catch(error=>{dom.window.close();console.error(error);process.exitCode=1;});

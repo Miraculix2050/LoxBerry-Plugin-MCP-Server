@@ -16,6 +16,42 @@ from mcpserver.knx.store import KnxStore
 from mcpserver.knx.xml_adapter import NAMESPACE, parse_xml
 
 
+@pytest.mark.parametrize("changed", [False, True])
+def test_initial_group_bundle_is_reused_only_for_current_revisions(changed):
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const w=new JSDOM(html,{url:'https://group.example/knx.cgi',runScripts:'outside-only'}).window;
+const el=id=>w.document.getElementById(id);let resume,reads=0;
+w.localStorage.setItem('mcpserver.knx.sections.v1',JSON.stringify({'knx-group-management':true}));
+const state={target:'a'.repeat(64),revision:1,total:0,offset:0,items:[],taxonomy:[],
+ taxonomy_revision:'old',imported_labels:[]};
+const group=(value)=>({...value,total:1,groups:[{
+ prefix:'1',level:'main',address_format:'three_level',
+ imported_name:value.revision===1?'Original':'Current',manual_label:null,address_count:0}]});
+w.fetch=async(_,o)=>{
+ const action=o.body.get('action');let data;
+ if(action==='knx_page'){
+  assert(JSON.parse(o.body.get('payload')).initial_groups);
+  await new Promise(resolve=>resume=resolve);
+  data={...state,sections:{knx_groups_page:{ok:true,data:group(state)}}};
+ }else{assert.equal(action,'knx_groups_page');reads++;data=group({...state,revision:2,taxonomy_revision:'new'});}
+ return{ok:true,json:async()=>({ok:true,data})};
+};
+const settle=async()=>{for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));};
+(async()=>{
+ w.eval(fs.readFileSync('webfrontend/htmlauth/knx.js','utf8'));await settle();
+ el('knx-group-management').open=false;await settle();resume();await settle();assert.equal(reads,0);
+ if(CHANGED)w.MCPKnx.render({...state,revision:2,taxonomy_revision:'new'});
+ el('knx-group-management').open=true;await settle();
+ assert.equal(reads,CHANGED?1:0);
+ assert.match(el('knx-group-rows').textContent,CHANGED?/Current/:/Original/);w.close();
+})().catch(e=>{console.error(e);process.exitCode=1;});
+""".replace("CHANGED", "true" if changed else "false")
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_groups_include_empty_and_local_groups_with_preserved_source_counts(tmp_path):
     store = KnxStore(tmp_path / "metadata.sqlite3")
     document = parse_xml(

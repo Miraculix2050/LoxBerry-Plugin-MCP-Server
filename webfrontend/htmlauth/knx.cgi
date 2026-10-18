@@ -4,7 +4,6 @@ use strict;
 use warnings;
 use CGI;
 use Digest::SHA qw(sha256_hex);
-use HTML::Template;
 use HTTP::Tiny;
 use IPC::Open3;
 use IO::Handle;
@@ -12,8 +11,6 @@ use JSON::PP qw(encode_json decode_json);
 use Symbol qw(gensym);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use LoxBerry::System;
-use LoxBerry::Web;
-use LoxBerry::Log;
 
 require "$lbpbindir/lib/MCPServer/RequestSecurity.pm";
 
@@ -23,7 +20,6 @@ my $cgi = CGI->new;
 my $q = $cgi->Vars;
 if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
     $LoxBerry::System::lang = $q->{lang};
-    $LoxBerry::Web::lang = $q->{lang};
 }
 $ENV{MCPSERVER_KNX_ADMIN} = "1";
 $ENV{LBPDATA} = $lbpdatadir;
@@ -98,6 +94,7 @@ if (($q->{action} // '') ne '') {
             my $quiet_read = $result->{ok}
                 && $q->{action} =~ /\A(?:knx_page|knx_read_page|knx_drafts_page|knx_project_page)\z/;
             if (!$quiet_read) {
+                require LoxBerry::Log;
                 my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir, addtime => 1);
                 my $outcome = $result->{ok} ? 'completed' : 'rejected';
                 my $mode = '';
@@ -118,6 +115,11 @@ if (($q->{action} // '') ne '') {
     print $cgi->header(-status => $status, -type => 'application/json', -charset => 'utf-8', headers());
     print encode_json($result);
     exit;
+}
+require HTML::Template;
+require LoxBerry::Web;
+if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
+    $LoxBerry::Web::lang = $q->{lang};
 }
 my $version = LoxBerry::System::pluginversion();
 my $template_text = LoxBerry::System::read_file("$lbptemplatedir/knx.html");

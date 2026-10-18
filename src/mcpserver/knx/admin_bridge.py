@@ -6,28 +6,31 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import time
+from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
-import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from mcpserver.admin_errors import AdminError
-from mcpserver.auth.provider import Phase0OAuthProvider, StoredAccessToken
 from mcpserver.auth.scopes import READ_SCOPE
 from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
 from mcpserver.config import AtomicConfigStore
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.models import ProjectError
-from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeUnavailable
 from mcpserver.persistence import PersistenceUncertain
 
 from .model import KnxError
+
+if TYPE_CHECKING:
+    from mcpserver.auth.provider import Phase0OAuthProvider, StoredAccessToken
+    from mcpserver.loxone.runtime import LoxoneRuntime
 
 PATH = "/internal/knx-admin-project"
 MAX_REQUEST = 64 * 1024
@@ -92,25 +95,20 @@ def forward(action: str, payload: dict[str, Any], configs: AtomicConfigStore) ->
         SESSION_HEADER: session,
         PROOF_HEADER: proof(helper_key(_auth_store()), session, body, issued),
     }
+    # A fixed plain loopback connection needs no proxy discovery, redirects or
+    # TLS trust-store initialization. Host remains the validated public origin.
+    connection = HTTPConnection("127.0.0.1", 8765, timeout=55)
     try:
-        raw = bytearray()
-        with httpx.stream(
-            "POST",
-            "http://127.0.0.1:8765" + PATH,
-            headers=headers,
-            content=body,
-            timeout=55,
-            trust_env=False,
-        ) as response:
-            for chunk in response.iter_bytes():
-                raw.extend(chunk)
-                if len(raw) > MAX_RESPONSE:
-                    raise AdminError(
-                        "Project operation unavailable", code="write_outcome_uncertain"
-                    )
+        connection.request("POST", PATH, body=body, headers=headers)
+        response = connection.getresponse()
+        raw = response.read(MAX_RESPONSE + 1)
+        if len(raw) > MAX_RESPONSE:
+            raise AdminError("Project operation unavailable", code="write_outcome_uncertain")
         result = json.loads(raw)
-    except (httpx.HTTPError, ValueError):
+    except (HTTPException, OSError, ValueError):
         raise AdminError("Project operation unavailable", code="write_outcome_uncertain") from None
+    finally:
+        connection.close()
     if not isinstance(result, dict) or result.get("ok") is not True:
         error = result.get("error") if isinstance(result, dict) else None
         code = error.get("code") if isinstance(error, dict) else error
@@ -163,6 +161,8 @@ class AdminProjectBridge:
             raise PermissionError("Project access revoked")
 
     async def handle(self, request: Request) -> JSONResponse:
+        from mcpserver.loxone.runtime import RuntimeUnavailable
+
         session = request.headers.get(SESSION_HEADER, "")
         supplied = request.headers.get(PROOF_HEADER, "")
         raw = bytearray()
@@ -247,6 +247,7 @@ class AdminProjectBridge:
         body: bytes,
         access: StoredAccessToken,
     ) -> dict[str, Any]:
+        from mcpserver.loxone.runtime import RuntimeUnavailable
         from mcpserver.tools import _project_query
 
         from .admin import dispatch_knx
@@ -293,12 +294,17 @@ class AdminProjectBridge:
                 )
             # The analysis runner admits each project/worker phase through the
             # runtime's shared semaphore. Do not acquire that same permit here.
+            started = time.monotonic()
             envelope = await self.comparison.run(
                 "knx",
                 ["ets_project_comparison"],
                 limit=50,
                 admin_access=access,
                 admin_table={"offset": payload.get("offset", 0), "sort": payload.get("sort")},
+            )
+            logging.getLogger(__name__).info(
+                "component=project_load phase=admin_runner duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
             )
             result: dict[str, Any] = envelope.model_dump(mode="json")
             data = result.get("data")

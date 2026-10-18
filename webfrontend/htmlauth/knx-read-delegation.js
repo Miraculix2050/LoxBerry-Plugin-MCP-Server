@@ -1,5 +1,27 @@
 (() => {
   'use strict';
+  // Share only the pending read, never a reusable authorization result.
+  const pendingPolls = new Map();
+  const poll = async (action, target) => {
+    const key = target || '';
+    let pending = pendingPolls.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const response = await fetch('knx.cgi', {method:'POST',credentials:'same-origin',
+          headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          body:new URLSearchParams({action:'knx_read_page',payload:JSON.stringify({
+            ...(target ? {target} : {}),include_delegations:true})})});
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error('delegation_unavailable');
+        return result.data.delegations;
+      })();
+      pendingPolls.set(key,pending);
+      void pending.finally(()=>{if(pendingPolls.get(key)===pending)pendingPolls.delete(key);}).catch(()=>{});
+    }
+    const section = (await pending)?.[action];
+    if (!section?.ok) throw new Error('delegation_unavailable');
+    return section.data;
+  };
   for (const prefix of ['knx-read', 'knx-drafts', 'knx-write']) {
     const section = document.getElementById(`${prefix}-delegation`);
     if (!section) continue;
@@ -38,6 +60,7 @@
       document.getElementById('knx-confirm-cancel').focus();
     });
     const api = async (action, payload = {}, background = false) => {
+      if (background && action === `${actionPrefix}_page`) return poll(action,payload.target);
       if (action === `${actionPrefix}_page` && !background) {
         loading.hidden = false;
         announcement.textContent = announcement.dataset.loading;

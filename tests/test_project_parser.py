@@ -52,3 +52,18 @@ def test_attribute_cursor_handles_many_attributes_without_suffix_scans():
     attributes = b" ".join(f'a{index}="x"'.encode() for index in range(10_000))
     parsed = parse_project(b"<P " + attributes + b"/>", ProjectLimits(attributes=10_000))
     assert len(parsed.elements[0].attributes) == 10_000
+
+
+@pytest.mark.parametrize("quote", ['"', "'"])
+def test_long_quoted_boundaries_and_unterminated_values(quote):
+    value = ">" * 100_000 + "<tail>"
+    parsed = parse_project(f"<P V={quote}{value}{quote}/>".encode())
+    assert parsed.elements[0].value("V") == value
+    with pytest.raises(ProjectError, match="project_xml_invalid"):
+        parse_project(f"<P V={quote}{value}".encode())
+
+
+@pytest.mark.parametrize("code", [*range(9), 11, 12, *range(14, 32)])
+def test_control_character_rejection_covers_each_disallowed_code(code):
+    with pytest.raises(ProjectError, match="project_character_invalid"):
+        parse_project(b'<P V="' + bytes([code]) + b'"/>')

@@ -20,6 +20,66 @@ from mcpserver.knx.model import KnxError
 from mcpserver.knx.store import KnxStore
 
 
+@pytest.mark.parametrize("hint", ["valid", "shortened", "missing", "target", "invalid"])
+def test_initial_page_inspects_selected_draft_with_current_revision(tmp_path, monkeypatch, hint):
+    target = "https://first.example"
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "b" * 64)
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(tmp_path / "auth.json"))
+    config = replace(PluginConfig.defaults(), loxone_endpoint=target)
+    configs = AtomicConfigStore(tmp_path / "config.json")
+    configs.save(config)
+    store = KnxStore(tmp_path / "knx" / "metadata.sqlite3")
+    owner = CorrectionDraftStore(tmp_path / "knx" / "drafts.sqlite3", "a" * 64)
+    plan = CorrectionService(store, owner).plan(
+        config,
+        target,
+        0,
+        labels_revision(config, target),
+        [
+            dict(
+                destination="local_metadata",
+                kind="prefix",
+                prefix="1",
+                address_format="three_level",
+                field="label",
+                operation="set",
+                value="Synthetic",
+            )
+        ],
+    )
+    created = owner.create_correction(target, 0, plan["manual_revision"], plan["changes"])
+    selection = dict(
+        target=hashlib.sha256(target.encode()).hexdigest(),
+        draft_id=created["draft_id"],
+        offset=0,
+        sort=None,
+    )
+    if hint == "shortened":
+        selection["offset"] = 10
+    elif hint == "missing":
+        selection["draft_id"] = "f" * 48
+    elif hint == "target":
+        selection["target"] = "f" * 64
+    elif hint == "invalid":
+        selection["offset"] = True
+    page = dispatch_knx(
+        "knx_page", dict(include_sections=True, initial_correction=selection), configs
+    )
+    inspected = page["sections"]["knx_correction_inspect"]
+    assert page["sections"]["knx_correction_page"]["ok"]
+    if hint in {"valid", "shortened"}:
+        assert inspected["ok"]
+        assert inspected["request"]["offset"] == 0
+        direct = dispatch_knx(
+            "knx_correction_inspect", dict(selection, offset=0, draft_revision=1), configs
+        )
+        assert inspected["data"] == direct
+    else:
+        assert not inspected["ok"]
+    assert store.page(target)["total"] == 0
+
+
 def test_admin_retention_management_cannot_apply_archived_or_restore_approval(
     tmp_path, monkeypatch
 ):
@@ -684,6 +744,9 @@ def test_bridged_storage_failure_audit_matches_operation(
     [
         "reload",
         "bootstrap",
+        "bundled",
+        "bundled_revision",
+        "bundled_sort",
         "missing",
         "target",
         "blocked",
@@ -728,6 +791,16 @@ const create=()=>{
     decision:'accepted',imported:field,manual:field,proposed:field}]};
   return{ok:true,json:async()=>({ok:true,data})};
  };
+ if(generation===2&&mode.startsWith('bundled')){
+  const field={state:'value',value:'fresh value',truncated:false};
+  w.MCPKnx={initialSections:Promise.resolve({knx_correction_page:{ok:true,data:page},
+   knx_correction_inspect:{ok:true,request:{target,draft_id:draft.draft_id,offset:10,
+    sort:mode==='bundled_sort'?{field:'address',direction:'ascending'}:null},
+    data:{target,draft:{...draft,draft_revision:mode==='bundled_revision'?1:2},next_offset:null,
+     catalog_stale:false,manual_stale:false,project_status:'not_required',changes:[{
+      change_id:'d'.repeat(24),identity:'1/2/3',field:'name',operation:'set',destination:'ets_export',
+      decision:'accepted',imported:field,manual:field,proposed:field}]}}})};
+ }
  w.eval(source);return w;
 };
 const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
@@ -753,7 +826,8 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r))
   assert.equal(w.document.querySelectorAll('#knx-corrections-values tr').length,0);
   assert.equal(w.document.getElementById('knx-corrections').dataset.loadFailed,'true');
  }else{
-  assert.equal(reads.length,1);assert.equal(reads[0].payload.offset,mode==='shortened'?0:10);
+  assert.equal(reads.length,mode==='bundled'?0:1);
+  if(reads.length)assert.equal(reads[0].payload.offset,mode==='shortened'?0:10);
   assert(w.document.getElementById('knx-corrections-values').textContent.includes('fresh value'));
   const choice=w.document.querySelector('#knx-corrections-values input[type=checkbox]');
   assert.equal(choice.checked,false);

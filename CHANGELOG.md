@@ -51,6 +51,13 @@ extracted from the matching version heading.
 - Deliver canonical on-demand MCP workflow modules through the existing guide
   tool and static resources, retaining the complete compatibility guide (#442).
 
+- Reduce KNX initial helper imports, duplicate authorization-store copies and
+  sequential group/selected-draft reads. Combine concurrent background grant
+  checks without retaining their results; preserve unsaved edits and revision
+  checks. Start a remembered project comparison alongside catalog hydration, validate its fresh
+  binding before display, and speed up bounded XML parsing and worker transport.
+  The five-second whole-page acceptance target remains open (#522).
+
 - Add a lazy, paginated KNX main/middle-group view including empty imported
   groups, source-preserving address counts and global header sorting. Create,
   edit and remove local group labels using existing taxonomy conflict checks;
