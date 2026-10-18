@@ -95,8 +95,10 @@ def decode_forecast(
     if result.ready is False:
         result.status = "not_ready"
         return result
+    if not isinstance(raw, str):
+        raise PvForecastError("pv_forecast_invalid_payload")
     try:
-        payload_size = len(raw.encode("utf-8")) if isinstance(raw, str) else MAX_BYTES + 1
+        payload_size = len(raw.encode("utf-8"))
     except UnicodeEncodeError:
         raise PvForecastError("pv_forecast_invalid_payload") from None
     if payload_size > MAX_BYTES:
