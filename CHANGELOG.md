@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Focus MCP read-tool routing descriptions on purpose and evidence boundaries;
+  move parameter selection and limits to field help without changing contracts (#443).
+
 - Add versioned offline #485 acceptance captures for complete-workflow UTF-8
   bytes, calls/pages/retries/fallbacks and cold/warm MCP timings with a 50-record
   plan limit. Make token/phase telemetry optional in v2, preserve historical v1

@@ -4694,17 +4694,11 @@ def register_read_tools(
     @server.tool(
         name="loxone_get_weather",
         description=(
-            "Get bounded current or forecast weather from the configured Loxone weather server. "
-            "last_updated_at is the source update time, data.received_at is the local cache "
-            "processing time, and observed_at is the tool response time. stale describes cache "
-            "availability, not weather source age. mode=history reads explicitly configured "
-            "local recording with loxone:history and administrator activation. Its received-time "
-            "axis, source point time and reported update time are separate; forecasts remain "
-            "forecasts. Unknown units remain unknown. Recording never backfills the past. "
-            "forecast_sources checks only the registered local irradiance source; solar_windows "
-            "compares future point predictions in W/m² with future_options. These local modes "
-            "require independent loxberry:read approval and administrator source confirmation, "
-            "and do not establish PV yield, surplus, admissible load schedules or savings."
+            "Read current/forecast weather or explicitly configured local history. Forecasts "
+            "remain forecasts; missing units and past observations stay unknown. History requires "
+            "activated loxone:history; local irradiance modes require independent loxberry:read "
+            "approval and Admin source confirmation. Future point comparisons do not prove PV "
+            "yield, surplus or admissible schedules. See states and energy guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -5057,12 +5051,9 @@ def register_read_tools(
     @server.tool(
         name="loxone_describe_control",
         description=(
-            "Describe one visible Loxone control or, with include_hidden, one hidden control for "
-            "read-only diagnosis. Use view=history_targets for compact history targets or "
-            "view=operation_targets for allowed actions and their required selectable targets, "
-            "or view=state_refs for current state-name/UUID references only."
-            " Fresh visible Loxone administrators may use view=energy_context for "
-            "generation-specific documented Energy Manager metadata and cached state context."
+            "Describe one discovered control; select compact targets or full diagnostic metadata "
+            "with view. Hidden diagnosis is read-only. Energy context requires a freshly verified "
+            "Loxone administrator. See states, history, energy or operations guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -5080,8 +5071,10 @@ def register_read_tools(
             str,
             Field(
                 description=(
-                    "Full description (default), history targets, operation targets, "
-                    "state references, or administrator-only Energy Manager context."
+                    "full (default) includes diagnostic metadata; history_targets selects "
+                    "series/state references; operation_targets selects currently allowed actions "
+                    "and their targets; state_refs returns only state references; energy_context "
+                    "requires a freshly verified Loxone administrator."
                 ),
                 json_schema_extra={
                     "enum": [
@@ -5630,14 +5623,11 @@ def register_read_tools(
     @server.tool(
         name="loxone_read_controls",
         description=(
-            "Read compact identity and cached values for 1 to 25 known visible control UUIDs. "
-            "Select exact state names or omit to read all; at most 100 named states and 64 KiB "
-            "per response. Optional semantics reuses the state-semantics evidence model. "
-            "All targets are validated atomically against one fresh visible snapshot."
-            " Opt-in native_result_view reads one EFM on verified 17.2.8.28 as a freshly "
-            "verified Loxone administrator; period views additionally require activated history. "
-            "Only three actual power fields have metadata-bound W/kW units; remaining units, "
-            "signs and period boundaries stay unknown. No balance calculation."
+            "Read cached values for exact currently visible controls with fresh caller "
+            "authorization. Optional semantic evidence is independent of freshness. Native EFM "
+            "views require verified firmware 17.2.8.28 and a fresh Loxone administrator; periods "
+            "require activated history. Native values are not a verified balance. See states or "
+            "energy guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -5648,7 +5638,10 @@ def register_read_tools(
             Field(
                 min_length=1,
                 max_length=25,
-                description="Unique visible control targets, at most 100 named states total.",
+                description=(
+                    "Unique visible targets; at most 100 named states total and 64 KiB per "
+                    "response. Select exact state names or omit for all states."
+                ),
             ),
         ],
         include_semantics: Annotated[
@@ -5659,7 +5652,14 @@ def register_read_tools(
         ] = False,
         native_result_view: Annotated[
             NativeResultView | None,
-            Field(description="Optional native EFM view; one target, no state_names or semantics."),
+            Field(
+                description=(
+                    "Native EFM only: one plain target, no state_names or semantics; exact "
+                    "firmware 17.2.8.28 and fresh Loxone administrator. Period views require "
+                    "history activation and scope. Only Gpwr/Ppwr/Spwr have metadata-bound W/kW "
+                    "units; other units, signs and period boundaries remain unknown."
+                )
+            ),
         ] = None,
     ) -> ControlsReadEnvelope:
         if (
@@ -5829,11 +5829,9 @@ def register_read_tools(
     @server.tool(
         name="loxone_get_state_semantics",
         description=(
-            "Read bounded semantic evidence and cached values for one visible control. "
-            "Interpretation and observation quality are independent; missing units or meanings "
-            "remain explicit. Exact reviewed rules distinguish IRCv2 actual/target temperature "
-            "and InfoOnlyDigital/Hourcounter binary activity; ambiguous temperature units stay "
-            "unknown. No hidden controls, project data, or documentation download."
+            "Read semantic evidence and cached values for one currently visible control. "
+            "Interpretation, freshness and completeness are independent; unknown units or meanings "
+            "stay unknown. No hidden controls or project/document download. See states guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -6909,8 +6907,9 @@ def register_project_tools(
     @server.tool(
         name="loxone_trace_project_logic",
         description=(
-            "Trace bounded upstream or downstream signal and reference logic "
-            "from one project object."
+            "Trace bounded upstream/downstream signal and reference paths from one authorized "
+            "project object. Structural reachability does not establish historical causation. See "
+            "project guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -7060,10 +7059,10 @@ def register_observability_tools(
     @server.tool(
         name="loxone_analyze_observability",
         description=(
-            "Assess bounded current-state and history-source evidence and suggest recording "
-            "strategies for exact runtime controls "
-            "structurally reachable from one authorized project target. Graph reachability is not "
-            "historical causation. Requires loxone:read and loxone:history."
+            "Inspect reachable controls, current-state availability, advertised statistic metadata "
+            "and local recording coverage. Statistics are not fetched for the requested period. "
+            "Graph reachability is not historical causation. Requires loxone:read and "
+            "loxone:history. See project and history guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -7868,9 +7867,9 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     @server.tool(
         name="loxone_get_statistics",
         description=(
-            "Read one statistic series advertised by loxone_describe_control, including an "
-            "explicitly requested hidden diagnostic control. "
-            "Requires loxone:history and never accepts paths or raw commands."
+            "Read one advertised statistic series for an exact period; this is not an energy "
+            "balance. Requires loxone:history; hidden diagnosis must be explicit. Units and "
+            "coverage remain source-dependent. See history guidance; no paths or raw commands."
         ),
         annotations=annotations,
         structured_output=True,
