@@ -79,6 +79,21 @@ def logical_runtime_nodes(
             local_ids[node.project, uuid] += 1
             if node.kind == "block":
                 groups[uuid].append(node)
+    if all(len(members) == 1 for members in groups.values()):
+        # Single occurrences never use topology; still reject UUID collisions
+        # with connectors or other nodes in the same project.
+        single_evidence: dict[str, IdentityEvidence] = {}
+        for uuid, members in groups.items():
+            node = members[0]
+            if node.block_type not in SUPPORTED_TYPES:
+                continue
+            duplicate = local_ids[node.project, uuid] != 1
+            single_evidence[node.key] = IdentityEvidence(
+                "ambiguous" if duplicate else "single_source",
+                "duplicate_source" if duplicate else "single_occurrence",
+                (node.key,),
+            )
+        return (), (), single_evidence
     for edge in graph.edges:
         if edge.kind == "contains":
             parents[edge.target].append(edge.source)

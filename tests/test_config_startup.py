@@ -1,4 +1,4 @@
-"""Unrelated helpers defer solar models without bypassing source validation."""
+"""Helpers defer solar analysis without moving source-model imports into locks."""
 
 import os
 import subprocess
@@ -18,7 +18,7 @@ def test_disabled_solar_still_validates_all_source_values(sources):
         PluginConfig.from_document(document)
 
 
-def test_empty_config_helpers_defer_models_and_configured_sources_keep_contracts():
+def test_helpers_defer_analysis_and_configured_sources_keep_contracts():
     root = Path(__file__).resolve().parents[1]
     code = """
 import sys
@@ -27,9 +27,9 @@ import mcpserver.knx.admin
 base = PluginConfig.defaults().to_document()
 parsed = PluginConfig.from_document(base)
 assert parsed.solar_history_sources == ()
-assert 'mcpserver.solar_recording' not in sys.modules
+assert 'mcpserver.solar_recording' in sys.modules
 assert 'mcpserver.solar_history' not in sys.modules
-assert 'pydantic' not in sys.modules
+assert 'mcpserver.comparable_days' not in sys.modules
 
 # Even disabled recording must validate and retain configured sources.
 source = dict(control_uuid='12345678-1234-1234-1234567890123456',

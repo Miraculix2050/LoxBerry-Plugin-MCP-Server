@@ -17,7 +17,7 @@ from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Final, TypeVar
+from typing import Any, BinaryIO, Final, TypeVar
 from urllib.parse import urlsplit
 
 import idna
@@ -29,9 +29,8 @@ from mcpserver.loxone.uuid import normalize_history_control_id, normalize_loxone
 from mcpserver.loxone.weather_history import MAX_SOURCES as MAX_WEATHER_HISTORY_SOURCES
 from mcpserver.loxone.weather_history import WeatherHistorySource
 from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
-
-if TYPE_CHECKING:
-    from mcpserver.solar_recording import SolarRecordingSource
+from mcpserver.solar_recording import SolarRecordingSource
+from mcpserver.solar_recording import parse_sources as parse_solar_sources
 
 SCHEMA_VERSION: Final = 12
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
@@ -563,15 +562,8 @@ class PluginConfig:
         )
         if solar_history_enabled and not loxone_history_enabled:
             raise ConfigError("event_history.solar_enabled requires loxone history")
-        solar_sources = event_history.get("solar_sources", [])
-        solar_history_sources: tuple[SolarRecordingSource, ...] = ()
         try:
-            # An empty source list needs no source models. All configured or
-            # malformed values still pass through the authoritative validator.
-            if not isinstance(solar_sources, list) or solar_sources:
-                from mcpserver.solar_recording import parse_sources
-
-                solar_history_sources = parse_sources(solar_sources)
+            solar_history_sources = parse_solar_sources(event_history.get("solar_sources", []))
         except ValueError as exc:
             raise ConfigError("event_history.solar_sources is unsupported") from exc
         if enabled and not read_enabled:

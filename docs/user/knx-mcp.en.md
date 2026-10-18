@@ -19,10 +19,10 @@ still use new connections. Verified HTTP trust configuration is reused per clien
 Rebuilding the model can take longer, particularly after a service restart;
 a complete page-loading time below five seconds has not yet been established.
 
-The KNX helper loads solar analysis models only when they are used. With an
-empty solar source list, source models are deferred too; configured sources
-remain fully validated even when recording is disabled. Project identity and
-authorization checks remain unchanged; no additional result cache is introduced.
+The KNX helper loads solar analysis models only when they are used. Configured
+sources remain fully validated even when recording is disabled. Unused topology
+indexes are avoided for single-occurrence project identities; local UUID conflicts
+and authorization checks remain unchanged. No additional result cache is introduced.
 
 ## Local Config file: EIBType mapping
 

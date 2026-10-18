@@ -252,6 +252,27 @@ def test_invalid_uuid_forms_never_establish_cross_source_identity(source_id):
     assert not model.logical_identity
 
 
+def test_single_block_uuid_collision_with_connector_stays_ambiguous():
+    model = snapshot(block(children=f'<Co U="{UUID.upper()}" K="I1"/>'))
+    assert not model.logical_aliases
+    assert len(model.logical_identity) == 1
+    evidence = next(iter(model.logical_identity.values()))
+    assert evidence.classification == "ambiguous"
+    assert evidence.reason == "duplicate_source"
+    assert len(evidence.candidate_node_ids) == 1
+    assert evidence.candidates_omitted == 0
+
+
+def test_single_block_with_unresolved_topology_retains_single_source_evidence():
+    model = snapshot(block(children='<Co K="I1"><In Input="missing"/></Co>'))
+    assert model.graph.unresolved
+    assert not model.logical_aliases
+    assert len(model.logical_identity) == 1
+    evidence = next(iter(model.logical_identity.values()))
+    assert evidence.classification == "single_source"
+    assert evidence.reason == "single_occurrence"
+
+
 def test_group_bounds_order_and_unmodeled_families():
     assert len(snapshot(*[block()] * 32).logical_aliases) == 32
     model = snapshot(*[block()] * 33)

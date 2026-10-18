@@ -105,11 +105,10 @@ authoritative; the release fallback literal and public import forms remain.
 KNX helper imports do not resolve the plugin version or load unrelated async
 machinery. Required Solar configuration validation may load Python metadata for
 Pydantic's own plugin discovery; this is separate from a plugin-version lookup.
-Empty Solar source lists defer source-model imports. Nonempty or malformed lists
-still use the same authoritative validator, even with recording disabled. Solar
-observation analysis models load only when observations are actually constructed.
-For configured sources, import time can move into configuration parsing: compare
-the combined time, not the module-import span in isolation.
+Solar observation analysis models load only when observations are actually
+constructed. Source models remain imported before the configuration lock;
+configured sources use the same authoritative validator even with recording
+disabled. Avoid moving cold model imports inside the shared configuration lock.
 Session phase logs are restricted to an active project certificate scope for the
 same endpoint. Ordinary sessions and inherited tasks after scope exit emit no
 project timings; each session still connects and authenticates independently.
@@ -146,14 +145,24 @@ saved project despite positive synthetic cases. Reusing the identical compiled
 UUID pattern and returning early for empty UUIDs retained all conservative
 identity checks and reduced local identity time from 87.97 to 78.85 ms across
 24 alternating pairs with identical results. No new cache or model version is
-required because interpretations remain unchanged.
+required because interpretations remain unchanged. When every block UUID has
+one occurrence, topology indexes are unused by existing identity decisions.
+A fast path retains the complete UUID/local-duplicate pass and the existing
+single-source or ambiguous/duplicate-source evidence, including connector
+collisions. Multi-occurrence groups retain the complete existing topology path.
+Twelve alternating local pairs reduced identity time from 79.51 to 16.90 ms;
+equivalent duplicate groups and groups over the source limit retained equal
+results and comparable fallback times.
 
-On reserved Loxberry-Test, eight alternating fresh-process helper probes loaded
-the same configuration with three Solar sources. Combined import and complete
-configuration validation measured median 1162.78 -> 825.61 ms, with equal parsed
-documents. The probe uses source overrides in both variants; it isolates startup
-CPU rather than reproducing Apache, CGI, OAuth or browser latency. Empty-list
-benefits must not be projected onto this configured installation.
+An initially tested source-model lazy import was rejected. On reserved
+Loxberry-Test, eight alternating fresh-process probes loaded the same three
+Solar sources and measured combined import/validation of 1162.78 -> 825.61 ms,
+with equal parsed documents. However, actual parallel initial CGI requests moved
+cold source-model imports into the shared configuration lock: project forwarding
+configuration time grew from about 24 ms to 897-1492 ms. The whole-page pilot did
+not improve reliably. The retained change defers only observation analysis,
+leaving source-model imports outside the configuration lock. A standalone CPU
+improvement is insufficient when it introduces contention in the real page path.
 
 For whole-page comparison, alternate the unchanged master reference `6704f6e0`
 with only the three optimized runtime files. Keep project/configuration, shared
