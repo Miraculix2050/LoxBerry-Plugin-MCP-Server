@@ -63,6 +63,7 @@ def logical_runtime_nodes(
     """
     nodes = {node.key: node for node in graph.nodes}
     groups: dict[str, list[GraphNode]] = defaultdict(list)
+    source_uuids: dict[str, str] = {}
     local_ids: dict[tuple[str, str], int] = defaultdict(int)
     parents: dict[str, list[str]] = defaultdict(list)
     children: dict[str, list[str]] = defaultdict(list)
@@ -71,6 +72,7 @@ def logical_runtime_nodes(
     for node in graph.nodes:
         uuid = _uuid(node.source_id)
         if uuid:
+            source_uuids[node.key] = uuid
             local_ids[node.project, uuid] += 1
             if node.kind == "block":
                 groups[uuid].append(node)
@@ -89,11 +91,17 @@ def logical_runtime_nodes(
         for node in graph.nodes
         if len({name for name, _ in node.attributes}) != len(node.attributes)
     )
+    ports: dict[str, str] = {}
+    for node in graph.nodes:
+        keys = [value for name, value in node.attributes if name == "K"]
+        if node.kind == "connector" and len(keys) == 1 and keys[0]:
+            ports[node.key] = keys[0]
     reliable_groups = {
         uuid
         for uuid, members in groups.items()
         if len(members) <= 32
         and len({item.project for item in members}) == len(members)
+        and all(local_ids[item.project, uuid] == 1 for item in members)
         and len({item.block_type for item in members}) == 1
         and len({_attributes(item) for item in members}) == 1
     }
@@ -101,10 +109,10 @@ def logical_runtime_nodes(
     port_signatures: dict[tuple[str, str], set[tuple[tuple[str, str], ...]]] = defaultdict(set)
     for owner, members in children.items():
         for child in members:
-            port = dict(nodes[child].attributes).get("K")
+            port = ports.get(child)
             if port is not None:
                 port_counts[owner, port] += 1
-                owner_uuid = _uuid(nodes[owner].source_id)
+                owner_uuid = source_uuids.get(owner)
                 if owner_uuid is not None:
                     port_signatures[owner_uuid, port].add(
                         tuple(pair for pair in _attributes(nodes[child]) if pair[0] != "U")
@@ -114,13 +122,14 @@ def logical_runtime_nodes(
         node = nodes[key]
         if node.kind == "connector":
             owner_ids = parents.get(key, [])
-            port = [value for name, value in node.attributes if name == "K"]
-            if len(owner_ids) != 1 or len(port) != 1 or not port[0]:
+            port_key = ports.get(key)
+            if len(owner_ids) != 1 or port_key is None:
                 return None
             owner = nodes[owner_ids[0]]
+            port = [port_key]
         else:
             owner, port = node, []
-        uuid = _uuid(owner.source_id)
+        uuid = source_uuids.get(owner.key)
         if not uuid or local_ids[owner.project, uuid] != 1 or not owner.block_type:
             return None
         if uuid not in reliable_groups or owner.key in unresolved:
@@ -150,16 +159,15 @@ def logical_runtime_nodes(
             if key == node.key:
                 slot = "block"
             else:
-                port = [value for name, value in item.attributes if name == "K"]
+                port_key = ports.get(key)
                 if (
                     item.kind != "connector"
-                    or len(port) != 1
-                    or not port[0]
+                    or port_key is None
                     or children.get(key)
                     or parents.get(key) != [node.key]
                 ):
                     return None
-                slot = "connector:" + port[0]
+                slot = "connector:" + port_key
             if slot in slots:
                 return None
             relations = []
@@ -185,7 +193,7 @@ def logical_runtime_nodes(
         if len(occurrences) > 32:
             reason = "source_limit"
         elif len({node.project for node in occurrences}) != len(occurrences) or any(
-            local_ids[node.project, _uuid(node.source_id) or ""] != 1 for node in occurrences
+            local_ids[node.project, source_uuids[node.key]] != 1 for node in occurrences
         ):
             reason = "duplicate_source"
         elif len({node.block_type for node in occurrences}) != 1:

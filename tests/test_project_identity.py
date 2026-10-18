@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from mcpserver.loxone.project.graph import build_snapshot
+from mcpserver.loxone.project.identity import logical_runtime_nodes
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.models import ProjectBundle, ProjectFile
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
@@ -227,6 +228,31 @@ def test_hierarchy_conflict_and_cycles_do_not_create_unbounded_or_guessed_traces
     trace = query.trace(node, direction="upstream", max_depth=3, max_nodes=20)
     assert len(trace["edges"]) == 2 and not trace["truncated"]
     assert len(trace["nodes"]) == 4
+
+
+def test_high_degree_neighbor_attributes_are_indexed_once_instead_of_per_edge():
+    class CountedAttributes(tuple):
+        iterations = 0
+
+        def __iter__(self):
+            type(self).iterations += 1
+            return super().__iter__()
+
+    source = block(uuid=OTHER, kind="Source", children=f'<Co K="Q" U="{PORT}"/>')
+    consumer = block(
+        children="".join(f'<Co K="I{index}"><In Input="{PORT}"/></Co>' for index in range(100))
+    )
+    model = snapshot(source + consumer, source + consumer)
+    nodes = tuple(
+        replace(node, attributes=CountedAttributes(node.attributes))
+        if node.source_id == PORT
+        else node
+        for node in model.graph.nodes
+    )
+    aliases, _, evidence = logical_runtime_nodes(replace(model.graph, nodes=nodes))
+    assert len(aliases) == 2
+    assert all(item.classification == "equivalent" for item in evidence.values())
+    assert CountedAttributes.iterations < 20
 
 
 @pytest.mark.asyncio
