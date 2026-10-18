@@ -12,7 +12,7 @@ from test_native_efm import ACTION, TARGET, access, fixture_runtime
 import mcpserver.loxone.client as client_module
 from mcpserver.loxone.client import LoxoneWebSocketSession
 from mcpserver.loxone.models import Freshness
-from mcpserver.loxone.pv_forecast import LOXONE_EPOCH, PvForecastError, decode_forecast
+from mcpserver.loxone.pv_forecast_hours import LOXONE_EPOCH, PvForecastError, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.pv_forecast_runtime import read_pv_forecast

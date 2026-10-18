@@ -135,7 +135,7 @@ from mcpserver.loxone.project.result_cache import ProjectResultCache
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.project.worker import process_analysis
-from mcpserver.loxone.pv_forecast import PvForecastResult
+from mcpserver.loxone.pv_forecast_hours import PvForecastResult
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,

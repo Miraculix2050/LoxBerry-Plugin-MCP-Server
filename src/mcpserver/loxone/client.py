@@ -782,7 +782,7 @@ class LoxoneWebSocketSession:
 
     async def pv_forecast(self, action_uuid: str) -> Any:
         """Read the fixed PVPF getForecasts command (Structure File 17.1)."""
-        from mcpserver.loxone.pv_forecast import MAX_BYTES
+        from mcpserver.loxone.pv_forecast_hours import MAX_BYTES
         from mcpserver.loxone.uuid import normalize_loxone_uuid
 
         action_uuid = normalize_loxone_uuid(action_uuid)

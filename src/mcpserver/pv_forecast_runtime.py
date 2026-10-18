@@ -15,7 +15,7 @@ from mcpserver.loxone.client import (
 )
 from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
 from mcpserver.loxone.models import Control, Freshness, LoxoneStructure
-from mcpserver.loxone.pv_forecast import PvForecastError, PvForecastResult, decode_forecast
+from mcpserver.loxone.pv_forecast_hours import PvForecastError, PvForecastResult, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime, RuntimeUnavailable
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 

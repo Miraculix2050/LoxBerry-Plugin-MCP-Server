@@ -727,7 +727,7 @@ class StateSemanticsResolver:
                 "cycleUntil": "s",
             }
             if state_name in units or state_name in {"ready", "errorInfo"}:
-                from .pv_forecast import LOXONE_EPOCH, number
+                from .pv_forecast_hours import LOXONE_EPOCH, number
 
                 numeric = number(value)
                 valid = numeric is not None
