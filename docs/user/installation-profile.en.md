@@ -11,6 +11,13 @@ confirmed role does not prove a unit, aggregation or physical measurement bounda
 Technical semantics are checked separately. The profile contains no energy/history
 calculations of its own.
 
+Request-local energy scenarios can reuse explicit confirmed profile references;
+real declared and hypothetical loads do not require a saved profile. A request
+cannot override a conflicting reference or promote a draft or changed binding.
+The server rechecks selected sources and operating companions before returning
+results. Confirmation describes an association, not technical units, physical
+measurement proof or permission to operate a device.
+
 Select **Weather context** to bind an exact current or forecast weather source and
 one weather field. This source has its own visibility check and no control UUID.
 Formats are presentation metadata; units and the `solar_radiation` encoding remain

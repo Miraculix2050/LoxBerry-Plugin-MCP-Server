@@ -112,7 +112,7 @@ async def test_profileless_plan_authorization_publication_and_zero_history(
         source.side_effect = ControlOperationError("not_found", "PV forecast target not accessible")
     monkeypatch.setattr(module, "read_pv_forecasts", source)
     reader = Mock(side_effect=AssertionError("no profile access for request-local loads"))
-    monkeypatch.setattr(module, "ProfileStore", reader)
+    monkeypatch.setattr("mcpserver.installation_profile.ProfileStore", reader)
     history = AsyncMock(side_effect=AssertionError("no history for declared models"))
     monkeypatch.setattr(module, "_observed_profiles", history)
     if changed:
@@ -199,7 +199,12 @@ def test_maximum_load_and_window_context_is_bounded_without_changing_legacy():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("observed", [False, True])
-async def test_profile_cycles_keep_request_alias_and_share_one_history_read(monkeypatch, observed):
+@pytest.mark.parametrize(
+    "change", ["none", "companion_changed", "companion_draft", "consumer_draft"]
+)
+async def test_profile_cycles_keep_request_alias_and_share_one_history_read(
+    monkeypatch, observed, change
+):
     from test_load_flexibility import flexibility
 
     visible = controls()
@@ -225,6 +230,7 @@ async def test_profile_cycles_keep_request_alias_and_share_one_history_read(monk
         declared_cycle_energy_wh=None if observed else 2000.0,
     )
     binding = {
+        "status": "confirmed",
         "binding_id": "stored",
         "control_uuid": LOAD,
         "role": "consumer",
@@ -232,12 +238,21 @@ async def test_profile_cycles_keep_request_alias_and_share_one_history_read(monk
         "load_flexibility": flex.model_dump(),
     }
     operating = {
+        "status": "confirmed",
         "binding_id": "load-active",
         "control_uuid": LOAD,
         "role": "operating_state",
         "state_uuid": "active",
     }
-    resolver = AsyncMock(return_value=({"stored": binding, "load-active": operating}, 7))
+    if change == "companion_draft":
+        operating["status"] = "draft"
+    elif change == "consumer_draft":
+        binding["status"] = "draft"
+    before = {"stored": binding, "load-active": operating}
+    after = {**before, "load-active": {**operating, "status": "draft"}}
+    resolver = AsyncMock(
+        side_effect=[(before, 7), (after if change == "companion_changed" else before, 7)]
+    )
     monkeypatch.setattr(module, "_bindings", resolver)
     history = AsyncMock(return_value={"request-load": ((7200, 2000.0),)})
     monkeypatch.setattr(module, "_observed_profiles", history)
@@ -247,6 +262,16 @@ async def test_profile_cycles_keep_request_alias_and_share_one_history_read(monk
     )
     doc = context_document()
     doc["loads"] = [{"load_id": "request-load", "kind": "profile", "binding_id": "stored"}]
+    if change != "none":
+        with pytest.raises(ControlOperationError) as failure:
+            await calculate_context_plan(
+                runtime, None, None, access(), context_options(doc), deadline=time.monotonic() + 5
+            )
+        assert failure.value.code == (
+            "temporarily_unavailable" if change == "companion_changed" else "not_found"
+        )
+        assert history.await_count == int(observed and change == "companion_changed")
+        return
     result = await calculate_context_plan(
         runtime, None, None, access(), context_options(doc), deadline=time.monotonic() + 5
     )

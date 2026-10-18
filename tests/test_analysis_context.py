@@ -182,3 +182,97 @@ def test_asset_and_load_ids_cannot_collide_in_resolved_provenance():
     doc["loads"][0]["load_id"] = "roof"
     with pytest.raises(ValidationError, match="duplicate"):
         EnergyAnalysisContext.model_validate(doc)
+
+
+@pytest.mark.asyncio
+async def test_optional_profile_resolution_never_opens_or_creates_store(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from mcpserver.analysis_context import read_profile_bindings
+
+    store = Mock(side_effect=AssertionError("profile must remain optional"))
+    monkeypatch.setattr("mcpserver.installation_profile.ProfileStore", store)
+    assert await read_profile_bindings(None, "unused", None, required=False) == ({}, None)
+    assert await read_profile_bindings(
+        tmp_path / "absent" / "profile.json", "unused", None, required=False
+    ) == ({}, None)
+    assert not (tmp_path / "absent").exists()
+    store.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["draft", "needs_review", "invalid", None])
+def test_resolver_cannot_upgrade_confirmation(status):
+    from mcpserver.analysis_context import resolve_source_association
+    from mcpserver.loxone.runtime import ControlOperationError
+
+    with pytest.raises(ControlOperationError) as failure:
+        resolve_source_association(
+            "alias",
+            controls(),
+            binding_id="saved",
+            origin="user_confirmed",
+            bindings={"saved": {"status": status, "control_uuid": LOAD}},
+        )
+    assert failure.value.code == "not_found"
+
+
+def test_resolver_preserves_alias_and_rejects_contradictory_or_hidden_sources():
+    from mcpserver.analysis_context import resolve_source_association
+    from mcpserver.loxone.runtime import ControlOperationError
+
+    bindings = {"saved": {"status": "confirmed", "role": "consumer", "control_uuid": LOAD}}
+    result = resolve_source_association(
+        "alias", controls(), bindings=bindings, binding_id="saved", expected_role="consumer"
+    )
+    assert result.association.identifier == "alias"
+    assert result.association.origin == "user_confirmed"
+    assert result.association.control_uuid == LOAD
+    with pytest.raises(ValueError, match="choose"):
+        resolve_source_association(
+            "alias", controls(), bindings=bindings, binding_id="saved", control_uuid=METER
+        )
+    visible = controls()
+    visible[LOAD] = replace(visible[LOAD], is_hidden=True)
+    with pytest.raises(ControlOperationError):
+        resolve_source_association("alias", visible, bindings=bindings, binding_id="saved")
+    with pytest.raises(ControlOperationError):
+        resolve_source_association(
+            "alias", controls(), bindings=bindings, binding_id="saved", expected_role="production"
+        )
+
+
+@pytest.mark.parametrize("change", ["identity", "hidden", "source", "revision", "companion"])
+def test_publication_guard_detects_source_and_companion_changes(change):
+    from mcpserver.analysis_context import SourceSnapshot
+    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+    from mcpserver.loxone.runtime import ControlOperationError
+
+    structure = LoxoneStructure(
+        LoxoneIdentity("reader", "SYNTHETIC"), "current", (), (), tuple(controls().values())
+    )
+    bindings = {"consumer": {"status": "confirmed"}, "active": {"status": "confirmed"}}
+    guard = SourceSnapshot.capture(
+        "http://synthetic.local", structure, {LOAD}, bindings, 7, {"consumer", "active"}
+    )
+    guard.validate("http://synthetic.local", structure, bindings, 7)
+    revision = 7
+    if change == "identity":
+        structure = replace(structure, identity=LoxoneIdentity("reader", "OTHER"))
+    elif change in {"hidden", "source"}:
+        structure = replace(
+            structure,
+            controls=tuple(
+                replace(c, is_hidden=True)
+                if change == "hidden"
+                else replace(c, control_type="Other")
+                for c in structure.controls
+            ),
+        )
+    elif change == "revision":
+        revision = 8
+    else:
+        # In-place edits must not alter the captured initial comparison value.
+        bindings["active"]["status"] = "draft"
+    with pytest.raises(ControlOperationError) as failure:
+        guard.validate("http://synthetic.local", structure, bindings, revision)
+    assert failure.value.code == "temporarily_unavailable"

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Annotated, Literal
+from copy import deepcopy
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -180,6 +183,128 @@ class ResolvedAssociation(ContextContract):
     control_uuid: str | None = None
     monitor_uuid: str | None = None
     conditions: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ResolvedSource:
+    """Request-local association; never a decoder rule or persistent confirmation."""
+
+    association: ResolvedAssociation
+    binding: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class SourceSnapshot:
+    """Selected metadata is a publication guard, never reusable authorization."""
+
+    installation: str
+    signature: tuple[Control, ...]
+    bindings: dict[str, Any]
+    revision: int | None
+
+    @classmethod
+    def capture(
+        cls,
+        origin: str,
+        structure: LoxoneStructure,
+        source_ids: set[str],
+        bindings: dict[str, Any],
+        revision: int | None,
+        binding_ids: set[str],
+    ) -> SourceSnapshot:
+        from mcpserver.installation_profile import installation_identity
+
+        return cls(
+            installation_identity(origin, structure),
+            selected_source_signature(structure, source_ids),
+            deepcopy({key: bindings.get(key) for key in binding_ids}),
+            revision,
+        )
+
+    def validate(
+        self,
+        origin: str,
+        structure: LoxoneStructure,
+        bindings: dict[str, Any],
+        revision: int | None,
+    ) -> None:
+        from mcpserver.installation_profile import installation_identity
+        from mcpserver.loxone.runtime import ControlOperationError
+
+        try:
+            signature = selected_source_signature(structure, {c.uuid for c in self.signature})
+        except ValueError:
+            raise ControlOperationError(
+                "temporarily_unavailable", "Analysis context changed"
+            ) from None
+        if (
+            installation_identity(origin, structure) != self.installation
+            or signature != self.signature
+            or revision != self.revision
+            or any(bindings.get(key) != value for key, value in self.bindings.items())
+        ):
+            raise ControlOperationError("temporarily_unavailable", "Analysis context changed")
+
+
+async def read_profile_bindings(
+    path: Path | None,
+    identity: str,
+    structure: LoxoneStructure,
+    *,
+    required: bool,
+) -> tuple[dict[str, Any], int | None]:
+    """Read current confirmations only for explicit references, without creating a store."""
+    from mcpserver.bounded_worker import run_admitted_worker
+    from mcpserver.installation_profile import ProfileSources, ProfileStore, project_profile
+    from mcpserver.loxone.runtime import ControlOperationError
+
+    if not required:
+        return {}, None
+    if path is None:
+        raise ControlOperationError("temporarily_unavailable", "Analysis profile unavailable")
+    document = await run_admitted_worker(ProfileStore(path).read, identity)
+    projection = project_profile(
+        document, identity, ProfileSources.from_structure(identity, structure), limit=256
+    )
+    if projection["status"] != "available":
+        raise ControlOperationError("temporarily_unavailable", "Analysis profile changed")
+    return {b["binding_id"]: b for b in projection["bindings"]}, document.revision
+
+
+def resolve_source_association(
+    identifier: str,
+    visible: dict[str, Control],
+    *,
+    bindings: dict[str, Any],
+    binding_id: str | None = None,
+    control_uuid: str | None = None,
+    origin: Declaration = "scenario_assumption",
+    expected_role: str | None = None,
+) -> ResolvedSource:
+    """Resolve exact sources or confirmations; a declaration cannot override a reference."""
+    from mcpserver.loxone.runtime import ControlOperationError
+
+    binding = None
+    if binding_id is not None:
+        if control_uuid is not None:
+            raise ValueError("choose a profile reference or an exact source")
+        binding = bindings.get(binding_id)
+        if (
+            binding is None
+            or binding.get("status") != "confirmed"
+            or (expected_role is not None and binding.get("role") != expected_role)
+        ):
+            raise ControlOperationError("not_found", "Confirmed visible source required")
+        control_uuid = binding.get("control_uuid")
+        origin = "user_confirmed"
+    if control_uuid is not None and (
+        control_uuid not in visible or visible[control_uuid].is_hidden
+    ):
+        raise ControlOperationError("not_found", "Analysis source is not accessible")
+    return ResolvedSource(
+        ResolvedAssociation(identifier=identifier, origin=origin, control_uuid=control_uuid),
+        binding,
+    )
 
 
 def resolve_membership(

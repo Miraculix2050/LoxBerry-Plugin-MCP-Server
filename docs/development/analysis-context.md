@@ -28,6 +28,13 @@ It cannot be mixed with legacy forecast/binding selection. The legacy path retai
 its result type; the context path returns `conditional_context_planning.v1`.
 Multiple forecasts share one authenticated transport and one final structure read.
 Legacy tools and profile stores retain their contracts.
+The shared resolver reads a profile only for explicit references and accepts only
+currently confirmed projections. Exact declarations cannot override a profile
+reference. Request aliases remain separate from persistent binding identities.
+Publication rechecks installation, selected source metadata, profile revision and
+all referenced operating companions, including changes with an unchanged revision.
+These checks do not replace fresh transport authorization. Unrelated saved
+bindings are not consulted to assign physical associations to profileless calls.
 Follow-ups: #557 history, #558 weather/solar, #559 profile reuse;
 existing #357, #441 and #444 own their respective EFM, lighting and prompt domains.
 
@@ -42,3 +49,9 @@ nur gelesen. Fehlende Verdrahtung eines nur visualisierten PVPF ist für sich ke
 Konfigurationsfehler. Der Kontext ist eine optionale alternative Auswahl in der
 bestehenden Lastplanung; Altaufrufe und Profilformate bleiben erhalten. #440/#510 bleiben bis zur
 positiven realen Prognose- und Verbraucherabnahme offen.
+
+Der gemeinsame Resolver liest Profile nur bei ausdrücklichen Referenzen und
+verwendet ausschließlich aktuell bestätigte Zuordnungen. Anfrageannahmen können
+Referenzen nicht überschreiben. Vor Ergebnisausgabe werden Anlagenidentität,
+Quellenmerkmale und alle verwendeten Verbraucher- und Betriebszustandsbindungen
+erneut geprüft. Transportzugriffe benötigen weiterhin frische Autorisierung.

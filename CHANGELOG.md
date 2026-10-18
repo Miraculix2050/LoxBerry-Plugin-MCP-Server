@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reuse one request-local source resolver for optional confirmed energy profiles;
+  reject stale or hidden references and recheck operating companions before
+  publishing results, without changing profile documents or legacy contracts (#559).
+
 - Fix local Event History rejecting exact runtime subcontrol suffix IDs. Preserve
   child/state storage identity, visibility, recording approval and plain-UUID
   compatibility across reads and existing source selection. Deliver shared-state
