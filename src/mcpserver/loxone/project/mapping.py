@@ -269,8 +269,29 @@ def map_runtime(
             reason,
         )
 
+    derived = [replace(entry, parent=derive(entry)) for entry in entries]
+    parent_statuses: dict[str, set[str]] = defaultdict(set)
+    for entry in derived:
+        parent_statuses[entry.control_uuid].add(entry.mapping_status)
+    effective_parent_status = {
+        uuid: next(iter(statuses)) if len(statuses) == 1 else "ambiguous"
+        for uuid, statuses in parent_statuses.items()
+    }
     return RuntimeMapping(
         snapshot.fingerprint,
         inputs.fingerprint,
-        tuple(replace(entry, parent=derive(entry)) for entry in entries),
+        tuple(
+            replace(
+                entry,
+                parent=replace(
+                    entry.parent,
+                    parent_mapping_status=effective_parent_status.get(
+                        entry.parent.parent_runtime_control_uuid, "ambiguous"
+                    ),
+                ),
+            )
+            if entry.parent is not None and entry.parent.parent_runtime_control_uuid is not None
+            else entry
+            for entry in derived
+        ),
     )

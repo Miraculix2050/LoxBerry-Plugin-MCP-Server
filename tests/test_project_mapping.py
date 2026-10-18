@@ -206,6 +206,7 @@ def test_explicit_nested_parent_chain_and_relationship_fingerprint():
     assert result.entries[2].parent.runtime_parent_chain == ("middle", root)
     assert result.entries[2].parent.anchor_runtime_control_uuid == root
     assert result.entries[2].mapping_status == "derived_from_parent"
+    assert result.entries[2].parent.parent_mapping_status == "derived_from_parent"
     assert (
         result.structure_fingerprint != map_runtime(parent_snapshot(), second).structure_fingerprint
     )
@@ -234,6 +235,8 @@ def test_parent_depth_limit_is_not_successful_mapping():
     result = map_runtime(parent_snapshot(), SimpleNamespace(last_modified="v", controls=(root,)))
     assert result.entries[-1].mapping_status == "derived_parent_unmapped"
     assert result.entries[-1].parent.reason == "parent_depth_limit"
+    assert result.entries[-1].parent.parent_mapping_status == "derived_parent_unmapped"
+    assert result.entries[-2].parent.parent_mapping_status == "derived_from_parent"
 
 
 @pytest.mark.parametrize("ambiguous", [False, True])

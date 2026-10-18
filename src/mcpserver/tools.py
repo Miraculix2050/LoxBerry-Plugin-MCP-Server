@@ -1496,7 +1496,7 @@ class RuntimeMappingEvidenceData(BaseModel):
     mapping_rule: str
     project_node_ids: list[str] = Field(max_length=32)
     parent_runtime_control_uuid: str | None
-    parent_mapping_status: Literal["exact", "ambiguous", "unmapped", "derived_from_parent"] | None
+    parent_mapping_status: MappingStatus | None
     parent_project_node_ids: list[str] = Field(max_length=32)
     anchor_runtime_control_uuid: str | None
     subcontrol_key: str | None
