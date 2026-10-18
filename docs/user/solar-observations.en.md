@@ -22,3 +22,5 @@ Solar recording requires history permission. Disable solar recording before
 revoking that permission in the main configuration. If periodic source metadata
 revalidation fails, solar capture pauses until a successful retry; ordinary
 event-history coverage continues without reopening its connection.
+If solar is the only active recorder, its runtime status reports unavailable
+while source validation prevents capture.

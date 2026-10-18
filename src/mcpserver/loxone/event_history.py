@@ -1669,6 +1669,8 @@ class EventHistoryMonitor:
                     if solar_refresh_task is not None and solar_refresh_task.done():
                         solar_sampler = solar_refresh_task.result()
                         solar_refresh_task = None
+                        if not solar_sampler.sources and not active and not weather_active:
+                            self._set_status("unavailable", "solar_source_validation_unavailable")
                         solar_refresh_at = time.monotonic() + max(
                             60, self.config.structure_refresh_seconds
                         )

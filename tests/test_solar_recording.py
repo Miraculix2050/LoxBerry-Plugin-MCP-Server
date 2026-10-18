@@ -389,7 +389,13 @@ async def test_solar_metadata_failure_pauses_only_solar_and_can_recover(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "mode,scalar",
+    [("blocked", True), ("failed", False), ("hidden", False), ("failed", True), ("hidden", True)],
+)
+async def test_metadata_refresh_preserves_scalar_stream_and_reports_solar_pause(
+    tmp_path, monkeypatch, mode, scalar
+):
     from types import SimpleNamespace
 
     from mcpserver.loxone import event_history
@@ -398,6 +404,7 @@ async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path,
 
     clock = [0]
     started, drained, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    finished = asyncio.Event()
     connections = []
     structure = LoxoneStructure(LoxoneIdentity("service", "serial"), "17.2", (), (), (control(),))
 
@@ -411,6 +418,9 @@ async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path,
             yield (StateEvent(uuid=S, value=20),)
             await started.wait()
             yield (StateEvent(uuid=S, value=30),)
+            if mode != "blocked":
+                await finished.wait()
+                yield (StateEvent(uuid=S, value=40),)
             await asyncio.Future()
 
     class Connection:
@@ -431,6 +441,10 @@ async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path,
     async def refresh():
         started.set()
         try:
+            if mode == "failed":
+                raise TimeoutError("private upstream message")
+            if mode == "hidden":
+                return replace(structure, controls=())
             await asyncio.Future()
         finally:
             cancelled.set()
@@ -445,7 +459,7 @@ async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path,
 
     def transition(*args, **kwargs):
         result = record(*args, **kwargs)
-        if kwargs["new_value"] == 30:
+        if kwargs["new_value"] == (30 if mode == "blocked" else 40):
             loop.call_soon_threadsafe(drained.set)
         return result
 
@@ -454,7 +468,7 @@ async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path,
         PluginConfig(
             loxone_endpoint="http://192.168.10.20",
             loxone_history_enabled=True,
-            event_history_enabled=True,
+            event_history_enabled=scalar,
             event_history_sources=((C, S),),
             solar_history_enabled=True,
             solar_history_sources=(source(),),
@@ -464,13 +478,32 @@ async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path,
         Credentials(),
     )
     monkeypatch.setattr(monitor, "visible_structure", refresh)
+    refresh_sampler = monitor._refresh_solar_sampler
+
+    async def refresh_completed(sampler):
+        result = await refresh_sampler(sampler)
+        finished.set()
+        return result
+
+    status = monitor._set_status
+
+    def observe_status(value, reason=None):
+        status(value, reason)
+        if reason == "solar_source_validation_unavailable":
+            drained.set()
+
+    monkeypatch.setattr(monitor, "_refresh_solar_sampler", refresh_completed)
+    monkeypatch.setattr(monitor, "_set_status", observe_status)
     task = asyncio.create_task(monitor._run())
     try:
         await asyncio.wait_for(drained.wait(), 2)
         assert len(connections) == 1 and not connections[0].closed
-        assert not cancelled.is_set()
+        assert cancelled.is_set() == (mode != "blocked")
+        assert monitor.runtime_status()["status"] == ("recording" if scalar else "unavailable")
         with sqlite3.connect(store.path) as db:
-            assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
+            assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == (
+                (2 if mode == "blocked" else 3) if scalar else 0
+            )
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

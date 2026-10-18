@@ -25,3 +25,5 @@ Freigabe in der Hauptkonfiguration muss die Solaraufzeichnung deaktiviert werden
 Scheitert die regelmäßige Quellenprüfung, pausiert die Solaraufzeichnung bis zur
 erfolgreichen Wiederholung; die gewöhnliche Ereignishistorie zeichnet ohne
 Neuaufbau ihrer Verbindung weiter auf.
+Ist nur die Solaraufzeichnung aktiv, meldet ihr Laufzeitstatus unverfügbar,
+solange die Quellenprüfung die Erfassung verhindert.
