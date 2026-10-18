@@ -386,3 +386,93 @@ async def test_solar_metadata_failure_pauses_only_solar_and_can_recover(tmp_path
     monkeypatch.setattr(monitor, "visible_structure", cancelled)
     with pytest.raises(asyncio.CancelledError):
         await monitor._refresh_solar_sampler(restored)
+
+
+@pytest.mark.asyncio
+async def test_slow_metadata_refresh_does_not_delay_scalar_transitions(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from mcpserver.loxone import event_history
+    from mcpserver.loxone.events import StateEvent
+    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+
+    clock = [0]
+    started, drained, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    connections = []
+    structure = LoxoneStructure(LoxoneIdentity("service", "serial"), "17.2", (), (), (control(),))
+
+    class Session:
+        async def load_structure(self):
+            return structure
+
+        async def state_events(self):
+            yield (StateEvent(uuid=S, value=10),)
+            clock[0] = 61
+            yield (StateEvent(uuid=S, value=20),)
+            await started.wait()
+            yield (StateEvent(uuid=S, value=30),)
+            await asyncio.Future()
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            connections.append(self)
+            self.closed = False
+
+        async def connect(self, *args):
+            return Session()
+
+        async def close(self):
+            self.closed = True
+
+    class Credentials:
+        async def load(self):
+            return "fixture", "fixture"
+
+    async def refresh():
+        started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(event_history, "ServiceMiniserverConnection", Connection)
+    monkeypatch.setattr(
+        event_history, "time", SimpleNamespace(monotonic=lambda: clock[0], time=time.time)
+    )
+    store = EventHistoryStore(tmp_path / "history.sqlite3", retention_days=7, maximum_mib=16)
+    record = store.record_transition
+    loop = asyncio.get_running_loop()
+
+    def transition(*args, **kwargs):
+        result = record(*args, **kwargs)
+        if kwargs["new_value"] == 30:
+            loop.call_soon_threadsafe(drained.set)
+        return result
+
+    monkeypatch.setattr(store, "record_transition", transition)
+    monitor = event_history.EventHistoryMonitor(
+        PluginConfig(
+            loxone_endpoint="http://192.168.10.20",
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            event_history_sources=((C, S),),
+            solar_history_enabled=True,
+            solar_history_sources=(source(),),
+            structure_refresh_seconds=60,
+        ),
+        store,
+        Credentials(),
+    )
+    monkeypatch.setattr(monitor, "visible_structure", refresh)
+    task = asyncio.create_task(monitor._run())
+    try:
+        await asyncio.wait_for(drained.wait(), 2)
+        assert len(connections) == 1 and not connections[0].closed
+        assert not cancelled.is_set()
+        with sqlite3.connect(store.path) as db:
+            assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert cancelled.is_set() and connections[0].closed

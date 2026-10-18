@@ -1587,6 +1587,7 @@ class EventHistoryMonitor:
             weather_active: dict[str, list[tuple[WeatherHistorySource, str, int]]] = {}
             stream_outcome = "disconnected"
             stream_ended_at = None
+            solar_refresh_task: asyncio.Task[SolarSampler] | None = None
             try:
                 await asyncio.to_thread(self.store.initialize)
                 username, password = await self.credentials.load()
@@ -1665,12 +1666,21 @@ class EventHistoryMonitor:
                     batches = _solar_sampling_stream(batches)
                 solar_refresh_at = time.monotonic() + max(60, self.config.structure_refresh_seconds)
                 async for batch in batches:
-                    if self.config.solar_history_enabled and time.monotonic() >= solar_refresh_at:
-                        # A separate authorized metadata connection avoids competing
-                        # with the sole state reader or splitting scalar coverage.
-                        solar_sampler = await self._refresh_solar_sampler(solar_sampler)
+                    if solar_refresh_task is not None and solar_refresh_task.done():
+                        solar_sampler = solar_refresh_task.result()
+                        solar_refresh_task = None
                         solar_refresh_at = time.monotonic() + max(
                             60, self.config.structure_refresh_seconds
+                        )
+                    if (
+                        self.config.solar_history_enabled
+                        and solar_refresh_task is None
+                        and time.monotonic() >= solar_refresh_at
+                    ):
+                        # A separate authorized metadata connection avoids competing
+                        # with the sole state reader or splitting scalar coverage.
+                        solar_refresh_task = asyncio.create_task(
+                            self._refresh_solar_sampler(solar_sampler)
                         )
                     observed_at = time.time()
                     changed = False
@@ -1798,6 +1808,10 @@ class EventHistoryMonitor:
                     coverage_active = False
                 await asyncio.sleep(5)
             finally:
+                if solar_refresh_task is not None:
+                    solar_refresh_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await solar_refresh_task
                 for weather_modes in weather_active.values():
                     for _weather_source, _fingerprint, capture in weather_modes:
                         with suppress(EventHistoryUnavailable):
