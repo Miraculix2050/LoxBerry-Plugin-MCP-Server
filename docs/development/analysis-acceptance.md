@@ -117,14 +117,17 @@ A v2 object has exactly `version`, `identity`, `plan`, `catalog_reads`, and `run
 - Each actual call has exactly `tool`, `status` (`ok`/`error`/`timeout`),
   `duration_ms`, `response_bytes`, `guide_section`, `guide_module_bytes`, `page`,
   `retry`, `fallback_reason`. Calls must be released read-only tools or the
-  read-only prompt methods `prompts.list`/`prompts.get`. Include every subsequent
+  read-only prompt methods `prompts.list`/`prompts.get`, or `resources.read` for
+  fixed published guide resources. Include every subsequent
   detail read, all pages, failures, retries and fallbacks. Boolean `page` means a
   continuation/page request; `retry` means an actual repeated failed attempt.
   Fallback reasons are `source_unavailable`, `unsupported`, `permission_denied`,
   `rate_limit`, `incomplete_coverage`, `tool_error`, `other`, or `null` (none).
   They categorize the request without private values. Guide section labels and
-  module bytes apply only to actual `loxone_get_skill_guide` calls; other calls
-  use `null` for both. Repeated guide fetches count each time. A failed guide
+  module bytes apply to actual `loxone_get_skill_guide` calls and published-guide
+  `resources.read` calls; other calls use `null` for both. The collector verifies
+  the fixed URI/section association without storing the URI or arguments.
+  Repeated guide fetches count each time. A failed guide
   response may have no extractable module bytes; retain `null` and the gap.
 - `optional_metrics` contains `authorization_ms`, `download_count`, `sqlite_ms`,
   `calculation_ms`, `peak_bytes`, `tool_result_tokens`, `input_tokens`,
