@@ -15,6 +15,7 @@ from test_native_efm import ACTION, SERIAL, TARGET, access
 
 import mcpserver.load_planning_runtime as module
 import mcpserver.load_planning_tools as tool_module
+from mcpserver.installation_profile import ProfileError
 from mcpserver.load_planning_runtime import calculate_load_plan
 from mcpserver.load_planning_tools import register_load_planning_tool
 from mcpserver.loxone.models import Control, Freshness, LoxoneIdentity, LoxoneStructure
@@ -216,10 +217,9 @@ def test_shared_operating_source_cannot_be_planned_as_independent_consumers():
 
 
 @pytest.mark.asyncio
-async def test_storage_failure_is_a_sanitized_availability_result(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        tool_module, "calculate_load_plan", AsyncMock(side_effect=OSError("private path"))
-    )
+@pytest.mark.parametrize("failure", [OSError("private path"), ProfileError("private path")])
+async def test_storage_failure_is_a_sanitized_availability_result(tmp_path, monkeypatch, failure):
+    monkeypatch.setattr(tool_module, "calculate_load_plan", AsyncMock(side_effect=failure))
     monkeypatch.setattr(tool_module, "_access", access)
     server = FastMCP("planning-storage")
     register_load_planning_tool(server, object(), None, tmp_path / "profile.json")

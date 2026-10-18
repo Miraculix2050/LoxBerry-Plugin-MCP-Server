@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from mcpserver.history_analysis import HistoryAnalysisDeadline
+from mcpserver.installation_profile import ProfileError
 from mcpserver.load_planning import LoadPlanningOptions, LoadPlanningResult
 from mcpserver.load_planning_runtime import calculate_load_plan
 from mcpserver.loxone.event_history import EventHistoryQueryTimeout, EventHistoryUnavailable
@@ -77,6 +78,10 @@ def register_load_planning_tool(
         except (RuntimeUnavailable, EventHistoryUnavailable, OSError):
             return _error(
                 LoadPlanningEnvelope, "temporarily_unavailable", "Planning source unavailable"
+            )
+        except ProfileError:
+            return _error(
+                LoadPlanningEnvelope, "temporarily_unavailable", "Planning profile is unavailable"
             )
         except ValueError:
             return _error(

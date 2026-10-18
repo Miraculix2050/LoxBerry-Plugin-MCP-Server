@@ -103,6 +103,18 @@ def test_unknown_current_lock_is_an_explicit_condition():
     assert "native_current_lock_unresolved" not in cleared.conditions
 
 
+def test_finite_high_energy_does_not_overflow_during_proration():
+    import math
+    from dataclasses import replace
+
+    value = replace(load(), profile=((3600, 1e308), (3600, 0.0)))
+    allocation = calculate((value,)).allocations[0]
+    assert allocation.cycle_energy_wh == 1e308
+    assert math.isfinite(allocation.additional_grid_wh)
+    invalid = replace(value, profile=((3600, 1e308), (3600, 1e308)))
+    assert not calculate((invalid,)).allocations
+
+
 def test_source_unavailable_does_not_generate_schedule():
     source = forecast()
     source.status = "not_ready"

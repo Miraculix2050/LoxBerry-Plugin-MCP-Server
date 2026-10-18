@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -153,7 +154,7 @@ def _demand(load: PlanningLoad, start: int, hours: list[PvForecastHour]) -> dict
         for hour in hours:
             overlap = max(0, min(end, hour.end) - max(position, hour.start))
             if overlap:
-                demand[hour.start] = demand.get(hour.start, 0) + energy * overlap / duration
+                demand[hour.start] = demand.get(hour.start, 0) + energy * (overlap / duration)
                 covered += overlap
         if covered != duration:
             return None
@@ -202,7 +203,8 @@ def plan_loads(
         if (
             not load.profile
             or sum(d for d, _ in load.profile) != flex.duration_seconds
-            or any(d <= 0 or e < 0 for d, e in load.profile)
+            or any(d <= 0 or not math.isfinite(e) or e < 0 for d, e in load.profile)
+            or not math.isfinite(sum(e for _, e in load.profile))
         ):
             result.unplanned[load.binding_id] = "complete_cycle_model_missing"
             continue
