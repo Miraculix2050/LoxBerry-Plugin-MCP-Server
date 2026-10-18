@@ -7,6 +7,9 @@ Defaults: hours 0–24, seasonal distance ≤30 days, radiation-energy differenc
 temperature difference ≤3 °C. Stricter options are allowed. All candidates use the
 fixed reference window; current reference days use completed hours. Missing data
 never shrinks that window; ambiguous DST positions are excluded.
+The requested end also caps completed reference hours. Confirmed profile roles
+do not establish hourly energy semantics: unqualified statistics remain
+unavailable; qualified statistics with missing values report incomplete coverage.
 
 Register independent irradiance and outside-temperature sources in Admin with
 documented units, cadence and confirmed installation association. Enable recording;

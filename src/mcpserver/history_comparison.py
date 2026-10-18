@@ -61,22 +61,27 @@ def _check(deadline: float) -> None:
         raise HistoryAnalysisDeadline()
 
 
+def _qualified_hourly_energy(semantic: SeriesSemantics | None) -> bool:
+    """Qualify the source contract independently of its available data coverage."""
+    return bool(
+        semantic is not None
+        and semantic.interpretation_status != "invalid"
+        and semantic.measurement_quantity == "energy"
+        and semantic.timestamp_basis == "unix_utc"
+        and semantic.timestamp_position == "interval_start"
+        and semantic.value_meaning == "interval_difference_sum"
+        and semantic.unit in {"Wh", "kWh"}
+    )
+
+
 def _hours(
     source: ComparisonInput, start: float, end: float, deadline: float
 ) -> dict[float, float]:
     """Return whole documented hourly energies in Wh; never allocate partial hours."""
     semantic = source.semantics
-    if (
-        source.summary.status == "insufficient_evidence"
-        or semantic is None
-        or semantic.interpretation_status == "invalid"
-        or semantic.measurement_quantity != "energy"
-        or semantic.timestamp_basis != "unix_utc"
-        or semantic.timestamp_position != "interval_start"
-        or semantic.value_meaning != "interval_difference_sum"
-        or semantic.unit not in {"Wh", "kWh"}
-    ):
+    if source.summary.status == "insufficient_evidence" or not _qualified_hourly_energy(semantic):
         return {}
+    assert semantic is not None
     values: dict[float, float] = {}
     previous = None
     for point in sorted(source.points, key=lambda p: p.timestamp):

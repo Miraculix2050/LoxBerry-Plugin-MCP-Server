@@ -179,7 +179,7 @@ def test_forecast_cycles_never_establish_period_bounds_or_actual_comparisons():
     assert unavailable[0]["status"] == "unavailable" and unavailable[0]["period_kwh"] is None
 
 
-def setup(monkeypatch, tmp_path):
+def setup(monkeypatch, tmp_path, role="production"):
     runtime, _ = configured(monkeypatch)
     runtime.endpoint = SimpleNamespace(origin="http://192.168.255.254")
     first, local, pv = fixture_data()
@@ -213,7 +213,7 @@ def setup(monkeypatch, tmp_path):
         0,
         BindingInput(
             binding_id="production",
-            role="production",
+            role=role,
             control_uuid=P,
             source_kind="statistic",
             series_id="pv",
@@ -251,6 +251,58 @@ def setup(monkeypatch, tmp_path):
         ),
     )
     return runtime, server._tool_manager.get_tool("loxone_analyze_history"), args, current
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["production", "self_consumption", "grid_export"])
+@pytest.mark.parametrize("qualified", [False, True])
+async def test_energy_role_does_not_qualify_semantics_and_empty_qualified_data_stays_incomplete(
+    monkeypatch, tmp_path, role, qualified
+):
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path, role=role)
+    meter, series, _ = runtime.authorized_statistics.return_value
+    runtime.authorized_statistics.return_value = meter, series, ()
+    resolve = StateSemanticsResolver.resolve_series
+
+    def semantics(self, *args, **kwargs):
+        value = resolve(self, *args, **kwargs)
+        return value if qualified else replace(value, measurement_quantity="power")
+
+    monkeypatch.setattr(StateSemanticsResolver, "resolve_series", semantics)
+    result = await tool.fn(**args)
+    assert result.ok, result
+    comparison = result.data.comparable_days
+    assert comparison.reference.pv_evidence == (
+        "intervals_incomplete" if role == "production" and qualified else "rule_unverified"
+    )
+    assert comparison.self_consumption.method == (
+        "direct_observed" if role == "self_consumption" and qualified else "unavailable"
+    )
+
+
+def test_running_reference_respects_earlier_requested_end():
+    first, local, pv = fixture_data()
+    first += timedelta(days=1)
+    local = [(s, f, [(t + 86400, p) for t, p in rows]) for s, f, rows in local]
+    pv = {t + 86400: v for t, v in pv.items()}
+    today = first + timedelta(days=3)
+    result = _calculate(
+        local,
+        {"production": pv},
+        begin=first.timestamp(),
+        finish=(today + timedelta(hours=12, minutes=30)).timestamp(),
+        zone_name="UTC",
+        options=NumericalComparableDayOptions(
+            method="numerical", reference_day=today.date().isoformat(), start_hour=10, end_hour=14
+        ),
+        installation="plant",
+        balance_matches=False,
+        deadline=time.monotonic() + 5,
+        now=today + timedelta(hours=18),
+    )
+    assert result.common_hour_positions == [10, 11]
+    assert result.reference.pv_wh == 2000
+    assert result.group.count == 3
 
 
 @pytest.mark.asyncio

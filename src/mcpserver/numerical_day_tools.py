@@ -29,7 +29,7 @@ from mcpserver.comparable_days_models import (
     SolarSourceSummary,
 )
 from mcpserver.history_analysis import statistic_summary
-from mcpserver.history_comparison import ComparisonInput, _hours
+from mcpserver.history_comparison import ComparisonInput, _hours, _qualified_hourly_energy
 from mcpserver.installation_profile import installation_identity, visible_controls
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.event_history import EventHistoryStore
@@ -184,6 +184,7 @@ def _calculate(
     deadline: float,
     now: datetime,
 ) -> NumericalComparableDaysResult:
+    now = datetime.fromtimestamp(min(now.timestamp(), finish), UTC)
     zone = timezone(zone_name)
     first = datetime.fromtimestamp(begin, zone).date()
     last_local = datetime.fromtimestamp(finish, zone)
@@ -300,7 +301,12 @@ def _calculate(
     method: Literal["unavailable", "direct_observed", "pv_minus_export"] = (
         "direct_observed" if "self_consumption" in energies else "unavailable"
     )
-    if method == "unavailable" and options.pv_export_balance_confirmed and balance_matches:
+    if (
+        method == "unavailable"
+        and options.pv_export_balance_confirmed
+        and balance_matches
+        and {"production", "grid_export"} <= energies.keys()
+    ):
         exported = energies.get("grid_export", {})
         self_hours = {
             t: value - exported[t]
@@ -505,9 +511,10 @@ async def numerical_day_analysis(
             control_uuid=control.uuid,
             source_id=series.series_id,
         )
-        energies[role] = await run_admitted_worker(
-            _hours, ComparisonInput(summary, semantics, points), begin, finish, deadline
-        )
+        if _qualified_hourly_energy(semantics):
+            energies[role] = await run_admitted_worker(
+                _hours, ComparisonInput(summary, semantics, points), begin, finish, deadline
+            )
         roles[role] = (control, binding)
     production = roles.get("production", (None, {}))[1]
     exported = roles.get("grid_export", (None, {}))[1]

@@ -8,6 +8,10 @@ Vorgaben: Stunden 0–24, saisonaler Abstand ≤30 Tage, Strahlungsenergieabweic
 verwenden das feste Referenzfenster; laufende Referenztage nur abgeschlossene
 Stunden. Fehlende Daten verkleinern es nicht; mehrdeutige Zeitumstellungsstunden
 werden ausgeschlossen.
+Das angeforderte Ende begrenzt zusätzlich die abgeschlossenen Referenzstunden.
+Bestätigte Profilrollen belegen keine stündliche Energiesemantik: Unqualifizierte
+Statistiken bleiben unverfügbar; qualifizierte Reihen mit fehlenden Werten weisen
+unvollständige Abdeckung aus.
 
 Unabhängige Strahlungs- und Außentemperaturquellen im Adminbereich mit belegter
 Einheit, Abtastperiode und bestätigter Anlagenzuordnung registrieren. Aufzeichnung
