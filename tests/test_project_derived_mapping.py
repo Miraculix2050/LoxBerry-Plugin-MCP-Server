@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools
 from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE
+from mcpserver.loxone.event_history import EventHistoryCoverage
 from mcpserver.loxone.models import Freshness, StateRecord
 from mcpserver.loxone.project.graph import ProjectSnapshot, build_graph
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
@@ -117,7 +118,7 @@ def test_parent_failure_and_bounded_candidate_provenance(candidate_count):
         query.resolve(CHILD, "runtime_control_uuid")
 
 
-def install_tools(monkeypatch, query, snapshot):
+def install_tools(monkeypatch, query, snapshot, event_history=None):
     access = SimpleNamespace(family_id="family", scopes={READ_SCOPE, HISTORY_SCOPE})
     monkeypatch.setattr(tools, "_access", lambda: access)
     monkeypatch.setattr(tools, "_project_query", AsyncMock(return_value=(query, snapshot)))
@@ -128,7 +129,7 @@ def install_tools(monkeypatch, query, snapshot):
     )
     server = FastMCP("derived-mapping")
     tools.register_project_tools(server, runtime)
-    tools.register_observability_tools(server, runtime, None)
+    tools.register_observability_tools(server, runtime, event_history)
     return server, access
 
 
@@ -244,3 +245,31 @@ async def test_large_inventory_projects_only_the_requested_page(monkeypatch):
         include_mapping_inventory=True, limit=1, cursor=first.data.mapping_inventory.next_cursor
     )
     assert second.ok and projected == [CHILD]
+
+
+@pytest.mark.asyncio
+async def test_selected_child_history_uses_child_sources_and_preserves_exact_summary(monkeypatch):
+    query, snapshot = derived_query()
+    history = SimpleNamespace(
+        coverage=AsyncMock(
+            return_value=(
+                True,
+                {
+                    (CHILD, "child-0"): EventHistoryCoverage(1.0, 1.0, "complete", True),
+                },
+            )
+        )
+    )
+    server, _ = install_tools(monkeypatch, query, snapshot, history)
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(
+        CHILD, "runtime_control_uuid", "both", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"
+    )
+    assert result.ok
+    evidence = result.data.target_runtime_evidence
+    assert evidence.historical_status == "complete"
+    assert evidence.local_event_history[0].state_uuid == "child-0"
+    assert evidence.local_event_history[0].status == "complete"
+    assert result.data.summary.historical_complete == 0
+    assert result.data.summary.historical_missing == 1
+    requested = set(history.coverage.call_args.args[1])
+    assert requested == {(PARENT, "parent-state"), (CHILD, "child-0")}
