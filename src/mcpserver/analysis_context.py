@@ -141,6 +141,7 @@ class EnergyAnalysisContext(ContextContract):
     @model_validator(mode="after")
     def coverage(self) -> EnergyAnalysisContext:
         for values in (
+            [a.asset_id for a in self.assets] + [load.load_id for load in self.loads],
             [a.asset_id for a in self.assets],
             [f.control_uuid for f in self.forecasts],
             [load.load_id for load in self.loads],

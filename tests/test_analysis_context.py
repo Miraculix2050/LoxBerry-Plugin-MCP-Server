@@ -173,3 +173,10 @@ def test_display_diagnostics_do_not_remove_valid_efm_membership():
     )
     visible[MONITOR] = replace(visible[MONITOR], efm=projection)
     assert resolve_membership(efm_context(), visible, {"pump": LOAD})
+
+
+def test_asset_and_load_ids_cannot_collide_in_resolved_provenance():
+    doc = context_document()
+    doc["loads"][0]["load_id"] = "roof"
+    with pytest.raises(ValidationError, match="duplicate"):
+        EnergyAnalysisContext.model_validate(doc)
