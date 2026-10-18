@@ -108,6 +108,12 @@ def test_missing_error_status_is_not_complete_and_old_hour_is_rejected():
         decode('{"today":[{"t":1,"v":1}]}')
 
 
+def test_unavailable_aggregate_is_not_negative_energy():
+    result = decode(states={**STATES, "today": -1, "tomorrow": 1.25})
+    assert result.aggregates_kwh["today"] is None
+    assert result.aggregates_kwh["tomorrow"] == 1.25
+
+
 @pytest.mark.asyncio
 async def test_invalid_target_returns_stable_error():
     runtime, _, session, _ = fixture_runtime()
@@ -133,6 +139,7 @@ async def test_native_read_once_with_visibility_recheck_and_cleanup(revoke):
         yield RuntimeSnapshot("family", structure, True)
 
     runtime.snapshot_context = snapshot_context
+    runtime.token_health = SimpleNamespace(record_successful_authentication=Mock())
     runtime.cache = SimpleNamespace(
         get=Mock(return_value=SimpleNamespace(value=0, freshness=Freshness.CURRENT))
     )
@@ -149,3 +156,4 @@ async def test_native_read_once_with_visibility_recheck_and_cleanup(revoke):
     session.pv_forecast.assert_awaited_once_with(ACTION)
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
+    runtime.token_health.record_successful_authentication.assert_called_once_with("family")

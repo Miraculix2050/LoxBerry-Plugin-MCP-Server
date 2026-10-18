@@ -81,6 +81,10 @@ def decode_forecast(
             key: number(states.get(key)) for key in ("period", "today", "tomorrow", "after")
         },
     )
+    result.aggregates_kwh = {
+        key: value if value is not None and value >= 0 else None
+        for key, value in result.aggregates_kwh.items()
+    }
     if result.ready is False:
         result.status = "not_ready"
         return result

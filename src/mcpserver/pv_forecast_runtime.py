@@ -65,6 +65,8 @@ async def read_pv_forecast(
                 access=access,
                 require_token_confirmation=True,
             )
+            if runtime.token_health is not None:
+                runtime.token_health.record_successful_authentication(access.family_id)
             raw = await session.pv_forecast(action)
             refreshed = await session.load_structure()
             after = visible_pvpf(refreshed, uuid)
