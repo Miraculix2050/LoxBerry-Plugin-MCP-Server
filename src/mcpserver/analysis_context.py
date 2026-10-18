@@ -208,9 +208,12 @@ def resolve_membership(
                     raise ValueError("ambiguous or inaccessible EFM participant")
                 members[row.control_uuid] = row.path
     for load in context.loads:
-        if load.kind == "real" and load.load_id in load_controls:
-            if load_controls[load.load_id] != load.control_uuid:
-                raise ValueError("real load mapping contradicts declared source")
+        if (
+            load.kind == "real"
+            and load.load_id in load_controls
+            and load_controls[load.load_id] != load.control_uuid
+        ):
+            raise ValueError("real load mapping contradicts declared source")
         if load.kind == "profile" and load.load_id not in load_controls:
             raise ValueError("profile load source must be resolved")
     selections = [
