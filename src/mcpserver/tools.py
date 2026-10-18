@@ -1465,7 +1465,69 @@ class ProjectApiConnectorData(BaseModel):
     rule_id: Literal["api_connector_metadata_v1"]
 
 
+class ProjectLogicalIdentityData(BaseModel):
+    classification: Literal["single_source", "equivalent", "complementary", "ambiguous"]
+    reason: Literal[
+        "single_occurrence",
+        "equal_topology",
+        "disjoint_connectors",
+        "duplicate_source",
+        "type_conflict",
+        "attribute_conflict",
+        "topology_conflict",
+        "topology_unresolved",
+        "source_limit",
+    ]
+    candidate_project_node_ids: list[str] = Field(max_length=32)
+    candidates_omitted: int = Field(default=0, ge=0)
+
+
+MappingStatus = Literal[
+    "exact",
+    "ambiguous",
+    "unmapped",
+    "derived_from_parent",
+    "derived_parent_unmapped",
+    "derived_parent_ambiguous",
+]
+
+
+class RuntimeMappingEvidenceData(BaseModel):
+    runtime_control_uuid: str
+    mapping_status: MappingStatus
+    mapping_rule: str
+    project_node_ids: list[str] = Field(max_length=32)
+    parent_runtime_control_uuid: str | None
+    parent_mapping_status: MappingStatus | None
+    parent_project_node_ids: list[str] = Field(max_length=32)
+    anchor_runtime_control_uuid: str | None
+    subcontrol_key: str | None
+    runtime_parent_chain: list[str] = Field(max_length=16)
+    model_source_ids: list[str] = Field(max_length=32)
+    reason: (
+        Literal[
+            "parent_unmapped",
+            "conflicting_runtime_parents",
+            "runtime_parent_cycle",
+            "conflicting_parent_mappings",
+            "parent_mapping_ambiguous",
+            "parent_depth_limit",
+        ]
+        | None
+    )
+    references_truncated: bool
+
+
+class MappingInventoryData(BaseModel):
+    items: list[RuntimeMappingEvidenceData] = Field(max_length=100)
+    next_cursor: str | None
+    truncated: bool = False
+    truncation_reason: Literal["max_response_bytes"] | None = None
+
+
 class ProjectNodeSummaryData(BaseModel):
+    source_project_node_ids: list[str] = Field(default_factory=list, max_length=32)
+    logical_identity: ProjectLogicalIdentityData | None = None
     api_connector: ProjectApiConnectorData | None = None
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -1490,6 +1552,7 @@ class ProjectNodeSummaryData(BaseModel):
 class ProjectSearchNodeSummaryData(ProjectNodeSummaryData):
     """Search-only additive evidence, excluded from trace and observability contracts."""
 
+    runtime_target_mapping: RuntimeMappingEvidenceData | None = None
     modbus: ProjectModbusData | None = None
 
 
@@ -1532,6 +1595,9 @@ class ProjectStateFlowData(BaseModel):
 
 
 class ProjectNodeData(BaseModel):
+    source_project_node_ids: list[str] = Field(default_factory=list, max_length=32)
+    logical_identity: ProjectLogicalIdentityData | None = None
+    runtime_target_mapping: RuntimeMappingEvidenceData | None = None
     api_connector: ProjectApiConnectorData | None = None
     state_table: ProjectStateTableData | None = None
     state_semantics: ProjectStateFlowData | None = None
@@ -1603,6 +1669,8 @@ class ProjectStatusData(BaseModel):
     edges: int
     unresolved_relationships: int
     mapping: dict[str, int]
+    mapping_breakdown: dict[str, int] = Field(default_factory=dict)
+    mapping_inventory: MappingInventoryData | None = None
     structure_generation: int
     source_diagnostics: ProjectSourceDiagnosticsSummaryData
     coverage_by_source_type: ProjectKnxSourceTypeCoverageData
@@ -1655,6 +1723,7 @@ class ProjectDescriptionData(ProjectNodeData):
 
 
 class ProjectTraceData(BaseModel):
+    runtime_target_mapping: RuntimeMappingEvidenceData | None = None
     start: ProjectNodeSummaryData
     direction: Literal["upstream", "downstream"]
     nodes: list[ProjectNodeSummaryData]
@@ -2231,6 +2300,10 @@ class ObservabilityControlData(BaseModel):
     historical_status: Literal["complete", "partial", "missing", "unverified"]
 
 
+class DerivedObservabilityControlData(ObservabilityControlData):
+    runtime_target_mapping: RuntimeMappingEvidenceData
+
+
 class ObservabilitySummaryData(BaseModel):
     relevant_controls: int
     current_state_controls: int
@@ -2245,6 +2318,7 @@ class ObservabilitySummaryData(BaseModel):
 
 
 class ObservabilityData(BaseModel):
+    target_runtime_evidence: DerivedObservabilityControlData | None = None
     analysis_version: Literal[1] = 1
     project_fingerprint: str
     model_version: int
@@ -3645,11 +3719,25 @@ def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOve
     return envelope
 
 
-def _fit_project_status(envelope: ProjectStatusEnvelope) -> bool:
+def _fit_project_status(
+    envelope: ProjectStatusEnvelope,
+    codec: _CursorCodec | None = None,
+    scope: str = "",
+    cursor: str | None = None,
+) -> bool:
     if not isinstance(envelope.data, ProjectStatusData):
         return True
     coverage = envelope.data.coverage_by_source_type
+    inventory = envelope.data.mapping_inventory
     while len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
+        if inventory is not None and len(inventory.items) > 1 and codec is not None:
+            inventory.items.pop()
+            inventory.next_cursor = codec.encode(
+                scope, codec.decode(scope, cursor) + len(inventory.items)
+            )
+            inventory.truncated = True
+            inventory.truncation_reason = "max_response_bytes"
+            continue
         if not coverage.entries:
             return False
         coverage.entries.pop()
@@ -6757,22 +6845,82 @@ def register_project_tools(
     @server.tool(
         name="loxone_get_project_status",
         description=(
-            "Get bounded status, KNX source-type coverage and runtime-mapping counts "
+            "Get bounded status, KNX source-type coverage, runtime-mapping counts and "
+            "an optional mapping inventory with explicit parent provenance "
             "for the authorized Loxone project. project_parts counts internally "
             "ingested model sources, not Loxone Config projects."
         ),
         annotations=annotations,
         structured_output=True,
     )
-    async def get_project_status() -> ProjectStatusEnvelope:
+    async def get_project_status(
+        include_mapping_inventory: Annotated[
+            bool,
+            Field(description="Include paginated visible runtime mappings and parent provenance."),
+        ] = False,
+        mapping_status: Annotated[
+            MappingStatus | None,
+            Field(
+                description=(
+                    "Inventory classification filter; unmapped selects independent gaps. "
+                    "Requires inventory."
+                ),
+            ),
+        ] = None,
+        runtime_control_uuid: Annotated[str | None, Field(min_length=1, max_length=200)] = None,
+        cursor: CursorArgument = None,
+        limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    ) -> ProjectStatusEnvelope:
         try:
+            if not include_mapping_inventory and any(
+                value is not None for value in (mapping_status, runtime_control_uuid, cursor)
+            ):
+                return _error(
+                    ProjectStatusEnvelope,
+                    "invalid_input",
+                    "Mapping filters and cursor require the inventory",
+                )
             query, snapshot = await _project_query(runtime)
+            inventory = None
+            scope = ""
+            if include_mapping_inventory:
+                scope = (
+                    "mapping_inventory:"
+                    + hashlib.sha256(
+                        json.dumps(
+                            [
+                                _access().family_id,
+                                query.view.snapshot.fingerprint,
+                                query.view.mapping.structure_fingerprint,
+                                mapping_status,
+                                runtime_control_uuid,
+                            ],
+                            separators=(",", ":"),
+                        ).encode()
+                    ).hexdigest()
+                )
+                inventory = _page(
+                    cursors,
+                    scope,
+                    query.mapping_inventory_entries(
+                        mapping_status=mapping_status, runtime_control_uuid=runtime_control_uuid
+                    ),
+                    cursor,
+                    limit,
+                )
+                inventory["items"] = [
+                    query.mapping_evidence(entry.control_uuid) for entry in inventory["items"]
+                ]
             envelope = _result(
                 ProjectStatusEnvelope,
-                {**query.status(), "structure_generation": snapshot.structure_generation},
+                {
+                    **query.status(),
+                    "structure_generation": snapshot.structure_generation,
+                    "mapping_inventory": inventory,
+                },
                 stale=not snapshot.connected,
             )
-            if not _fit_project_status(envelope):
+            if not _fit_project_status(envelope, cursors, scope, cursor):
                 return _error(
                     ProjectStatusEnvelope,
                     "temporarily_unavailable",
@@ -6788,6 +6936,12 @@ def register_project_tools(
         except (ProjectError, ProjectQueryError) as exc:
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(ProjectStatusEnvelope, code, message, diagnostic_code=diagnostic_code)
+        except ValueError:
+            return _error(
+                ProjectStatusEnvelope,
+                "invalid_input",
+                "Mapping inventory input or cursor is invalid",
+            )
         except RuntimeUnavailable as exc:
             return _availability_error(ProjectStatusEnvelope, exc)
 
@@ -7011,6 +7165,8 @@ def register_project_tools(
                 limit=limit,
                 include_state_table=include_state_table,
             )
+            if provenance := project.derived_target(identifier, identifier_type):
+                description["runtime_target_mapping"] = provenance
             await enrich([description], project, metadata_target, knx_revision)
             if metadata is not None and runtime is not None and runtime.projects is not None:
                 await runtime.projects.authorize(_access())
@@ -7075,7 +7231,12 @@ def register_project_tools(
             node = project.resolve(start_identifier, start_type)
             envelope = _result(
                 ProjectTraceEnvelope,
-                project.trace(node, direction=direction, max_depth=max_depth, max_nodes=max_nodes),
+                {
+                    **project.trace(
+                        node, direction=direction, max_depth=max_depth, max_nodes=max_nodes
+                    ),
+                    "runtime_target_mapping": project.derived_target(start_identifier, start_type),
+                },
                 stale=not snapshot.connected,
             )
             if not _fit_project_trace(envelope):
@@ -7284,6 +7445,7 @@ def register_observability_tools(
             )
             source_controls: list[tuple[Control, dict[str, object]]] = []
             visible = {control.uuid: control for control in _visible_controls(snapshot.structure)}
+            target_provenance = project.derived_target(target_identifier, target_type)
             for candidate in candidates:
                 if not isinstance(candidate, dict):
                     continue
@@ -7293,6 +7455,21 @@ def register_observability_tools(
                 control = visible.get(control_uuid)
                 if control is not None:
                     source_controls.append((control, candidate))
+
+            exact_control_count = len(source_controls)
+            if target_provenance is not None:
+                child = visible.get(target_identifier)
+                if child is not None:
+                    source_controls.append(
+                        (
+                            child,
+                            {
+                                "project_node_ids": [],
+                                "directions": [],
+                                "runtime_target_mapping": target_provenance,
+                            },
+                        )
+                    )
 
             event_sources = tuple(
                 (control.uuid, state_uuid)
@@ -7322,7 +7499,7 @@ def register_observability_tools(
             controls: list[dict[str, object]] = []
             stale = not snapshot.connected
             summary = {
-                "relevant_controls": len(source_controls),
+                "relevant_controls": exact_control_count,
                 "current_state_controls": 0,
                 "native_statistics_configured": 0,
                 "local_history_complete": 0,
@@ -7333,7 +7510,11 @@ def register_observability_tools(
                 "historical_missing": 0,
                 "historical_unverified": 0,
             }
+            target_runtime_evidence = None
             for control, candidate in source_controls:
+                # The selected child's evidence has its own record and never contributes
+                # to the existing exact-only aggregate counters.
+                exact_summary = dict(summary)
                 control_name, control_name_truncated = _truncate_utf8(
                     control.name, _OBSERVABILITY_MAX_STATE_NAME_BYTES
                 )
@@ -7479,8 +7660,12 @@ def register_observability_tools(
                         "local_event_history": local_event_history,
                         "recommendations": recommendations,
                         "historical_status": historical_status,
+                        "runtime_target_mapping": candidate.get("runtime_target_mapping"),
                     }
                 )
+                if candidate.get("runtime_target_mapping") is not None:
+                    target_runtime_evidence = controls.pop()
+                    summary = exact_summary
             page = _page(cursors, scope, controls, cursor, limit)
             result = _result(
                 ObservabilityEnvelope,
@@ -7492,6 +7677,7 @@ def register_observability_tools(
                     "start": start_time.isoformat().replace("+00:00", "Z"),
                     "end": end_time.isoformat().replace("+00:00", "Z"),
                     "summary": summary,
+                    "target_runtime_evidence": target_runtime_evidence,
                     "controls": page["items"],
                     "next_cursor": page["next_cursor"],
                     "graph_truncated": analysis["truncated"],

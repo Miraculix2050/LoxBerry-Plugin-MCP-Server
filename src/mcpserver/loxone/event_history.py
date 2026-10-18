@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from mcpserver.config import PluginConfig
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.models import Control, LoxoneStructure
+    from mcpserver.solar_recording import SolarSampler
 
 
 from mcpserver.loxone.events import StateEvent
@@ -1586,6 +1587,7 @@ class EventHistoryMonitor:
             weather_active: dict[str, list[tuple[WeatherHistorySource, str, int]]] = {}
             stream_outcome = "disconnected"
             stream_ended_at = None
+            solar_refresh_task: asyncio.Task[SolarSampler] | None = None
             try:
                 await asyncio.to_thread(self.store.initialize)
                 username, password = await self.credentials.load()
@@ -1664,19 +1666,23 @@ class EventHistoryMonitor:
                     batches = _solar_sampling_stream(batches)
                 solar_refresh_at = time.monotonic() + max(60, self.config.structure_refresh_seconds)
                 async for batch in batches:
-                    if self.config.solar_history_enabled and time.monotonic() >= solar_refresh_at:
-                        # A separate authorized metadata connection avoids competing
-                        # with the sole state reader or splitting scalar coverage.
-                        refreshed = await self.visible_structure()
-                        solar_sampler = solar_sampler.revalidated(
-                            _controls(refreshed.controls),
-                            installation_identity(
-                                MiniserverEndpoint.parse(self.config.loxone_endpoint).origin,
-                                refreshed,
-                            ),
-                        )
+                    if solar_refresh_task is not None and solar_refresh_task.done():
+                        solar_sampler = solar_refresh_task.result()
+                        solar_refresh_task = None
+                        if not solar_sampler.sources and not active and not weather_active:
+                            self._set_status("unavailable", "solar_source_validation_unavailable")
                         solar_refresh_at = time.monotonic() + max(
                             60, self.config.structure_refresh_seconds
+                        )
+                    if (
+                        self.config.solar_history_enabled
+                        and solar_refresh_task is None
+                        and time.monotonic() >= solar_refresh_at
+                    ):
+                        # A separate authorized metadata connection avoids competing
+                        # with the sole state reader or splitting scalar coverage.
+                        solar_refresh_task = asyncio.create_task(
+                            self._refresh_solar_sampler(solar_sampler)
                         )
                     observed_at = time.time()
                     changed = False
@@ -1804,6 +1810,10 @@ class EventHistoryMonitor:
                     coverage_active = False
                 await asyncio.sleep(5)
             finally:
+                if solar_refresh_task is not None:
+                    solar_refresh_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await solar_refresh_task
                 for weather_modes in weather_active.values():
                     for _weather_source, _fingerprint, capture in weather_modes:
                         with suppress(EventHistoryUnavailable):
@@ -1838,6 +1848,24 @@ class EventHistoryMonitor:
             with suppress(asyncio.CancelledError):
                 await self._backfill_task
             self._backfill_task = None
+
+    async def _refresh_solar_sampler(self, sampler: SolarSampler) -> SolarSampler:
+        """Pause solar capture on failed revalidation without interrupting scalar coverage."""
+        from mcpserver.installation_profile import installation_identity
+        from mcpserver.loxone.client import MiniserverEndpoint
+
+        try:
+            refreshed = await asyncio.wait_for(self.visible_structure(), timeout=30)
+            return sampler.revalidated(
+                _controls(refreshed.controls),
+                installation_identity(
+                    MiniserverEndpoint.parse(self.config.loxone_endpoint).origin, refreshed
+                ),
+            )
+        except Exception:
+            _LOGGER.warning("component=event_history outcome=solar_metadata_refresh_unavailable")
+            # Keep configured selectors for the next refresh, discard stale authorization/data.
+            return sampler.revalidated((), "")
 
     async def visible_structure(
         self, *, timing: dict[str, float | int] | None = None

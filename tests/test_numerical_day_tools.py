@@ -179,7 +179,44 @@ def test_forecast_cycles_never_establish_period_bounds_or_actual_comparisons():
     assert unavailable[0]["status"] == "unavailable" and unavailable[0]["period_kwh"] is None
 
 
-def setup(monkeypatch, tmp_path):
+def test_forecast_context_respects_half_open_capture_interval():
+    first, local, _ = fixture_data()
+    begin, finish = first.timestamp(), (first + timedelta(days=4)).timestamp()
+    forecast = source(control_uuid=P, kind="pv_forecast", state_uuid=None, unit="kWh")
+    payload = {
+        "states": dict(
+            period=-1,
+            today=-1,
+            tomorrow=-1,
+            after=-1,
+            inputperiod=24,
+            ready=0,
+            errorInfo=2,
+            timestamp=0,
+            cycleFrom=0,
+            cycleUntil=0,
+        )
+    }
+    rows = [(at, payload) for at in (begin - 60, begin, finish - 60, finish, finish + 60)]
+    result = calculate(local=[*local, (forecast, "forecast", rows)])
+    assert [datetime.fromisoformat(c.captured_at).timestamp() for c in result.forecast_context] == [
+        begin,
+        finish - 60,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_numerical_structured_weather_selector_is_invalid_input(monkeypatch, tmp_path):
+    from mcpserver.comparable_days_tools import WeatherAnalysisSource
+
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+    args["sources"] = [WeatherAnalysisSource(source_kind="structured_weather", state_uuid=S)]
+    result = await tool.fn(**args)
+    assert not result.ok and result.data.error == "invalid_input"
+    runtime.authorized_statistics.assert_not_awaited()
+
+
+def setup(monkeypatch, tmp_path, role="production"):
     runtime, _ = configured(monkeypatch)
     runtime.endpoint = SimpleNamespace(origin="http://192.168.255.254")
     first, local, pv = fixture_data()
@@ -213,7 +250,7 @@ def setup(monkeypatch, tmp_path):
         0,
         BindingInput(
             binding_id="production",
-            role="production",
+            role=role,
             control_uuid=P,
             source_kind="statistic",
             series_id="pv",
@@ -251,6 +288,58 @@ def setup(monkeypatch, tmp_path):
         ),
     )
     return runtime, server._tool_manager.get_tool("loxone_analyze_history"), args, current
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["production", "self_consumption", "grid_export"])
+@pytest.mark.parametrize("qualified", [False, True])
+async def test_energy_role_does_not_qualify_semantics_and_empty_qualified_data_stays_incomplete(
+    monkeypatch, tmp_path, role, qualified
+):
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path, role=role)
+    meter, series, _ = runtime.authorized_statistics.return_value
+    runtime.authorized_statistics.return_value = meter, series, ()
+    resolve = StateSemanticsResolver.resolve_series
+
+    def semantics(self, *args, **kwargs):
+        value = resolve(self, *args, **kwargs)
+        return value if qualified else replace(value, measurement_quantity="power")
+
+    monkeypatch.setattr(StateSemanticsResolver, "resolve_series", semantics)
+    result = await tool.fn(**args)
+    assert result.ok, result
+    comparison = result.data.comparable_days
+    assert comparison.reference.pv_evidence == (
+        "intervals_incomplete" if role == "production" and qualified else "rule_unverified"
+    )
+    assert comparison.self_consumption.method == (
+        "direct_observed" if role == "self_consumption" and qualified else "unavailable"
+    )
+
+
+def test_running_reference_respects_earlier_requested_end():
+    first, local, pv = fixture_data()
+    first += timedelta(days=1)
+    local = [(s, f, [(t + 86400, p) for t, p in rows]) for s, f, rows in local]
+    pv = {t + 86400: v for t, v in pv.items()}
+    today = first + timedelta(days=3)
+    result = _calculate(
+        local,
+        {"production": pv},
+        begin=first.timestamp(),
+        finish=(today + timedelta(hours=12, minutes=30)).timestamp(),
+        zone_name="UTC",
+        options=NumericalComparableDayOptions(
+            method="numerical", reference_day=today.date().isoformat(), start_hour=10, end_hour=14
+        ),
+        installation="plant",
+        balance_matches=False,
+        deadline=time.monotonic() + 5,
+        now=today + timedelta(hours=18),
+    )
+    assert result.common_hour_positions == [10, 11]
+    assert result.reference.pv_wh == 2000
+    assert result.group.count == 3
 
 
 @pytest.mark.asyncio
@@ -300,6 +389,24 @@ async def test_revocation_and_configuration_change_prevent_output(monkeypatch, t
 async def test_hidden_and_unregistered_solar_sources_are_not_read(monkeypatch, tmp_path):
     runtime, tool, args, current = setup(monkeypatch, tmp_path)
     current[0] = replace(current[0], solar_history_sources=())
+    result = await tool.fn(**args)
+    assert not result.ok and result.data.error == "not_found"
+    runtime.authorized_statistics.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_source", [False, True])
+async def test_stale_energy_binding_returns_not_found_without_statistic_read(
+    monkeypatch, tmp_path, missing_source
+):
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+    if missing_source:
+        runtime.structure = replace(
+            runtime.structure,
+            controls=tuple(c for c in runtime.structure.controls if c.uuid != P),
+        )
+    else:
+        args["sources"][-1] = AnalysisSource(binding_id="deleted-production", granularity="hour")
     result = await tool.fn(**args)
     assert not result.ok and result.data.error == "not_found"
     runtime.authorized_statistics.assert_not_awaited()

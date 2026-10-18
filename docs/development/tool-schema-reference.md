@@ -1,5 +1,35 @@
 # Tool schema reference
 
+## Native PVPF forecast (#510)
+
+`loxone_read_controls` adds `native_result_view="pv_forecast"` for one plain visible
+PVPF target. It requires `loxone:read`; no EFM administrator/firmware gate or local
+file approval is added. Native fields are returned in the existing `native_result`
+slot with `source_kind="native_pv_forecast"`. Source hours are bounded to 78, native
+response to 32 KiB and the MCP envelope to 64 KiB. See [user guidance](../user/pv-planning.en.md).
+
+
+## Cross-source project identity (#218)
+
+Project node summaries and descriptions add `source_project_node_ids` (at most
+32 physical occurrence IDs) and optional `logical_identity`. Its classification
+is `single_source`, `equivalent`, `complementary`, or `ambiguous`; `reason` is a
+fixed diagnostic code. `candidate_project_node_ids` lists at most 32 candidates,
+with `candidates_omitted` counting omitted references. These are source references,
+never authorization evidence. Existing mapping statuses remain unchanged.
+
+Project model version 15 resolves verified cross-source UUID groups for `SysVar`,
+`DigitalIn`, `Actor`, `Online`, `Mode`, and `VoltageOut`. All occurrences require
+the same type and attributes except `Title`/`Desc`; UUID/reference spelling is
+normalized. Equal topology or disjoint explicit connectors may complement each
+other. Conflicts, repeated source IDs, unknown topology or unresolved references
+prevent the entire group from merging. Raw graphs and physical IDs remain
+available. Description and trace aggregate occurrences within existing limits.
+Exact `source_id` filters check stored spellings across every represented occurrence.
+Text search also checks every represented physical node ID and source ID.
+Existing KNX identity rules are retained. This establishes static graph evidence,
+not physical behavior, causality or permission. No new tool or store is added.
+
 ## Native PV-production forecast reads (#439)
 
 Existing state readers optionally decode exact `PvProductionForecast` fields.
@@ -9,15 +39,29 @@ The full control description adds optional `capabilities.model.pv_forecast` with
 documented and missing state names, forecast origin and time basis. No new tool,
 control action or change to read authorization is introduced. Local solar sampling
 is an independent default-off Admin setting in shared SQLite V9. See
-[source and storage contract](solar-recording.md). Skill revision 96.
+[source and storage contract](solar-recording.md). Skill revision 97.
 
-## Native PVPF forecast (#510)
 
-`loxone_read_controls` adds `native_result_view="pv_forecast"` for one plain visible
-PVPF target. It requires `loxone:read`; no EFM administrator/firmware gate or local
-file approval is added. Native fields are returned in the existing `native_result`
-slot with `source_kind="native_pv_forecast"`. Source hours are bounded to 78, native
-response to 32 KiB and the MCP envelope to 64 KiB. See [user guidance](../user/pv-planning.en.md).
+## Runtime subcontrol provenance (#219)
+
+`loxone_get_project_status` adds `include_mapping_inventory=false`, optional
+`mapping_status`/`runtime_control_uuid` filters, `cursor`, and `limit` (20, 1–100).
+Filters/cursors require the inventory. Its optional `mapping_inventory` contains
+bounded mapping records, `next_cursor`, `truncated`, and `truncation_reason`.
+Each record exposes direct mapping candidates separately from parent project
+references, immediate parent UUID/status, exact ancestor UUID, subcontrol key,
+bounded runtime ancestry, model-source IDs, rule, reason and reference truncation.
+Derived statuses are `derived_from_parent`, `derived_parent_unmapped`, and
+`derived_parent_ambiguous`; exact/ambiguous/unmapped entries remain available.
+`mapping_breakdown.independent_unmapped` separates the independent gap class;
+legacy `mapping` counts are unchanged.
+
+Search/description and trace add nullable `runtime_target_mapping` for a selected
+derived child. Observability adds nullable `target_runtime_evidence`, reusing
+the bounded control-evidence shape with that provenance and empty own project
+references. Existing controls and summary counts remain exact-only. All overlays
+require fresh visibility and existing authorization. Explicit runtime containment
+is evidence only for parent topology, never connector identity. Skill revision 98.
 
 ## KNX correction draft descriptions and retention (#524)
 

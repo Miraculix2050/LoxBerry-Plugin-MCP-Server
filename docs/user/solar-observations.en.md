@@ -17,3 +17,10 @@ radiation energy either. Without a suitable local source, numerical comparison
 remains unavailable. The existing qualitative class method remains usable. The
 internal hourly normalization alone enables neither a source nor recording;
 #509 and #439 remain open until full acceptance.
+
+Solar recording requires history permission. Disable solar recording before
+revoking that permission in the main configuration. If periodic source metadata
+revalidation fails, solar capture pauses until a successful retry; ordinary
+event-history coverage continues without reopening its connection.
+If solar is the only active recorder, its runtime status reports unavailable
+while source validation prevents capture.

@@ -57,6 +57,9 @@ async def test_mapping_reuse_has_own_downloads_local_queries_and_existing_owners
     builder = Mock(wraps=service_module.map_runtime)
     monkeypatch.setattr(service_module, "map_runtime", builder)
     structure = mapping_structure()
+    parent = structure.controls[0]
+    child = Control(parent.uuid + "/AI1", "Child", "Switch", None, None, None, ())
+    structure = replace(structure, controls=(replace(parent, subcontrols=(child,)),))
     try:
         first = await service.query(
             access("first"), SimpleNamespace(subject="first", structure=structure)
@@ -66,6 +69,10 @@ async def test_mapping_reuse_has_own_downloads_local_queries_and_existing_owners
         )
         assert first is not second and first.view is not second.view
         assert first.view.mapping is second.view.mapping
+        assert second.view.mapping.entries[1].mapping_status == "derived_from_parent"
+        assert second.resolve(child.uuid, "runtime_control_uuid") is second.resolve(
+            parent.uuid, "runtime_control_uuid"
+        )
         assert builder.call_count == 1 and client.download_project.await_count == 2
         first.control_names["a" * 32] = "First query only"
         assert second.control_names["a" * 32] == "Visible"

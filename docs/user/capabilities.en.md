@@ -237,6 +237,30 @@ contact roles from names, categories or room counts.
 
 ### Runtime and project capabilities
 
+Project status optionally includes a paginated mapping inventory with
+`include_mapping_inventory=true`, `mapping_status`, `runtime_control_uuid`,
+`cursor` and `limit` (default 20, maximum 100). Repeat filters on continuation;
+filters and cursors require the inventory. `mapping_breakdown` separates
+`independent_unmapped`, `derived_from_parent`, `derived_parent_unmapped` and
+`derived_parent_ambiguous`; legacy `mapping` counters retain their definition.
+The inventory uses `unmapped` for independently unmapped entries.
+
+Derived mappings require explicit visible runtime containment. A suffix alone
+does not establish a parent or Config connector. Provenance identifies the
+immediate parent, the exact ancestor used as project anchor, the bounded parent
+chain, source references and rule `explicit_runtime_parent_v1`. Parent chains
+are limited to 16 steps; unresolved, conflicting or cyclic chains never establish
+a successful mapping. Own exact or ambiguous UUID mappings take precedence.
+Project search, description and trace identify the selected child through
+`runtime_target_mapping` while returning parent project topology.
+
+For a selected derived target, Observability exposes `target_runtime_evidence`
+with that child's current-state availability, statistic metadata and local history
+coverage. Its `project_node_ids` is empty; parent references are provenance.
+Existing controls and summary counters remain exact-only. Siblings are not
+included automatically. Structural reachability does not establish causation.
+
+
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
 For known visible UUIDs, prefer `loxone_read_controls` for identity and current values in one call, as described below. For reference-only selection, explicit hidden diagnosis or servers without that tool, use `loxone_describe_control(view="state_refs")` after discovery. It returns only control identity, visibility and the complete normalized `states` list of names and UUIDs, without room/category context, capabilities, statistics, history, presentation or relationships. The view reloads the user-filtered structure and returns an error rather than cached references if the refresh fails. `stale` marks a disconnected event stream; `observed_at` timestamps the description, not a state value. Select only needed UUIDs, deduplicate them and call `loxone_get_states` in batches of at most 100; make no value-read call for an empty selection. Preserve explicit `include_hidden=true` for hidden-control diagnosis and its value reads. Use `history_targets` for history/statistic selection, `operation_targets` for operation preparation, and `full` for additional diagnosis.
@@ -343,6 +367,15 @@ report a size trim through `truncated` and `truncation_reason`.
 Status exposes opaque `model_sources`; identical KNX source occurrences from separate model
 sources are presented once as a logical object with `source_occurrence_count` and
 `model_source_ids`. Equal titles or group addresses never cause such a merge.
+For `SysVar`, `DigitalIn`, `Actor`, `Online`, `Mode`, and `VoltageOut`, model version
+15 also resolves verified cross-source UUID occurrences with equal or complementary
+explicit connector topology. Conflicts and insufficient evidence remain ambiguous.
+`source_project_node_ids` preserves physical references; `logical_identity` explains
+the classification with a fixed reason and bounded candidate references. Description
+and trace include all verified occurrences within their normal limits. This proves
+static identity and wiring only; it establishes no permission or physical behavior.
+Exact source ID filters check every represented occurrence.
+Text search also checks every represented physical node ID and source ID.
 Project model version 13 allows an `OutputRef` without a local target to resolve
 to a unique `VirtualOutCmd` in
 another model source of the same authorized bundle using an exact normalized UUID.

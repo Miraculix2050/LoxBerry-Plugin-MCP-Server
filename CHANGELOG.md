@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a bounded read-only native PVPF hourly-production view; preserve readiness,
+  prediction age, fresh authorization and explicit model limitations (#440, #510).
+
+- Resolve verified cross-source project UUID occurrences for six bounded block
+  families while preserving conflicts as ambiguous, physical provenance and
+  complementary topology in bounded descriptions and traces (#218).
+
 - Connect explicit numerical comparable-day analysis to administrator-qualified
   local observations and confirmed hourly energy bindings. Explain estimated
   irradiance, fixed windows, weather-ranked peers, yield/self-consumption
@@ -15,9 +22,14 @@ extracted from the matching version heading.
   observation/forecast snapshots in the shared history store. Preserve forecast
   origin, source contracts, current caller visibility and default-off recording;
   migrate history SQLite V8 to V9 without backfilling observations (#439, #509).
+  Validate preserved solar policies when saving the main configuration and pause
+  solar capture on metadata refresh failure without interrupting scalar coverage.
 
-- Add a bounded read-only native PVPF hourly-production view and documented state
-  semantics; preserve separate availability, prediction age and model limitations (#440, #510).
+
+- Represent explicit runtime subcontrols with bounded parent provenance and an
+  optional paginated mapping inventory in project status. Trace parent topology
+  separately from selected-child observability evidence; preserve exact mappings,
+  legacy mapping counts and authorization boundaries (#219).
 
 - Add bounded source-proven LightControllerV2 mood context to the existing control
   description tool; retain operation validation and count guide resource reads in

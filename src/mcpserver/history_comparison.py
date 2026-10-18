@@ -61,22 +61,29 @@ def _check(deadline: float) -> None:
         raise HistoryAnalysisDeadline()
 
 
-def _hours(
+def hourly_energy_semantics_qualified(semantic: SeriesSemantics | None) -> bool:
+    """Qualify the source contract independently of its available data coverage."""
+    return bool(
+        semantic is not None
+        and semantic.interpretation_status != "invalid"
+        and semantic.measurement_quantity == "energy"
+        and semantic.timestamp_basis == "unix_utc"
+        and semantic.timestamp_position == "interval_start"
+        and semantic.value_meaning == "interval_difference_sum"
+        and semantic.unit in {"Wh", "kWh"}
+    )
+
+
+def qualified_hourly_energy(
     source: ComparisonInput, start: float, end: float, deadline: float
 ) -> dict[float, float]:
     """Return whole documented hourly energies in Wh; never allocate partial hours."""
     semantic = source.semantics
-    if (
-        source.summary.status == "insufficient_evidence"
-        or semantic is None
-        or semantic.interpretation_status == "invalid"
-        or semantic.measurement_quantity != "energy"
-        or semantic.timestamp_basis != "unix_utc"
-        or semantic.timestamp_position != "interval_start"
-        or semantic.value_meaning != "interval_difference_sum"
-        or semantic.unit not in {"Wh", "kWh"}
+    if source.summary.status == "insufficient_evidence" or not hourly_energy_semantics_qualified(
+        semantic
     ):
         return {}
+    assert semantic is not None
     values: dict[float, float] = {}
     previous = None
     for point in sorted(source.points, key=lambda p: p.timestamp):
@@ -139,7 +146,7 @@ def _retrospective_shift(
     if not boundary or any(s.declared_boundary != boundary for s in consumers):
         result.limitations = ["matching_declared_export_consumer_boundary_required"]
         return result
-    export_hours = _hours(export[0], start, end, deadline)
+    export_hours = qualified_hourly_energy(export[0], start, end, deadline)
     if not export_hours:
         result.limitations = ["complete_native_hourly_export_energy_required"]
         return result
@@ -163,7 +170,7 @@ def _retrospective_shift(
         associations.append(flex.operating_binding_id)
         cycles = describe_load_cycles(
             state.segments,
-            _hours(consumer, start, end, deadline),
+            qualified_hourly_energy(consumer, start, end, deadline),
             flex,
             consumer.summary.binding_id,
             start=start,
@@ -232,9 +239,9 @@ def compare_history(
         ):
             result.limitations = ["compatible_complete_energy_observation_windows_required"]
             return result
-        reference_hours = _hours(inputs[0], start, end, deadline)
+        reference_hours = qualified_hourly_energy(inputs[0], start, end, deadline)
         if reference.method == "whole_hourly_interval_sum" and any(
-            _hours(source, start, end, deadline).keys() != reference_hours.keys()
+            qualified_hourly_energy(source, start, end, deadline).keys() != reference_hours.keys()
             for source in inputs[1:]
         ):
             result.limitations = ["identical_whole_energy_interval_coverage_required"]
@@ -280,8 +287,8 @@ def compare_history(
             result.limitations = ["one_confirmed_production_and_one_load_binding_required"]
             return result
         pv, consumption = (
-            _hours(production[0], start, end, deadline),
-            _hours(load[0], start, end, deadline),
+            qualified_hourly_energy(production[0], start, end, deadline),
+            qualified_hourly_energy(load[0], start, end, deadline),
         )
         common = sorted(pv.keys() & consumption.keys())
         if states:
@@ -340,7 +347,7 @@ def compare_history(
         if len(inputs) != 2 or len(states) != 1 or len(numeric) != 1 or not states[0].segments:
             result.limitations = ["one_evidenced_state_and_one_numeric_source_required"]
             return result
-        intervals = _hours(numeric[0], start, end, deadline)
+        intervals = qualified_hourly_energy(numeric[0], start, end, deadline)
         flexibility = numeric[0].load_flexibility
         if (
             flexibility is not None
@@ -422,7 +429,7 @@ def compare_history(
     if not 0 <= night_start_hour < night_end_hour <= 24:
         raise ValueError("night window requires ordered whole local hours")
     zone = timezone(timezone_name)
-    intervals = _hours(inputs[0], start, end, deadline)
+    intervals = qualified_hourly_energy(inputs[0], start, end, deadline)
     day = datetime.fromtimestamp(start, UTC).astimezone(zone).date()
     local_end = datetime.fromtimestamp(end, UTC).astimezone(zone)
     last_day = local_end.date()

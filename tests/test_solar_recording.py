@@ -326,3 +326,186 @@ def test_offline_local_configuration_can_be_disabled_and_cleared(tmp_path, monke
                 confirm=True,
             ),
         )
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_main_form_rejects_revoking_history_with_preserved_solar_policy(
+    tmp_path, monkeypatch, active
+):
+    from mcpserver import admin
+    from mcpserver.config import AtomicConfigStore
+
+    store = AtomicConfigStore(tmp_path / "config.json")
+    previous = PluginConfig(
+        loxone_history_enabled=True, solar_history_enabled=True, solar_history_sources=(source(),)
+    )
+    store.save(previous)
+    monkeypatch.setattr(admin, "_config_store", lambda: store)
+    monkeypatch.setattr(admin, "_service_active", lambda: active)
+    monkeypatch.setattr(admin, "_restart_service", lambda: pytest.fail("invalid policy restarted"))
+    with pytest.raises(ConfigError, match="solar"):
+        admin._save_mcp({"schema_version": 10, "tools": {"loxone_history_enabled": False}})
+    assert store.load().to_document() == previous.to_document()
+
+
+@pytest.mark.asyncio
+async def test_solar_metadata_failure_pauses_only_solar_and_can_recover(tmp_path, monkeypatch):
+    from mcpserver.installation_profile import installation_identity
+    from mcpserver.loxone.event_history import EventHistoryMonitor
+    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+
+    structure = LoxoneStructure(LoxoneIdentity("service", "serial"), "17.2", (), (), (control(),))
+    origin = "http://192.168.10.20"
+    sampler = SolarSampler((source(),), (control(),), installation_identity(origin, structure))
+    sampler.batch({S: 100}, 100)
+    monitor = EventHistoryMonitor(
+        PluginConfig(loxone_endpoint=origin),
+        EventHistoryStore(tmp_path / "s.sqlite3", retention_days=7, maximum_mib=16),
+        object(),
+    )
+
+    async def unavailable():
+        raise TimeoutError("private upstream message")
+
+    monkeypatch.setattr(monitor, "visible_structure", unavailable)
+    paused = await monitor._refresh_solar_sampler(sampler)
+    assert not paused.sources and not paused.values
+    assert paused.configured_sources == sampler.configured_sources
+
+    async def available():
+        return structure
+
+    monkeypatch.setattr(monitor, "visible_structure", available)
+    restored = await monitor._refresh_solar_sampler(paused)
+    assert restored.sources and not restored.values
+    assert restored.batch({S: 150}, 200)
+
+    async def cancelled():
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(monitor, "visible_structure", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await monitor._refresh_solar_sampler(restored)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode,scalar",
+    [("blocked", True), ("failed", False), ("hidden", False), ("failed", True), ("hidden", True)],
+)
+async def test_metadata_refresh_preserves_scalar_stream_and_reports_solar_pause(
+    tmp_path, monkeypatch, mode, scalar
+):
+    from types import SimpleNamespace
+
+    from mcpserver.loxone import event_history
+    from mcpserver.loxone.events import StateEvent
+    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+
+    clock = [0]
+    started, drained, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    finished = asyncio.Event()
+    connections = []
+    structure = LoxoneStructure(LoxoneIdentity("service", "serial"), "17.2", (), (), (control(),))
+
+    class Session:
+        async def load_structure(self):
+            return structure
+
+        async def state_events(self):
+            yield (StateEvent(uuid=S, value=10),)
+            clock[0] = 61
+            yield (StateEvent(uuid=S, value=20),)
+            await started.wait()
+            yield (StateEvent(uuid=S, value=30),)
+            if mode != "blocked":
+                await finished.wait()
+                yield (StateEvent(uuid=S, value=40),)
+            await asyncio.Future()
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            connections.append(self)
+            self.closed = False
+
+        async def connect(self, *args):
+            return Session()
+
+        async def close(self):
+            self.closed = True
+
+    class Credentials:
+        async def load(self):
+            return "fixture", "fixture"
+
+    async def refresh():
+        started.set()
+        try:
+            if mode == "failed":
+                raise TimeoutError("private upstream message")
+            if mode == "hidden":
+                return replace(structure, controls=())
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(event_history, "ServiceMiniserverConnection", Connection)
+    monkeypatch.setattr(
+        event_history, "time", SimpleNamespace(monotonic=lambda: clock[0], time=time.time)
+    )
+    store = EventHistoryStore(tmp_path / "history.sqlite3", retention_days=7, maximum_mib=16)
+    record = store.record_transition
+    loop = asyncio.get_running_loop()
+
+    def transition(*args, **kwargs):
+        result = record(*args, **kwargs)
+        if kwargs["new_value"] == (30 if mode == "blocked" else 40):
+            loop.call_soon_threadsafe(drained.set)
+        return result
+
+    monkeypatch.setattr(store, "record_transition", transition)
+    monitor = event_history.EventHistoryMonitor(
+        PluginConfig(
+            loxone_endpoint="http://192.168.10.20",
+            loxone_history_enabled=True,
+            event_history_enabled=scalar,
+            event_history_sources=((C, S),),
+            solar_history_enabled=True,
+            solar_history_sources=(source(),),
+            structure_refresh_seconds=60,
+        ),
+        store,
+        Credentials(),
+    )
+    monkeypatch.setattr(monitor, "visible_structure", refresh)
+    refresh_sampler = monitor._refresh_solar_sampler
+
+    async def refresh_completed(sampler):
+        result = await refresh_sampler(sampler)
+        finished.set()
+        return result
+
+    status = monitor._set_status
+
+    def observe_status(value, reason=None):
+        status(value, reason)
+        if reason == "solar_source_validation_unavailable":
+            drained.set()
+
+    monkeypatch.setattr(monitor, "_refresh_solar_sampler", refresh_completed)
+    monkeypatch.setattr(monitor, "_set_status", observe_status)
+    task = asyncio.create_task(monitor._run())
+    try:
+        await asyncio.wait_for(drained.wait(), 2)
+        assert len(connections) == 1 and not connections[0].closed
+        assert cancelled.is_set() == (mode != "blocked")
+        assert monitor.runtime_status()["status"] == ("recording" if scalar else "unavailable")
+        with sqlite3.connect(store.path) as db:
+            assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == (
+                (2 if mode == "blocked" else 3) if scalar else 0
+            )
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert cancelled.is_set() and connections[0].closed

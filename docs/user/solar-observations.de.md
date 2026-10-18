@@ -19,3 +19,11 @@ beobachtete Strahlungsenergie. Ohne geeignete lokale Quelle bleibt der numerisch
 Vergleich nicht verfügbar. Die vorhandene qualitative Klassenmethode bleibt
 nutzbar. Die interne Stundenaufbereitung allein aktiviert noch keine Quelle oder
 Aufzeichnung; #509 und #439 bleiben bis zur vollständigen Abnahme offen.
+
+Die Solaraufzeichnung benötigt die Historienfreigabe. Vor dem Entzug dieser
+Freigabe in der Hauptkonfiguration muss die Solaraufzeichnung deaktiviert werden.
+Scheitert die regelmäßige Quellenprüfung, pausiert die Solaraufzeichnung bis zur
+erfolgreichen Wiederholung; die gewöhnliche Ereignishistorie zeichnet ohne
+Neuaufbau ihrer Verbindung weiter auf.
+Ist nur die Solaraufzeichnung aktiv, meldet ihr Laufzeitstatus unverfügbar,
+solange die Quellenprüfung die Erfassung verhindert.

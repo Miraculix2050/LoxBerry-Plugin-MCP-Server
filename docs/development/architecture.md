@@ -234,7 +234,19 @@ exact runtime mappings. Search and trace use compact node projections and
 enforce a 64-KiB envelope limit with explicit response-size truncation; describe
 is the detailed per-object evidence projection.
 
+Runtime containment mapping (`explicit_runtime_parent_v1`) is a separate overlay
+on the immutable graph. Legacy mapping status and node keys remain unchanged;
+derived records carry parent/ancestor references without adding graph nodes or
+connector semantics. The rule version and explicit parent relationships enter
+the runtime fingerprint. Parent lookup is bounded to 16 steps, including conflict
+and cycle detection. Authorization and independent project downloads still precede
+immutable mapping reuse. Project-status inventory cursors bind the caller family,
+project/runtime fingerprints and filters; response trimming preserves continuation
+without skipping records. Observability keeps exact-only counters and emits the
+selected derived child's evidence separately from parent topology.
+
 ## KNX metadata administration
+
 
 `knx.file_comparison` is an admin-only consumer of the same XML/CSV parsers and
 duplicate selection rules. It compares explicit files or streams the current
