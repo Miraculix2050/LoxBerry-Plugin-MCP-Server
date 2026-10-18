@@ -78,12 +78,14 @@ class RadiationRule(Enum):
     """Closed adapter contract: proven hourly radiation energy, never a raw delivery."""
 
     HOURLY_ENERGY_WH_M2 = "radiation.hourly_interval_energy_wh_m2.v1"
+    ESTIMATED_SAMPLE_ENERGY = "radiation.bounded_trapezoidal_irradiance.v1"
 
 
 class TemperatureRule(Enum):
     """Closed adapter contract: Celsius sample at each matching hour start."""
 
     CELSIUS_HOUR_START = "temperature.celsius_hour_start_sample.v1"
+    CELSIUS_NEAR_HOUR_START = "temperature.celsius_within_60s_of_hour_start.v1"
 
 
 class PVRule(Enum):
@@ -167,7 +169,12 @@ def _summary(
         return None, "radiation_quantity_unit_interval_unverified"
     if not isinstance(source.temperature_rule, TemperatureRule):
         return None, "temperature_observation_position_unverified"
-    if source.temperature_position != "hour_start":
+    expected_temperature_position = (
+        "within_60s_of_hour_start"
+        if source.temperature_rule is TemperatureRule.CELSIUS_NEAR_HOUR_START
+        else "hour_start"
+    )
+    if source.temperature_position != expected_temperature_position:
         return None, "temperature_observation_position_unverified"
     if not source.source_generation or not source.installation_ref:
         return None, "source_identity_unverified"

@@ -18,7 +18,12 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mcpserver.bounded_worker import run_admitted_worker
-from mcpserver.comparable_days_models import ClassComparableDayOptions, ClassComparableDaysResult
+from mcpserver.comparable_days_models import (
+    ClassComparableDayOptions,
+    ClassComparableDaysResult,
+    NumericalComparableDayOptions,
+    NumericalComparableDaysResult,
+)
 from mcpserver.comparable_days_tools import (
     WeatherAnalysisSource,
     WeatherAnalysisSummary,
@@ -64,6 +69,7 @@ from mcpserver.loxone.runtime import (
 )
 from mcpserver.loxone.state_semantics import SeriesSemantics, StateSemanticsResolver
 from mcpserver.loxone.statistics import StatisticPoint
+from mcpserver.numerical_day_tools import SolarAnalysisSource, numerical_day_analysis
 from mcpserver.tools import (
     ErrorData,
     EventHistoryRuntime,
@@ -120,7 +126,7 @@ class AnalysisData(BaseModel):
     raw: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     next_cursor: str | None = None
     comparison: ComparisonResult | None = None
-    comparable_days: ClassComparableDaysResult | None = None
+    comparable_days: ClassComparableDaysResult | NumericalComparableDaysResult | None = None
     weather_sources: list[WeatherAnalysisSummary] = Field(default_factory=list, max_length=16)
 
 
@@ -287,14 +293,14 @@ def register_history_analysis_tool(
 
     async def calculate(
         operation: AnalysisOperation,
-        sources: list[AnalysisSource | WeatherAnalysisSource],
+        sources: list[AnalysisSource | WeatherAnalysisSource | SolarAnalysisSource],
         start: str,
         end: str,
         timezone_name: str,
         include_raw: bool,
         cursor: str | None,
         comparison_options: ComparisonOptions | None,
-        comparable_day_options: ClassComparableDayOptions | None,
+        comparable_day_options: ClassComparableDayOptions | NumericalComparableDayOptions | None,
     ) -> AnalysisEnvelope:
         trace_id = str(uuid4())
         try:
@@ -319,7 +325,9 @@ def register_history_analysis_tool(
                 raise ValueError("comparable day options require comparable_days")
             if is_day_comparison and (comparable_day_options is None or include_raw or cursor):
                 raise ValueError("comparable_days requires reference options and compact output")
-            if not is_day_comparison and any(isinstance(s, WeatherAnalysisSource) for s in sources):
+            if not is_day_comparison and any(
+                isinstance(s, WeatherAnalysisSource | SolarAnalysisSource) for s in sources
+            ):
                 raise ValueError("structured weather sources require comparable_days")
             first, last = _rfc3339(start), _rfc3339(end)
             zone = timezone(timezone_name)
@@ -378,6 +386,46 @@ def register_history_analysis_tool(
                     }
                 if is_day_comparison:
                     assert comparable_day_options is not None
+                    if isinstance(comparable_day_options, NumericalComparableDayOptions):
+                        numerical, count = await numerical_day_analysis(
+                            runtime,
+                            event_runtime,
+                            access,
+                            structure,
+                            session,
+                            [source.model_dump() for source in sources],
+                            bindings,
+                            begin=begin,
+                            finish=finish,
+                            zone_name=timezone_name,
+                            options=comparable_day_options,
+                            deadline=deadline,
+                        )
+                        if profile_revision is not None:
+                            assert profile_path is not None
+                            current_profile = await run_admitted_worker(
+                                ProfileStore(profile_path).read, identity
+                            )
+                            if current_profile.revision != profile_revision:
+                                raise ControlOperationError(
+                                    "temporarily_unavailable", "Installation profile changed"
+                                )
+                        numerical_envelope = _result(
+                            AnalysisEnvelope,
+                            dict(
+                                operation=operation,
+                                start=utc_timestamp(begin),
+                                end=utc_timestamp(finish),
+                                timezone=timezone_name,
+                                sources=[],
+                                input_points=count,
+                                comparable_days=numerical,
+                            ),
+                            trace_id=trace_id,
+                        )
+                        if len(numerical_envelope.model_dump_json().encode()) > 64 * 1024:
+                            raise ValueError("analysis output byte limit exceeded")
+                        return numerical_envelope
                     days, weather = await class_day_analysis(
                         runtime,
                         event_runtime,
@@ -727,15 +775,16 @@ def register_history_analysis_tool(
             AnalysisOperation,
             Field(
                 description=(
-                    "Interval energy requires hour granularity. Comparable-day classes do not "
-                    "establish radiation energy or normalized yield. Retrospective shifts are "
+                    "Interval energy requires hour granularity. Numerical comparable days use "
+                    "registered observations and confirmed hourly energy bindings; classes remain "
+                    "the default qualitative method. Retrospective shifts are "
                     "conditional, with unknown native locks and unproven admissibility; no "
                     "scheduling or savings claim."
                 )
             ),
         ],
         sources: Annotated[
-            list[AnalysisSource | WeatherAnalysisSource],
+            list[AnalysisSource | WeatherAnalysisSource | SolarAnalysisSource],
             Field(
                 min_length=1,
                 max_length=16,
@@ -772,7 +821,9 @@ def register_history_analysis_tool(
         include_raw: bool = False,
         cursor: Annotated[str | None, Field(max_length=512)] = None,
         comparison_options: ComparisonOptions | None = None,
-        comparable_day_options: ClassComparableDayOptions | None = None,
+        comparable_day_options: ClassComparableDayOptions
+        | NumericalComparableDayOptions
+        | None = None,
     ) -> AnalysisEnvelope:
         if len(pending) >= 2:
             return _error(
