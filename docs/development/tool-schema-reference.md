@@ -94,7 +94,7 @@ or unresolved-diagnostic truncation. Unresolved relationships alone do not set
 and byte-driven `page_truncated`; truncated counts describe observed subsets.
 Missing mappings never prove absence or non-occurrence. Inputs, scopes,
 `analysis_version=1` and the project model version remain unchanged.
-The bundled project guidance is published as skill revision 102.
+The bundled project guidance is published as skill revision 103.
 
 ## KNX correction draft descriptions and retention (#524)
 
