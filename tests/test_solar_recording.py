@@ -105,6 +105,23 @@ def test_sampler_records_current_unchanged_values_without_extra_source_reads():
     assert SolarSampler((source(),), (control(),), "plant").batch({}, 121) == []
 
 
+def test_metadata_revalidation_keeps_only_unchanged_visible_source_values():
+    sampler = SolarSampler((source(),), (control(),), "plant")
+    sampler.batch({S: 100}, 1)
+    unchanged = sampler.revalidated((control(),), "plant")
+    assert len(unchanged.batch({}, 61)) == 1
+    changed = unchanged.revalidated((replace(control(), format="%.2fW/m²"),), "plant")
+    assert changed.batch({}, 121) == []
+    assert len(changed.batch({S: 200}, 122)) == 1
+    hidden = changed.revalidated((replace(control(), is_hidden=True),), "plant")
+    assert not hidden.sources and not hidden.values
+    assert hidden.batch({S: 300}, 182) == []
+    restored = hidden.revalidated((control(),), "plant")
+    assert restored.sources and restored.batch({}, 242) == []
+    assert len(restored.batch({S: 300}, 243)) == 1
+    assert restored.revalidated((control(),), "other plant").batch({}, 303) == []
+
+
 def test_pvpf_snapshots_are_complete_and_settled():
     from mcpserver.loxone.pv_forecast import STATES
 

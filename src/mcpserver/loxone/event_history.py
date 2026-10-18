@@ -1662,7 +1662,22 @@ class EventHistoryMonitor:
                     )
                 if self.config.solar_history_enabled:
                     batches = _solar_sampling_stream(batches)
+                solar_refresh_at = time.monotonic() + max(60, self.config.structure_refresh_seconds)
                 async for batch in batches:
+                    if self.config.solar_history_enabled and time.monotonic() >= solar_refresh_at:
+                        # A separate authorized metadata connection avoids competing
+                        # with the sole state reader or splitting scalar coverage.
+                        refreshed = await self.visible_structure()
+                        solar_sampler = solar_sampler.revalidated(
+                            _controls(refreshed.controls),
+                            installation_identity(
+                                MiniserverEndpoint.parse(self.config.loxone_endpoint).origin,
+                                refreshed,
+                            ),
+                        )
+                        solar_refresh_at = time.monotonic() + max(
+                            60, self.config.structure_refresh_seconds
+                        )
                     observed_at = time.time()
                     changed = False
                     if solar_sampler.sources:
