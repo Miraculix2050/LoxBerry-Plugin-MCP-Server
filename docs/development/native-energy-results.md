@@ -128,3 +128,32 @@ oversized output returns an error without partial metadata. New family-specific
 technical rulesets version source fingerprints independently of disclosure rights,
 preserving unchanged legacy families. Rule references alone establish neither
 semantic completeness, present administration nor physical truth.
+
+### Real-device evidence disposition — 2026-10-18
+
+The reserved, read-only [#533 investigation](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/533)
+on Loxberry-Test, firmware 17.2.8.28, established fresh caller administration
+and independently matching source identity. The caller-authenticated raw structure,
+its normalized visible controls and HTTP-MCP `loxone_find_controls` agreed:
+
+| Family | Availability in this caller's visible structure | Real-device context acceptance |
+| --- | --- | --- |
+| EnergyManager | Not available in the inspected scope | Unverified |
+| EnergyManager2 | Not available in the inspected scope | Unverified |
+
+Both HTTP-MCP discovery responses were successful, non-stale and complete without
+a continuation cursor. Fresh post-read visibility and authorization were checked.
+This does not establish absence from inaccessible controls, Config or other
+installations. No real manager metadata/state specimen, positive `energy_context`
+result, load observation or manager Browser acceptance was possible. Documented
+contracts and synthetic tests remain separate from these missing device proofs;
+neither generation is declared compatible or defective by this disposition.
+
+Installed package 0.4.0b4 used Python 3.13.5. Six inspected source files (manager
+decoder, models, structure, semantics, runtime and client) matched master
+`56aac1f430aac678add9bb1507507a50f7e1e6ae`. The pre-existing `tools.py` matched
+`eb97a8a7` instead; this was a mixed installed revision, not an exact-master
+acceptance. Private evidence retains full file hashes and source identity.
+Configuration hash, inspected source hashes, service PID/active state and loopback
+health remained unchanged; the private runtime was closed and reservation released.
+No deployment, restart, configuration, permission or control changes were made.

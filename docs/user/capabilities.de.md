@@ -570,6 +570,13 @@ getrennte Listen belegter Fähigkeiten und fehlender Nachweise. Andere Familien
 bleiben nicht unterstützt; der dokumentierte Vertrag allein belegt keine
 Gerätekompatibilität.
 
+Die lesende Geräteprüfung [#533](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/533)
+vom 18.10.2026 fand auf dem Testziel (Firmware 17.2.8.28) keine der beiden Familien
+im autorisierten sichtbaren Bestand. Die Geräteabnahme bleibt für Generation 1
+und Generation 2 jeweils **unverifiziert**. Das belegt keine Abwesenheit in
+unzugänglichen Bereichen oder anderen Anlagen; positive Kontext- und
+Lastzustandsbelege fehlen weiterhin.
+
 Generation 1 liefert deklarierte Lastmetadaten getrennt von zwischengespeicherten
 Lastzuständen; Namen belegen keine Zuordnung. Eine Mindestlaufzeit von null
 bedeutet, dass der dokumentierte Trigger nicht verfügbar ist. Generation 2
