@@ -52,7 +52,7 @@ derived child. Observability adds nullable `target_runtime_evidence`, reusing
 the bounded control-evidence shape with that provenance and empty own project
 references. Existing controls and summary counts remain exact-only. All overlays
 require fresh visibility and existing authorization. Explicit runtime containment
-is evidence only for parent topology, never connector identity. Skill revision 96.
+is evidence only for parent topology, never connector identity. Skill revision 98.
 
 ## KNX correction draft descriptions and retention (#524)
 
