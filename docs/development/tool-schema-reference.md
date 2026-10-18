@@ -30,7 +30,7 @@ The full control description adds optional `capabilities.model.pv_forecast` with
 documented and missing state names, forecast origin and time basis. No new tool,
 control action or change to read authorization is introduced. Local solar sampling
 is an independent default-off Admin setting in shared SQLite V9. See
-[source and storage contract](solar-recording.md). Skill revision 96.
+[source and storage contract](solar-recording.md). Skill revision 97.
 
 ## KNX correction draft descriptions and retention (#524)
 
