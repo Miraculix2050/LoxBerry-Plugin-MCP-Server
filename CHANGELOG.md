@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add read-only native PV-production forecast semantics and optional local solar
+  observation/forecast snapshots in the shared history store. Preserve forecast
+  origin, source contracts, current caller visibility and default-off recording;
+  migrate history SQLite V8 to V9 without backfilling observations (#439, #509).
+
 - Add a bounded read-only native PVPF hourly-production view and documented state
   semantics; preserve separate availability, prediction age and model limitations (#440, #510).
 

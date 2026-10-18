@@ -31,7 +31,7 @@ from mcpserver.loxone.service_access import ServiceCredentials, ServiceMiniserve
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 8
+_SCHEMA_VERSION: Final = 9
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 _MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
@@ -191,7 +191,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, 7, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -259,7 +259,10 @@ class EventHistoryStore:
                 from mcpserver.loxone.weather_history import initialize_weather
 
                 initialize_weather(connection)
-                connection.execute("PRAGMA user_version = 8")
+                from mcpserver.solar_recording import initialize_solar
+
+                initialize_solar(connection)
+                connection.execute("PRAGMA user_version = 9")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -332,7 +335,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5, 6, 7}:
+                if version in {3, 4, 5, 6, 7, 8}:
                     self._ensure_history_metadata(connection)
                     self._ensure_payload_columns(connection)
                     connection.execute(
@@ -342,7 +345,10 @@ class EventHistoryStore:
                     from mcpserver.loxone.weather_history import initialize_weather
 
                     initialize_weather(connection)
-                    connection.execute("PRAGMA user_version = 8")
+                    from mcpserver.solar_recording import initialize_solar
+
+                    initialize_solar(connection)
+                    connection.execute("PRAGMA user_version = 9")
                 elif version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute("COMMIT")
@@ -365,7 +371,7 @@ class EventHistoryStore:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
         except sqlite3.Error as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
-        if version in {3, 4, 5, 6, 7}:
+        if version in {3, 4, 5, 6, 7, 8}:
             self._migrate_snapshot()
         elif version != _SCHEMA_VERSION:
             raise EventHistoryUnavailable("local event history needs migration")
@@ -606,7 +612,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5, 6, 7}:
+                if version in {3, 4, 5, 6, 7, 8}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -744,7 +750,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5, 6, 7}:
+                if version in {3, 4, 5, 6, 7, 8}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -781,8 +787,11 @@ class EventHistoryStore:
         event_deletions = connection.execute(
             "DELETE FROM events WHERE observed_at < ?", (cutoff,)
         ).rowcount
+        from mcpserver.solar_recording import evict_solar, prune_solar
+
+        solar_deletions = prune_solar(connection, cutoff)
         weather_deletions = prune_weather(connection, cutoff)
-        deleted = event_deletions + weather_deletions
+        deleted = event_deletions + weather_deletions + solar_deletions
         connection.execute(
             "UPDATE coverage SET started_at = ?, initial_value = NULL, initial_observed_at = NULL "
             "WHERE started_at < ? "
@@ -793,19 +802,36 @@ class EventHistoryStore:
             "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
         ).rowcount
         while self._used_database_bytes(connection) > self.maximum_bytes:
-            weather_removed = evict_weather(connection)
+            solar_removed = evict_solar(connection)
+            if solar_removed:
+                solar_deletions += solar_removed
+                deleted += solar_removed
+                continue
+            solar_oldest = connection.execute(
+                "SELECT observed_at FROM solar_samples ORDER BY observed_at,id LIMIT 1"
+            ).fetchone()
+            solar_boundary = solar_oldest[0] if solar_oldest is not None else math.inf
+            weather_removed = evict_weather(connection, before=solar_boundary)
             if weather_removed:
                 weather_deletions += weather_removed
                 deleted += weather_removed
                 continue
+            weather_oldest = connection.execute(
+                "SELECT received_at FROM weather_deliveries ORDER BY received_at,id LIMIT 1"
+            ).fetchone()
+            scalar_boundary = min(
+                solar_boundary, weather_oldest[0] if weather_oldest is not None else math.inf
+            )
             evicted = connection.execute(
                 "SELECT control_uuid, state_uuid, MAX(observed_at) FROM events WHERE id IN "
-                "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256) "
-                "GROUP BY control_uuid, state_uuid"
+                "(SELECT id FROM events WHERE observed_at<=? "
+                "ORDER BY observed_at, id LIMIT 256) GROUP BY control_uuid, state_uuid",
+                (scalar_boundary,),
             ).fetchall()
             removed = connection.execute(
                 "DELETE FROM events WHERE id IN "
-                "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256)"
+                "(SELECT id FROM events WHERE observed_at<=? ORDER BY observed_at, id LIMIT 256)",
+                (scalar_boundary,),
             ).rowcount
             if removed <= 0:
                 removed = connection.execute(
@@ -850,7 +876,7 @@ class EventHistoryStore:
         ).rowcount
         if event_deletions:
             self._refresh_summaries(connection)
-        if event_deletions or weather_deletions:
+        if event_deletions or weather_deletions or solar_deletions:
             connection.execute(
                 "UPDATE history_metadata SET mutation_generation = "
                 "mutation_generation + 1 WHERE id = 1"
@@ -1364,6 +1390,7 @@ class EventHistoryStore:
                 connection.execute("DELETE FROM removed_sources")
                 connection.execute("DELETE FROM source_totals")
                 connection.execute("DELETE FROM weather_captures")
+                connection.execute("DELETE FROM solar_samples")
                 connection.execute(
                     "UPDATE history_metadata SET clear_generation = clear_generation + 1, "
                     "mutation_generation = mutation_generation + 1 "
@@ -1405,6 +1432,32 @@ async def _rotating_weather_stream(
             await close()
 
 
+async def _solar_sampling_stream(
+    stream: AsyncIterator[tuple[StateEvent, ...]], seconds: float = 1
+) -> AsyncIterator[tuple[StateEvent, ...]]:
+    """One socket reader with local ticks; never split scalar capture coverage."""
+    pending = asyncio.ensure_future(anext(stream))
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=seconds)
+            if not done:
+                yield ()
+                continue
+            try:
+                batch = pending.result()
+            except StopAsyncIteration:
+                return
+            pending = asyncio.ensure_future(anext(stream))
+            yield batch
+    finally:
+        pending.cancel()
+        with suppress(asyncio.CancelledError, StopAsyncIteration):
+            await pending
+        close = getattr(stream, "aclose", None)
+        if close is not None:
+            await close()
+
+
 class EventHistoryMonitor:
     """Use the LoxBerry-owned identity to record only explicitly selected states."""
 
@@ -1423,7 +1476,11 @@ class EventHistoryMonitor:
         self._backfill_task: asyncio.Task[None] | None = None
         self.status = (
             "disabled"
-            if not (config.event_history_enabled or config.weather_history_enabled)
+            if not (
+                config.event_history_enabled
+                or config.weather_history_enabled
+                or config.solar_history_enabled
+            )
             else "unknown"
         )
         self.status_reason: str | None = None
@@ -1468,7 +1525,11 @@ class EventHistoryMonitor:
         return self.config.event_history_sources
 
     async def start(self) -> None:
-        recording_enabled = self.config.event_history_enabled or self.config.weather_history_enabled
+        recording_enabled = (
+            self.config.event_history_enabled
+            or self.config.weather_history_enabled
+            or self.config.solar_history_enabled
+        )
         if not recording_enabled and not self.store.path.is_file():
             return
         try:
@@ -1483,8 +1544,10 @@ class EventHistoryMonitor:
         self._backfill_task = asyncio.create_task(self._backfill())
         if not recording_enabled:
             return
-        if not (self.config.event_history_enabled and self.sources) and not (
-            self.config.weather_history_enabled and self.config.weather_history_sources
+        if (
+            not (self.config.event_history_enabled and self.sources)
+            and not (self.config.weather_history_enabled and self.config.weather_history_sources)
+            and not (self.config.solar_history_enabled and self.config.solar_history_sources)
         ):
             self._set_status("unavailable", "no_sources")
             return
@@ -1511,6 +1574,7 @@ class EventHistoryMonitor:
             WeatherHistorySource,
             source_fingerprint,
         )
+        from mcpserver.solar_recording import SolarHistory, SolarSampler
 
         weather_store = WeatherHistory(self.store)
 
@@ -1539,6 +1603,15 @@ class EventHistoryMonitor:
                 )
                 session = await connection.connect(username, password)
                 structure = await session.load_structure()
+                solar_sampler = SolarSampler((), (), "")
+                if self.config.solar_history_enabled:
+                    solar_sampler = SolarSampler(
+                        self.config.solar_history_sources,
+                        _controls(structure.controls),
+                        installation_identity(
+                            MiniserverEndpoint.parse(self.config.loxone_endpoint).origin, structure
+                        ),
+                    )
                 visible = {
                     (control.uuid, state_uuid)
                     for control in _controls(structure.controls)
@@ -1572,7 +1645,7 @@ class EventHistoryMonitor:
                                 capture,
                             )
                         )
-                if not active and not weather_active:
+                if not active and not weather_active and not solar_sampler.sources:
                     self._set_status("unavailable", "no_visible_sources")
                     _LOGGER.warning("component=event_history outcome=no_configured_sources_visible")
                     await asyncio.sleep(60)
@@ -1587,9 +1660,34 @@ class EventHistoryMonitor:
                     batches = _rotating_weather_stream(
                         batches, max(60, self.config.structure_refresh_seconds)
                     )
+                if self.config.solar_history_enabled:
+                    batches = _solar_sampling_stream(batches)
+                solar_refresh_at = time.monotonic() + max(60, self.config.structure_refresh_seconds)
                 async for batch in batches:
+                    if self.config.solar_history_enabled and time.monotonic() >= solar_refresh_at:
+                        # A separate authorized metadata connection avoids competing
+                        # with the sole state reader or splitting scalar coverage.
+                        refreshed = await self.visible_structure()
+                        solar_sampler = solar_sampler.revalidated(
+                            _controls(refreshed.controls),
+                            installation_identity(
+                                MiniserverEndpoint.parse(self.config.loxone_endpoint).origin,
+                                refreshed,
+                            ),
+                        )
+                        solar_refresh_at = time.monotonic() + max(
+                            60, self.config.structure_refresh_seconds
+                        )
                     observed_at = time.time()
                     changed = False
+                    if solar_sampler.sources:
+                        rows = solar_sampler.batch(
+                            {event.uuid: event.value for event in batch}, observed_at
+                        )
+                        if rows:
+                            await run_admitted_worker(SolarHistory(self.store).record, rows)
+                            changed = True
+                            self._set_status("recording")
                     for event in batch:
                         weather_modes = weather_active.get(event.uuid)
                         if weather_modes is not None:
@@ -1806,7 +1904,11 @@ class EventHistoryMonitor:
         self.config = config
         self._set_status(
             "unknown"
-            if (config.event_history_enabled or config.weather_history_enabled)
+            if (
+                config.event_history_enabled
+                or config.weather_history_enabled
+                or config.solar_history_enabled
+            )
             else "disabled"
         )
         self.capture_started_at = None

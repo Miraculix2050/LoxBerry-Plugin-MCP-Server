@@ -1,5 +1,16 @@
 # Tool schema reference
 
+## Native PV-production forecast reads (#439)
+
+Existing state readers optionally decode exact `PvProductionForecast` fields.
+Semantics add energy/predicted_pv_energy with kWh; source-native timestamps use the
+2009 epoch. Missing companions and unavailable sentinels retain explicit status.
+The full control description adds optional `capabilities.model.pv_forecast` with
+documented and missing state names, forecast origin and time basis. No new tool,
+control action or change to read authorization is introduced. Local solar sampling
+is an independent default-off Admin setting in shared SQLite V9. See
+[source and storage contract](solar-recording.md). Skill revision 96.
+
 ## Native PVPF forecast (#510)
 
 `loxone_read_controls` adds `native_result_view="pv_forecast"` for one plain visible

@@ -7,7 +7,6 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from itertools import islice
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -16,6 +15,11 @@ from pydantic import Field
 from .energy_manager import DOCUMENT as MANAGER_DOCUMENT
 from .energy_manager import PERCENT_ROLES, POWER_ROLES, decode_loads
 from .models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
+from .pv_forecast import DOCUMENT as PVPF_DOCUMENT
+from .pv_forecast import ENERGY_STATES as PVPF_ENERGY_STATES
+from .pv_forecast import STATES as PVPF_STATES
+from .pv_forecast import decode as decode_pv_forecast
+from .source_time import loxone_time as _loxone_time
 from .window_states import WINDOW_DOCUMENT, decode_window_states
 
 if TYPE_CHECKING:
@@ -75,9 +79,9 @@ class StateSemantics:
     display_format_truncated: bool = False
     display_format_complete: bool = False
     unit: str | None = None
-    measurement_quantity: Literal["temperature", "binary_state", "power", "percentage"] | None = (
-        None
-    )
+    measurement_quantity: (
+        Literal["temperature", "binary_state", "power", "percentage", "energy"] | None
+    ) = None
     measurement_role: (
         Literal[
             "actual_temperature",
@@ -90,6 +94,7 @@ class StateSemantics:
             "maximum_storage_power_parameter",
             "storage_state_of_charge",
             "minimum_storage_soc_parameter",
+            "predicted_pv_energy",
         ]
         | None
     ) = None
@@ -715,53 +720,42 @@ class StateSemanticsResolver:
         value: object,
         companion_values: Mapping[str, object],
     ) -> tuple[StateSemantics, object | None]:
-        if control.control_type.casefold() == "pvproductionforecast":
-            units = {
-                "period": "kWh",
-                "today": "kWh",
-                "tomorrow": "kWh",
-                "after": "kWh",
-                "inputperiod": "h",
-                "timestamp": "s",
-                "cycleFrom": "s",
-                "cycleUntil": "s",
-            }
-            if state_name in units or state_name in {"ready", "errorInfo"}:
-                from .pv_forecast_hours import LOXONE_EPOCH, number
-
-                numeric = number(value)
-                valid = numeric is not None
-                if state_name == "errorInfo":
-                    valid = numeric is not None and numeric >= 0 and numeric.is_integer()
-                if state_name in {"period", "today", "tomorrow", "after"}:
-                    valid = numeric is not None and (numeric >= 0 or numeric == -1)
-                if state_name == "ready":
-                    valid = valid and numeric in (0, 1)
-                result = StateSemantics(
-                    interpretation_status="known" if valid else "invalid",
-                    reason="documented_decoder" if valid else "invalid_documented_value",
-                    value_type="number",
-                    unit=units.get(state_name),
-                    sources=[
-                        SemanticsSource(
-                            "decoder_rule",
-                            "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=115",
-                            ("unit", "semantic_value"),
-                            rule_id="pvpf.17_1.v1",
-                            document_version="17.1",
-                        )
-                    ],
+        if control.control_type == "PvProductionForecast" and state_name in PVPF_STATES:
+            result = StateSemantics()
+            result.value_type = "number"
+            if state_name in PVPF_ENERGY_STATES:
+                result.unit, result.measurement_quantity = "kWh", "energy"
+                result.measurement_role = "predicted_pv_energy"
+            elif state_name == "inputperiod":
+                result.unit = "h"
+            result.sources = [
+                SemanticsSource(
+                    "decoder_rule",
+                    PVPF_DOCUMENT,
+                    ("semantic_value", "unit", "measurement_quantity", "measurement_role"),
+                    rule_id=f"PvProductionForecast.{state_name}.17_1.v1",
+                    document_version="17.1",
                 )
-                decoded: object | None = numeric if valid else None
-                if state_name in {"timestamp", "cycleFrom", "cycleUntil"}:
-                    decoded = (
-                        {"unix_seconds": numeric + LOXONE_EPOCH}
-                        if numeric and numeric > 0
-                        else None
+            ]
+            result.sources_returned = result.sources_total = 1
+            result.interpretation_status, result.reason = "partial", "value_unavailable"
+            pv_decoded = None
+            if value is not None:
+                try:
+                    pv_decoded = decode_pv_forecast(state_name, value, companion_values)
+                    result.interpretation_status = "known"
+                    result.reason = "documented_decoder"
+                    if pv_decoded.get("status") == "incomplete":
+                        result.interpretation_status, result.reason = (
+                            "partial",
+                            "companion_unavailable",
+                        )
+                except ValueError:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
                     )
-                elif state_name in {"period", "today", "tomorrow", "after"} and numeric == -1:
-                    decoded = {"available": False}
-                return result, decoded
+            return result, pv_decoded
         manager = _resolve_energy_manager(structure, control, state_name, value)
         if manager is not None:
             return manager
@@ -1303,7 +1297,6 @@ class StateSemanticsResolver:
 
 _MAX_SEMANTIC_JSON_TEXT = 65_536
 _MAX_SEMANTIC_ENTRIES = 100
-_LOXONE_EPOCH_UNIX = 1_230_768_000
 
 
 class _SemanticValueError(ValueError):
@@ -1605,6 +1598,8 @@ def decode_state_value(
     companion_values: Mapping[str, object],
 ) -> tuple[object | None, bool]:
     try:
+        if control.control_type == "PvProductionForecast" and state_name in PVPF_STATES:
+            return decode_pv_forecast(state_name, value, companion_values), False
         if control.control_type == "WindowMonitor" and state_name == "windowStates":
             decoded_window = decode_window_states(control, value)
             return decoded_window, decoded_window is None or decoded_window[
@@ -1703,22 +1698,6 @@ def decode_state_value(
     except ValueError:
         return None, True
     return None, False
-
-
-def _loxone_time(value: object) -> str:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError("weather timestamp is invalid")
-    number = float(value)
-    if not number.is_integer() or not 0 <= number <= 4_000_000_000:
-        raise ValueError("weather timestamp is invalid")
-    try:
-        return (
-            datetime.fromtimestamp(_LOXONE_EPOCH_UNIX + int(number), UTC)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
-    except (OverflowError, OSError, ValueError) as exc:
-        raise ValueError("weather timestamp is invalid") from exc
 
 
 def _valid_measurement_number(value: object, *, binary: bool) -> bool:

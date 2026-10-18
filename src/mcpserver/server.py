@@ -518,6 +518,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         if event_history_path.is_absolute() and (
             settings.plugin_config.event_history_enabled
             or settings.plugin_config.weather_history_enabled
+            or settings.plugin_config.solar_history_enabled
             or event_history_path.is_file()
         ):
             event_history = EventHistoryMonitor(

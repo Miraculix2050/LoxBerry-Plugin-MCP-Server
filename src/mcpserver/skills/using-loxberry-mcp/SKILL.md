@@ -1087,6 +1087,25 @@ financial benefit. Storage, other load responses and sub-hour dynamics remain
 unknown. No future planning or device write is authorized. Search exhaustion
 returns no allocation from a partial search; truncation is not global optimality.
 
+### Native PV-production forecasts and local observations
+
+For an exact visible `PvProductionForecast`, reuse control description and named
+state reads with semantics. `period`, `today`, `tomorrow` and `after` are forecast
+kWh, not observed production. Check `ready`, `errorInfo`, prediction timestamp and
+cycle bounds together; zero timestamps and -1 energy are unavailable. Time states
+use the native 2009 epoch. Current cache observations do not prove a recently
+issued forecast; inspect prediction/cycle times separately. No subdaily forecast
+distribution or inverter-limit validation follows from these aggregate values.
+
+LoxBerry Admin can explicitly confirm and enable bounded irradiance/temperature
+sampling or complete settled PVPF snapshots in the existing history store.
+Administrator source contracts are declarations, not native decoder guarantees
+or physical calibration. Never qualify sources by names, units in display text
+alone, or a caller-supplied analysis rule. Irradiance derived from the assessed PV
+yield is a circular baseline and must be excluded. Samples establish observations
+of source states, not continuous physical measurements. Recording starts now and
+never backfills history. Forecast snapshots retain forecast origin.
+
 ### Qualitative weather peers
 
 For qualitative weather peers use `loxone_analyze_history(operation="comparable_days")`

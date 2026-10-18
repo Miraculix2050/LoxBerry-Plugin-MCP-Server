@@ -2249,6 +2249,10 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         return event_history_admin.purge_source(payload)
     if action == "event_history_runtime_status":
         return _event_history_runtime_status()
+    if action in {"solar_history_options", "solar_history_save"}:
+        from mcpserver.event_history_admin import solar_sources
+
+        return solar_sources(action, payload)
     if action in {
         "weather_history_options",
         "weather_history_add_source",

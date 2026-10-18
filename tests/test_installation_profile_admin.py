@@ -150,6 +150,6 @@ def test_cgi_and_ui_use_same_origin_and_safe_text_and_localized_keys():
 
     required = set(re.findall(r"PROFILE\.([A-Z_]+)", template))
     for language in ("de", "en"):
-        text = (root / f"templates/lang/language_{language}.ini").read_text()
+        text = (root / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
         section = text.split("[PROFILE]", 1)[1].split("\n[", 1)[0]
         assert required <= set(re.findall(r"^([A-Z_]+)=", section, re.M))

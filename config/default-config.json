@@ -47,6 +47,8 @@
   },
   "emergency_stop": {"virtual_status_uuid": ""},
   "event_history": {
+    "solar_enabled": false,
+    "solar_sources": [],
     "weather_enabled": false,
     "weather_sources": [],
     "enabled": false,

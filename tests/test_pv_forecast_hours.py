@@ -12,8 +12,9 @@ from test_native_efm import ACTION, TARGET, access, fixture_runtime
 import mcpserver.loxone.client as client_module
 from mcpserver.loxone.client import LoxoneWebSocketSession
 from mcpserver.loxone.models import Freshness
-from mcpserver.loxone.pv_forecast_hours import LOXONE_EPOCH, PvForecastError, decode_forecast
+from mcpserver.loxone.pv_forecast_hours import PvForecastError, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
+from mcpserver.loxone.source_time import LOXONE_EPOCH_UNIX as LOXONE_EPOCH
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.pv_forecast_runtime import read_pv_forecast
 
@@ -64,6 +65,9 @@ def test_hourly_energy_and_distinct_timestamp_epochs():
     [
         ({**STATES, "ready": 0}, "not_ready"),
         ({**STATES, "timestamp": 0}, "incomplete"),
+        ({**STATES, "timestamp": 1.5}, "incomplete"),
+        ({**STATES, "timestamp": 4_000_000_001}, "incomplete"),
+        ({**STATES, "errorInfo": 4}, "incomplete"),
         ({**STATES, "timestamp": NOW - LOXONE_EPOCH - 10801}, "stale"),
         ({**STATES, "timestamp": NOW - LOXONE_EPOCH + 301}, "stale"),
         ({**STATES, "errorInfo": 2}, "incomplete"),
@@ -122,8 +126,11 @@ def test_aggregate_semantics_only_accept_documented_negative_sentinel(value):
     metadata, decoded = StateSemanticsResolver().resolve(structure, control, "today", value, {})
     if value < 0 and value != -1:
         assert metadata.interpretation_status == "invalid" and decoded is None
-    else:
+    elif value == -1:
         assert metadata.interpretation_status == "known"
+    else:
+        assert metadata.interpretation_status == "partial"
+        assert decoded["energy_kwh"] is None
 
 
 @pytest.mark.asyncio

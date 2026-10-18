@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-LOXONE_EPOCH = 1_230_768_000
+from mcpserver.loxone.source_time import loxone_time
+
 MAX_BYTES = 32_768
 
 
@@ -67,16 +69,21 @@ def decode_forecast(
 ) -> PvForecastResult:
     """Convert documented hourly kWh; never manufacture missing hourly values."""
     ready = states.get("ready")
-    timestamp = number(states.get("timestamp"))
     error = number(states.get("errorInfo"))
-    prediction = int(timestamp) + LOXONE_EPOCH if timestamp and timestamp > 0 else None
+    prediction = None
+    try:
+        issued = states.get("timestamp")
+        if number(issued) is not None and number(issued) != 0:
+            prediction = int(datetime.fromisoformat(loxone_time(issued)).timestamp())
+    except ValueError:
+        pass
     result = PvForecastResult(
         status="incomplete",
         control_uuid=control_uuid,
         retrieved_at=retrieved_at,
         ready=bool(ready) if type(ready) in {int, float} and ready in (0, 1) else None,
         prediction_at=prediction,
-        error_info=int(error) if error is not None and error.is_integer() and error >= 0 else None,
+        error_info=int(error) if error is not None and error in (0, 1, 2, 3) else None,
         aggregates_kwh={
             key: number(states.get(key)) for key in ("period", "today", "tomorrow", "after")
         },
