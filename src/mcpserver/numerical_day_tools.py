@@ -29,7 +29,11 @@ from mcpserver.comparable_days_models import (
     SolarSourceSummary,
 )
 from mcpserver.history_analysis import statistic_summary
-from mcpserver.history_comparison import ComparisonInput, _hours, _qualified_hourly_energy
+from mcpserver.history_comparison import (
+    ComparisonInput,
+    hourly_energy_semantics_qualified,
+    qualified_hourly_energy,
+)
 from mcpserver.installation_profile import installation_identity, visible_controls
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.event_history import EventHistoryStore
@@ -511,9 +515,13 @@ async def numerical_day_analysis(
             control_uuid=control.uuid,
             source_id=series.series_id,
         )
-        if _qualified_hourly_energy(semantics):
+        if hourly_energy_semantics_qualified(semantics):
             energies[role] = await run_admitted_worker(
-                _hours, ComparisonInput(summary, semantics, points), begin, finish, deadline
+                qualified_hourly_energy,
+                ComparisonInput(summary, semantics, points),
+                begin,
+                finish,
+                deadline,
             )
         roles[role] = (control, binding)
     production = roles.get("production", (None, {}))[1]
