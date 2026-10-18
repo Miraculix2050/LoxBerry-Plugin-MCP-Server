@@ -63,6 +63,7 @@ class HourlyObservation:
     unit: str
     origin: Literal["observed", "estimated"]
     method: str
+    sample_at: float | None = None
 
 
 def normalize_hours(
@@ -116,10 +117,24 @@ def normalize_hours(
         return _integrate(points, hours, contract, deadline)
     index = {point.start: point for point in points}
     result = []
+    near = 0
     factor = {"MJ/m²": 1_000_000 / 3600, "kWh": 1000}.get(contract.unit, 1)
     for start in hours:
         _check(deadline)
         selected = index.get(start)
+        if (
+            selected is None
+            and contract.quantity == "temperature"
+            and contract.sample_period_seconds is not None
+        ):
+            while near + 1 < len(points) and points[near + 1].start <= start:
+                _check(deadline)
+                near += 1
+            candidates = points[max(0, near) : near + 2]
+            if candidates:
+                nearest = min(candidates, key=lambda p: (abs(p.start - start), p.start))
+                if abs(nearest.start - start) <= min(60, contract.sample_period_seconds):
+                    selected = nearest
         if selected is None:
             continue
         temperature = contract.quantity == "temperature"
@@ -145,7 +160,10 @@ def normalize_hours(
                     else "Wh"
                 ),
                 "observed",
-                "hour_start_sample" if temperature else "whole_interval_unit_conversion",
+                ("hour_start_sample" if selected.start == start else "within_60s_of_hour_start")
+                if temperature
+                else "whole_interval_unit_conversion",
+                selected.start if temperature else None,
             )
         )
     last_end: float | None = None

@@ -1,4 +1,53 @@
-# Qualitative comparable days
+# Comparable days
+
+## Numerical weather peers
+
+Select `comparable_day_options.method="numerical"` explicitly, with `reference_day`.
+Defaults: hours 0–24, seasonal distance ≤30 days, radiation-energy difference ≤15%,
+temperature difference ≤3 °C. Stricter options are allowed. All candidates use the
+fixed reference window; current reference days use completed hours. Missing data
+never shrinks that window; ambiguous DST positions are excluded.
+
+Register independent irradiance and outside-temperature sources in Admin with
+documented units, cadence and confirmed installation association. Enable recording;
+existing records remain readable when recording is disabled. Select each via
+`{"source_kind":"solar_observation","control_uuid":"<control UUID>","state_uuid":"<value UUID>"}`.
+The caller cannot supply evidence rules or units. Names never establish roles;
+sources may be absent. Irradiance derived from the PV yield under assessment is
+circular and unsuitable.
+
+Select PV through `{"binding_id":"<confirmed production binding>","granularity":"hour"}`
+with documented hourly energy statistics. A `self_consumption` binding supplies
+direct PV self-consumption. Alternatively `pv_export_balance_confirmed=true`
+explicitly confirms PV minus export, excluding storage discharge and other
+generation. Matching confirmed profile boundaries and declared export direction
+are additionally required. No storage model is inferred or negative balance clamped.
+
+W/m² source-state observations are integrated trapezoidally into estimated Wh/m²:
+no extrapolation, no gaps above twice the cadence, capped at 60 minutes.
+Temperature uses the nearest recorded state within 60 seconds of hour start,
+also bounded by cadence; the maximum actual offset is reported. This does not
+prove continuous physical measurement. Weather similarity selects peers; no
+additional physical PV normalization model is introduced.
+
+Results explain selection, exclusions, tolerances, coverage and missing-source
+setup. Peers sort by weather similarity. PV and self-consumption provide pairs
+and a median group with at least three complete peers. PV strictly below −20%
+marks a check candidate, never a fault diagnosis. A separate ranking shows the
+strongest negative differences. Zero baselines have no ratio.
+
+Optional PVPF uses the same selector with `state_uuid=null`. Previously captured
+native period forecasts are separate context and must exactly match a complete
+observed window. Revisions captured after the period begins are excluded. Daily
+horizons have no independently established native timezone here and are never
+allocated to partial days. Forecasts do not select weather peers.
+
+Each unique source/range is read once in one fresh authorized context. Limits:
+16 sources, 100,000 points, 31 local days, 30 seconds, two analyses, 64 KiB.
+Recording never backfills observations. Real multi-day acceptance remains required
+before #509 and #439 close.
+
+## Qualitative radiation classes
 
 `loxone_analyze_history(operation="comparable_days")` compares recorded weather
 source points by radiation classes. It is a coarse comparison, not a radiation
@@ -61,4 +110,4 @@ There is no 15-percent irradiance tolerance, radiation energy, temperature-based
 selection, normalized yield, fault diagnosis or self-consumption calculation in
 this class method. Brightness in lux is additional context, not a universal
 conversion to W/m2. Numerical comparisons need separate qualified historical
-sources and interval semantics; they remain open in #439.
+sources and interval semantics through the explicit numerical method above.

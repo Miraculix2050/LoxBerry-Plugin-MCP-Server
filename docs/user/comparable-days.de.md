@@ -1,4 +1,57 @@
-# Qualitativ vergleichbare Tage
+# Vergleichbare Tage
+
+## Numerische Wettervergleiche
+
+Explizit `comparable_day_options.method="numerical"` mit `reference_day` wählen.
+Vorgaben: Stunden 0–24, saisonaler Abstand ≤30 Tage, Strahlungsenergieabweichung
+≤15 %, Temperaturabweichung ≤3 °C. Strengere Optionen sind möglich. Alle Kandidaten
+verwenden das feste Referenzfenster; laufende Referenztage nur abgeschlossene
+Stunden. Fehlende Daten verkleinern es nicht; mehrdeutige Zeitumstellungsstunden
+werden ausgeschlossen.
+
+Unabhängige Strahlungs- und Außentemperaturquellen im Adminbereich mit belegter
+Einheit, Abtastperiode und bestätigter Anlagenzuordnung registrieren. Aufzeichnung
+aktivieren; vorhandene Daten bleiben nach Deaktivierung lesbar. Auswahl jeweils:
+`{"source_kind":"solar_observation","control_uuid":"<Baustein-UUID>","state_uuid":"<Wert-UUID>"}`.
+Aufrufer können keine Evidenzregeln oder Einheiten vorgeben. Namen bestimmen
+keine Rolle; Quellen dürfen fehlen. Aus dem bewerteten PV-Ertrag abgeleitete
+Strahlung ist als Vergleichsbasis zirkulär und ungeeignet.
+
+PV-Auswahl über `{"binding_id":"<bestätigte production-Zuordnung>","granularity":"hour"}`
+mit dokumentierter stündlicher Energiestatistik. Eine `self_consumption`-Zuordnung
+liefert direkten PV-Eigenverbrauch. Alternativ bestätigt
+`pv_export_balance_confirmed=true` ausdrücklich PV minus Einspeisung ohne
+Speicherentladung und andere Erzeugung. Zusätzlich müssen bestätigte
+Profil-Bilanzgrenzen übereinstimmen und die Einspeiserichtung deklariert sein.
+Kein Speicherbilanzmodell; negative Bilanzen werden nicht auf null begrenzt.
+
+W/m²-Quellzustände werden trapezförmig zu geschätzten Wh/m² integriert: keine
+Extrapolation oder Lücken über der doppelten Abtastperiode, maximal 60 Minuten.
+Temperatur verwendet den nächsten aufgezeichneten Zustand innerhalb von
+60 Sekunden zum Stundenbeginn, zusätzlich begrenzt durch die Abtastperiode.
+Der größte tatsächliche Versatz wird ausgegeben. Das belegt keine kontinuierliche
+physikalische Messung. Wetterähnlichkeit wählt Vergleichstage aus; es entsteht
+kein zusätzliches physikalisches Modell zur PV-Normalisierung.
+
+Ergebnisse erklären Auswahl, Ausschlüsse, Toleranzen, Abdeckung und Einrichtung
+fehlender Quellen. Rangfolge nach Wetterähnlichkeit. Ertrag und Eigenverbrauch
+liefern Paare und eine Mediangruppe mit mindestens drei vollständigen Tagen.
+PV-Abweichungen strikt unter −20 % kennzeichnen Prüfkandidaten, keine Fehlerdiagnose.
+Eine getrennte Rangfolge zeigt die stärksten negativen Abweichungen. Bei Null-Basis
+entsteht kein Verhältnis.
+
+Optionales PVPF nutzt denselben Selektor mit `state_uuid=null`. Zuvor erfasste native
+Periodenprognosen bleiben separater Kontext und müssen exakt zu einem vollständigen
+Istfenster passen. Nach Periodenbeginn erfasste Revisionen sind ausgeschlossen.
+Für Tageshorizonte fehlt hier eine unabhängig bestätigte native Zeitzone; sie werden
+nicht auf unvollständige Tage verteilt. Prognosen beeinflussen keine Wetterauswahl.
+
+Jede eindeutige Quelle wird pro Zeitraum einmal gemeinsam frisch autorisiert gelesen.
+Grenzen: 16 Quellen, 100.000 Punkte, 31 lokale Tage, 30 Sekunden, zwei Analysen,
+64 KiB. Aufzeichnung erzeugt keine frühere Historie. Echte mehrtägige Abnahme bleibt
+Voraussetzung für den Abschluss von #509 und #439.
+
+## Qualitative Strahlungsklassen
 
 `loxone_analyze_history(operation="comparable_days")` vergleicht aufgezeichnete
 Wetter-Quellenpunkte anhand von Strahlungsklassen. Das ist ein grober Vergleich,
@@ -65,4 +118,4 @@ Diese Klassenmethode verwendet keine 15-Prozent-Strahlungstoleranz,
 Strahlungsenergie, temperaturbasierte Auswahl, Ertragsnormierung, Defektdiagnose
 oder Eigenverbrauchsrechnung. Helligkeit in Lux ist zusätzlicher Kontext, keine
 allgemeine Umrechnung in W/m2. Numerische Vergleiche benötigen separat belegte
-historische Quellen und Intervallsemantik; sie bleiben in #439 offen.
+historische Quellen und Intervallsemantik über die explizite numerische Methode oben.
