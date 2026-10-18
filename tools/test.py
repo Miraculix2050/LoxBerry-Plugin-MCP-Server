@@ -129,6 +129,7 @@ _TEST_GROUPS: Final = (
             "tests/test_project_analysis.py",
             "tests/test_project_coverage.py",
             "tests/test_project_graph.py",
+            "tests/test_project_identity.py",
             "tests/test_project_knx_semantics.py",
             "tests/test_project_mapping.py",
             "tests/test_project_query.py",

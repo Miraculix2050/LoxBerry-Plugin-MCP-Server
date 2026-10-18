@@ -26,6 +26,18 @@ current states, statistics, or history only when those sources independently
 provide the required observation. Do not infer meanings for unknown block types
 or request raw project XML.
 
+For SysVar, DigitalIn, Actor, Online, Mode and VoltageOut, model version 15 can
+resolve an exact normalized UUID across model sources after whole-group attribute
+and topology checks. Mapping remains exact only when occurrences are equivalent
+or have disjoint explicit complementary connectors. Inspect logical_identity and
+its fixed reason; retain source_project_node_ids, model_source_ids and
+source_occurrence_count as provenance. Ambiguous candidates remain ambiguous:
+never select by name or source order. Candidate lists contain at most 32 IDs;
+check candidates_omitted. Description and trace retain all verified occurrences
+within their normal limits. This is static graph evidence, never authorization,
+historical causality or observed physical behavior. Derived runtime children are
+not resolved by this rule.
+
 State internal signal flow is version- and configuration-bound. Rule
 `state_table_aq_v3` covers complete fixed-operand tables for Config 17020828 /
 XML 274 / State 178, selecting I1–I8 with up to four AND conditions per row,

@@ -142,7 +142,7 @@ def test_version_is_part_local_and_analysis_exposes_remaining_gap():
     q = query(config(body), config(body, "other"))
     nodes = [n for n in q.view.snapshot.graph.nodes if n.knx is not None]
     assert sum(n.knx.normalized_dpt_evidence is not None for n in nodes) == 1
-    assert q.view.snapshot.model_version == 14
+    assert q.view.snapshot.model_version == 15
     result = analyze_knx(q.view, analyses={"datatype_consistency"})
     assert (
         next(x["count"] for x in result["limitations"] if x["code"] == "normalized_dpt_unavailable")
@@ -156,4 +156,4 @@ async def test_isolated_worker_preserves_evidence():
     snapshot, _ = await process_project(data)
     node = next(n for n in snapshot.graph.nodes if n.knx is not None)
     assert node.knx.normalized_dpt_evidence.dpt_main_types == (9,)
-    assert snapshot.model_version == 14
+    assert snapshot.model_version == 15

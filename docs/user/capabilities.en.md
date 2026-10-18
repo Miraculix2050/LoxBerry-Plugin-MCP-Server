@@ -343,6 +343,13 @@ report a size trim through `truncated` and `truncation_reason`.
 Status exposes opaque `model_sources`; identical KNX source occurrences from separate model
 sources are presented once as a logical object with `source_occurrence_count` and
 `model_source_ids`. Equal titles or group addresses never cause such a merge.
+For `SysVar`, `DigitalIn`, `Actor`, `Online`, `Mode`, and `VoltageOut`, model version
+15 also resolves verified cross-source UUID occurrences with equal or complementary
+explicit connector topology. Conflicts and insufficient evidence remain ambiguous.
+`source_project_node_ids` preserves physical references; `logical_identity` explains
+the classification with a fixed reason and bounded candidate references. Description
+and trace include all verified occurrences within their normal limits. This proves
+static identity and wiring only; it establishes no permission or physical behavior.
 Project model version 13 allows an `OutputRef` without a local target to resolve
 to a unique `VirtualOutCmd` in
 another model source of the same authorized bundle using an exact normalized UUID.

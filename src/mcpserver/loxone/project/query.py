@@ -277,6 +277,17 @@ class ProjectQuery:
                 else None
             ),
             "source_occurrence_count": len(self.view.snapshot.source_ids_for(node.key)) or 1,
+            "source_project_node_ids": list(self.view.snapshot.occurrence_keys_for(node.key)),
+            "logical_identity": (
+                {
+                    "classification": identity.classification,
+                    "reason": identity.reason,
+                    "candidate_project_node_ids": list(identity.candidate_node_ids),
+                    "candidates_omitted": identity.candidates_omitted,
+                }
+                if (identity := self.view.snapshot.logical_identity.get(node.key)) is not None
+                else None
+            ),
             "model_source_ids": list(
                 self.view.snapshot.source_ids_for(node.key) or (node.project,)
             ),
@@ -744,20 +755,26 @@ class ProjectQuery:
                         for position, row in enumerate(selected)
                     ],
                 }
-        contains_in = [
-            edge.source
-            for edge in graph.edges
-            if edge.kind == "contains" and edge.target == node.key
-        ]
-        contains_out = [
-            edge.target
-            for edge in graph.edges
-            if edge.kind == "contains" and edge.source == node.key
-        ]
+        occurrence_keys = set(self.view.snapshot.occurrence_keys_for(node.key))
+        contains_in = sorted(
+            {
+                edge.source
+                for edge in graph.edges
+                if edge.kind == "contains" and edge.target in occurrence_keys
+            }
+        )
+        contains_out = sorted(
+            {
+                edge.target
+                for edge in graph.edges
+                if edge.kind == "contains" and edge.source in occurrence_keys
+            }
+        )
         direct = [
             self._edge_data(edge)
             for edge in graph.edges
-            if edge.kind != "contains" and (edge.source == node.key or edge.target == node.key)
+            if edge.kind != "contains"
+            and (edge.source in occurrence_keys or edge.target in occurrence_keys)
         ]
         api_connections = [
             self._edge_data(edge)
@@ -766,7 +783,7 @@ class ProjectQuery:
             and (edge.source in contains_out or edge.target in contains_out)
         ]
         child_ids = sorted(contains_out)
-        unresolved = [code for key, code in graph.unresolved if key == node.key]
+        unresolved = [code for key, code in graph.unresolved if key in occurrence_keys]
         truncated_fields = []
         if len(child_ids) > limit:
             truncated_fields.append("child_project_node_ids")
@@ -926,6 +943,11 @@ class ProjectQuery:
                     pending.append((neighbor, depth + 1))
         return predecessors, truncated
 
+    def _trace_occurrences(self, key: str) -> tuple[str, ...]:
+        """Expand verified logical blocks and their explicit physical ports."""
+        snapshot = self.view.snapshot
+        return snapshot._logical_ports.get(key) or snapshot.occurrence_keys_for(key)
+
     def trace(
         self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
     ) -> dict[str, object]:
@@ -944,10 +966,14 @@ class ProjectQuery:
         for semantic_edge in self.view.snapshot.graph.semantic_edges:
             key = semantic_edge.target if direction == "upstream" else semantic_edge.source
             adjacency[key].append(semantic_edge)
-        seeds = [node.key]
-        seed_set = {node.key}
-        pending = deque([node.key])
-        seed_truncated = False
+        occurrences = (
+            node.key,
+            *(key for key in self._trace_occurrences(node.key) if key != node.key),
+        )
+        seeds = list(occurrences[:max_nodes])
+        seed_set = set(seeds)
+        pending = deque(seeds)
+        seed_truncated = len(occurrences) > max_nodes
         while pending and not seed_truncated:
             current = pending.popleft()
             for child in self._children.get(current, ()):
@@ -972,6 +998,17 @@ class ProjectQuery:
                 if adjacency[current]:
                     truncated, reason = True, "max_depth"
                 continue
+            for alias in self._trace_occurrences(current):
+                if alias in visited:
+                    continue
+                if len(keys) >= max_nodes:
+                    truncated, reason = True, "max_nodes"
+                    break
+                visited.add(alias)
+                keys.append(alias)
+                queue.append((alias, depth))
+            if truncated:
+                break
             for relationship in adjacency[current]:
                 neighbor = relationship.source if direction == "upstream" else relationship.target
                 if neighbor in visited:

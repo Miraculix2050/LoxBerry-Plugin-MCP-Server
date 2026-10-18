@@ -1,5 +1,24 @@
 # Tool schema reference
 
+## Cross-source project identity (#218)
+
+Project node summaries and descriptions add `source_project_node_ids` (at most
+32 physical occurrence IDs) and optional `logical_identity`. Its classification
+is `single_source`, `equivalent`, `complementary`, or `ambiguous`; `reason` is a
+fixed diagnostic code. `candidate_project_node_ids` lists at most 32 candidates,
+with `candidates_omitted` counting omitted references. These are source references,
+never authorization evidence. Existing mapping statuses remain unchanged.
+
+Project model version 15 resolves verified cross-source UUID groups for `SysVar`,
+`DigitalIn`, `Actor`, `Online`, `Mode`, and `VoltageOut`. All occurrences require
+the same type and attributes except `Title`/`Desc`; UUID/reference spelling is
+normalized. Equal topology or disjoint explicit connectors may complement each
+other. Conflicts, repeated source IDs, unknown topology or unresolved references
+prevent the entire group from merging. Raw graphs and physical IDs remain
+available. Description and trace aggregate occurrences within existing limits.
+Existing KNX identity rules are retained. This establishes static graph evidence,
+not physical behavior, causality or permission. No new tool or store is added.
+
 ## KNX correction draft descriptions and retention (#524)
 
 `loxberry_prepare_knx_corrections` adds optional `metadata` in prepare mode only:
