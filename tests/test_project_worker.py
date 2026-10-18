@@ -1,5 +1,7 @@
 import asyncio
 import struct
+import subprocess
+import sys
 import zipfile
 import zlib
 from io import BytesIO
@@ -377,3 +379,22 @@ async def test_warm_query_rechecks_access_around_download_and_rejects_revocation
     assert not service._cache
     assert not service._views
     await service.close()
+
+
+def test_snapshot_worker_imports_no_analysis_or_runtime_models():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import mcpserver.loxone.project.worker; "
+            "assert 'mcpserver.loxone.project.analysis' not in sys.modules; "
+            "assert 'mcpserver.loxone.project.modbus_analysis' not in sys.modules; "
+            "assert 'mcpserver.loxone.project.mapping' not in sys.modules; "
+            "assert 'mcpserver.loxone.models' not in sys.modules; "
+            "assert 'pydantic' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr

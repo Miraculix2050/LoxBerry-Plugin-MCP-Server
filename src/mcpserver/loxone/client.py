@@ -7,8 +7,11 @@ import hashlib
 import json
 import logging
 import re
+import ssl
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from typing import Any, Final, Protocol
 from urllib.parse import quote
 from uuid import UUID
@@ -278,6 +281,11 @@ class LoxoneClient:
         except (LookupError, UnicodeDecodeError):
             raise LoxoneConnectionError("Miniserver request failed") from None
 
+    @cached_property
+    def _http_verify(self) -> ssl.SSLContext:
+        """Reuse public trust configuration, never connections or authorization."""
+        return httpx.create_ssl_context(trust_env=False)
+
     async def _get_bytes(self, path: str) -> tuple[bytes, str]:
         try:
             async with (
@@ -286,6 +294,7 @@ class LoxoneClient:
                     follow_redirects=False,
                     timeout=self.timeout_seconds,
                     trust_env=False,
+                    verify=self._http_verify,
                 ) as client,
                 client.stream("GET", path) as response,
             ):
@@ -327,6 +336,7 @@ class LoxoneClient:
                         follow_redirects=False,
                         timeout=limits.timeout_seconds,
                         trust_env=False,
+                        verify=self._http_verify,
                     ) as http,
                     http.stream("GET", path, headers={"Accept-Encoding": "identity"}) as response,
                 ):
@@ -517,9 +527,19 @@ class LoxoneClient:
         if not token.value:
             raise LoxoneConnectionError("Loxone token is no longer available")
         public_key = ""
+        started = time.monotonic()
         if not self.endpoint.secure:
             public_key = await self.websocket_public_key()
+        _LOGGER.info(
+            "component=project_load phase=session_certificate duration_ms=%.1f",
+            (time.monotonic() - started) * 1000,
+        )
+        started = time.monotonic()
         websocket = await self._connect_websocket()
+        _LOGGER.info(
+            "component=project_load phase=session_connect duration_ms=%.1f",
+            (time.monotonic() - started) * 1000,
+        )
         session = LoxoneWebSocketSession(
             websocket,
             public_key=public_key,
@@ -534,7 +554,12 @@ class LoxoneClient:
             structure_namespace=self.endpoint.origin,
         )
         try:
+            started = time.monotonic()
             await session.authenticate()
+            _LOGGER.info(
+                "component=project_load phase=session_authenticate duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
         except BaseException as exc:
             if isinstance(exc, asyncio.CancelledError):
                 websocket.transport.abort()

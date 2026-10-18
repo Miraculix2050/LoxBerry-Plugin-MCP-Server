@@ -25,6 +25,7 @@ def test_cgi_project_forwarder_does_not_import_server_models():
             "import sys; import mcpserver.admin; import mcpserver.knx.admin_bridge; "
             "assert 'mcpserver.auth.provider' not in sys.modules; "
             "assert 'mcpserver.loxone.runtime' not in sys.modules; "
+            "assert 'starlette.requests' not in sys.modules; "
             "assert 'mcp.types' not in sys.modules",
         ],
         capture_output=True,

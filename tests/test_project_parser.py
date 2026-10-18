@@ -15,6 +15,23 @@ def test_preserves_duplicate_attributes_and_mixed_content():
     assert parsed.anomalies == ((1, "duplicate_attribute"), (1, "attribute_newline"))
 
 
+@pytest.mark.parametrize(
+    "attributes,expected",
+    [
+        (b"", None),
+        (b' V=""', ""),
+        (b' V="" V=""', ""),
+        (b' V="same" V="same"', "same"),
+        (b' V="" V="other"', None),
+        (b' V="same" V="other" V="same"', None),
+    ],
+)
+def test_unique_attribute_value_preserves_empty_and_duplicate_semantics(attributes, expected):
+    assert (
+        parse_project(b'<P Other="ignored"' + attributes + b"/>").elements[0].value("V") == expected
+    )
+
+
 def test_quotes_entities_and_unknown_elements():
     parsed = parse_project(b'<Unknown V="a > b &amp; c">&#x41;<![CDATA[<raw>]]></Unknown>')
     assert parsed.elements[0].value("V") == "a > b & c"

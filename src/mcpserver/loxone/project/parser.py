@@ -20,8 +20,14 @@ class ProjectElement:
     content: tuple[str | int, ...] = field(repr=False)
 
     def value(self, name: str) -> str | None:
-        values = {value for key, value in self.attributes if key == name}
-        return next(iter(values)) if len(values) == 1 else None
+        found = None
+        for key, value in self.attributes:
+            if key == name:
+                if found is None:
+                    found = value
+                elif found != value:
+                    return None
+        return found
 
 
 @dataclass(frozen=True, slots=True)

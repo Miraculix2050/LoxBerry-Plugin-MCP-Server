@@ -11,6 +11,44 @@ from mcpserver.loxone.project.service import ProjectService
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scheme", ["http", "https"])
+async def test_http_reads_reuse_only_verified_trust_configuration(monkeypatch, scheme):
+    import ssl
+
+    from mcpserver.loxone.security import CommandEncryptor
+
+    client = LoxoneClient(MiniserverEndpoint.parse(scheme + "://192.168.1.5"), client_uuid=uuid4())
+    monkeypatch.setattr(client, "websocket_public_key", AsyncMock(return_value="synthetic"))
+    monkeypatch.setattr(CommandEncryptor, "encrypted_http_request", lambda *_: "/encrypted")
+    original = httpx.AsyncClient
+    contexts = []
+
+    def factory(**options):
+        context = options["verify"]
+        assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+        assert context.cert_store_stats()["x509_ca"] > 0
+        assert options["trust_env"] is False and options["follow_redirects"] is False
+        contexts.append(context)
+        return original(
+            **options,
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, stream=httpx.ByteStream(b"synthetic"))
+            ),
+        )
+
+    monkeypatch.setattr("mcpserver.loxone.client.httpx.AsyncClient", factory)
+    assert await client._get_bytes("/fixed") == (b"synthetic", "utf-8")
+    assert await client._get_bytes("/fixed") == (b"synthetic", "utf-8")
+    assert (
+        await client.download_project(LoxoneToken("opaque", "reader", "", "SHA256", 9999999999))
+        == b"synthetic"
+    )
+    assert len(contexts) == 3 and all(context is contexts[0] for context in contexts)
+    second = LoxoneClient(client.endpoint, client_uuid=uuid4())
+    assert second._http_verify is not contexts[0]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "status,expected",
     [

@@ -15,21 +15,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-
 from mcpserver.admin_errors import AdminError
-from mcpserver.auth.scopes import READ_SCOPE
-from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
-from mcpserver.config import AtomicConfigStore
-from mcpserver.loxone.endpoint import MiniserverEndpoint
-from mcpserver.loxone.project.models import ProjectError
-from mcpserver.persistence import PersistenceUncertain
-
-from .model import KnxError
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+
     from mcpserver.auth.provider import Phase0OAuthProvider, StoredAccessToken
+    from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.config import AtomicConfigStore
     from mcpserver.loxone.runtime import LoxoneRuntime
 
 PATH = "/internal/knx-admin-project"
@@ -141,6 +135,9 @@ class AdminProjectBridge:
 
     def fresh(self, access: StoredAccessToken) -> None:
         """Fresh local OAuth validity at effects, without reading Admin config again."""
+        from mcpserver.auth.scopes import READ_SCOPE
+        from mcpserver.auth.store import token_digest
+
         state = self.store.snapshot()
         record = state["access_tokens"].get(token_digest(access.token), {})
         family = state["families"].get(access.family_id, {})
@@ -161,7 +158,14 @@ class AdminProjectBridge:
             raise PermissionError("Project access revoked")
 
     async def handle(self, request: Request) -> JSONResponse:
+        from starlette.responses import JSONResponse
+
+        from mcpserver.auth.scopes import READ_SCOPE
+        from mcpserver.loxone.project.models import ProjectError
         from mcpserver.loxone.runtime import RuntimeUnavailable
+        from mcpserver.persistence import PersistenceUncertain
+
+        from .model import KnxError
 
         session = request.headers.get(SESSION_HEADER, "")
         supplied = request.headers.get(PROOF_HEADER, "")
@@ -247,11 +251,14 @@ class AdminProjectBridge:
         body: bytes,
         access: StoredAccessToken,
     ) -> dict[str, Any]:
+        from mcpserver.loxone.endpoint import MiniserverEndpoint
+        from mcpserver.loxone.project.models import ProjectError
         from mcpserver.loxone.runtime import RuntimeUnavailable
         from mcpserver.tools import _project_query
 
         from .admin import dispatch_knx
         from .correction_service import project_binding
+        from .model import KnxError
 
         config = await asyncio.to_thread(self.configs.load)
         target = MiniserverEndpoint.parse(config.loxone_endpoint).origin

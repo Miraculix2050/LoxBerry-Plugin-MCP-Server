@@ -1698,9 +1698,15 @@ class LoxoneRuntime:
             if token is None:
                 raise LoxoneTokenStoreError("Loxone token is unavailable")
             phase = AvailabilityPhase.SESSION
+            session_started = time.monotonic()
             session = await self._open_session(
                 token, owner="tool_request", phase="session_establishment", access=access
             )
+            if fresh_visibility:
+                _LOGGER.info(
+                    "component=project_load phase=visibility_open duration_ms=%.1f",
+                    (time.monotonic() - session_started) * 1000,
+                )
             try:
                 if not fresh_visibility:
                     phase = AvailabilityPhase.VERSION
@@ -1710,11 +1716,23 @@ class LoxoneRuntime:
                         _LOGGER.debug("component=structure outcome=unchanged")
                         return
                 phase = AvailabilityPhase.LOAD
+                command_started = time.monotonic()
                 structure = await session.load_structure()
+                if fresh_visibility:
+                    _LOGGER.info(
+                        "component=project_load phase=visibility_command duration_ms=%.1f",
+                        (time.monotonic() - command_started) * 1000,
+                    )
             finally:
                 operation_phase = phase
                 phase = AvailabilityPhase.CLOSE
+                close_started = time.monotonic()
                 await session.close()
+                if fresh_visibility:
+                    _LOGGER.info(
+                        "component=project_load phase=visibility_close duration_ms=%.1f",
+                        (time.monotonic() - close_started) * 1000,
+                    )
                 phase = operation_phase
         except RuntimeAuthorizationError:
             raise
@@ -1906,11 +1924,27 @@ class LoxoneRuntime:
 
     async def project_marker(self, token: LoxoneToken) -> str:
         """Read the project marker through the shared authentication coordinator."""
+        started = time.monotonic()
         session = await self._open_session(token, owner="tool_request", phase="project_marker")
+        _LOGGER.info(
+            "component=project_load phase=marker_open duration_ms=%.1f",
+            (time.monotonic() - started) * 1000,
+        )
         try:
-            return await session.structure_version()
+            started = time.monotonic()
+            marker = await session.structure_version()
+            _LOGGER.info(
+                "component=project_load phase=marker_command duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
+            return marker
         finally:
+            started = time.monotonic()
             await session.close()
+            _LOGGER.info(
+                "component=project_load phase=marker_close duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
 
     async def _pump_events(self, subject: str, record: _ConnectionRecord) -> None:
         async for event_batch in record.session.state_events():
