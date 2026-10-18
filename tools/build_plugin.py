@@ -174,10 +174,17 @@ def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
             source.relative_to(source_root).as_posix(): source
             for source in (source_root / "mcpserver").rglob("*.py")
         }
+        sources.update(
+            {
+                source.relative_to(source_root).as_posix(): source
+                for source in (source_root / "mcpserver/skills/using-loxberry-mcp").rglob("*")
+                if source.is_file() and source.suffix in {".md", ".txt"}
+            }
+        )
         members = [
             name
             for name in wheel.namelist()
-            if name.startswith("mcpserver/") and name.endswith(".py")
+            if name.startswith("mcpserver/") and (name.endswith(".py") or name in sources)
         ]
         if len(members) != len(set(members)) or set(members) != set(sources):
             raise SystemExit("project wheel Python source set differs from current source")

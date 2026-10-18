@@ -156,6 +156,7 @@ from mcpserver.skill_delivery import (
     SKILL_MIME_TYPE,
     SKILL_NAME,
     SKILL_REVISION,
+    SkillSection,
     read_skill_markdown,
 )
 from mcpserver.solar_forecast import SolarWindowOptions, SolarWindowsResult
@@ -957,7 +958,7 @@ class SkillGuideData(BaseModel):
     revision: int
     media_type: str
     content: str
-    section: Literal["full", "core", "knx", "alerts"] = "full"
+    section: SkillSection = "full"
 
 
 class SystemStatusData(BaseModel):
@@ -6158,15 +6159,15 @@ def register_skill_tool(server: FastMCP) -> None:
     @server.tool(
         name="loxone_get_skill_guide",
         description=(
-            "Read core first; knx for ETS, alerts for active alerts; full for other workflows "
-            "and before writes. Use when MCP resources are unavailable."
+            "Read core first and its task index; load only needed workflow sections. "
+            "Before writes load operations. Omit section for the complete fallback guide."
         ),
         annotations=annotations,
         structured_output=True,
     )
     def get_skill_guide(
         section: Annotated[
-            Literal["full", "core", "knx", "alerts"],
+            SkillSection,
             Field(description="Task section; omitted preserves the complete legacy guide."),
         ] = "full",
     ) -> SkillGuideEnvelope:

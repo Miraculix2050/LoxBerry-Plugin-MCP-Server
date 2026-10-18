@@ -68,3 +68,6 @@ MCP clients receive the tool descriptions published by the specific installation
 Next: [Troubleshooting](troubleshooting.en.md).
 
 **Help and developer tools** provides links to the project and guides, Tool Explorer, schema reference, local event history, KNX address management, confirmed installation profile and individual message approval. Each link briefly explains the purpose and limits of its destination. KNX address management and the installation profile also remain available under **MCP configuration**, with the same explanations. Message approval opened from Help keeps the current page language.
+
+
+Read core first, then only the workflow sections selected by its task index. Before a write load core, operations and the relevant read module. If section retrieval fails use the complete guide; if that also fails stop the affected workflow. The legacy full-guide tool default and URI remain available.

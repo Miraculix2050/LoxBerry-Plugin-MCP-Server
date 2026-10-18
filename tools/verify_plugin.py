@@ -127,6 +127,18 @@ _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/emergency_options_cache.py",
     "mcpserver/event_history_selector_cache.py",
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",
+    "mcpserver/skills/using-loxberry-mcp/frontmatter.txt",
+    "mcpserver/skills/using-loxberry-mcp/modules/core.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/states.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/history.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/project.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/knx.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/modbus.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/lighting.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/energy.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/operations.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/diagnostics.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/alerts.md",
     "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
 }
 
@@ -178,10 +190,17 @@ def _verify_project_wheel(content: bytes, source_root: Path) -> None:
             source.relative_to(source_root).as_posix(): source
             for source in (source_root / "mcpserver").rglob("*.py")
         }
+        sources.update(
+            {
+                source.relative_to(source_root).as_posix(): source
+                for source in (source_root / "mcpserver/skills/using-loxberry-mcp").rglob("*")
+                if source.is_file() and source.suffix in {".md", ".txt"}
+            }
+        )
         members = [
             name
             for name in wheel.namelist()
-            if name.startswith("mcpserver/") and name.endswith(".py")
+            if name.startswith("mcpserver/") and (name.endswith(".py") or name in sources)
         ]
         if len(members) != len(set(members)) or set(members) != set(sources):
             raise PackageVerificationError(

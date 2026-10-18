@@ -387,3 +387,15 @@ always an explicitly chosen local candidate, never a Loxone authorization grant.
 The serializer never accesses Loxone or edits catalog/overrides. Draft download is
 session/target/revision-bound and requires the visible experimental confirmation.
 An actual ETS project-copy import remains an external acceptance gate for #419.
+
+
+## Canonical task guidance (#442)
+
+Fixed packaged Markdown modules own workflow rules. The core task index selects
+only needed modules; guidance retrieval never reads project or runtime data.
+`tools/generate_skill_guide.py` composes the checked-in legacy full guide from
+these sources; regression tests reject drift. Resources and the existing guide
+tool share the same module loader, revision and allowlisted section type.
+Clients fall back to the full guide if a module is unavailable and stop the
+affected workflow if both retrieval paths fail. Core and operations are required
+before writes; source-specific read modules retain their independent policy.
