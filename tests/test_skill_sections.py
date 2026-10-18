@@ -177,3 +177,15 @@ def test_missing_module_preserves_full_fallback_and_rejects_paths(monkeypatch) -
     assert "## Read history and statistics" in delivery.read_skill_markdown()
     with pytest.raises(ValueError, match="skill_section_invalid"):
         delivery.read_skill_markdown("../SKILL")
+
+
+def test_standalone_modules_keep_routed_workflows_and_explicit_dependencies() -> None:
+    project = read_skill_markdown("project")
+    energy = read_skill_markdown("energy")
+    states = read_skill_markdown("states")
+    assert "### Review opening-contact coverage" in project
+    assert "loxone_analyze_opening_contacts" in project
+    assert "### Review opening-contact coverage" not in read_skill_markdown("knx")
+    assert "loxone_read_controls" in energy and "loxone_find_controls" in energy
+    assert "section='project'" in states and "section='history'" in states
+    assert "tools above" not in states and "as described below" not in states

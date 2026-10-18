@@ -91,13 +91,13 @@ the overview.
    is an observation, not a record of when that value began.
 2. For a question about a past period, check `loxone_describe_control` for
    advertised native history or statistic series, and query only the relevant
-   history source as described below. A configured series or recording source
+   history source after loading section='history'. A configured series or recording source
    does not establish coverage of the requested period. Check returned events,
    timestamps, pagination, and coverage before describing a transition. A
    reconnect snapshot records a value observed after reconnect; it does not
    timestamp the transition that may have happened while disconnected.
 3. For a structural question, inspect the exact project target with the project
-   tools above. For a time-bounded coverage question, use
+   workflow after loading section='project'. For a time-bounded coverage question, use
    `loxone_analyze_observability` with that target, the needed direction, and
    the requested `start` and `end`. Follow `next_cursor` and check graph, page,
    and each control's `states_truncated` indicators before treating the set of

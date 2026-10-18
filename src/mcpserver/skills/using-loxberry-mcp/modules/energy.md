@@ -27,7 +27,10 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
 
 ### Native energy reads
 
-   For native EFM results only, pass `native_result_view` (`actual`, `day`, `week`,
+   Resolve one exact currently visible EFM with `loxone_find_controls` and current
+   description references; never infer a target from its name. Call
+   `loxone_read_controls` with `targets=[{control_uuid: ...}]` and
+   `native_result_view` (`actual`, `day`, `week`,
    `month`, `year`, `lifetime`) with one exact target, no `state_names`, and
    `include_semantics=false`. This first slice requires a freshly verified Loxone
    administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
