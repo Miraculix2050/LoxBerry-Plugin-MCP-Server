@@ -24,7 +24,7 @@ from mcpserver.loxone.event_history import (
 )
 from mcpserver.loxone.models import LoxoneStructure
 from mcpserver.loxone.service_access import LoxBerryServiceCredentials
-from mcpserver.loxone.uuid import normalize_loxone_uuid
+from mcpserver.loxone.uuid import normalize_history_control_id, normalize_loxone_uuid
 
 _DISCOVERY_TIMEOUT = 35
 _SOURCE_LIMIT = 64
@@ -99,7 +99,7 @@ def _source(payload: object) -> tuple[str, str]:
     if not isinstance(payload, dict):
         raise bridge.AdminError("source is invalid")
     try:
-        control = normalize_loxone_uuid(payload.get("control_uuid"))
+        control = normalize_history_control_id(payload.get("control_uuid"))
         state = normalize_loxone_uuid(payload.get("state_uuid"))
     except (TypeError, ValueError) as exc:
         raise bridge.AdminError("source is invalid") from exc
@@ -776,7 +776,7 @@ def discover_states(payload: object) -> dict[str, Any]:
     if len(query) > 100:
         raise bridge.AdminError("search is too long")
     try:
-        control_uuid = normalize_loxone_uuid(payload.get("control_uuid"))
+        control_uuid = normalize_history_control_id(payload.get("control_uuid"))
     except (TypeError, ValueError) as exc:
         raise bridge.AdminError("control is invalid") from exc
     config = bridge._config_store().load()

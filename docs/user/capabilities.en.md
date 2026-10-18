@@ -1,5 +1,12 @@
 # Capabilities and limits
 
+Local Event History accepts exact discovered runtime control IDs with subcontrol
+suffixes. Preserve their complete spelling and case; state IDs remain UUIDs.
+Reads and existing recording-source selection use the exact visible child/state
+pair, without parent or sibling fallback. A visible child without retained local
+history returns `not_found`; this does not prove inactivity. Recording and
+LoxBerry approval gates remain unchanged.
+
 [Deutsch](capabilities.de.md)
 
 `loxone_analyze_history` computes compact temperature sample means, verified

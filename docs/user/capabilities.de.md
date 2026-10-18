@@ -1,5 +1,13 @@
 # Funktionsumfang und Grenzen
 
+Die lokale Event History akzeptiert exakt entdeckte Runtime-Control-IDs mit
+Subcontrol-Suffix. Vollständige Schreibweise und Groß-/Kleinschreibung bleiben
+erhalten; State-IDs bleiben UUIDs. Abfragen und die bestehende Quellenauswahl
+verwenden ausschließlich das sichtbare Child/State-Paar, ohne Rückfall auf Parent
+oder Geschwister. Ohne aufbewahrte lokale Historie liefert ein sichtbares Child
+`not_found`; das beweist keine Inaktivität. Aufzeichnungs- und LoxBerry-Freigaben
+bleiben unverändert.
+
 [English](capabilities.en.md)
 
 `loxone_analyze_history` berechnet kompakte Temperatur-Stichprobenmittel,

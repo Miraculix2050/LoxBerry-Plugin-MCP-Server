@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Fix local Event History rejecting exact runtime subcontrol suffix IDs. Preserve
+  child/state storage identity, visibility, recording approval and plain-UUID
+  compatibility across reads and existing source selection (#553, follow-up #219).
+
 - Explain conditional PVPF planning in the DE/EN Tool Explorer and summarize
   suggested UTC windows, conditional PV coverage and additional grid energy (#510).
 
