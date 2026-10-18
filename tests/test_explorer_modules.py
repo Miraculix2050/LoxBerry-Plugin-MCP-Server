@@ -287,9 +287,12 @@ def test_explorer_oauth_requests_independent_knx_write_scope(explicit) -> None:
 
 def test_knx_write_explorer_assets_and_bilingual_permission_label_are_current() -> None:
     template = (ROOT / "templates/explorer.html").read_text(encoding="utf-8")
-    for name in ("explorer-adapters", "explorer", "explorer-core"):
-        suffix = "-solar-numerical-v1" if name in {"explorer-core", "explorer"} else ""
-        assert f"{name}.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1{suffix}" in template
+    for name, suffix in (
+        ("explorer-adapters", "pv-planning-v1"),
+        ("explorer", "knx-write-v1-solar-numerical-v1"),
+        ("explorer-core", "knx-write-v1-solar-numerical-v1"),
+    ):
+        assert f"{name}.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-{suffix}" in template
     assert (
         'data-knx-write-required="<TMPL_VAR EXPLORER.KNX_WRITE_REQUIRED ESCAPE=HTML>"' in template
     )

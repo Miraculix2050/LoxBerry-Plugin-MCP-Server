@@ -876,3 +876,10 @@ Core plus operations supply the complete mandatory write guidance, including
 profile, message, event-source and KNX draft/apply safeguards; source-specific
 read modules are loaded only when their evidence is needed. This changes no
 runtime permission, approval, confirmation or uncertainty contract.
+
+## Conditional load planner (#510)
+
+`loxone_plan_loads(options=...)` adds the separately typed future planning contract.
+Existing history operations retain past-only validation. Source discovery uses
+existing controls/profile tools; options accept no commands, URLs or source paths.
+See [method and limits](load-planning-method.md) and [user input guide](../user/pv-planning.en.md).

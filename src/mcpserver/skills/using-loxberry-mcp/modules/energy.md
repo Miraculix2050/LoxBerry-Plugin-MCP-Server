@@ -254,3 +254,10 @@ fixed getForecasts source supplies hourly kWh, converted to Wh; timestamp states
 use the 2009 epoch while hourly timestamps use Unix. Do not fill gaps or treat
 model estimates as measured production. Explain unavailable Weather Service
 without automatically changing configuration.
+
+Use `loxone_plan_loads` for future consumer windows. Supply exact confirmed
+consumer bindings and explicit baseload/storage scenarios. Exclude the selected
+loads from baseload. Require user-confirmed complete cycle identity; observed
+models use existing history, declared energy is a uniform estimate. Preserve
+conditional results, unknown future locks, hourly/subhour limitations and source
+status; never turn suggestions into device actions or guaranteed savings.

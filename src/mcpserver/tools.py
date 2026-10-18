@@ -9081,11 +9081,22 @@ def register_tool_surface(
     register_event_history_tools(server, event_history_runtime)
     from mcpserver.history_analysis_tools import register_history_analysis_tool
 
+    analysis_pending: set[asyncio.Task[Any]] = set()
     register_history_analysis_tool(
         server,
         runtime,
         event_history_runtime,
         knx_store_path.parent.parent / "installation-profile.json" if knx_store_path else None,
+        pending=analysis_pending,
+    )
+    from mcpserver.load_planning_tools import register_load_planning_tool
+
+    register_load_planning_tool(
+        server,
+        runtime,
+        event_history_runtime,
+        knx_store_path.parent.parent / "installation-profile.json" if knx_store_path else None,
+        pending=analysis_pending,
     )
     if loxberry_runtime is not None:
         register_loxberry_read_tools(server, loxberry_runtime)

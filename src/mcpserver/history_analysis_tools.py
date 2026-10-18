@@ -287,9 +287,11 @@ def register_history_analysis_tool(
     runtime: LoxoneRuntime | None,
     event_runtime: EventHistoryRuntime | None,
     profile_path: Path | None,
+    *,
+    pending: set[asyncio.Task[Any]] | None = None,
 ) -> None:
     cursors = _CursorCodec()
-    pending: set[asyncio.Task[AnalysisEnvelope]] = set()
+    pending = pending if pending is not None else set()
 
     async def calculate(
         operation: AnalysisOperation,

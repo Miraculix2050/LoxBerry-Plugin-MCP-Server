@@ -90,6 +90,7 @@ EXPECTED_TOOLS = {
     "loxone_get_control_history",
     "loxone_get_event_history",
     "loxone_analyze_history",
+    "loxone_plan_loads",
     "loxone_get_control_notes",
     "loxone_get_project_status",
     "loxone_get_room_snapshot",

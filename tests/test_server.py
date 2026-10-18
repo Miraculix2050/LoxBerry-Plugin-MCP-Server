@@ -504,6 +504,7 @@ def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
         "loxone_list_event_history_sources",
         "loxone_get_event_history",
         "loxone_analyze_history",
+        "loxone_plan_loads",
     ]
     mutations = {
         "loxberry_prepare_knx_corrections",

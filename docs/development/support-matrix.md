@@ -87,3 +87,8 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
 - Native PVPF (#510): typed hourly energy and state semantics follow Structure File
   17.1 pp.115–116. Availability and prediction age are explicit; automated fixtures
   do not establish an available real Weather Service or forecast accuracy.
+
+- Conditional future planning (#510): native PVPF hours, confirmed complete cycles,
+  explicit base/storage scenarios and shared hourly budget. Unknown future native
+  constraints remain conditions. Automated evidence is separate from positive
+  source/device acceptance and measured forecast accuracy.
