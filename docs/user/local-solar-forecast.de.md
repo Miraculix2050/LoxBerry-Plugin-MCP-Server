@@ -48,3 +48,5 @@ belegten Gerätefehler zu behaupten. Lücken werden nicht interpoliert. Für ein
 PV-Ertragsplanung fehlen weiterhin qualifizierte Anlagen- und Lastnachweise;
 native Sperren und zulässige Lastpläne bleiben unbekannt.
 Die vollständige Planung wird in [#510](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/510) weitergeführt.
+
+Für native PVPF-Stundenprognosen und bedingte Lastszenarien siehe [PV-Planung](pv-planning.de.md). Diese verwenden eine getrennte native Quelle; die oben beschriebenen Wetterfenster bleiben W/m²-Orientierung.

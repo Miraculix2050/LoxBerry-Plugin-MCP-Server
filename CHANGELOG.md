@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Explain conditional PVPF planning in the DE/EN Tool Explorer and summarize
+  suggested UTC windows, conditional PV coverage and additional grid energy (#510).
+
 - Add read-only conditional future load planning from native PVPF hours, confirmed
   complete-cycle models and explicit baseload/storage scenarios; allocate one
   shared energy budget with bounded source reads and computation (#440, #510).

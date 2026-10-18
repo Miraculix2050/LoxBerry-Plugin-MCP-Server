@@ -59,6 +59,18 @@ Suche führt keine Quellzugriffe aus. Ergebnisse beschreiben bedingte PV-Abdecku
 und zusätzliche Netzenergie, keine gemessene Einsparung, optimale Planung oder
 Betriebsfreigabe.
 
+## Tool Explorer
+
+Im authentifizierten Explorer zuerst PVPF suchen, danach
+`loxone_read_controls` mit einem Ziel und `native_result_view=pv_forecast` wählen.
+Für `loxone_plan_loads` den JSON-Editor für das strukturierte `options`-Objekt
+und die bestätigten Profilkennungen verwenden. Die Szenarien ausdrücklich
+angeben; die Oberfläche wählt keine Speicherreserve und schaltet kein Gerät.
+Bedingte Fenster zeigen UTC-Grenzen, PV-Abdeckung und zusätzliche Netzenergie;
+das vollständige Ergebnis behält Annahmen, Bedingungen und Gründe ungeplanter
+Lasten. Eine nicht verfügbare Quelle wird sichtbar erklärt. Die neuen Tools
+benötigen nach dem Plugin-Update keine zusätzliche Konfigurationsänderung.
+
 Bei aktuellem nativem `ready=0` wird `not_ready` ohne Abruf nicht verfügbarer Stundenwerte zurückgegeben. Autorisierung und Quellensichtbarkeit werden weiterhin geprüft.
 
 Eine unbekannte oder veraltete aktuelle native Sperre wird ausdrücklich als `native_current_lock_unresolved` ausgewiesen; sie gilt nicht als bestätigt aufgehoben.

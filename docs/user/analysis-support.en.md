@@ -1,5 +1,7 @@
 # Analysis questions: support and boundaries
 
+Current addition: [native PVPF forecasts and conditional future planning](pv-planning.en.md) use a separate PV source and confirmed load profiles. The retained solar-25 case below describes the original weather-only acceptance; it does not establish source, device or AI acceptance of the new planner.
+
 Renewed #485 acceptance uses bytes, complete call counts, cold/warm durations and
 domain answer quality. Token metrics are optional; bytes do not establish token
 or cost savings. The confirmed limit remains 50 answer records. Changing the

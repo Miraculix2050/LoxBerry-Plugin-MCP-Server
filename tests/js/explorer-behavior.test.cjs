@@ -4,6 +4,45 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const {createHarness, readTool, writeTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
 
+test('future planning keeps conditional guidance and energy results visible', async (t) => {
+  const tool = {...readTool, name: 'loxone_plan_loads',
+    inputSchema: {type: 'object', properties: {}},
+  };
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    method_version: 'conditional_load_planning.v1', status: 'conditional',
+    allocations: [{binding_id: '<script>load</script>', start: 1792396800,
+      end: 1792400400, conditional_pv_wh: 800, additional_grid_wh: 200}],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  assert.match(h.byId('tool-summary').textContent, /PLANNING_NOTICE/);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('800 Wh'));
+  assert.match(h.byId('result-tree').textContent, /200 Wh/);
+  assert.match(h.byId('result-tree').textContent, /UTC/);
+  assert.equal(h.byId('result-tree').querySelector('script'), null);
+  assert.equal(h.calls().length, 1);
+  assert.equal(h.window.McpExplorerAdapters.toolGroup('loxone_plan_loads'), 'loxoneRead');
+});
+
+for (const reason of ['source', 'requested_future_forecast_hours_unavailable', 'requested_scenario_hour_coverage_unavailable']) {
+test(`unavailable planning explains source or coverage: ${reason}`, async (t) => {
+  const tool = {...readTool, name: 'loxone_plan_loads',
+    inputSchema: {type: 'object', properties: {}},
+  };
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    method_version: 'conditional_load_planning.v1', status: 'unavailable', allocations: [],
+    forecast: {status: reason === 'source' ? 'not_ready' : 'available'},
+    limitations: reason === 'source' ? [] : [reason],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('PLANNING_UNAVAILABLE'));
+  assert.equal(h.calls().length, 1);
+});
+}
+
 test('object alternatives reuse JSON fields without dropping source rows or branch validation', async (t) => {
   const choice = {anyOf: [
     {type: 'object', additionalProperties: false, required: ['method'], properties: {method: {const: 'classes'}}},

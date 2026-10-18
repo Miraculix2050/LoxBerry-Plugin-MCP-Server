@@ -42,3 +42,5 @@ user of these limitations without claiming a proven device fault. Gaps are not
 interpolated. Actual PV-yield planning additionally needs qualified plant and
 load evidence; native locks and allowed load schedules remain unknown.
 The full planning follow-up is [#510](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/510).
+
+For native PVPF hourly forecasts and conditional load scenarios see [PV planning](pv-planning.en.md). They use a separate native source; the weather windows above remain W/m² guidance.
