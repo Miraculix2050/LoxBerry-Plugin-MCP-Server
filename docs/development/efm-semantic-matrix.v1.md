@@ -25,34 +25,13 @@ Fronius/Energy Monitor units on that page belong to another control family.
 KB statements have no independently established 17.2.8.28 applicability for a
 new aggregate interpretation; their review date is not a source version.
 
-### Sanitized capture provenance
-
-E1 retained HTTP 200 and LL.Code string `"200"`; LL.value was a **JSON string**
-containing a flat object. Actual had numeric Gpwr/Ppwr/Spwr/Cpwr and no Rest.
-Each period view had the seven numeric fields listed below. No measurement
-values, credentials, addresses, names or source identifiers are reproduced here.
-
-Actual/day receipt times were 2026-10-11T12:59:26.310Z / 12:59:37.755Z;
-week/month/year/lifetime were 13:04:14.795Z / 13:04:14.874Z /
-13:04:14.969Z / 13:04:15.053Z. Responses were uncached. The additional-period
-event buffer evicted earlier events; all four selected responses were retained,
-but global event completeness was not established. These are receipt times,
-not physical measurement timestamps. This review made no new device requests.
-
-E2 independently recorded `currentUser.isAdmin=true` in a fresh caller session
-and EFM formats `actualFormat="%.3fkW"`, `totalFormat="%.3fkWh"`,
-`storageFormat="%.0f%%"`. Installed actual results had units
-`[kW, kW, kW, null, null]`; all period units stayed null. This is historical
-acceptance, not confirmation of today's configuration or permission.
-
-Private sanitized artifact digests (SHA-256; retained in project-data evidence):
-
-| Artifact | SHA-256 |
-| --- | --- |
-| `issue436-native-efm-20261011-v2.json` (E1) | `c2fb4da2bd42e4c4ae7fe684828641c33a800c95747299901f41ffe8fe2212ef` |
-| `issue436-pr492-energy-native-source-context-492.jsonl` (E2 source) | `9725896154a08223dee7a21febf923a92c794ba81bf559c5a0f470fdec16b765` |
-| `issue436-pr492-energy-native-acceptance-492.jsonl` (E2 handler) | `65216c9bc109c710cf791d2cd2b32f5bf5cd46de641d04716f82c95b06f896a0` |
-| `issue436-pr492-browser-mcp.json` (E2 HTTP/Explorer) | `937b76bc0ab562a308e81130b4c8f24b5fdfff3861d1c77217b63426bc62d7e0` |
+E1 establishes the JSON-string wire shape and numeric fields in the tables
+below. E2 separately establishes the existing format rule through a fresh
+caller-owned administrator session. Both concern firmware 17.2.8.28 and remain
+historical evidence, not confirmation of today's configuration or permission.
+Detailed sanitized capture provenance, receipt times, acquisition limitations
+and artifact digests are retained in the private project-data evidence store.
+This review made no new device requests and accepts no new interpretation.
 
 ## Actual field decisions
 
@@ -94,7 +73,7 @@ outputs and formulas are contextual documentation, not native field aliases.
 | Consumption | D1 lists Consumption; K1 documents Cd. | **Insufficient evidence:** raw numeric Consumption; quantity/unit/direction unknown. | Aggregate quantity/unit and consumption boundary, including residual/storage treatment; no Cd alias or balance formula. |
 | Income | D1 lists Income; K1 describes Yd and export/import price parameters. | **Insufficient evidence:** raw numeric Income; quantity/unit/currency unknown. | Explicit native Income meaning, currency source and applicability, time accumulation and tariff/source linkage. Income=Yd=OYt is not established. No tariff reconstruction. |
 
-`totalFormat` is documented for `total/totalNeg` (D1 p.64). Its kWh text in E2
+`totalFormat` is documented for `total/totalNeg` (D1 p.64). Its retained format in E2
 does not prove that the seven aggregate period fields use that unit. Meter KB
 examples also allow different media and independently configured power/reading
 units; they do not supply the missing aggregate mapping.
