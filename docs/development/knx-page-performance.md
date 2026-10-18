@@ -170,3 +170,36 @@ OAuth session, remembered comparison, periodic polling and all security checks
 unchanged. A cold sample means restarting the plugin service, not clearing OS or
 browser caches. Record initial response completion and separately verify rendered
 rows/loading indicators. Do not call this a precise paint timestamp or p95.
+
+The retained observation-import change was checked separately on the native host
+with eight alternating fresh-process pairs and the same three configured sources:
+combined import/complete validation 1563.57 -> 997.09 ms (CPU 1562.39 -> 996.81 ms),
+with equal parsed documents. Configuration validation remained about 20 ms in
+both variants; source-model imports were no longer moved under the config lock.
+
+Successful whole-page pairs, in seconds, on the unchanged functional baseline:
+
+| Pair | Reference cold | Candidate cold | Reference cached refresh | Candidate cached refresh |
+| --- | ---: | ---: | ---: | ---: |
+| A2 / C1 | 20.671 | 19.973 | 8.553 | 8.363 |
+| A3 / C2R | 24.014 | 22.650 | 10.185 | 8.864 |
+| A4 / C3 | 25.246 | 24.914 | 11.275 | 11.568 |
+
+All accepted samples restored 22 comparison rows with no remaining initial
+loading indicators. The cold definition is service restart; each accepted cached
+refresh follows a successful cold run. One earlier cold request returned no rows
+and is retained as failed acceptance, excluded from successful timing statistics.
+Its error body was unavailable after navigation, so its cause remains unknown.
+The immediate recovery rebuilt the model and took 20.173 s; it is not a cached
+refresh. Later successes do not resolve the original functional finding, and the
+native acceptance must not be described as entirely clean on that evidence.
+
+Device conditions varied materially during measurement: temperature rose from
+about 67.7 to 73.1 C, and firmware reported frequency capping (`0x60002`), with an
+observed actual ARM clock of about 0.841 GHz versus an earlier 1.200 GHz. The
+[official firmware status reference](https://www.raspberrypi.com/documentation/computers/os.html#get_throttled)
+distinguishes current capping from historical flags. These readings do not prove
+the reason for capping or explain the exact historical 3.176 s difference.
+Unchanged reference times also increased. Whole-page deltas therefore remain
+observations under drifting device conditions, not an isolated causal speedup,
+p95 or a five-second guarantee. The five-second target remains unmet.
