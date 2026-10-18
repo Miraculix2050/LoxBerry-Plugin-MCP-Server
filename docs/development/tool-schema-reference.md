@@ -32,6 +32,28 @@ control action or change to read authorization is introduced. Local solar sampli
 is an independent default-off Admin setting in shared SQLite V9. See
 [source and storage contract](solar-recording.md). Skill revision 97.
 
+
+## Runtime subcontrol provenance (#219)
+
+`loxone_get_project_status` adds `include_mapping_inventory=false`, optional
+`mapping_status`/`runtime_control_uuid` filters, `cursor`, and `limit` (20, 1–100).
+Filters/cursors require the inventory. Its optional `mapping_inventory` contains
+bounded mapping records, `next_cursor`, `truncated`, and `truncation_reason`.
+Each record exposes direct mapping candidates separately from parent project
+references, immediate parent UUID/status, exact ancestor UUID, subcontrol key,
+bounded runtime ancestry, model-source IDs, rule, reason and reference truncation.
+Derived statuses are `derived_from_parent`, `derived_parent_unmapped`, and
+`derived_parent_ambiguous`; exact/ambiguous/unmapped entries remain available.
+`mapping_breakdown.independent_unmapped` separates the independent gap class;
+legacy `mapping` counts are unchanged.
+
+Search/description and trace add nullable `runtime_target_mapping` for a selected
+derived child. Observability adds nullable `target_runtime_evidence`, reusing
+the bounded control-evidence shape with that provenance and empty own project
+references. Existing controls and summary counts remain exact-only. All overlays
+require fresh visibility and existing authorization. Explicit runtime containment
+is evidence only for parent topology, never connector identity. Skill revision 96.
+
 ## KNX correction draft descriptions and retention (#524)
 
 `loxberry_prepare_knx_corrections` adds optional `metadata` in prepare mode only:

@@ -6,6 +6,17 @@ Use Project Intelligence only for a structural question such as what can
 influence a known control. Call `loxone_get_project_status` first when project
 freshness, mapping coverage, or unresolved relationships matter. Then:
 
+For mapping diagnosis, request `include_mapping_inventory=true` on project status
+and follow its inventory cursor with unchanged filters. `mapping_breakdown`
+separates independently unmapped controls from explicit runtime children; legacy
+mapping counters retain their definition. `derived_from_parent` is parent
+topology evidence, never an independent Config block or connector mapping.
+Inspect `runtime_target_mapping` on child-target search/describe/trace results.
+Observability uses the exact parent/ancestor as structural anchor and reports
+only the selected child's evidence in `target_runtime_evidence`; its existing
+controls and summary counters remain exact-only. Check missing/ambiguous parent
+evidence and truncation; never derive parents or connectors from suffixes alone.
+
 1. Use `loxone_find_project_objects` with narrow exact filters or a bounded
    query. It returns a compact node summary; follow `next_cursor` while keeping
    all filters unchanged, and check `truncated` plus `truncation_reason`.

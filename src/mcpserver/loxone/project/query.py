@@ -567,6 +567,20 @@ class ProjectQuery:
         mapping_counts: dict[str, int] = {"exact": 0, "ambiguous": 0, "unmapped": 0}
         for entry in self.view.mapping.entries:
             mapping_counts[entry.status] = mapping_counts.get(entry.status, 0) + 1
+        breakdown = dict.fromkeys(
+            (
+                "exact",
+                "ambiguous",
+                "independent_unmapped",
+                "derived_from_parent",
+                "derived_parent_unmapped",
+                "derived_parent_ambiguous",
+            ),
+            0,
+        )
+        for entry in self.view.mapping.entries:
+            status = entry.mapping_status
+            breakdown["independent_unmapped" if status == "unmapped" else status] += 1
         return {
             "project_fingerprint": self.view.snapshot.fingerprint,
             "model_version": self.view.snapshot.model_version,
@@ -579,6 +593,7 @@ class ProjectQuery:
             "edges": len(graph.edges),
             "unresolved_relationships": len(graph.unresolved),
             "mapping": mapping_counts,
+            "mapping_breakdown": breakdown,
             "source_diagnostics": {
                 "entries": [
                     {
@@ -599,6 +614,53 @@ class ProjectQuery:
             },
             "coverage_by_source_type": coverage_by_source_type(self.view.snapshot),
         }
+
+    def mapping_inventory(
+        self, *, mapping_status: str | None = None, runtime_control_uuid: str | None = None
+    ) -> list[dict[str, object]]:
+        return [
+            self.mapping_evidence(entry.control_uuid)
+            for entry in sorted(self._mappings.values(), key=lambda item: item.control_uuid)
+            if (mapping_status is None or entry.mapping_status == mapping_status)
+            and (runtime_control_uuid is None or entry.control_uuid == runtime_control_uuid)
+        ]
+
+    def mapping_evidence(self, identifier: str) -> dict[str, object]:
+        entry = self._mappings[identifier]
+        parent = entry.parent
+        references = parent.parent_project_node_ids if parent else entry.node_keys
+        sources = sorted(
+            {
+                source
+                for key in references
+                for source in (
+                    self.view.snapshot.source_ids_for(key) or (self._nodes[key].project,)
+                )
+            }
+        )
+        return {
+            "runtime_control_uuid": entry.control_uuid,
+            "mapping_status": entry.mapping_status,
+            "mapping_rule": parent.mapping_rule if parent else entry.rule,
+            "project_node_ids": list(entry.node_keys[:32]),
+            "parent_runtime_control_uuid": parent.parent_runtime_control_uuid if parent else None,
+            "parent_mapping_status": parent.parent_mapping_status if parent else None,
+            "parent_project_node_ids": list(parent.parent_project_node_ids[:32]) if parent else [],
+            "anchor_runtime_control_uuid": parent.anchor_runtime_control_uuid if parent else None,
+            "subcontrol_key": parent.subcontrol_key if parent else None,
+            "runtime_parent_chain": list(parent.runtime_parent_chain) if parent else [],
+            "model_source_ids": sources[:32],
+            "reason": parent.reason if parent else None,
+            "references_truncated": len(references) > 32 or len(sources) > 32,
+        }
+
+    def derived_target(self, identifier: str, identifier_type: str) -> dict[str, object] | None:
+        entry = (
+            self._mappings.get(identifier) if identifier_type == "runtime_control_uuid" else None
+        )
+        if entry is not None and entry.mapping_status == "derived_from_parent":
+            return self.mapping_evidence(identifier)
+        return None
 
     def find(
         self,
@@ -636,6 +698,8 @@ class ProjectQuery:
             if mapping is None:
                 return []
             candidates = set(mapping.node_keys)
+            if mapping.parent and mapping.parent.status == "derived_from_parent":
+                candidates = set(mapping.parent.parent_project_node_ids)
         else:
             candidates = None
         needle = query.casefold().strip() if query else None
@@ -697,6 +761,14 @@ class ProjectQuery:
                 ) and (metadata_number is None or metadata_number not in metadata_matches):
                     continue
             result.append(item)
+        provenance = (
+            self.derived_target(runtime_control_uuid, "runtime_control_uuid")
+            if runtime_control_uuid
+            else None
+        )
+        if provenance:
+            for item in result:
+                item["runtime_target_mapping"] = provenance
         return result
 
     def resolve(self, identifier: str, identifier_type: str) -> GraphNode:
@@ -708,6 +780,11 @@ class ProjectQuery:
         if identifier_type != "runtime_control_uuid":
             raise ProjectQueryError("project_query_invalid")
         mapping = self._mappings.get(identifier)
+        if mapping is not None and mapping.parent is not None:
+            if mapping.parent.status == "derived_from_parent":
+                return self._nodes[mapping.parent.parent_project_node_ids[0]]
+            if mapping.parent.status == "derived_parent_ambiguous":
+                raise ProjectQueryError("project_mapping_ambiguous")
         if mapping is None or mapping.status == "unmapped":
             raise ProjectQueryError("project_node_unknown")
         if mapping.status != "exact":
