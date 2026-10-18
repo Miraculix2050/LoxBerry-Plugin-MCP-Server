@@ -216,12 +216,12 @@ def _calculate(
     normalized: dict[str, dict[float, float]] = {}
     summaries = []
     generations = []
-    forecasts = []
+    forecasts: list[tuple[float, dict[str, object]]] = []
     for source, fingerprint, rows in local:
         _check(deadline)
         generations.append(fingerprint)
         if source.kind == "pv_forecast":
-            forecasts.extend(rows)
+            forecasts.extend((at, payload) for at, payload in rows if begin <= at < finish)
             summaries.append(
                 SolarSourceSummary(
                     control_uuid=source.control_uuid,
@@ -458,7 +458,9 @@ async def numerical_day_analysis(
                 raise ControlOperationError(
                     "not_found", "Registered visible solar source is not available"
                 ) from exc
-            margin = min(3600, 2 * source.sampling_period_seconds)
+            margin = (
+                0 if source.kind == "pv_forecast" else min(3600, 2 * source.sampling_period_seconds)
+            )
             await runtime._require_access(access)
             rows, consumed = await run_admitted_worker(
                 store.read,
@@ -472,7 +474,9 @@ async def numerical_day_analysis(
             count += consumed
             local.append((source, fingerprint, rows))
             continue
-        binding = bindings.get(selector.get("binding_id", ""))
+        if not selector.get("binding_id") or selector.get("source_kind") is not None:
+            raise ValueError("numerical energy sources require confirmed hourly statistic bindings")
+        binding = bindings.get(selector["binding_id"])
         if binding is None:
             raise ControlOperationError("not_found", "Confirmed energy binding is not available")
         if binding.get("source_kind") != "statistic" or selector.get("granularity") != "hour":

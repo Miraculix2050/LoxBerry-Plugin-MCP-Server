@@ -179,6 +179,43 @@ def test_forecast_cycles_never_establish_period_bounds_or_actual_comparisons():
     assert unavailable[0]["status"] == "unavailable" and unavailable[0]["period_kwh"] is None
 
 
+def test_forecast_context_respects_half_open_capture_interval():
+    first, local, _ = fixture_data()
+    begin, finish = first.timestamp(), (first + timedelta(days=4)).timestamp()
+    forecast = source(control_uuid=P, kind="pv_forecast", state_uuid=None, unit="kWh")
+    payload = {
+        "states": dict(
+            period=-1,
+            today=-1,
+            tomorrow=-1,
+            after=-1,
+            inputperiod=24,
+            ready=0,
+            errorInfo=2,
+            timestamp=0,
+            cycleFrom=0,
+            cycleUntil=0,
+        )
+    }
+    rows = [(at, payload) for at in (begin - 60, begin, finish - 60, finish, finish + 60)]
+    result = calculate(local=[*local, (forecast, "forecast", rows)])
+    assert [datetime.fromisoformat(c.captured_at).timestamp() for c in result.forecast_context] == [
+        begin,
+        finish - 60,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_numerical_structured_weather_selector_is_invalid_input(monkeypatch, tmp_path):
+    from mcpserver.comparable_days_tools import WeatherAnalysisSource
+
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+    args["sources"] = [WeatherAnalysisSource(source_kind="structured_weather", state_uuid=S)]
+    result = await tool.fn(**args)
+    assert not result.ok and result.data.error == "invalid_input"
+    runtime.authorized_statistics.assert_not_awaited()
+
+
 def setup(monkeypatch, tmp_path, role="production"):
     runtime, _ = configured(monkeypatch)
     runtime.endpoint = SimpleNamespace(origin="http://192.168.255.254")
