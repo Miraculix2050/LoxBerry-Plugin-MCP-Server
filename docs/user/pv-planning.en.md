@@ -54,6 +54,38 @@ grid energy, not measured savings, an optimal schedule or operating permission.
 
 ## Tool Explorer
 
+### Request context instead of a persistent profile
+
+Alternatively provide `analysis_context` in `options`, omitting legacy
+`forecast_control_uuid` and `consumer_binding_ids`. Time range, timezone, baseload
+and storage reserve remain required. The context contains `scope` (selected `efm`
+with `monitor_uuid`, or an explicit `scenario`), `assets`, `forecasts` and `loads`.
+Each request has one supply budget; separate requests are not coordinated schedules.
+
+Each asset has a request-local `asset_id`, description, optional
+`production_control_uuid` and `association_origin`. Each forecast specifies its
+`control_uuid`, covered `asset_ids` and `coverage_origin`. Multiple forecasts
+(at most four) require confirmed common supply and disjoint coverage
+(`user_confirmed`); otherwise only one explicitly assumed scenario forecast is
+allowed. Only common complete hours are summed. A visualization-only PVPF is not
+automatically misconfigured because no wire connects it to a meter.
+
+Loads have `load_id` and `kind`: `profile` references `binding_id`; `real` uses a
+visible `control_uuid` and confirmed declared `cycle`; `hypothetical` uses only a
+scenario cycle without a device identity. The cycle specifies timezone, windows,
+completion, duration, interruptibility, minimum run/off times, `cycle_energy_wh`,
+`origin` and rationale. Declared energy is distributed uniformly and is not a
+measurement. Hypothetical cycles must use `origin="scenario_assumption"`.
+
+Only native participants establish EFM membership. Additional loads require an
+explicit scenario. Native membership does not prove physical measurement scope.
+Unknown socket loads require a clearer device description, not an invented
+consumer. Requests never persist profile confirmations. The new result
+`conditional_context_planning.v1` retains individual forecasts, coverage,
+provenance, load models and unresolved associations. Hypothetical loads do not
+satisfy real consumer acceptance. New context inputs are bounded to 64 KiB;
+existing computation/output limits remain unchanged.
+
 In the authenticated Explorer first discover PVPF, then select
 `loxone_read_controls`, one target and `native_result_view=pv_forecast`.
 For `loxone_plan_loads`, use the JSON editor for the structured `options` object

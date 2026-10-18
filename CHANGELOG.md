@@ -9,6 +9,12 @@ extracted from the matching version heading.
   child/state storage identity, visibility, recording approval and plain-UUID
   compatibility across reads and existing source selection. Deliver shared-state
   events to every explicitly configured source pair (#553, follow-up #219).
+
+- Add optional request-local energy planning with explicit plant coverage, up to
+  four PVPFs in one confirmed supply budget, profile or declared real cycles and
+  separately labelled hypothetical loads. Preserve legacy requests/results and
+  share one forecast transport session per planning request (#556).
+
 - Establish internal request-local energy scope and provenance contracts with
   explicit forecast coverage and isolated native EFM membership checks (#556).
 

@@ -16,7 +16,7 @@ from mcpserver.loxone.pv_forecast_hours import PvForecastError, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
 from mcpserver.loxone.source_time import LOXONE_EPOCH_UNIX as LOXONE_EPOCH
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
-from mcpserver.pv_forecast_runtime import read_pv_forecast
+from mcpserver.pv_forecast_runtime import read_pv_forecast, read_pv_forecasts
 
 NOW = 1_792_320_000
 STATES = {"ready": 1, "timestamp": NOW - LOXONE_EPOCH, "errorInfo": 0}
@@ -187,3 +187,28 @@ async def test_native_read_once_with_visibility_recheck_and_cleanup(
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
     runtime.token_health.record_successful_authentication.assert_called_once_with("family")
+
+
+@pytest.mark.asyncio
+async def test_multiple_forecasts_share_authentication_structure_read_and_cleanup():
+    runtime, structure, session, token = fixture_runtime()
+    first = replace(structure.controls[0], control_type="PvProductionForecast")
+    second = replace(first, uuid="00000000-0000-0000-0000000000000009")
+    structure = replace(structure, controls=(first, second))
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", structure, True)
+
+    runtime.snapshot_context = snapshots
+    runtime.cache = SimpleNamespace(get=Mock())
+    runtime.token_health = None
+    session.pv_forecast = AsyncMock(return_value="{}")
+    session.load_structure = AsyncMock(return_value=structure)
+    results = await read_pv_forecasts(runtime, access(), [first.uuid, second.uuid])
+    assert len(results) == 2
+    assert session.pv_forecast.await_count == 2
+    runtime._open_session.assert_awaited_once()
+    session.load_structure.assert_awaited_once()
+    session.close.assert_awaited_once()
+    token.destroy.assert_called_once()

@@ -10,6 +10,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from mcpserver.context_planning import ContextPlanningResult, calculate_context_plan
 from mcpserver.history_analysis import HistoryAnalysisDeadline
 from mcpserver.installation_profile import ProfileError
 from mcpserver.load_planning import LoadPlanningOptions, LoadPlanningResult
@@ -33,7 +34,7 @@ from mcpserver.tools import (
 
 
 class LoadPlanningEnvelope(ToolEnvelope):
-    data: LoadPlanningResult | ErrorData
+    data: LoadPlanningResult | ContextPlanningResult | ErrorData
 
 
 def register_load_planning_tool(
@@ -48,17 +49,29 @@ def register_load_planning_tool(
 
     async def calculate(options: LoadPlanningOptions) -> LoadPlanningEnvelope:
         try:
-            if runtime is None or profile_path is None:
+            if runtime is None or (profile_path is None and options.analysis_context is None):
                 raise RuntimeUnavailable("Load planning is not configured")
             async with asyncio.timeout(30):
-                result = await calculate_load_plan(
-                    runtime,
-                    event_runtime,
-                    profile_path,
-                    _access(),
-                    options,
-                    deadline=time.monotonic() + 30,
-                )
+                result: LoadPlanningResult | ContextPlanningResult
+                if options.analysis_context is not None:
+                    result = await calculate_context_plan(
+                        runtime,
+                        event_runtime,
+                        profile_path,
+                        _access(),
+                        options,
+                        deadline=time.monotonic() + 30,
+                    )
+                else:
+                    assert profile_path is not None
+                    result = await calculate_load_plan(
+                        runtime,
+                        event_runtime,
+                        profile_path,
+                        _access(),
+                        options,
+                        deadline=time.monotonic() + 30,
+                    )
             envelope = _result(LoadPlanningEnvelope, result)
             if len(envelope.model_dump_json().encode()) > 65_536:
                 return _error(
@@ -92,7 +105,9 @@ def register_load_planning_tool(
         name="loxone_plan_loads",
         description=(
             "Suggest conditional future windows for confirmed flexible consumer bindings using "
-            "one native PVPF forecast and explicit baseload/storage scenarios. Read-only; requires "
+            "native PVPF forecasts and explicit baseload/storage scenarios. Legacy profile "
+            "selection or analysis_context with one supply budget, up to four disjoint PVPFs, "
+            "real declared-cycle loads and explicit hypothetical loads. Read-only; requires "
             "loxone:read and activated loxone:history for observed cycle models. At most 16 loads "
             "and 72 hours. Unknown native constraints remain conditions, not operating permission. "
             "See energy guidance."

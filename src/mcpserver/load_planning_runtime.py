@@ -46,6 +46,8 @@ async def calculate_load_plan(
     *,
     deadline: float,
 ) -> LoadPlanningResult:
+    assert options.forecast_control_uuid is not None
+    assert options.consumer_binding_ids is not None
     begin, _ = options.interval()
     if begin < time.time():
         raise ValueError("planning interval must begin in the future")

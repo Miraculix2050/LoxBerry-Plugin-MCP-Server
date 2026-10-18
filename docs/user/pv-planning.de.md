@@ -61,6 +61,39 @@ Betriebsfreigabe.
 
 ## Tool Explorer
 
+### Anfragekontext statt dauerhaftem Profil
+
+Alternativ zur bisherigen Auswahl `analysis_context` in `options` angeben;
+`forecast_control_uuid` und `consumer_binding_ids` dann weglassen. Zeitraum,
+Zeitzone, Grundlast und Speicherreserve bleiben erforderlich. Der Kontext enthält
+`scope` (ausgewählter `efm` mit `monitor_uuid` oder ausdrücklich beschriebenes
+`scenario`), `assets`, `forecasts` und `loads`. Genau ein gemeinsames Energiebudget
+gilt pro Anfrage; getrennte Anfragen sind keine abgestimmten Fahrpläne.
+
+Jede Anlage erhält eine anfragebezogene `asset_id`, Beschreibung, optional eine
+`production_control_uuid` und `association_origin`. Jede Prognose benennt ihre
+`control_uuid`, abgedeckte `asset_ids` und `coverage_origin`. Mehrere Prognosen
+(maximal vier) benötigen bestätigte gemeinsame Versorgung und überschneidungsfreie
+Abdeckung (`user_confirmed`); sonst ist nur eine ausdrücklich angenommene
+Szenarioprognose möglich. Nur gemeinsame vollständig verfügbare Stunden werden
+addiert. Ein nur visualisierter PVPF ist ohne Verdrahtung nicht automatisch falsch.
+
+Lasten haben `load_id` und `kind`: `profile` verwendet `binding_id`; `real`
+verwendet eine sichtbare `control_uuid` und einen bestätigten deklarierten `cycle`;
+`hypothetical` verwendet ausschließlich einen angenommenen Zyklus ohne Geräte-ID.
+`cycle` enthält Zeitzone, Fenster, Fertigstellung, Dauer, Unterbrechbarkeit,
+Mindestlauf-/Pausenzeiten, `cycle_energy_wh`, `origin` und Begründung. Deklarierte
+Energie wird gleichmäßig verteilt und nicht als Messung ausgegeben.
+
+EFM-Zuordnungen werden nur aus nativen Teilnehmern bestätigt. Zusätzliche Lasten
+gehören in ein Szenario. Native Zugehörigkeit beweist keine physische Messgrenze.
+Unbekannter Steckdoseninhalt verlangt eine konkretere Gerätebeschreibung, nicht
+einen erfundenen Verbraucher. Anfragen speichern keine Profilbestätigungen.
+Der neue Ergebnistyp `conditional_context_planning.v1` enthält einzelne Prognosen,
+Abdeckung, Herkunft, Lastmodelle und offene Zuordnungen. Hypothetische Lasten
+erfüllen keine reale Verbraucherabnahme. Neue Kontextanfragen sind auf 64 KiB
+Eingabe begrenzt; alle bisherigen Rechen-/Ausgabegrenzen bleiben erhalten.
+
 Im authentifizierten Explorer zuerst PVPF suchen, danach
 `loxone_read_controls` mit einem Ziel und `native_result_view=pv_forecast` wählen.
 Für `loxone_plan_loads` den JSON-Editor für das strukturierte `options`-Objekt
