@@ -9,6 +9,31 @@ net/financial saving.
 
 ## Confirm the inputs
 
+The existing profile workflow below remains available. Alternatively, pass an
+optional `analysis_context` (`history_analysis_context.v1`). Its associations use
+zero-based `source_index` values into the existing `sources` list; they cannot
+introduce other source IDs. Give every selected source one distinct association.
+Declare one EFM or scenario scope. Independent supplies need separate requests.
+Exact visible sources need no saved profile; references reuse currently confirmed
+bindings without changing their roles, boundaries or cycle constraints.
+
+An `observed` load references consumer and operating associations. Provide
+measured-interval flexibility or reuse compatible confirmed profile constraints.
+Both observed edges, continuous capture and complete hourly cycle energy remain
+mandatory for a shift example. Effective cycle and analysis timezones must agree.
+A `declared_real` load references a confirmed visible consumer and a complete
+user-confirmed declared cycle. A `hypothetical` load has no consumer or operating
+source and uses `scenario_assumption` cycle origin. Declared cycle energy is a
+uniform demand estimate, never a reconstruction of missing measurements.
+
+Context results appear in `comparison.context_analysis`, with association IDs,
+real binding references where present, measured episodes and conditional
+allocations. All modeled loads share one measured historical export budget.
+Declared allocations have no observed start/end and establish no historical
+improvement. Missing activity/minimum-off evidence and historical locks remain
+explicit limitations. Historical export is not automatically solar production.
+No profile, recorder, configuration or device is changed.
+
 Read the current installation profile. Select one confirmed `grid_export`
 energy statistic with `declared_direction="export"`, and up to seven confirmed
 consumer statistics with usable load constraints and their exact confirmed

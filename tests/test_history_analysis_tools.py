@@ -81,6 +81,147 @@ ARGS = dict(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["none", "source", "revoked"])
+async def test_profileless_context_keeps_semantics_and_checks_publication(monkeypatch, change):
+    from unittest.mock import Mock
+
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool = configured(monkeypatch)
+    fresh = runtime.structure
+    if change == "source":
+        fresh = replace(fresh, controls=(replace(runtime.control, control_type="Other"),))
+    runtime._history_visible_structure = AsyncMock(return_value=fresh)
+    if change == "revoked":
+        runtime._require_access.side_effect = [None, RuntimeAuthorizationError("Access revoked")]
+    store = Mock(side_effect=AssertionError("no profile access for direct associations"))
+    monkeypatch.setattr("mcpserver.installation_profile.ProfileStore", store)
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "Explicit test scope",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": [
+                {
+                    "association_id": "selected",
+                    "source_index": 0,
+                    "role": "consumer",
+                    "measurement_boundary": "single-channel",
+                    "origin": "user_confirmed",
+                }
+            ],
+        }
+    )
+    result = await asyncio.wait_for(
+        tool.fn(**{**ARGS, "operation": "baseload", "analysis_context": ctx}), 3
+    )
+    assert runtime.contexts == 1
+    assert runtime.authorized_statistics.await_count == 1
+    store.assert_not_called()
+    if change == "none":
+        assert result.ok
+        assert result.data.sources[0].binding_id is None
+        assert result.data.comparison.status == "insufficient_evidence"
+        assert result.data.comparison.context_analysis.associations[0].identifier == "selected"
+        # Calling a temperature channel a consumer never manufactures energy semantics.
+        assert not result.data.comparison.metrics
+    else:
+        assert not result.ok
+
+
+@pytest.mark.asyncio
+async def test_context_invalid_indices_are_rejected_before_source_context(monkeypatch):
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool = configured(monkeypatch)
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "Test",
+                "common_supply_origin": "scenario_assumption",
+            },
+            "associations": [
+                {"association_id": "missing", "source_index": 1, "origin": "scenario_assumption"}
+            ],
+        }
+    )
+    result = await tool.fn(**{**ARGS, "operation": "baseload", "analysis_context": ctx})
+    assert not result.ok and runtime.contexts == 0
+
+
+@pytest.mark.asyncio
+async def test_context_profile_revision_change_prevents_publication(monkeypatch):
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool = configured(monkeypatch)
+    runtime._history_visible_structure = AsyncMock(return_value=runtime.structure)
+    saved = {
+        "binding_id": "saved",
+        "status": "confirmed",
+        "role": "consumer",
+        "source_kind": "statistic",
+        "control_uuid": "control",
+        "series_id": "series",
+        "state_uuid": None,
+        "measurement_boundary": "single",
+        "declared_direction": None,
+    }
+    reader = AsyncMock(side_effect=[({"saved": saved}, 7), ({"saved": saved}, 8)])
+    monkeypatch.setattr("mcpserver.history_analysis_tools.read_profile_bindings", reader)
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "One budget",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": [
+                {"association_id": "load", "source_index": 0, "origin": "user_confirmed"}
+            ],
+        }
+    )
+    result = await tool.fn(
+        **{
+            **ARGS,
+            "operation": "baseload",
+            "sources": [AnalysisSource(binding_id="saved")],
+            "analysis_context": ctx,
+        }
+    )
+    assert not result.ok and result.data.error == "temporarily_unavailable"
+    assert reader.await_count == 2 and runtime.authorized_statistics.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_raw_cursor_binds_context_even_when_comparison_values_are_unchanged(monkeypatch):
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool = configured(monkeypatch, points=101)
+    runtime._history_visible_structure = AsyncMock(return_value=runtime.structure)
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "First assumption",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": [
+                {"association_id": "channel", "source_index": 0, "origin": "scenario_assumption"}
+            ],
+        }
+    )
+    args = {**ARGS, "operation": "baseload", "analysis_context": ctx, "include_raw": True}
+    first = await tool.fn(**args)
+    assert first.ok and first.data.next_cursor
+    ctx.scope.description = "Changed assumption"
+    rejected = await tool.fn(**args, cursor=first.data.next_cursor)
+    assert not rejected.ok and rejected.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
 async def test_baseload_is_reachable_with_documented_hourly_energy(monkeypatch):
     runtime, tool = configured(monkeypatch)
     series = replace(

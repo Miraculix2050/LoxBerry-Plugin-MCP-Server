@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add optional request-local history associations, complete measured-cycle evidence
+  and separately declared real/hypothetical scenarios sharing one historical
+  export budget. Preserve legacy calls and profile formats; revalidate selected
+  sources, constraints and authorization before publication (#557).
+
 - Reuse one request-local source resolver for optional confirmed energy profiles;
   reject stale or hidden references and recheck operating companions before
   publishing results, without changing profile documents or legacy contracts (#559).

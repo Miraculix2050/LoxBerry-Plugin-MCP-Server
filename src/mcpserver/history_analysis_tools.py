@@ -17,6 +17,13 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from mcpserver.analysis_context import (
+    HistoryAnalysisContext,
+    HistoryResolvedAssociation,
+    SourceSnapshot,
+    read_profile_bindings,
+    resolve_history_associations,
+)
 from mcpserver.bounded_worker import run_admitted_worker
 from mcpserver.comparable_days_models import (
     ClassComparableDayOptions,
@@ -208,6 +215,7 @@ def _raw_scope(
     deadline: float,
     comparison_options: ComparisonOptions | None = None,
     comparison: ComparisonResult | None = None,
+    analysis_context: HistoryAnalysisContext | None = None,
 ) -> str:
     if time.monotonic() >= deadline:
         raise HistoryAnalysisDeadline()
@@ -223,6 +231,7 @@ def _raw_scope(
             [s.model_dump() for s in outputs],
             comparison_options.model_dump() if comparison_options else None,
             comparison.model_dump() if comparison else None,
+            analysis_context.model_dump() if analysis_context else None,
         ],
         sort_keys=True,
         separators=(",", ":"),
@@ -303,6 +312,7 @@ def register_history_analysis_tool(
         cursor: str | None,
         comparison_options: ComparisonOptions | None,
         comparable_day_options: ClassComparableDayOptions | NumericalComparableDayOptions | None,
+        analysis_context: HistoryAnalysisContext | None,
     ) -> AnalysisEnvelope:
         trace_id = str(uuid4())
         try:
@@ -318,8 +328,25 @@ def register_history_analysis_tool(
             }
             if comparison_options is not None and not is_comparison:
                 raise ValueError("comparison options require a comparison operation")
-            if operation == "retrospective_shift" and (
-                not sources or any(not source.binding_id for source in sources)
+            if analysis_context is not None and (
+                not is_comparison
+                or len(analysis_context.associations) != len(sources)
+                or {a.source_index for a in analysis_context.associations}
+                != set(range(len(sources)))
+            ):
+                raise ValueError(
+                    "history context requires a comparison and exact associations for all sources"
+                )
+            if analysis_context is not None and any(
+                (load.cycle and load.cycle.timezone != timezone_name)
+                or (load.flexibility and load.flexibility.timezone != timezone_name)
+                for load in analysis_context.loads
+            ):
+                raise ValueError("cycle timezone contradicts the analysis timezone")
+            if (
+                analysis_context is None
+                and operation == "retrospective_shift"
+                and (not sources or any(not source.binding_id for source in sources))
             ):
                 raise ValueError("retrospective_shift requires confirmed profile bindings")
             is_day_comparison = operation == "comparable_days"
@@ -366,7 +393,43 @@ def register_history_analysis_tool(
                 resolved = []
                 bindings: dict[str, dict[str, Any]] = {}
                 profile_revision: int | None = None
-                if any(source.binding_id for source in sources):
+                association_results: list[HistoryResolvedAssociation] = []
+                context_bindings: dict[int, dict[str, Any]] = {}
+                context_guard: SourceSnapshot | None = None
+                identity = installation_identity(runtime.endpoint.origin, structure)
+                if analysis_context is not None:
+                    bindings, profile_revision = await read_profile_bindings(
+                        profile_path,
+                        identity,
+                        structure,
+                        required=any(source.binding_id for source in sources),
+                    )
+                    context_bindings, association_results = resolve_history_associations(
+                        analysis_context,
+                        [source.model_dump() for source in sources],
+                        {key: c for key, c in controls.items() if not c.is_hidden},
+                        bindings,
+                        timezone_name=timezone_name,
+                    )
+                    selected_ids = {row["control_uuid"] for row in context_bindings.values()}
+                    if analysis_context.scope.monitor_uuid is not None:
+                        selected_ids.add(analysis_context.scope.monitor_uuid)
+                    referenced = {source.binding_id for source in sources if source.binding_id}
+                    for source in sources:
+                        row = bindings.get(source.binding_id or "", {})
+                        if row.get("load_flexibility"):
+                            companion_id = row["load_flexibility"]["operating_binding_id"]
+                            if companion_id in bindings:
+                                referenced.add(companion_id)
+                    context_guard = SourceSnapshot.capture(
+                        runtime.endpoint.origin,
+                        structure,
+                        selected_ids,
+                        bindings,
+                        profile_revision,
+                        referenced,
+                    )
+                if analysis_context is None and any(source.binding_id for source in sources):
                     if profile_path is None:
                         raise ControlOperationError(
                             "not_found", "confirmed profile binding is not available"
@@ -477,7 +540,7 @@ def register_history_analysis_tool(
                         )
                     return envelope
                 seen = set()
-                for source in sources:
+                for source_index, source in enumerate(sources):
                     if not isinstance(source, AnalysisSource):
                         raise ValueError("scalar operations require scalar sources")
                     binding = bindings.get(source.binding_id) if source.binding_id else None
@@ -485,6 +548,8 @@ def register_history_analysis_tool(
                         raise ControlOperationError(
                             "not_found", "confirmed visible binding is not available"
                         )
+                    if analysis_context is not None:
+                        binding = context_bindings[source_index]
                     if binding and binding.get("source_kind") == "weather":
                         raise ValueError("weather bindings require comparable_days")
                     control_id = binding["control_uuid"] if binding else source.control_uuid
@@ -511,7 +576,9 @@ def register_history_analysis_tool(
                 raw: list[dict[str, Any]] = []
                 count = 0
                 resolver = StateSemanticsResolver()
-                for source, binding, control, series_id, state_id in resolved:
+                for source_index, (source, binding, control, series_id, state_id) in enumerate(
+                    resolved
+                ):
                     await runtime._require_access(access)
                     semantics = None
                     points: tuple[StatisticPoint, ...] = ()
@@ -662,6 +729,16 @@ def register_history_analysis_tool(
                                 if binding and binding.get("load_constraints_usable")
                                 else None,
                                 binding["declared_direction"] if binding else None,
+                                next(
+                                    (
+                                        a.association_id
+                                        for a in analysis_context.associations
+                                        if a.source_index == source_index
+                                    ),
+                                    None,
+                                )
+                                if analysis_context
+                                else None,
                             )
                         )
                 comparison = None
@@ -678,8 +755,11 @@ def register_history_analysis_tool(
                         night_start_hour=options.night_start_hour,
                         night_end_hour=options.night_end_hour,
                         deadline=deadline,
+                        analysis_context=analysis_context,
                     )
-                    if comparison.load_cycles is not None or operation == "retrospective_shift":
+                    if analysis_context is None and (
+                        comparison.load_cycles is not None or operation == "retrospective_shift"
+                    ):
                         assert profile_path is not None and profile_revision is not None
                         current_profile = await run_admitted_worker(
                             ProfileStore(profile_path).read, identity
@@ -693,6 +773,22 @@ def register_history_analysis_tool(
                             comparison.load_cycles.profile_revision = profile_revision
                         if comparison.retrospective_shift is not None:
                             comparison.retrospective_shift.profile_revision = profile_revision
+                    if comparison.context_analysis is not None:
+                        comparison.context_analysis.associations = association_results
+                        comparison.context_analysis.profile_revision = profile_revision
+                if context_guard is not None:
+                    await runtime._require_access(access)
+                    fresh_structure = await runtime._history_visible_structure(session, trace_id)
+                    current_bindings, current_revision = await read_profile_bindings(
+                        profile_path,
+                        identity,
+                        fresh_structure,
+                        required=any(source.binding_id for source in sources),
+                    )
+                    context_guard.validate(
+                        runtime.endpoint.origin, fresh_structure, current_bindings, current_revision
+                    )
+                    await runtime._require_access(access)
                 scope = await run_admitted_worker(
                     _raw_scope,
                     cursors,
@@ -707,6 +803,7 @@ def register_history_analysis_tool(
                     deadline,
                     comparison_options,
                     comparison,
+                    analysis_context,
                 )
                 offset = cursors.decode(scope, cursor)
                 envelope = _result(
@@ -826,6 +923,16 @@ def register_history_analysis_tool(
         comparable_day_options: ClassComparableDayOptions
         | NumericalComparableDayOptions
         | None = None,
+        analysis_context: Annotated[
+            HistoryAnalysisContext | None,
+            Field(
+                description=(
+                    "Optional request-local associations reference sources by zero-based index. "
+                    "Profiles are optional; keep observed cycles and declared scenarios separate. "
+                    "One supply scope, unchanged source semantics, no writes or proven savings."
+                )
+            ),
+        ] = None,
     ) -> AnalysisEnvelope:
         if len(pending) >= 2:
             return _error(
@@ -842,6 +949,7 @@ def register_history_analysis_tool(
                 cursor,
                 comparison_options,
                 comparable_day_options,
+                analysis_context,
             )
         )
         pending.add(task)

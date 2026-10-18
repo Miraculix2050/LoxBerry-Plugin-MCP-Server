@@ -185,6 +185,81 @@ class ResolvedAssociation(ContextContract):
     conditions: list[str] = Field(default_factory=list)
 
 
+class HistorySourceAssociation(ContextContract):
+    association_id: Identifier
+    source_index: int = Field(ge=0, le=15)
+    role: (
+        Literal["consumer", "house_consumption", "production", "grid_export", "operating_state"]
+        | None
+    ) = None
+    measurement_boundary: str | None = Field(default=None, min_length=1, max_length=128)
+    declared_direction: Literal["import", "export", "charge", "discharge"] | None = None
+    origin: Declaration
+
+
+class HistoryLoadModel(ContextContract):
+    load_id: Identifier
+    kind: Literal["observed", "declared_real", "hypothetical"]
+    consumer_id: Identifier | None = None
+    operating_id: Identifier | None = None
+    flexibility: LoadFlexibility | None = None
+    cycle: DeclaredCycle | None = None
+
+    @model_validator(mode="after")
+    def model_kind(self) -> HistoryLoadModel:
+        if self.kind == "observed":
+            if self.consumer_id is None or self.operating_id is None or self.cycle is not None:
+                raise ValueError("observed load requires consumer and operating associations")
+            if self.flexibility is not None and (
+                self.flexibility.energy_profile_origin != "observed_intervals"
+                or self.flexibility.operating_binding_id != self.operating_id
+            ):
+                raise ValueError("observed model requires the selected measured operating pair")
+        elif self.flexibility is not None or self.cycle is None:
+            raise ValueError("declared model requires only complete declared cycle constraints")
+        elif self.kind == "declared_real":
+            if self.consumer_id is None or self.cycle.origin != "user_confirmed":
+                raise ValueError("declared real model requires a confirmed visible consumer")
+        elif (
+            self.consumer_id is not None
+            or self.operating_id is not None
+            or self.cycle.origin != "scenario_assumption"
+        ):
+            raise ValueError("hypothetical models cannot claim observed sources")
+        return self
+
+
+class HistoryAnalysisContext(ContextContract):
+    schema_version: Literal["history_analysis_context.v1"] = "history_analysis_context.v1"
+    scope: EnergyScope
+    associations: list[HistorySourceAssociation] = Field(min_length=1, max_length=16)
+    loads: list[HistoryLoadModel] = Field(default_factory=list, max_length=16)
+
+    @model_validator(mode="after")
+    def references(self) -> HistoryAnalysisContext:
+        ids = {a.association_id for a in self.associations}
+        if len(ids) != len(self.associations) or len(
+            {a.source_index for a in self.associations}
+        ) != len(ids):
+            raise ValueError("duplicate history association")
+        if len({load.load_id for load in self.loads}) != len(self.loads):
+            raise ValueError("duplicate history load")
+        consumers = [load.consumer_id for load in self.loads if load.consumer_id]
+        operating = [load.operating_id for load in self.loads if load.operating_id]
+        if len(set(consumers)) != len(consumers) or len(set(operating)) != len(operating):
+            raise ValueError("duplicate load contribution or operating association")
+        if any(ref not in ids for ref in consumers + operating):
+            raise ValueError("unknown history load association")
+        if self.scope.kind == "efm" and any(load.kind == "hypothetical" for load in self.loads):
+            raise ValueError("hypothetical loads require an explicit scenario")
+        return self
+
+
+class HistoryResolvedAssociation(ResolvedAssociation):
+    source_index: int = Field(ge=0, le=15)
+    binding_id: str | None = None
+
+
 @dataclass(frozen=True)
 class ResolvedSource:
     """Request-local association; never a decoder rule or persistent confirmation."""
@@ -307,15 +382,174 @@ def resolve_source_association(
     )
 
 
+def resolve_history_associations(
+    context: HistoryAnalysisContext,
+    selectors: list[dict[str, Any]],
+    visible: dict[str, Control],
+    bindings: dict[str, Any],
+    *,
+    timezone_name: str,
+) -> tuple[dict[int, dict[str, Any]], list[HistoryResolvedAssociation]]:
+    """Apply domain declarations to exact selections, never to stored confirmations."""
+    effective = {}
+    resolved = {}
+    physical = set()
+    for association in context.associations:
+        if association.source_index >= len(selectors):
+            raise ValueError("unknown history source index")
+        selector = selectors[association.source_index]
+        source = resolve_source_association(
+            association.association_id,
+            visible,
+            bindings=bindings,
+            binding_id=selector.get("binding_id"),
+            control_uuid=selector.get("control_uuid"),
+            origin=association.origin,
+            expected_role=association.role,
+        )
+        binding = source.binding
+        row = dict(binding) if binding else {}
+        if binding and association.origin != "user_confirmed":
+            raise ValueError("a profile reference retains its confirmed provenance")
+        for key, value in (
+            ("role", association.role),
+            ("measurement_boundary", association.measurement_boundary),
+            ("declared_direction", association.declared_direction),
+        ):
+            if binding and value is not None and binding.get(key) != value:
+                raise ValueError("request declaration contradicts confirmed profile")
+            if value is not None:
+                row[key] = value
+            else:
+                row.setdefault(key, None)
+        uuid = source.association.control_uuid
+        if uuid is None or uuid not in visible:
+            raise ValueError("history requires a visible exact source")
+        control = visible[uuid]
+        series = binding.get("series_id") if binding else selector.get("series_id")
+        state = binding.get("state_uuid") if binding else selector.get("state_uuid")
+        if (
+            series is not None and series not in {s.series_id for s in control.statistic_series}
+        ) or (state is not None and state not in {s for _, s in control.state_uuids}):
+            raise ValueError("history source is not a selected control member")
+        physical_key = (uuid, series, state)
+        if physical_key in physical:
+            raise ValueError("duplicate physical history contribution")
+        physical.add(physical_key)
+        row.update(control_uuid=uuid, series_id=series, state_uuid=state)
+        effective[association.source_index] = row
+        resolved[association.association_id] = source.association
+    by_id = {a.association_id: a for a in context.associations}
+    load_controls = set()
+    for load in context.loads:
+        if load.consumer_id is None:
+            continue
+        selected = by_id[load.consumer_id]
+        consumer = effective[selected.source_index]
+        if consumer["role"] != "consumer" or selected.origin != "user_confirmed":
+            raise ValueError("real load requires an explicitly confirmed consumer association")
+        if consumer["control_uuid"] in load_controls:
+            raise ValueError("duplicate physical load model")
+        load_controls.add(consumer["control_uuid"])
+        operating: dict[str, Any] = {}
+        if load.operating_id is not None:
+            op = by_id[load.operating_id]
+            operating = effective[op.source_index]
+            if operating["role"] != "operating_state" or op.origin != "user_confirmed":
+                raise ValueError("observed operating association requires confirmation")
+        stored = consumer.get("load_flexibility")
+        effective_flex = load.flexibility or (
+            LoadFlexibility.model_validate(stored) if stored else None
+        )
+        if effective_flex is not None and effective_flex.timezone != timezone_name:
+            raise ValueError("effective cycle timezone contradicts the analysis timezone")
+        if selectors[selected.source_index].get("binding_id") and stored is not None:
+            saved = LoadFlexibility.model_validate(stored)
+            if load.flexibility is not None and (
+                saved.model_dump(exclude={"operating_binding_id"})
+                != load.flexibility.model_dump(exclude={"operating_binding_id"})
+            ):
+                raise ValueError("cycle declaration contradicts confirmed profile constraints")
+            if (
+                load.cycle is not None
+                and load.cycle.flexibility(saved.operating_binding_id) != saved
+            ):
+                raise ValueError("declared model contradicts confirmed profile constraints")
+            if load.kind == "observed":
+                companion = bindings.get(saved.operating_binding_id)
+                if (
+                    not consumer.get("load_constraints_usable")
+                    or companion is None
+                    or companion.get("status") != "confirmed"
+                    or (companion.get("control_uuid"), companion.get("state_uuid"))
+                    != (operating["control_uuid"], operating["state_uuid"])
+                ):
+                    raise ValueError("selected operating source contradicts confirmed companion")
+        if load.flexibility is not None:
+            consumer["load_flexibility"] = load.flexibility.model_dump()
+            consumer["load_constraints_usable"] = True
+    energy = [
+        (a.association_id, resolved[a.association_id].control_uuid, a.origin)
+        for a in context.associations
+        if effective[a.source_index]["role"]
+        in {"production", "consumer", "house_consumption", "grid_export"}
+    ]
+    native = {r.identifier: r for r in resolve_selected_membership(context.scope, visible, energy)}
+    return effective, [
+        HistoryResolvedAssociation(
+            **native.get(a.association_id, resolved[a.association_id]).model_dump(),
+            source_index=a.source_index,
+            binding_id=selectors[a.source_index].get("binding_id"),
+        )
+        for a in context.associations
+    ]
+
+
 def resolve_membership(
     context: EnergyAnalysisContext,
     visible: dict[str, Control],
     load_controls: dict[str, str],
 ) -> list[ResolvedAssociation]:
     """Check explicit members only; no inferred role or physical energy boundary."""
+    for load in context.loads:
+        if (
+            load.kind == "real"
+            and load.load_id in load_controls
+            and load_controls[load.load_id] != load.control_uuid
+        ):
+            raise ValueError("real load mapping contradicts declared source")
+        if load.kind == "profile" and load.load_id not in load_controls:
+            raise ValueError("profile load source must be resolved")
+    selections: list[tuple[str, str | None, Declaration]] = [
+        (a.asset_id, a.production_control_uuid, a.association_origin) for a in context.assets
+    ] + [
+        (
+            load.load_id,
+            load.control_uuid
+            if load.kind == "real"
+            else load_controls.get(load.load_id)
+            if load.kind == "profile"
+            else None,
+            "scenario_assumption"
+            if load.kind == "hypothetical"
+            else load.cycle.origin
+            if load.cycle
+            else "user_confirmed",
+        )
+        for load in context.loads
+    ]
+    return resolve_selected_membership(context.scope, visible, selections)
+
+
+def resolve_selected_membership(
+    scope: EnergyScope,
+    visible: dict[str, Control],
+    selections: list[tuple[str, str | None, Declaration]],
+) -> list[ResolvedAssociation]:
+    """Prove selected native topology independently of any domain's input shape."""
     members: dict[str, tuple[int, ...]] = {}
-    if context.scope.kind == "efm":
-        monitor = visible.get(context.scope.monitor_uuid or "")
+    if scope.kind == "efm":
+        monitor = visible.get(scope.monitor_uuid or "")
         projection = monitor.efm if monitor else None
         if (
             monitor is None
@@ -337,33 +571,6 @@ def resolve_membership(
                 if row.control_uuid not in visible or row.control_uuid in members:
                     raise ValueError("ambiguous or inaccessible EFM participant")
                 members[row.control_uuid] = row.path
-    for load in context.loads:
-        if (
-            load.kind == "real"
-            and load.load_id in load_controls
-            and load_controls[load.load_id] != load.control_uuid
-        ):
-            raise ValueError("real load mapping contradicts declared source")
-        if load.kind == "profile" and load.load_id not in load_controls:
-            raise ValueError("profile load source must be resolved")
-    selections = [
-        (a.asset_id, a.production_control_uuid, a.association_origin) for a in context.assets
-    ] + [
-        (
-            load.load_id,
-            load.control_uuid
-            if load.kind == "real"
-            else load_controls.get(load.load_id)
-            if load.kind == "profile"
-            else None,
-            "scenario_assumption"
-            if load.kind == "hypothetical"
-            else load.cycle.origin
-            if load.cycle
-            else "user_confirmed",
-        )
-        for load in context.loads
-    ]
     paths = []
     identities = [uuid for _, uuid, _ in selections if uuid is not None]
     if len(identities) != len(set(identities)):
@@ -372,7 +579,7 @@ def resolve_membership(
     for identifier, uuid, origin in selections:
         if uuid is not None and uuid not in visible:
             raise ValueError("context source is not accessible")
-        if context.scope.kind == "efm":
+        if scope.kind == "efm":
             if uuid not in members:
                 raise ValueError("source is not a proven selected EFM participant")
             paths.append(members[uuid])
@@ -381,7 +588,7 @@ def resolve_membership(
                     identifier=identifier,
                     origin="native_efm",
                     control_uuid=uuid,
-                    monitor_uuid=context.scope.monitor_uuid,
+                    monitor_uuid=scope.monitor_uuid,
                     conditions=["physical_measurement_boundary_requires_confirmation"],
                 )
             )

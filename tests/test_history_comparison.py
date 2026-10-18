@@ -47,6 +47,208 @@ def compare(operation, inputs, *, start=0, end=10_800, confirmed=False, night_st
     )
 
 
+def history_context(*, observed=False, loads=1):
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    cycle = {
+        "timezone": "UTC",
+        "windows": [{"weekdays": list(range(7)), "start": "00:00", "end": "23:59"}],
+        "latest_completion": "23:59",
+        "duration_seconds": 3600,
+        "interruptible": False,
+        "minimum_run_seconds": 0,
+        "minimum_off_seconds": 0,
+        "cycle_energy_wh": 1000.0,
+        "origin": "scenario_assumption",
+        "rationale": "Explicit hypothetical model",
+    }
+    declarations = [
+        {
+            "association_id": "export",
+            "source_index": 0,
+            "role": "grid_export",
+            "measurement_boundary": "main",
+            "declared_direction": "export",
+            "origin": "user_confirmed",
+        }
+    ]
+    models = [{"load_id": f"hyp{n}", "kind": "hypothetical", "cycle": cycle} for n in range(loads)]
+    if observed:
+        declarations += [
+            {
+                "association_id": "consumer",
+                "source_index": 1,
+                "role": "consumer",
+                "measurement_boundary": "main",
+                "origin": "user_confirmed",
+            },
+            {
+                "association_id": "active",
+                "source_index": 2,
+                "role": "operating_state",
+                "origin": "user_confirmed",
+            },
+        ]
+        models.append(
+            {
+                "load_id": "measured",
+                "kind": "observed",
+                "consumer_id": "consumer",
+                "operating_id": "active",
+            }
+        )
+    return HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "One historical supply",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": declarations,
+            "loads": models,
+        }
+    )
+
+
+def contextual_compare(ctx, *, observed=False, hours=None):
+    from test_retrospective_shift import END, START, load
+
+    from mcpserver.history_analysis import SourceAnalysis
+
+    hours = hours if hours is not None else [(START + 36000, 600.0), (START + 39600, 800.0)]
+    export = energy(hours, role="grid_export", boundary="main", start=START, end=END)
+    export.summary.binding_id = None
+    inputs = [replace(export, association_id="export", declared_direction="export")]
+    if observed:
+        original = load("measured")
+        consumer = energy(
+            [(START + 3600, 1000.0), (START + 7200, 500.0)],
+            role="consumer",
+            boundary="main",
+            start=START,
+            end=END,
+        )
+        consumer.summary.binding_id = None
+        inputs += [
+            replace(consumer, association_id="consumer", load_flexibility=original.flexibility),
+            ComparisonInput(
+                SourceAnalysis(
+                    control_uuid="state-control",
+                    source_id="state",
+                    source_kind="event_history",
+                    status="partial",
+                    method="binary_state_duration",
+                ),
+                segments=original.segments,
+                profile_role="operating_state",
+                association_id="active",
+            ),
+        ]
+    result = compare_history(
+        "retrospective_shift",
+        tuple(inputs),
+        start=START,
+        end=END,
+        timezone_name="UTC",
+        comparable_boundaries_confirmed=True,
+        night_start_hour=0,
+        night_end_hour=5,
+        deadline=time.monotonic() + 10,
+        analysis_context=ctx,
+    )
+    assert all(source.summary.binding_id is None for source in inputs)
+    return result
+
+
+def test_hypothetical_cycles_share_one_budget_without_an_observed_baseline():
+    ctx = history_context(loads=2)
+    first = contextual_compare(ctx)
+    second = contextual_compare(ctx.model_copy(update={"loads": list(reversed(ctx.loads))}))
+    assert first == second
+    assert first.status == "partial"
+    evidence = first.context_analysis
+    assert evidence.conditional_export_absorption_upper_bound_wh == 1400
+    assert len(evidence.allocations) == 2
+    assert all(a.observed_start is None and a.observed_end is None for a in evidence.allocations)
+    assert first.retrospective_shift is None and first.load_cycles is None
+    assert all(a.energy_origin == "user_declared_uniform" for a in evidence.allocations)
+
+
+def test_observed_and_declared_models_compete_without_rewriting_measured_energy():
+    result = contextual_compare(history_context(observed=True), observed=True)
+    evidence = result.context_analysis
+    assert result.status == "partial" and len(evidence.allocations) == 2
+    assert evidence.conditional_export_absorption_upper_bound_wh == 1400
+    assert evidence.cycles[0].episodes[0].observed_energy_wh == 1500
+    actual = next(a for a in evidence.allocations if a.kind == "observed")
+    hypothetical = next(a for a in evidence.allocations if a.kind == "hypothetical")
+    assert actual.observed_start is not None and hypothetical.observed_start is None
+
+
+def test_declared_subhour_demand_never_backfills_a_missing_supply_hour():
+    from test_retrospective_shift import START
+
+    ctx = history_context()
+    ctx.loads[0].cycle.duration_seconds = 5400
+    assert not contextual_compare(ctx, hours=[(START + 36000, 600.0)]).context_analysis.allocations
+    result = contextual_compare(ctx)
+    assert result.context_analysis.allocations[0].observed_start is None
+    assert result.context_analysis.conditional_export_absorption_upper_bound_wh <= 1000
+
+
+def test_declared_search_exhaustion_does_not_publish_partial_allocations():
+    from test_retrospective_shift import START
+
+    end = START + 31 * 86400
+    source = energy(
+        [(START + i * 3600, 1000.0) for i in range(744)],
+        role="grid_export",
+        boundary="main",
+        start=START,
+        end=end,
+    )
+    source.summary.binding_id = None
+    source = replace(source, association_id="export", declared_direction="export")
+    result = compare_history(
+        "retrospective_shift",
+        (source,),
+        start=START,
+        end=end,
+        timezone_name="UTC",
+        comparable_boundaries_confirmed=True,
+        night_start_hour=0,
+        night_end_hour=5,
+        deadline=time.monotonic() + 10,
+        analysis_context=history_context(loads=16),
+    )
+    assert result.context_analysis.evaluated_alternatives == 4096
+    assert not result.context_analysis.allocations
+    assert result.context_analysis.conditional_export_absorption_upper_bound_wh == 0
+    assert "alternative_search_budget_exceeded_no_partial_allocation" in result.limitations
+
+
+def test_declared_real_model_does_not_promote_available_activity_to_a_baseline():
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    doc = history_context(observed=True, loads=0).model_dump()
+    cycle = history_context().loads[0].cycle.model_dump()
+    cycle["origin"] = "user_confirmed"
+    doc["loads"] = [
+        {
+            "load_id": "real-model",
+            "kind": "declared_real",
+            "consumer_id": "consumer",
+            "cycle": cycle,
+        }
+    ]
+    result = contextual_compare(HistoryAnalysisContext.model_validate(doc), observed=True)
+    evidence = result.context_analysis
+    assert evidence.allocations and not evidence.cycles
+    assert evidence.allocations[0].kind == "declared_real"
+    assert evidence.allocations[0].observed_start is None
+    assert evidence.allocations[0].energy_origin == "user_declared_uniform"
+
+
 def test_pv_overlap_is_upper_bound_and_not_attribution():
     production = energy([(0, 1000), (3600, 0), (7200, 500)], role="production")
     load = energy([(0, 500), (3600, 200), (7200, 200)], role="house_consumption")

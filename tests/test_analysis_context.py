@@ -184,6 +184,179 @@ def test_asset_and_load_ids_cannot_collide_in_resolved_provenance():
         EnergyAnalysisContext.model_validate(doc)
 
 
+@pytest.mark.parametrize(
+    "change", ["none", "child", "duplicate", "missing", "hidden", "profile_conflict"]
+)
+def test_history_associations_use_exact_members_without_profile_writes(change):
+    from mcpserver.analysis_context import HistoryAnalysisContext, resolve_history_associations
+    from mcpserver.loxone.models import StatisticSeries
+    from mcpserver.loxone.runtime import ControlOperationError
+
+    identifier = LOAD + "/exact-child" if change == "child" else LOAD
+    series = StatisticSeries("energy", "statistic_v2", "1", "totalNeg", "Same name", "Wh")
+    visible = {identifier: replace(controls()[LOAD], uuid=identifier, statistic_series=(series,))}
+    selector = {"control_uuid": identifier, "series_id": "energy", "state_uuid": None}
+    declaration = {
+        "association_id": "load",
+        "source_index": 0,
+        "role": "consumer",
+        "measurement_boundary": "load-meter",
+        "origin": "user_confirmed",
+    }
+    bindings = {}
+    selectors = [selector]
+    declarations = [declaration]
+    if change == "duplicate":
+        selectors.append(dict(selector))
+        declarations.append({**declaration, "association_id": "duplicate", "source_index": 1})
+    elif change == "missing":
+        selector["series_id"] = "not-a-member"
+    elif change == "hidden":
+        visible[identifier] = replace(visible[identifier], is_hidden=True)
+    elif change == "profile_conflict":
+        selectors = [{"binding_id": "saved"}]
+        bindings = {
+            "saved": {
+                **selector,
+                "status": "confirmed",
+                "role": "consumer",
+                "measurement_boundary": "other-meter",
+            }
+        }
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "Independent supply",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": declarations,
+        }
+    )
+    if change in {"none", "child"}:
+        effective, result = resolve_history_associations(
+            ctx, selectors, visible, bindings, timezone_name="UTC"
+        )
+        assert effective[0]["control_uuid"] == identifier
+        assert result[0].binding_id is None and result[0].control_uuid == identifier
+    else:
+        with pytest.raises((ValueError, ControlOperationError)):
+            resolve_history_associations(ctx, selectors, visible, bindings, timezone_name="UTC")
+
+
+def test_inherited_profile_cycle_timezone_is_checked_before_source_reads():
+    from test_load_flexibility import flexibility
+
+    from mcpserver.analysis_context import HistoryAnalysisContext, resolve_history_associations
+    from mcpserver.loxone.models import StatisticSeries
+
+    series = StatisticSeries("energy", "statistic_v2", "1", "totalNeg", "Energy", "Wh")
+    state = "00000000-0000-0000-0000000000000011"
+    visible = {
+        LOAD: replace(
+            controls()[LOAD], statistic_series=(series,), state_uuids=(("active", state),)
+        )
+    }
+    consumer = {
+        "control_uuid": LOAD,
+        "series_id": "energy",
+        "state_uuid": None,
+        "status": "confirmed",
+        "role": "consumer",
+        "load_constraints_usable": True,
+        "load_flexibility": flexibility(
+            timezone="UTC", operating_binding_id="saved-active"
+        ).model_dump(),
+    }
+    active = {
+        "control_uuid": LOAD,
+        "series_id": None,
+        "state_uuid": state,
+        "status": "confirmed",
+        "role": "operating_state",
+    }
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "One budget",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": [
+                {"association_id": "load", "source_index": 0, "origin": "user_confirmed"},
+                {"association_id": "active", "source_index": 1, "origin": "user_confirmed"},
+            ],
+            "loads": [
+                {
+                    "load_id": "measured",
+                    "kind": "observed",
+                    "consumer_id": "load",
+                    "operating_id": "active",
+                }
+            ],
+        }
+    )
+    with pytest.raises(ValueError, match="effective cycle timezone"):
+        resolve_history_associations(
+            ctx,
+            [{"binding_id": "saved"}, {"binding_id": "saved-active"}],
+            visible,
+            {"saved": consumer, "saved-active": active},
+            timezone_name="Europe/Berlin",
+        )
+
+
+def test_history_membership_keeps_same_named_independent_efms_separate():
+    from mcpserver.analysis_context import HistoryAnalysisContext, resolve_history_associations
+    from mcpserver.loxone.models import StatisticSeries
+
+    second_load = "00000000-0000-0000-0000000000000021"
+    second_monitor = "00000000-0000-0000-0000000000000022"
+    series = StatisticSeries("energy", "statistic_v2", "1", "totalNeg", "Same name", "Wh")
+    visible = controls()
+    visible[LOAD] = replace(visible[LOAD], statistic_series=(series,))
+    visible[second_load] = replace(visible[LOAD], uuid=second_load)
+    visible[second_monitor] = replace(
+        visible[MONITOR],
+        uuid=second_monitor,
+        efm=Projection((Participant((0,), control_uuid=second_load),)),
+    )
+    for monitor, own, foreign in (
+        (MONITOR, LOAD, second_load),
+        (second_monitor, second_load, LOAD),
+    ):
+        ctx = HistoryAnalysisContext.model_validate(
+            {
+                "scope": {
+                    "kind": "efm",
+                    "monitor_uuid": monitor,
+                    "description": "Independent budget",
+                    "common_supply_origin": "user_confirmed",
+                },
+                "associations": [
+                    {
+                        "association_id": "load",
+                        "source_index": 0,
+                        "role": "consumer",
+                        "origin": "user_confirmed",
+                    }
+                ],
+            }
+        )
+        _, result = resolve_history_associations(
+            ctx, [{"control_uuid": own, "series_id": "energy"}], visible, {}, timezone_name="UTC"
+        )
+        assert result[0].origin == "native_efm" and result[0].monitor_uuid == monitor
+        with pytest.raises(ValueError, match="participant"):
+            resolve_history_associations(
+                ctx,
+                [{"control_uuid": foreign, "series_id": "energy"}],
+                visible,
+                {},
+                timezone_name="UTC",
+            )
+
+
 @pytest.mark.asyncio
 async def test_optional_profile_resolution_never_opens_or_creates_store(tmp_path, monkeypatch):
     from unittest.mock import Mock
