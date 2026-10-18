@@ -56,7 +56,10 @@ def test_query_keeps_parent_topology_and_legacy_counters_separate():
     breakdown = query.status()["mapping_breakdown"]
     assert breakdown["derived_from_parent"] == 2 and breakdown["independent_unmapped"] == 0
     assert query.resolve(CHILD, "runtime_control_uuid").key == "p:1"
-    inventory = query.mapping_inventory(mapping_status="derived_from_parent")
+    inventory = [
+        query.mapping_evidence(entry.control_uuid)
+        for entry in query.mapping_inventory_entries(mapping_status="derived_from_parent")
+    ]
     assert len(inventory) == 2
     assert inventory[0]["project_node_ids"] == []
     assert inventory[0]["parent_project_node_ids"] == ["p:1"]
@@ -91,7 +94,7 @@ def test_hidden_parent_subtree_never_enters_mapping_inventory():
     hidden = ProjectQuery(
         ProjectView(query.view.snapshot, map_runtime(query.view.snapshot, structure)), {}
     )
-    assert hidden.mapping_inventory() == []
+    assert hidden.mapping_inventory_entries() == []
     with pytest.raises(ProjectQueryError, match="project_node_unknown"):
         hidden.resolve(CHILD, "runtime_control_uuid")
     assert snapshot.structure.controls
@@ -104,7 +107,8 @@ def test_parent_failure_and_bounded_candidate_provenance(candidate_count):
     project = ProjectSnapshot("changed-project", 1, (), build_graph((("p", parsed),)))
     query = ProjectQuery(ProjectView(project, map_runtime(project, snapshot.structure)), {})
     expected = "derived_parent_ambiguous" if candidate_count else "derived_parent_unmapped"
-    row = query.mapping_inventory(runtime_control_uuid=CHILD)[0]
+    entry = query.mapping_inventory_entries(runtime_control_uuid=CHILD)[0]
+    row = query.mapping_evidence(entry.control_uuid)
     assert row["mapping_status"] == expected
     assert len(row["parent_project_node_ids"]) == min(candidate_count, 32)
     assert row["references_truncated"] == (candidate_count > 32)
@@ -218,3 +222,25 @@ async def test_inventory_byte_trimming_continues_without_skips(monkeypatch):
     monkeypatch.setattr(tools, "PROJECT_RESPONSE_MAX_BYTES", 100)
     oversized = await status(include_mapping_inventory=True)
     assert not oversized.ok and oversized.data.error == "temporarily_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_large_inventory_projects_only_the_requested_page(monkeypatch):
+    query, snapshot = derived_query(19_999)
+    server, _ = install_tools(monkeypatch, query, snapshot)
+    projected = []
+    original = ProjectQuery.mapping_evidence
+
+    def record_projection(self, identifier):
+        projected.append(identifier)
+        return original(self, identifier)
+
+    monkeypatch.setattr(ProjectQuery, "mapping_evidence", record_projection)
+    status = server._tool_manager.get_tool("loxone_get_project_status").fn
+    first = await status(include_mapping_inventory=True, limit=1)
+    assert first.ok and projected == [PARENT]
+    projected.clear()
+    second = await status(
+        include_mapping_inventory=True, limit=1, cursor=first.data.mapping_inventory.next_cursor
+    )
+    assert second.ok and projected == [CHILD]

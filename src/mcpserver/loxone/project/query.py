@@ -615,15 +615,19 @@ class ProjectQuery:
             "coverage_by_source_type": coverage_by_source_type(self.view.snapshot),
         }
 
-    def mapping_inventory(
+    def mapping_inventory_entries(
         self, *, mapping_status: str | None = None, runtime_control_uuid: str | None = None
-    ) -> list[dict[str, object]]:
-        return [
-            self.mapping_evidence(entry.control_uuid)
-            for entry in sorted(self._mappings.values(), key=lambda item: item.control_uuid)
-            if (mapping_status is None or entry.mapping_status == mapping_status)
-            and (runtime_control_uuid is None or entry.control_uuid == runtime_control_uuid)
-        ]
+    ) -> list[ControlMapping]:
+        """Select lightweight references; callers project evidence after pagination."""
+        return sorted(
+            (
+                entry
+                for entry in self._mappings.values()
+                if (mapping_status is None or entry.mapping_status == mapping_status)
+                and (runtime_control_uuid is None or entry.control_uuid == runtime_control_uuid)
+            ),
+            key=lambda item: item.control_uuid,
+        )
 
     def mapping_evidence(self, identifier: str) -> dict[str, object]:
         entry = self._mappings[identifier]

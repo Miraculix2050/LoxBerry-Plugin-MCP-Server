@@ -6895,12 +6895,15 @@ def register_project_tools(
                 inventory = _page(
                     cursors,
                     scope,
-                    query.mapping_inventory(
+                    query.mapping_inventory_entries(
                         mapping_status=mapping_status, runtime_control_uuid=runtime_control_uuid
                     ),
                     cursor,
                     limit,
                 )
+                inventory["items"] = [
+                    query.mapping_evidence(entry.control_uuid) for entry in inventory["items"]
+                ]
             envelope = _result(
                 ProjectStatusEnvelope,
                 {
