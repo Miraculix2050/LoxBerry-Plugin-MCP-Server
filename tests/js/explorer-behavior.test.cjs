@@ -17,7 +17,7 @@ test('object alternatives reuse JSON fields without dropping source rows or bran
   await h.ready();
   await h.click(h.byId('json-tab'));
   h.byId('json').value = JSON.stringify({sources: [{method: 'classes'}], options: {method: 'numerical'}});
-  h.byId('json').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  h.byId('json').dispatchEvent(new h.window.Event('input', {bubbles: true}));
   await h.click(h.byId('form-tab'));
   const fields = [...h.byId('form').querySelectorAll('textarea')];
   assert.equal(fields.length, 2);

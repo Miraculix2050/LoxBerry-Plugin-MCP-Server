@@ -466,6 +466,8 @@
   }
 
   function selectTab(jsonMode, focusPanel = true) {
+    if (!jsonMode && elements.jsonTab.getAttribute('aria-selected') === 'true' &&
+        validateDraft(false)) renderSelectedTool();
     elements.formTab.setAttribute('aria-selected', String(!jsonMode));
     elements.jsonTab.setAttribute('aria-selected', String(jsonMode));
     elements.formTab.tabIndex = jsonMode ? -1 : 0;
