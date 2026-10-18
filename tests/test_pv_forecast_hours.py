@@ -90,6 +90,7 @@ def test_source_availability(states, status):
         '{"today":[{"t":1792323600,"v":1},{"t":1792323600,"v":1}]}',
         '{"today":[{"t":1792323600,"v":1},{"t":1792323700,"v":1}]}',
         "x" * 32769,
+        "\ud800",
     ],
     ids=lambda raw: str(len(raw)),
 )

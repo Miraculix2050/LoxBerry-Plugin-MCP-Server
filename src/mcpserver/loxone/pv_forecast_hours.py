@@ -95,7 +95,11 @@ def decode_forecast(
     if result.ready is False:
         result.status = "not_ready"
         return result
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_BYTES:
+    try:
+        payload_size = len(raw.encode("utf-8")) if isinstance(raw, str) else MAX_BYTES + 1
+    except UnicodeEncodeError:
+        raise PvForecastError("pv_forecast_invalid_payload") from None
+    if payload_size > MAX_BYTES:
         raise PvForecastError("pv_forecast_invalid_payload")
     try:
         document = json.loads(raw, object_pairs_hook=_pairs)
