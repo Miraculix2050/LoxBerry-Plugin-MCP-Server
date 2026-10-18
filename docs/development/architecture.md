@@ -405,3 +405,12 @@ tool share the same module loader, revision and allowlisted section type.
 Clients fall back to the full guide if a module is unavailable and stop the
 affected workflow if both retrieval paths fail. Core and operations are required
 before writes; source-specific read modules retain their independent policy.
+
+
+The existing mood operation validator and the compact lighting read share one
+source-row/ID validator in `loxone/lighting.py`. Its pure, bounded projection
+retains only source IDs/names and explicit omission evidence; it has no runtime,
+policy or command dependency. The MCP adapter obtains fresh caller visibility
+before accessing the cached state and adds observation/source metadata. Read-only
+input/name/output bounds do not alter the released operation-ID contract. No new
+service, dispatcher or physical/scene interpretation is introduced.

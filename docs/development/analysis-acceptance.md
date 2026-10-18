@@ -290,3 +290,24 @@ at CSS 1280x800 and 390x844, without horizontal overflow or console warnings/err
 These final smoke checks complement the per-feature PR 2–8 evidence. They do not
 represent 25 independent model answers or token acceptance. #445 therefore remains
 open for the missing independent AI/token and matched-performance gates.
+
+
+## Modular-guidance and compact-read accounting (#442/#443)
+
+V2 also accepts `resources.read` for published fixed guide resources. The collector
+verifies the URI/section association; the value-free capture stores the section,
+UTF-8 module bytes and actual response bytes, never a private URI or arguments.
+Tool and resource guide reads use the same guide-fetch counters; actual parity or
+fallback reads count separately. Do not silently omit resource traffic.
+
+Use profile summaries for source selection and lighting_context for source moods.
+Fetch full PV/load parameters or raw/detail history only when the task needs them;
+include every such extra read, page, retry and fallback in complete-workflow totals.
+Existing analysis/comparison summaries and include_raw detail paths are retained.
+The original scenario questions, numeric references and prohibitions are unchanged.
+Lighting routing supports only source mood names, not the specialized #441 review.
+
+Reuse existing v2 separation of metric availability and independent quality review.
+Missing token telemetry stays null and optional-unavailable; bytes/calls/times do
+not establish token or cost savings. Protocol sessions, fixtures, native source
+coverage and independently judged AI answers remain distinct evidence boundaries.

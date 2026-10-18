@@ -256,6 +256,7 @@ V2_CALL_FIELDS = {
     "retry",
     "fallback_reason",
 }
+GUIDE_READ_CALLS = frozenset({"loxone_get_skill_guide", "resources.read"})
 FALLBACK_REASONS = {
     "source_unavailable",
     "unsupported",
@@ -285,7 +286,7 @@ def _v2_read_calls() -> frozenset[str]:
             for t in tool_schema_catalog("acceptance")["tools"]
             if t.get("annotations", {}).get("readOnlyHint") is True
         }
-        | {"prompts.list", "prompts.get"}
+        | {"prompts.list", "prompts.get", "resources.read"}
     )
 
 
@@ -424,7 +425,7 @@ def validate_capture_v2(document: dict, catalog: dict) -> list[dict]:
                 and call["fallback_reason"] not in FALLBACK_REASONS
             ):
                 raise ValueError("capture_fallback_invalid")
-            if call["tool"] == "loxone_get_skill_guide":
+            if call["tool"] in GUIDE_READ_CALLS:
                 if call["guide_section"] is not None and not _capture_labels(call["guide_section"]):
                     raise ValueError("capture_labels_invalid")
                 if (
@@ -444,8 +445,8 @@ def _v2_totals(run: dict) -> dict:
     def total(selected: list[dict], key: str) -> int | float | None:
         return None if any(c[key] is None for c in selected) else sum(c[key] for c in selected)
 
-    guides = [c for c in calls if c["tool"] == "loxone_get_skill_guide"]
-    other = [c for c in calls if c["tool"] != "loxone_get_skill_guide"]
+    guides = [c for c in calls if c["tool"] in GUIDE_READ_CALLS]
+    other = [c for c in calls if c["tool"] not in GUIDE_READ_CALLS]
     return {
         "mcp_sum_ms": total(calls, "duration_ms"),
         "response_bytes": total(calls, "response_bytes"),
@@ -539,10 +540,7 @@ def summarize_v2(document: dict, catalog: dict) -> dict:
         unavailable.update(k for k, v in totals.items() if v is None)
         if not run["calls"]:
             unavailable.add("task_call_evidence")
-        if any(
-            c["tool"] == "loxone_get_skill_guide" and c["guide_section"] is None
-            for c in run["calls"]
-        ):
+        if any(c["tool"] in GUIDE_READ_CALLS and c["guide_section"] is None for c in run["calls"]):
             unavailable.add("guide_section")
         rows.append(
             {

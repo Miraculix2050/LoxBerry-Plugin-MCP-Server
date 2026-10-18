@@ -15,7 +15,7 @@ Admin-only extension and archive management do not refresh source evidence or
 permissions. Archived drafts cannot be applied or exported; reopening resets
 decisions. Local writes and experimental ETS downloads retain their separate
 confirmation, ownership, revision and fresh project-authorization checks.
-Compact-summary migration is additive and preserves legacy drafts. Skill revision 94.
+Compact-summary migration is additive and preserves legacy drafts. Skill revision 95.
 
 ## Qualified local irradiance forecasts (#440)
 
@@ -778,3 +778,22 @@ Field help owns parameter selection and bounds; the canonical workflow modules
 own longer recipes. Native values, supplemental calculations, statistic-series
 reads, observability metadata and historical causation remain distinct. The
 routing revision changes no tool names, defaults, bounds or authorization.
+
+
+## Bounded lighting source context (#442/#443)
+
+`loxone_describe_control(view="lighting_context")` adds a fresh-visibility read of
+one visible LightControllerV2's cached `moodList`; full remains the default.
+Only validated source IDs and names are returned. Status distinguishes available,
+unsupported type, missing reference/value, invalid data and `source_limit`.
+Source state reference, cached origin, observation time and freshness remain
+explicit. `total`/`omitted` describe the validated source list, not complete
+configuration. At most 100 moods, 200 characters per name and 32 KiB of normalized
+mood-row JSON are retained; serialized input is limited to 1,048,576 characters.
+`returned`, `truncated`, `name_truncated_indices` and `names_complete` distinguish
+collection and name omissions; absent/invalid source counts remain null.
+Unknown names remain null. Existing response bounds remain in force.
+Explicit hidden diagnosis remains read-only. No scene roles, presence mapping,
+physical fixture inventory, operation targets or new operation permission are
+inferred. The shared released mood-ID validation and operation behavior remain
+unchanged; source parsing limits for this read do not change operation validation.

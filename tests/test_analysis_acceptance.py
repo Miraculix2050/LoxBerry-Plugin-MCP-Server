@@ -547,3 +547,19 @@ def test_v2_setup_catalog_calls_and_missing_catalog_timings_are_visible() -> Non
     data["catalog_reads"][0]["task"] = {"case_id": "unknown", "run": 1, "phase": "cold"}
     with pytest.raises(ValueError, match="catalog_task_invalid"):
         acceptance.validate_capture(data, CATALOG)
+
+
+def test_v2_published_guide_resources_share_byte_and_call_accounting():
+    data = capture_v2()
+    row = data["runs"][0]
+    row["calls"][0]["tool"] = "resources.read"
+    report = acceptance.summarize(data, CATALOG)
+    assert report["status"] == "pass"
+    assert report["results"][0]["guide_fetch_count"] == 1
+    assert report["results"][0]["guide_module_bytes"] == 60
+    assert report["results"][0]["guide_response_bytes"] == 100
+    row["calls"][0]["guide_section"] = None
+    assert acceptance.summarize(data, CATALOG)["status"] == "incomplete"
+    row["calls"][0]["guide_section"] = "../../unpublished"
+    with pytest.raises(ValueError, match="labels"):
+        acceptance.validate_capture(data, CATALOG)

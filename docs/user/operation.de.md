@@ -83,3 +83,10 @@ Nutzbarkeitshinweise. Für Begründungen, Anzeigenamen oder vollständige PV-/La
 Beide Ansichten prüfen die Sichtbarkeit je Seite frisch und verwenden dieselbe
 Pagination und Größenbegrenzung; ausgelassene Summary-Felder sind keine fehlenden
 gespeicherten Angaben.
+
+Mit `loxone_describe_control(view="lighting_context")` lassen sich begrenzt
+Quell-IDs und Namen der Lichtstimmungen eines sichtbaren LightControllerV2 lesen.
+Status, Quellzustand, Zeitstempel, Aktualität und Auslassungen beachten; fehlende
+oder ungültige Daten sind kein leeres Szeneninventar. Namen belegen weder
+Szenenrollen noch Präsenzverbindungen oder physische Leuchten. Der Full-Default
+und alle bestehenden Schutzregeln für Operationen bleiben erhalten.
