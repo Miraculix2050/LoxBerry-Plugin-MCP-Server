@@ -16,16 +16,15 @@ from mcpserver.analysis_context import (
     ForecastCoverage,
     ProductionAsset,
     ResolvedAssociation,
+    SourceSnapshot,
+    read_profile_bindings,
     resolve_membership,
-    selected_source_signature,
+    resolve_source_association,
 )
 from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.bounded_worker import run_admitted_worker
 from mcpserver.installation_profile import (
-    ProfileSources,
-    ProfileStore,
     installation_identity,
-    project_profile,
     visible_controls,
 )
 from mcpserver.load_flexibility import LoadFlexibility
@@ -100,17 +99,9 @@ def combine_forecasts(forecasts: list[PvForecastResult]) -> PvForecastResult:
 async def _bindings(
     path: Path | None, identity: str, structure: LoxoneStructure, context: EnergyAnalysisContext
 ) -> tuple[dict[str, Any], int | None]:
-    if not any(load.kind == "profile" for load in context.loads):
-        return {}, None
-    if path is None:
-        raise ControlOperationError("temporarily_unavailable", "Planning profile unavailable")
-    doc = await run_admitted_worker(ProfileStore(path).read, identity)
-    projection = project_profile(
-        doc, identity, ProfileSources.from_structure(identity, structure), limit=256
+    return await read_profile_bindings(
+        path, identity, structure, required=any(load.kind == "profile" for load in context.loads)
     )
-    if projection["status"] != "available":
-        raise ControlOperationError("temporarily_unavailable", "Planning profile changed")
-    return {b["binding_id"]: b for b in projection["bindings"]}, doc.revision
 
 
 async def calculate_context_plan(
@@ -137,9 +128,19 @@ async def calculate_context_plan(
         models = []
         loads = []
         missing = {}
+        referenced_bindings: set[str] = set()
         for load in context.loads:
+            resolved = resolve_source_association(
+                load.load_id,
+                visible,
+                bindings=bindings,
+                binding_id=load.binding_id,
+                control_uuid=load.control_uuid,
+                origin=load.cycle.origin if load.cycle else "user_confirmed",
+                expected_role="consumer",
+            )
             if load.kind == "profile":
-                binding = bindings.get(load.binding_id or "")
+                binding = resolved.binding
                 if (
                     not binding
                     or binding.get("role") != "consumer"
@@ -151,6 +152,18 @@ async def calculate_context_plan(
                     )
                 selected.append({**binding, "binding_id": load.load_id})
                 load_controls[load.load_id] = binding["control_uuid"]
+                assert load.binding_id is not None
+                referenced_bindings.add(load.binding_id)
+                companion_id = binding["load_flexibility"]["operating_binding_id"]
+                companion = resolve_source_association(
+                    load.load_id,
+                    visible,
+                    bindings=bindings,
+                    binding_id=companion_id,
+                    expected_role="operating_state",
+                )
+                assert companion.binding is not None
+                referenced_bindings.add(companion_id)
             elif load.kind == "real":
                 assert load.control_uuid is not None
                 if load.control_uuid not in visible or (
@@ -180,7 +193,9 @@ async def calculate_context_plan(
             | {c.uuid for controls in lock_controls.values() for c in controls}
             | ({context.scope.monitor_uuid} if context.scope.monitor_uuid else set())
         )
-        signature = selected_source_signature(initial, source_ids)
+        guard = SourceSnapshot.capture(
+            runtime.endpoint.origin, initial, source_ids, bindings, revision, referenced_bindings
+        )
     # No nested admission: forecast transport and historical reads own their slots.
     forecasts = []
     try:
@@ -253,26 +268,10 @@ async def calculate_context_plan(
         plan_loads, combined, tuple(loads), options, now=time.time(), deadline=deadline
     )
     async with runtime.snapshot_context(access) as refreshed:
-        try:
-            after_signature = selected_source_signature(refreshed.structure, source_ids)
-        except ValueError:
-            raise ControlOperationError(
-                "temporarily_unavailable", "Planning context changed"
-            ) from None
-        if (
-            installation_identity(runtime.endpoint.origin, refreshed.structure) != identity
-            or after_signature != signature
-        ):
-            raise ControlOperationError("temporarily_unavailable", "Planning context changed")
         after_bindings, after_revision = await _bindings(
             profile_path, identity, refreshed.structure, context
         )
-        if revision != after_revision or any(
-            bindings.get(load.binding_id or "") != after_bindings.get(load.binding_id or "")
-            for load in context.loads
-            if load.kind == "profile"
-        ):
-            raise ControlOperationError("temporarily_unavailable", "Planning profile changed")
+        guard.validate(runtime.endpoint.origin, refreshed.structure, after_bindings, after_revision)
         for allocation in solved.allocations:
             locked = _known_lock(runtime, refreshed.subject, lock_controls[allocation.binding_id])
             if locked:

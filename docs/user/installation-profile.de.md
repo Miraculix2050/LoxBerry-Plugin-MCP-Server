@@ -1,5 +1,13 @@
 # Bestätigtes Anlagenprofil
 
+Anfragelokale Energieszenarien können ausdrücklich referenzierte bestätigte
+Profilzuordnungen wiederverwenden. Real deklarierte und hypothetische Lasten
+benötigen kein gespeichertes Profil. Eine Anfrage kann widersprüchliche Referenzen,
+Entwürfe oder geänderte Zuordnungen nicht aufwerten. Der Server prüft ausgewählte
+Quellen und verknüpfte Betriebszustände vor der Ergebnisausgabe erneut.
+Bestätigung beschreibt eine Zuordnung; sie belegt weder technische Einheiten
+noch physische Messgrenzen oder eine Berechtigung zum Betrieb eines Geräts.
+
 **Wetterkontext** bindet eine genaue aktuelle oder prognostizierte Wetterquelle
 und eine Wettergröße. Diese Quelle hat eine eigene Sichtbarkeitsprüfung und keine
 Kontroll-UUID. Formate sind Darstellungsmetadaten; Einheiten und die Kodierung von

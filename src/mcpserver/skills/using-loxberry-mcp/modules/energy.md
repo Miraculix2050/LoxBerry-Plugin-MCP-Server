@@ -287,6 +287,10 @@ loads suggest a description naming the actual device, electrical circuit,
 measurement/estimate and operating restrictions; ask only for facts not in sources.
 Do not auto-write descriptions, confirmations, profiles or recorders. Existing
 profiles are optional reusable declarations and never replace fresh authorization.
+Reference only currently confirmed bindings. A request cannot override a conflicting
+reference or upgrade a draft, changed or hidden association. The shared resolver
+rechecks selected sources and referenced operating companions before publication;
+unreferenced saved profiles do not supply assumptions to profileless requests.
 
 The context result conditional_context_planning.v1 reports individual forecasts,
 coverage, association provenance, real/hypothetical kinds and unresolved feedback.
