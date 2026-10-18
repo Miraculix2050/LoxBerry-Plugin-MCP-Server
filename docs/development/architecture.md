@@ -45,6 +45,12 @@ visibility for the signed-in client on every page. Neither adapter treats a user
 declared role as verified measurement semantics. Source fingerprints ignore
 display names and flag technical changes for review. Hidden controls are omitted;
 retired source identities are removed from invalid binding projections.
+The MCP summary is a pure typed projection of that already authorized, cleaned
+full result. It performs no storage/source access and preserves all identity,
+status and usability evidence; the snapshot context rechecks authorization before
+publishing either view. Display names, rationale and full PV/load declarations
+remain in the default full view. Both use the same pagination and output budget.
+
 
 MCP profile mutations use a separate policy/orchestration adapter. It requires
 general local operation approval plus a default-disabled exact client/identity/

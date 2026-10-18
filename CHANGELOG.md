@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add an optional compact installation-profile summary after fresh visibility and
+  reference cleanup; retain full defaults, pagination and mutation safeguards (#443).
+
 - Focus MCP read-tool routing descriptions on purpose and evidence boundaries;
   move parameter selection and limits to field help without changing contracts (#443).
 

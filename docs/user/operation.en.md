@@ -73,3 +73,10 @@ Next: [Troubleshooting](troubleshooting.en.md).
 Read core first, then only the workflow sections selected by its task index. Before a write load core, operations and the relevant read module. If section retrieval fails use the complete guide; if that also fails stop the affected workflow. The legacy full-guide tool default and URI remain available.
 
 Tool descriptions summarize purpose, decisive prerequisites and limitations. Read parameter bounds and selection rules in the schema fields; retrieve longer recipes through the core task index. Statistic series are not an energy balance, advertised history metadata is not retrieved period evidence, and project reachability is not historical causation.
+
+For confirmed source selection, use `loxone_get_installation_profile(view="summary")`.
+The compact page retains exact sources, confirmation/review status, provenance
+and usability warnings. Use `view="full"` when rationale, display names or complete
+PV/load parameters are needed, especially before confirming a replacement or
+deletion. Both views freshly check visibility on every page and share pagination
+and size limits; omitted summary fields are not absent stored declarations.

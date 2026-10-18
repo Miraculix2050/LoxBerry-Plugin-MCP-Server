@@ -28,17 +28,15 @@ from mcpserver.persistence import PersistenceUncertain
 from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result
 
 
-class ProfileBindingData(BaseModel):
+class ProfileBindingSummaryData(BaseModel):
     binding_id: str
     role: str
     control_uuid: str
-    control_name: str
     source_kind: Literal["state", "statistic"]
     state_uuid: str | None = None
     series_id: str | None = None
     measurement_boundary: str | None = None
     declared_direction: str | None = None
-    rationale: str = ""
     confirmed: bool = False
     confirmation_origin: str | None = None
     status: Literal["confirmed", "draft", "needs_review", "invalid"]
@@ -46,9 +44,7 @@ class ProfileBindingData(BaseModel):
     semantic_status: Literal["not_resolved"] = "not_resolved"
     semantic_reference: str | None = None
     measurement_boundary_origin: Literal["user_declared"] = "user_declared"
-    pv_parameters: PVParameters | None = None
     pv_parameters_usable: bool = False
-    load_flexibility: LoadFlexibility | None = None
     load_constraints_usable: bool = False
     load_constraints_present: bool = False
     load_constraints_origin: Literal["user_declared"] = "user_declared"
@@ -57,14 +53,20 @@ class ProfileBindingData(BaseModel):
     load_operating_source_eligible: bool = False
 
 
-class WeatherProfileBindingData(BaseModel):
+class ProfileBindingData(ProfileBindingSummaryData):
+    control_name: str
+    rationale: str = ""
+    pv_parameters: PVParameters | None = None
+    load_flexibility: LoadFlexibility | None = None
+
+
+class WeatherProfileBindingSummaryData(BaseModel):
     binding_id: str
     role: Literal["weather_context"]
     source_kind: Literal["weather"]
     weather_state_uuid: str
     mode: Literal["actual", "forecast"]
     field: WeatherField
-    rationale: str
     confirmed: bool
     confirmation_origin: str | None
     status: Literal["confirmed", "draft", "needs_review"]
@@ -77,6 +79,20 @@ class WeatherProfileBindingData(BaseModel):
     value_origin: Literal["current_source_value", "forecast"]
 
 
+class WeatherProfileBindingData(WeatherProfileBindingSummaryData):
+    rationale: str
+
+
+class ProfileSummaryData(BaseModel):
+    view: Literal["summary"]
+    status: Literal["available", "installation_changed"]
+    revision: int
+    bindings: Annotated[
+        list[ProfileBindingSummaryData | WeatherProfileBindingSummaryData], Field(max_length=100)
+    ]
+    next_offset: int | None
+
+
 class ProfileData(BaseModel):
     status: Literal["available", "installation_changed"]
     revision: int
@@ -84,8 +100,24 @@ class ProfileData(BaseModel):
     next_offset: int | None
 
 
+def summarize_profile(profile: ProfileData) -> ProfileSummaryData:
+    """Project already authorized, reference-cleaned profile data without I/O."""
+    return ProfileSummaryData(
+        view="summary",
+        status=profile.status,
+        revision=profile.revision,
+        bindings=[
+            WeatherProfileBindingSummaryData.model_validate(item.model_dump())
+            if isinstance(item, WeatherProfileBindingData)
+            else ProfileBindingSummaryData.model_validate(item.model_dump())
+            for item in profile.bindings
+        ],
+        next_offset=profile.next_offset,
+    )
+
+
 class ProfileEnvelope(ToolEnvelope):
-    data: ProfileData | ErrorData
+    data: ProfileSummaryData | ProfileData | ErrorData
 
 
 class ProfileMutationData(BaseModel):
@@ -198,6 +230,15 @@ def register_profile_read_tool(
     async def get_installation_profile(
         offset: Annotated[int, Field(ge=0, le=256)] = 0,
         limit: Annotated[int, Field(ge=1, le=100)] = 100,
+        view: Annotated[
+            Literal["full", "summary"],
+            Field(
+                description=(
+                    "Full profile (default), or source/status selection without rationale "
+                    "and full PV/load parameters."
+                )
+            ),
+        ] = "full",
     ) -> ProfileEnvelope:
         try:
             if runtime is None or path is None:
@@ -214,6 +255,8 @@ def register_profile_read_tool(
                     offset=offset,
                     limit=limit,
                 )
+                if view == "summary":
+                    result = summarize_profile(ProfileData.model_validate(result)).model_dump()
                 envelope = _result(
                     ProfileEnvelope,
                     result,
