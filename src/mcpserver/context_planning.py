@@ -244,9 +244,15 @@ async def calculate_context_plan(
         plan_loads, combined, tuple(loads), options, now=time.time(), deadline=deadline
     )
     async with runtime.snapshot_context(access) as refreshed:
+        try:
+            after_signature = selected_source_signature(refreshed.structure, source_ids)
+        except ValueError:
+            raise ControlOperationError(
+                "temporarily_unavailable", "Planning context changed"
+            ) from None
         if (
             installation_identity(runtime.endpoint.origin, refreshed.structure) != identity
-            or selected_source_signature(refreshed.structure, source_ids) != signature
+            or after_signature != signature
         ):
             raise ControlOperationError("temporarily_unavailable", "Planning context changed")
         after_bindings, after_revision = await _bindings(

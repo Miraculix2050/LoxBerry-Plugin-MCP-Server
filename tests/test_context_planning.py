@@ -114,10 +114,11 @@ async def test_profileless_plan_authorization_publication_and_zero_history(
     history = AsyncMock(side_effect=AssertionError("no history for declared models"))
     monkeypatch.setattr(module, "_observed_profiles", history)
     if changed:
-        with pytest.raises((ValueError, ControlOperationError)):
+        with pytest.raises(ControlOperationError) as failure:
             await calculate_context_plan(
                 runtime, None, None, access(), context_options(doc), deadline=time.monotonic() + 5
             )
+        assert failure.value.code == "temporarily_unavailable"
     else:
         result = await calculate_context_plan(
             runtime, None, None, access(), context_options(doc), deadline=time.monotonic() + 5
