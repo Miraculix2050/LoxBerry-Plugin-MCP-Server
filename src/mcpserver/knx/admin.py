@@ -18,13 +18,7 @@ from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import parse_taxonomy
 from mcpserver.persistence import PersistenceUncertain
 
-from .catalog_service import CatalogService
-from .drafts import DraftStore
-from .file_comparison import FileComparison
-from .import_repository import ImportRepository
 from .model import MAX_FILE_BYTES, KnxError
-from .store import KnxStore
-from .xml_export import XmlCorrectionExport
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +28,9 @@ if TYPE_CHECKING:
 
 def validate_active_labels(config: PluginConfig) -> None:
     """Keep legacy configuration writes within the shared active-label bound."""
+    from .import_repository import ImportRepository
+    from .store import KnxStore
+
     data_root = os.getenv("LBPDATA", "")
     if not data_root or not config.loxone_endpoint:
         return
@@ -67,6 +64,7 @@ def dispatch_knx(
     authorize_effect: Callable[[], object] | None = None,
     admin_session: str | None = None,
     metadata_path: Path | None = None,
+    timing: dict[str, float | int] | None = None,
 ) -> dict[str, Any]:
     from mcpserver.admin import AdminError
 
@@ -132,7 +130,11 @@ def dispatch_knx(
         ):
             from .admin_bridge import forward
 
-            result = forward(action, payload, config_store)
+            result = (
+                forward(action, payload, config_store, timing=timing)
+                if timing is not None
+                else forward(action, payload, config_store)
+            )
         else:
             result = config_store.transaction(
                 lambda config, save: _run(
@@ -199,6 +201,7 @@ def _run(
     authorize_effect: Callable[[], object] | None = None,
     admin_session: str | None = None,
     metadata_path: Path | None = None,
+    read_auth: Any = None,
 ) -> dict[str, Any]:
     from mcpserver.admin import AdminError
 
@@ -213,6 +216,26 @@ def _run(
         action == "knx_page"
         and "include_sections" in payload
         and not isinstance(payload["include_sections"], bool)
+    ):
+        raise KnxError("knx_page_invalid")
+    if (
+        action == "knx_page"
+        and "initial_groups" in payload
+        and (
+            not payload.get("include_sections")
+            or not isinstance(payload["initial_groups"], dict)
+            or not payload["initial_groups"].keys() <= {"sort"}
+        )
+    ):
+        raise KnxError("knx_page_invalid")
+    if (
+        action == "knx_page"
+        and "initial_correction" in payload
+        and (
+            not payload.get("include_sections")
+            or not isinstance(payload["initial_correction"], dict)
+            or not payload["initial_correction"].keys() <= {"target", "draft_id", "offset", "sort"}
+        )
     ):
         raise KnxError("knx_page_invalid")
     if (
@@ -250,8 +273,51 @@ def _run(
         policy = {"knx_read": READ_POLICY, "knx_drafts": DRAFT_POLICY, "knx_write": WRITE_POLICY}[
             action.rsplit("_", 1)[0]
         ]
+        if action == "knx_read_page" and "include_delegations" in payload:
+            from .read_admin import _ReadPageAuthSnapshot
+
+            if type(payload["include_delegations"]) is not bool:
+                raise KnxError("knx_delegation_invalid")
+            request = {key: value for key, value in payload.items() if key != "include_delegations"}
+            if not request.keys() <= {"target"}:
+                raise KnxError("knx_delegation_invalid")
+            view = _ReadPageAuthSnapshot(_auth_store().snapshot())
+            if not payload["include_delegations"]:
+                return {
+                    **dispatch(action, request, config, save, view, target, policy),
+                    "target": token,
+                }
+            delegations: dict[str, Any] = {}
+            for selected in (READ_POLICY, DRAFT_POLICY, WRITE_POLICY):
+                selected_action = f"{selected.prefix}_page"
+                try:
+                    delegations[selected_action] = {
+                        "ok": True,
+                        "data": {
+                            **dispatch(
+                                selected_action,
+                                request,
+                                config,
+                                save,
+                                view,
+                                target,
+                                selected,
+                            ),
+                            "target": token,
+                        },
+                    }
+                except (AdminError, KnxError) as exc:
+                    delegations[selected_action] = {"ok": False, "error": {"code": exc.code}}
+                except Exception:
+                    delegations[selected_action] = {
+                        "ok": False,
+                        "error": {"code": "internal_error"},
+                    }
+            primary = delegations[action]
+            data = dict(primary["data"]) if primary["ok"] else {"target": token}
+            return {**data, "delegations": delegations}
         return {
-            **dispatch(action, payload, config, save, _auth_store(), target, policy),
+            **dispatch(action, payload, config, save, read_auth or _auth_store(), target, policy),
             "target": token,
         }
     import_fields = {
@@ -311,6 +377,8 @@ def _run(
     )
     if not data_root or not Path(data_root).is_absolute():
         raise AdminError("Plugin data directory unavailable")
+    from .store import KnxStore
+
     store = KnxStore(metadata_path or Path(data_root) / "knx" / "metadata.sqlite3")
     if action in {"knx_correction_xml_preview", "knx_correction_xml_download"}:
         from .admin_export import correction_export
@@ -480,6 +548,8 @@ def _run(
                 payload.get("sort") if not detail else None,
             ),
         }
+    from .import_repository import ImportRepository
+
     repository = ImportRepository(store)
     entries = config.knx_address_taxonomy if config.knx_address_taxonomy_endpoint == target else ()
     taxonomy_document = [
@@ -538,6 +608,9 @@ def _run(
             json.dumps(taxonomy_document, sort_keys=True).encode()
         ).hexdigest()
     if action.startswith("knx_xml_"):
+        from .drafts import DraftStore
+        from .xml_export import XmlCorrectionExport
+
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
         )
@@ -552,6 +625,9 @@ def _run(
             drafts.discard_xml_export()
         return {"discarded": True}
     if action.startswith("knx_compare_"):
+        from .drafts import DraftStore
+        from .file_comparison import FileComparison
+
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
         )
@@ -585,6 +661,9 @@ def _run(
             return {"discarded": True}
         return {**comparison_service.page(payload), "target": token}
     if action.startswith("knx_import_"):
+        from .catalog_service import CatalogService
+        from .drafts import DraftStore
+
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3",
             os.getenv("MCPSERVER_KNX_ADMIN_SESSION", ""),
@@ -678,17 +757,60 @@ def _run(
     }
     if action == "knx_page" and payload.get("include_sections"):
         sections: dict[str, Any] = {}
+        # One isolated, validated read per request; never retained across requests.
+        from mcpserver.admin import _auth_store
+
+        from .read_admin import _ReadPageAuthSnapshot
+
+        try:
+            read_auth = _ReadPageAuthSnapshot(_auth_store().snapshot())
+        except Exception:
+            read_auth = None
         for section_action in (
             "knx_read_page",
             "knx_drafts_page",
             "knx_write_page",
             "knx_correction_page",
+            *(("knx_groups_page",) if "initial_groups" in payload else ()),
+            *(("knx_correction_inspect",) if "initial_correction" in payload else ()),
         ):
             try:
+                section_payload: dict[str, Any] = {"target": token}
+                if section_action == "knx_groups_page":
+                    section_payload.update(payload["initial_groups"])
+                if section_action == "knx_correction_inspect":
+                    section_payload = dict(payload["initial_correction"])
+                    listed = sections["knx_correction_page"]
+                    if not listed["ok"]:
+                        raise KnxError("knx_draft_unavailable")
+                    selected_draft: dict[str, Any] | None = next(
+                        (
+                            item
+                            for item in listed["data"]["drafts"]
+                            if item["draft_id"] == section_payload.get("draft_id")
+                        ),
+                        None,
+                    )
+                    if selected_draft is None:
+                        raise KnxError("knx_draft_unavailable")
+                    section_payload["draft_revision"] = selected_draft["draft_revision"]
+                    offset = section_payload.get("offset", 0)
+                    if type(offset) is not int or not 0 <= offset < 50:
+                        raise KnxError("knx_correction_invalid")
+                    section_payload["offset"] = (
+                        offset if offset < selected_draft["change_count"] else 0
+                    )
                 sections[section_action] = {
                     "ok": True,
-                    "data": _run(section_action, {"target": token}, config, save),
+                    "data": _run(
+                        section_action, section_payload, config, save, read_auth=read_auth
+                    ),
                 }
+                if section_action == "knx_correction_inspect":
+                    sections[section_action]["request"] = {
+                        key: section_payload.get(key)
+                        for key in ("target", "draft_id", "offset", "sort")
+                    }
             except (AdminError, KnxError) as exc:
                 LOGGER.warning(
                     "component=knx_initial_section action=%s outcome=rejected code=%s",

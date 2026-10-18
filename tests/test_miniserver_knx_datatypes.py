@@ -8,11 +8,34 @@ import pytest
 
 from mcpserver.loxone.project.analysis import analyze_knx
 from mcpserver.loxone.project.graph import build_snapshot
+from mcpserver.loxone.project.knx_datatypes import verified_knx_format
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.models import ProjectBundle, ProjectFile
+from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.query import ProjectQuery
 from mcpserver.loxone.project.worker import process_project
 from mcpserver.tools import ProjectKnxData
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ("", True),
+        ('<C Type="Switch"/>', True),
+        ('<C Type="Switch" Type="Switch"/>', True),
+        ('<C Type="Document" Type="Switch"/>', True),
+        ('<C Type="Switch" Type="Document"/>', True),
+        ('<C Type="Document"/>', False),
+        ('<C Type="Document" Type="Document"/>', False),
+        ('<X Type="Document"/>', False),
+        ('<C ConfigVersion="17020828"/>', False),
+        ('<C Type="Switch" ConfigVersion="17020828"/>', False),
+        ('<X Type="Document" ConfigVersion="17020828"/>', False),
+        ('<C Type="Document" Type="Switch" ConfigVersion="17020828"/>', False),
+    ],
+)
+def test_format_boundary_rejects_additional_documents_and_foreign_versions(body, expected):
+    assert verified_knx_format(parse_project(config(body))) is expected
 
 
 def config(body: str, version: str = "17020828") -> bytes:

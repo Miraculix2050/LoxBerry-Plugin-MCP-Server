@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -14,6 +15,102 @@ from mcpserver.knx.admin import dispatch_knx
 from mcpserver.knx.model import KnxError, address
 from mcpserver.knx.store import KnxStore
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+
+
+def test_cgi_project_forwarder_does_not_import_server_models():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import mcpserver.admin; import mcpserver.knx.admin_bridge; "
+            "assert 'mcpserver.auth.provider' not in sys.modules; "
+            "assert 'mcpserver.loxone.runtime' not in sys.modules; "
+            "assert 'starlette.requests' not in sys.modules; "
+            "assert 'mcpserver.knx.file_comparison' not in sys.modules; "
+            "assert 'mcpserver.knx.xml_export' not in sys.modules; "
+            "assert 'mcp.types' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("outcome", ["success", "oversize", "invalid", "transport"])
+def test_fixed_loopback_forwarder_bounds_body_and_keeps_signed_binding(monkeypatch, outcome):
+    import json
+    import time
+    from types import SimpleNamespace
+
+    from mcpserver import admin as admin_module
+    from mcpserver.knx import admin_bridge as bridge
+
+    monkeypatch.setenv("HTTP_X_LOXONE_AUTHORIZATION", "Bearer synthetic")
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "a" * 64)
+    monkeypatch.setattr(
+        admin_module, "_auth_store", lambda: SimpleNamespace(pseudonym=lambda *_: "key")
+    )
+    calls = []
+    closed = []
+    raw = json.dumps({"ok": True, "data": {"result": "synthetic"}}).encode()
+    if outcome == "oversize":
+        raw = b"x" * 65
+        monkeypatch.setattr(bridge, "MAX_RESPONSE", 64)
+    elif outcome == "invalid":
+        raw = b"invalid"
+
+    class Connection:
+        def __init__(self, host, port, timeout):
+            assert (host, port, timeout) == ("127.0.0.1", 8765, 55)
+
+        def request(self, method, path, *, body, headers):
+            assert (method, path) == ("POST", bridge.PATH)
+            assert headers["Host"] == "public.example"
+            assert headers["Authorization"] == "Bearer synthetic"
+            assert bridge.verify(
+                "key", "a" * 64, body, headers[bridge.PROOF_HEADER], int(time.time())
+            )
+            calls.append(json.loads(body))
+
+        def getresponse(self):
+            if outcome == "transport":
+                raise OSError("private diagnostic")
+            return SimpleNamespace(
+                read=lambda cap: raw[:cap],
+                getheader=lambda *_: (
+                    "bridge_handler_ms;dur=1.250, secret;dur=3, bridge_key_ms;dur=nan"
+                ),
+            )
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(bridge, "HTTPConnection", Connection)
+    configs = SimpleNamespace(load=lambda: SimpleNamespace(public_origin="https://public.example"))
+    if outcome == "success":
+        timing = {}
+        assert bridge.forward("knx_project_page", {"revision": 1}, configs, timing=timing) == {
+            "result": "synthetic"
+        }
+        assert timing["bridge_handler_ms"] == 1.25
+        assert "secret" not in timing and "bridge_key_ms" not in timing
+        assert timing["forward_response_bytes"] == len(raw)
+        assert {
+            "forward_config_ms",
+            "forward_proof_ms",
+            "forward_send_ms",
+            "forward_headers_ms",
+            "forward_read_ms",
+            "forward_decode_ms",
+        } <= timing.keys()
+    else:
+        with pytest.raises(AdminError) as failed:
+            bridge.forward("knx_project_page", {"revision": 1}, configs)
+        assert failed.value.code == "write_outcome_uncertain"
+        assert "private diagnostic" not in str(failed.value)
+    assert calls == [{"action": "knx_project_page", "payload": {"revision": 1}}]
+    assert closed == [True]
 
 
 def record(name: str = "Additional name") -> dict[str, object]:
@@ -457,7 +554,17 @@ def test_initial_page_sections_match_individual_reads_without_config_writes(tmp_
     store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
     before = store.path.read_bytes()
     ordinary = dispatch_knx("knx_page", {}, store)
+    snapshots = 0
+    original_snapshot = auth.snapshot
+
+    def counted_snapshot():
+        nonlocal snapshots
+        snapshots += 1
+        return original_snapshot()
+
+    monkeypatch.setattr(auth, "snapshot", counted_snapshot)
     combined = dispatch_knx("knx_page", {"include_sections": True}, store)
+    assert snapshots == 1
     assert {key: value for key, value in combined.items() if key != "sections"} == ordinary
     assert set(combined["sections"]) == {
         "knx_read_page",
@@ -473,6 +580,26 @@ def test_initial_page_sections_match_individual_reads_without_config_writes(tmp_
         with pytest.raises(AdminError) as rejected:
             dispatch_knx("knx_page", {"include_sections": invalid}, store)
         assert rejected.value.code == "knx_page_invalid"
+
+
+def test_initial_groups_are_optional_and_match_separate_page(tmp_path, monkeypatch):
+    from mcpserver import admin as admin_module
+    from mcpserver.auth.store import AtomicJsonAuthStore
+
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    monkeypatch.setenv("MCPSERVER_KNX_ADMIN_SESSION", "a" * 64)
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    monkeypatch.setattr(admin_module, "_auth_store", lambda: auth)
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
+    combined = dispatch_knx("knx_page", {"include_sections": True, "initial_groups": {}}, store)
+    assert combined["sections"]["knx_groups_page"] == {
+        "ok": True,
+        "data": dispatch_knx("knx_groups_page", {"target": combined["target"]}, store),
+    }
+    for invalid in (None, True, [], {"target": "other"}):
+        with pytest.raises(AdminError):
+            dispatch_knx("knx_page", {"include_sections": True, "initial_groups": invalid}, store)
 
 
 def test_initial_section_failure_does_not_hide_other_sections(tmp_path, monkeypatch):
@@ -493,3 +620,74 @@ def test_initial_section_failure_does_not_hide_other_sections(tmp_path, monkeypa
     for action in ("knx_read_page", "knx_drafts_page", "knx_write_page"):
         assert combined["sections"][action] == {"ok": False, "error": {"code": "internal_error"}}
     assert "private diagnostic" not in str(combined)
+
+
+def test_delegation_poll_shares_one_fresh_snapshot_and_matches_separate_reads(
+    tmp_path, monkeypatch
+):
+    from mcpserver import admin as admin_module
+    from mcpserver.auth.store import AtomicJsonAuthStore
+
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    monkeypatch.setattr(admin_module, "_auth_store", lambda: auth)
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
+    snapshots = 0
+    original = auth.snapshot
+
+    def counted():
+        nonlocal snapshots
+        snapshots += 1
+        return original()
+
+    monkeypatch.setattr(auth, "snapshot", counted)
+    data = dispatch_knx("knx_read_page", {"include_delegations": True}, store)
+    assert snapshots == 1
+    for action, envelope in data["delegations"].items():
+        assert envelope == {"ok": True, "data": dispatch_knx(action, {}, store)}
+    store.mutate(lambda config: replace(config, loxberry_knx_read_enabled=True))
+    assert dispatch_knx("knx_read_page", {"include_delegations": True}, store)["enabled"]
+    for payload in ({"include_delegations": "true"}, {"include_delegations": True, "extra": True}):
+        with pytest.raises(AdminError):
+            dispatch_knx("knx_read_page", payload, store)
+
+
+@pytest.mark.parametrize("failed", ["knx_read", "knx_drafts", "knx_write"])
+@pytest.mark.parametrize("unexpected", [False, True])
+def test_combined_delegation_poll_isolates_each_projection_failure(
+    tmp_path, monkeypatch, failed, unexpected
+):
+    from mcpserver import admin as admin_module
+    from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.knx import read_admin
+
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    monkeypatch.setattr(admin_module, "_auth_store", lambda: auth)
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
+    original = read_admin.snapshot
+    calls = []
+
+    def project(config, view, target, policy):
+        calls.append(policy.prefix)
+        if policy.prefix == failed:
+            if unexpected:
+                raise RuntimeError("private diagnostic")
+            raise KnxError("knx_delegation_capacity")
+        return original(config, view, target, policy)
+
+    monkeypatch.setattr(read_admin, "snapshot", project)
+    result = dispatch_knx("knx_read_page", {"include_delegations": True}, store)
+    assert calls == ["knx_read", "knx_drafts", "knx_write"]
+    for action, section in result["delegations"].items():
+        if action == f"{failed}_page":
+            assert section == {
+                "ok": False,
+                "error": {"code": "internal_error" if unexpected else "knx_delegation_capacity"},
+            }
+        else:
+            assert section["ok"]
+            assert section["data"] == dispatch_knx(action, {}, store)
+    assert "private diagnostic" not in str(result)

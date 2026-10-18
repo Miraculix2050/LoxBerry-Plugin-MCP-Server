@@ -73,6 +73,7 @@
         ? {field:fields[order.column],direction:order.direction} : null; }});
   })();
   let resolveInitialSections;
+  let initialGroupPage = null;
   const initialSections = new Promise(resolve => { resolveInitialSections = resolve; });
   const collapseStorageKey = 'mcpserver.knx.sections.v1';
   const collapsibles = [...page.querySelectorAll('details[data-persist-collapse]')];
@@ -503,7 +504,12 @@
         sort:tables.selection('knx-group-rows',['prefix','format','imported_name','manual_label','address_count'])};
       if (offset && groupData) Object.assign(payload,{query_revision:groupData.revision,
         taxonomy_revision:groupData.taxonomy_revision});
-      const data = await api('knx_groups_page',payload);
+      const retained = initialGroupPage; initialGroupPage = null;
+      const data = retained?.ok && !offset && !query
+        && retained.data.target === state.target && retained.data.revision === state.revision
+        && retained.data.taxonomy_revision === state.taxonomy_revision
+        && JSON.stringify(retained.sort) === JSON.stringify(payload.sort) ? retained.data
+        : await api('knx_groups_page',payload);
       if (data.target !== state.target) throw new Error('knx_target_conflict');
       groupData = data;groupQuery=query;groupStale=false;requested=true;
       groupRows.replaceChildren();
@@ -599,7 +605,22 @@
     setImportDirty: (value) => { importDirty = value; }, message});
   void run(async () => {
     try {
-      const data = await api('knx_page', {include_sections: true});
+      const payload = {include_sections: true};
+      try {
+        const raw = sessionStorage.getItem('mcp-knx-admin-draft-view-v1');
+        const selection = raw && raw.length <= 512 ? JSON.parse(raw) : null;
+        if (/^[0-9a-f]{64}$/.test(selection?.target) && /^[0-9a-f]{48}$/.test(selection?.draft_id)
+            && Number.isInteger(selection.offset) && selection.offset >= 0 && selection.offset < 50)
+          payload.initial_correction = {target:selection.target,draft_id:selection.draft_id,offset:selection.offset,
+            sort:tables.selection('knx-corrections-values',
+              ['address','field','destination','imported','manual','proposed','decision'])};
+      } catch (_) { /* A saved selection is optional; no values are stored here. */ }
+      if (document.getElementById('knx-group-management')?.open)
+        payload.initial_groups = {sort:tables.selection('knx-group-rows',
+          ['prefix','format','imported_name','manual_label','address_count'])};
+      const data = await api('knx_page', payload);
+      initialGroupPage = data.sections?.knx_groups_page
+        ? {...data.sections.knx_groups_page,sort:payload.initial_groups?.sort} : null;
       render(data);
       resolveInitialSections(data.sections || null);
     } catch (error) {

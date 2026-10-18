@@ -542,7 +542,9 @@ class AtomicJsonAuthStore:
     def snapshot(self) -> dict[str, Any]:
         """Return an isolated validated snapshot."""
         with self._locked():
-            return copy.deepcopy(self._read_unlocked())
+            # JSON decoding allocates a new object graph for every read. A second
+            # deep copy adds no isolation and is costly for larger token stores.
+            return self._read_unlocked()
 
     def mutate(
         self, operation: Callable[[dict[str, Any]], T], *, lifecycle_now: int | None = None

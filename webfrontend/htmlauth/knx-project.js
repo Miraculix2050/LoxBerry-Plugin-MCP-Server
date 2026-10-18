@@ -26,19 +26,21 @@
   const sortFields = ['address','relation','loxone_names','imported_name','manual_name','observation'];
   const sortOrder = () => knx.tables?.selection('knx-project-rows', sortFields) || null;
   let savedView = null;
+  let restoringPage = null;
   try {
     const raw = sessionStorage.getItem(viewKey);
     const value = raw?.length < 16384 ? JSON.parse(raw) : null;
     if (/^[0-9a-f]{64}$/.test(value?.target) && Number.isInteger(value.offset)
         && value.offset >= 0 && value.offset <= 65536) {
-      savedView = {target:value.target,offset:value.offset};
+      savedView = {target:value.target,offset:value.offset,
+        revision:Number.isSafeInteger(value.revision) && value.revision >= 0 ? value.revision : null};
       if (Array.isArray(value.trail) && value.trail.length <= 1400
           && value.trail.every(n=>Number.isInteger(n)&&n>=0&&n<=65536)) trail = value.trail;
     }
   } catch (_) { /* Reload preferences are optional; data is never stored here. */ }
   const rememberView = () => {
     try {
-      if (frame) sessionStorage.setItem(viewKey, JSON.stringify({target:frame.target,offset:frame.offset,trail}));
+      if (frame) sessionStorage.setItem(viewKey, JSON.stringify({target:frame.target,revision:frame.revision,offset:frame.offset,trail}));
       else sessionStorage.removeItem(viewKey);
     } catch (_) { /* Continue without browser persistence. */ }
   };
@@ -101,6 +103,7 @@
     elements.previous.disabled = blocked || !state.oauth || !frame?.offset;
   };
   const clearSession = () => {
+    restoringPage = null;
     restoring = false;
     window.clearTimeout(expiryTimer);
     explorerState.clear();
@@ -229,8 +232,16 @@
     const retained = cached && Date.now() - cached.loadedAt < 60000
       && cached.target === binding.target && cached.revision === binding.revision
       && cached.session === expectedSession && cached.sortKey === JSON.stringify(sort) ? cached : null;
+    const pending = restoringPage; restoringPage = null;
+    const prepared = pending && pending.target === binding.target && pending.revision === binding.revision
+      && pending.offset === offset && pending.session === expectedSession
+      && pending.sortKey === JSON.stringify(sort) ? pending : null;
+    let loaded = prepared ? await prepared.result : null;
+    if (loaded && !(Date.now() - loaded.completedAt >= 0 && Date.now() - loaded.completedAt < 60000))
+      loaded = null;
+    if (loaded?.error) throw loaded.error;
     const envelope = retained
-      ? retained.envelope : await window.MCPKnxProject.adminRequest('knx_project_page',
+      ? retained.envelope : loaded ? loaded.envelope : await window.MCPKnxProject.adminRequest('knx_project_page',
         {...binding, offset, sort});
     if (request !== generation || state.oauth !== expectedSession) return;
     if (!envelope?.ok) {
@@ -250,7 +261,7 @@
       const bytes = JSON.stringify(envelope).length * 2;
       while (pages.size && (pages.size >= 20 || [...pages.values()].reduce((sum,item)=>sum+item.bytes,0)+bytes > 8*1024*1024))
         pages.delete(pages.keys().next().value);
-      pages.set(offset, {envelope, bytes, loadedAt:Date.now(), ...binding,
+      pages.set(offset, {envelope, bytes, loadedAt:loaded?.completedAt || Date.now(), ...binding,
         session:expectedSession,sortKey:JSON.stringify(sort)});
     }
     trail = [...new Set([...trail,offset])].sort((a,b)=>a-b);
@@ -379,6 +390,14 @@
       await auth.refreshAccessToken();
       if (request !== generation) return;
       scheduleExpiry(); message(label('connected'));
+      if (savedView && savedView.revision !== null && !knx.snapshot()) {
+        const hint = {...savedView}, sort = sortOrder();
+        restoringPage = {...hint,session:state.oauth,sortKey:JSON.stringify(sort),
+          result:window.MCPKnxProject.adminRequest('knx_project_page',
+            {target:hint.target,revision:hint.revision,offset:hint.offset,sort})
+            .then(envelope=>({envelope,completedAt:Date.now()}),
+              error=>({error,completedAt:Date.now()}))};
+      }
     } catch (error) { if (request === generation) { clearSession(); originWarning(error); } }
     finally { restoring = false; controls(); }
   };

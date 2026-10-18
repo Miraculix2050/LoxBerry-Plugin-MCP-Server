@@ -36,7 +36,9 @@ def decode_loxcc(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> bytes:
     while cursor < len(data):
         sequence = data[cursor]
         cursor += 1
-        literals = length(sequence >> 4)
+        literals = sequence >> 4
+        if literals == 15:
+            literals = length(literals)
         if cursor + literals > len(data):
             raise ProjectError("loxcc_truncated")
         if len(output) + literals > expected:
@@ -47,13 +49,28 @@ def decode_loxcc(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> bytes:
             break
         if cursor + 2 > len(data):
             raise ProjectError("loxcc_truncated")
-        distance = int.from_bytes(data[cursor : cursor + 2], "little")
+        distance = data[cursor] | data[cursor + 1] << 8
         cursor += 2
         if distance == 0 or distance > len(output):
             raise ProjectError("loxcc_reference_invalid")
-        count = length(sequence & 15) + 4
+        count = sequence & 15
+        if count == 15:
+            count = length(count)
+        count += 4
         if len(output) + count > expected:
             raise ProjectError("loxcc_size_limit")
+        if count <= distance:
+            start = len(output) - distance
+            output.extend(output[start : start + count])
+            continue
+        if count <= 65536:
+            # A single bounded chunk needs no loop or empty-tail append.
+            pattern = output[-distance:]
+            repeats, tail = divmod(count, distance)
+            output.extend(pattern * repeats)
+            if tail:
+                output.extend(pattern[:tail])
+            continue
         # Overlapping matches repeat a finite existing suffix. Copy in bounded
         # chunks rather than allocating an attacker-controlled repeat buffer.
         while count:

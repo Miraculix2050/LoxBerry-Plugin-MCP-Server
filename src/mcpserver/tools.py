@@ -15,6 +15,7 @@ import secrets
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime
 from math import ceil, floor, isfinite
@@ -3586,12 +3587,27 @@ async def _project_query(
         else runtime.project_call_slot(access)
     )
     async with slot:
-        try:
-            snapshot = await runtime.snapshot(access, fresh_visibility=True)
-        except RuntimeUnavailable:
-            runtime.projects.invalidate(access.family_id)
-            raise
-        query = await runtime.projects.query(access, snapshot)
+        client = getattr(runtime, "client", None)
+        certificate_scope = (
+            client.public_certificate_scope() if client is not None else nullcontext()
+        )
+        with certificate_scope:
+            started = time.monotonic()
+            try:
+                snapshot = await runtime.snapshot(access, fresh_visibility=True)
+            except RuntimeUnavailable:
+                runtime.projects.invalidate(access.family_id)
+                raise
+            _LOGGER.info(
+                "component=project_load phase=visibility duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
+            started = time.monotonic()
+            query = await runtime.projects.query(access, snapshot)
+            _LOGGER.info(
+                "component=project_load phase=query duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
     return query, snapshot
 
 
@@ -6506,6 +6522,7 @@ class _ProjectAnalysisRunner:
                 if admin_access is not None
                 else await _project_query(self.runtime)
             )
+            projection_started = time.monotonic()
             if self.runtime is None or self.runtime.projects is None:
                 raise RuntimeUnavailable("the service is not configured")
             projects = self.runtime.projects
@@ -6658,6 +6675,12 @@ class _ProjectAnalysisRunner:
                     self.results.retain(result_key, cached, now=time.monotonic())
                 self.results.bind(analysis_scope, result_key, cursor_scope, expires=expires)
             findings = result.get("findings")
+            if admin_access is not None:
+                _LOGGER.info(
+                    "component=project_load phase=analysis duration_ms=%.1f",
+                    (time.monotonic() - projection_started) * 1000,
+                )
+                projection_started = time.monotonic()
             if not isinstance(findings, list):
                 raise ProjectError("project_worker_invalid")
             retained = (
@@ -6742,11 +6765,22 @@ class _ProjectAnalysisRunner:
             envelope = _result(
                 _PreparedProjectAnalysisEnvelope, projected, stale=not snapshot.connected
             )
+            if admin_access is not None:
+                _LOGGER.info(
+                    "component=project_load phase=presentation duration_ms=%.1f",
+                    (time.monotonic() - projection_started) * 1000,
+                )
+                projection_started = time.monotonic()
             if not _fit_project_analysis_page(envelope, self.cursors, cursor_scope, page_cursor):
                 return _error(
                     _PreparedProjectAnalysisEnvelope,
                     "temporarily_unavailable",
                     "Project analysis result exceeds the response limit",
+                )
+            if admin_access is not None:
+                _LOGGER.info(
+                    "component=project_load phase=response_fit duration_ms=%.1f",
+                    (time.monotonic() - projection_started) * 1000,
                 )
             return envelope
         except KnxError:

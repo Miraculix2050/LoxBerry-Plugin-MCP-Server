@@ -245,8 +245,12 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r))
  address.querySelectorAll('th button')[3].click();await settle();
  assert.equal(calls.at(-1).payload.sort.field,'imported_name');
  assert.equal(calls.at(-1).payload.offset,0);
+ saved.set('mcp-knx-admin-draft-view-v1',JSON.stringify({target:'a'.repeat(64),
+   draft_id:'b'.repeat(48),offset:10,unexpected:'must-not-be-forwarded'}));
  w.close();w=setup();await settle();
  assert.equal(calls.at(-1).payload.include_sections,true);
+ assert.equal(calls.at(-1).payload.initial_correction.offset,10);
+ assert(!('unexpected' in calls.at(-1).payload.initial_correction));
  assert.equal(calls.at(-1).payload.sort.field,'imported_name');
  assert.equal(w.document.querySelector('#knx-addresses').closest('table')
    .querySelectorAll('th')[3].getAttribute('aria-sort'),'ascending');
@@ -262,19 +266,25 @@ def test_project_reload_reads_fresh_pages_and_uncertain_reads_keep_stale_view():
 const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
 const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
 const saved=new Map(),calls=[],target='a'.repeat(64);let version=1,fail=false,sort=null;
-const create=()=>{
+const create=(cold=false)=>{
  const w=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}).window;
  Object.defineProperty(w,'sessionStorage',{value:{getItem:k=>saved.get(k)||null,
   setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)}});
- const page=w.document.getElementById('knx-page');page.removeAttribute('aria-busy');
- let handler;w.MCPKnx={snapshot:()=>({target,revision:1}),
+ const page=w.document.getElementById('knx-page');
+ let current=cold?null:{target,revision:1};
+ if(cold)page.setAttribute('aria-busy','true');else page.removeAttribute('aria-busy');
+ w.hydrate=(revision=1)=>{current={target,revision};page.removeAttribute('aria-busy');
+  page.dispatchEvent(new w.Event('knx-state'));page.dispatchEvent(new w.Event('knx-idle'));};
+ w.catalogFailed=()=>{page.removeAttribute('aria-busy');
+  page.dispatchEvent(new w.Event('knx-idle'));};
+ let handler;w.MCPKnx={snapshot:()=>current,
   tables:{selection:()=>sort,bind:(_id,h)=>handler=h}};
  w.changeSort=()=>{sort={field:'observation',direction:'descending'};handler();};
  for(const file of ['explorer-core.js','explorer-state.js'])
    w.eval(fs.readFileSync('webfrontend/htmlauth/'+file,'utf8'));
  w.McpExplorerAuth={create:o=>({discover:async()=>({authorizationMetadata:{},resourceMetadata:{resource:'local'}}),
   refreshAccessToken:async()=>o.explorerState.updateToken({access_token:'synthetic',scope:'loxone:read',
-   expires_in:60,expires_at:Date.now()/1000+60}),accessToken:async()=>'synthetic',
+   expires_in:3600,expires_at:Date.now()/1000+3600}),accessToken:async()=>'synthetic',
   fetchWithTimeout:async(_url,o)=>{const args=JSON.parse(o.body.get('payload'));calls.push(args);
    if(fail)throw Error('Transient');
    const item={group_address:'1/2/'+args.offset,comparison:{relation:'common',project_objects:[],
@@ -282,7 +292,7 @@ const create=()=>{
     names_differ:version===2,name_comparison:'compared',project_names_complete:true}};
    return{ok:true,json:async()=>({ok:true,data:{ok:true,stale:false,observed_at:'now',data:{
     findings:[item],next_cursor:args.offset===0?'more':null,project_fingerprint:'fingerprint',model_version:14,
-    summaries:{ets_project_comparison:{target_binding:target,knx_revision:1,import_info:{},
+    summaries:{ets_project_comparison:{target_binding:target,knx_revision:args.revision,import_info:{},
      counts:{common:2,import_only:0,observed_project_only:0,name_deviations:0}}}}}})};
   }})};
  w.McpExplorerClient={create:()=>({initialize:async()=>[],
@@ -297,7 +307,9 @@ const click=async(w,id)=>{w.document.getElementById('knx-project-'+id).click();a
  await click(w,'previous');await click(w,'next');assert.equal(calls.length,2);
  assert(![...saved.values()].join('').includes('PrivateName'));
  assert(![...saved.values()].join('').includes('synthetic'));
- w.close();version=2;w=create();await settle();
+ w.close();version=2;w=create(true);await settle();
+ assert.equal(calls.length,3);assert.equal(w.document.getElementById('knx-project-rows').children.length,0);
+ w.hydrate();await settle();
  assert.equal(calls.length,3);assert.equal(calls.at(-1).offset,1);
  assert.match(w.document.getElementById('knx-project-rows').textContent,/PrivateName2/);
  w.changeSort();await settle();assert.equal(calls.at(-1).sort.field,'observation');
@@ -306,6 +318,17 @@ const click=async(w,id)=>{w.document.getElementById('knx-project-'+id).click();a
  assert.match(w.document.getElementById('knx-project-rows').textContent,/PrivateName2/);
  assert.equal(w.MCPKnxProject.snapshot(),null);
  fail=false;await click(w,'run');assert(w.MCPKnxProject.snapshot());
+ w.close();w=create(true);await settle();
+ const beforeHydrate=calls.length;
+ assert.equal(w.document.getElementById('knx-project-rows').children.length,0);
+ w.hydrate(2);await settle();assert.equal(calls.length,beforeHydrate+1);
+ assert.equal(calls.at(-1).revision,2);assert(w.MCPKnxProject.snapshot());
+ w.close();w=create(true);await settle();
+ const beforeRetry=calls.length;
+ w.catalogFailed();await settle();
+ const originalNow=w.Date.now;w.Date.now=()=>originalNow()+61000;
+ w.hydrate(2);await settle();
+ assert.equal(calls.length,beforeRetry+1);assert(w.MCPKnxProject.snapshot());
  w.close();
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """

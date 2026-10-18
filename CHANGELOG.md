@@ -51,6 +51,26 @@ extracted from the matching version heading.
 - Deliver canonical on-demand MCP workflow modules through the existing guide
   tool and static resources, retaining the complete compatibility guide (#442).
 
+- Reduce KNX initial helper imports, duplicate authorization-store copies and
+  sequential group/selected-draft reads. Combine concurrent background grant
+  checks without retaining their results; preserve unsaved edits and revision
+  checks. Start a remembered project comparison alongside catalog hydration, validate its fresh
+  binding before display, and speed up bounded XML parsing and worker transport.
+  Reduce bounded LZ4 decoding, KNX graph attribute work and unrelated helper/worker
+  imports. Reuse verified HTTP trust setup per client and normalized public
+  certificate bytes only within one admitted project read; retain fresh sockets,
+  authentication, independent downloads and final marker checks. Add numeric
+  phase timings without project or authentication data. Attribute CGI/helper
+  overhead with numeric request timings, drain bounded helper pipes concurrently,
+  defer plugin-version lookups and unrelated async imports, and use an available
+  JSON::XS response decoder with the original JSON::PP fallback. Drop the unused
+  Perl HTTP client import. Combine part-local KNX format checks into one
+  attribute pass while preserving duplicate and version ambiguity handling.
+  Avoid loop setup for bounded short overlapping LZ4 matches; retain the existing
+  chunked path for larger copies, output limits and checksum verification.
+  Whole-page times remain workload-dependent; the five-second target is not
+  guaranteed. Measured improvements and remaining costs are documented (#522).
+
 - Add a lazy, paginated KNX main/middle-group view including empty imported
   groups, source-preserving address counts and global header sorting. Create,
   edit and remove local group labels using existing taxonomy conflict checks;

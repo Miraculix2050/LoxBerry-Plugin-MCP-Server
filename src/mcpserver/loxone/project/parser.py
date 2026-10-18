@@ -6,8 +6,10 @@ from dataclasses import dataclass, field
 from .models import DEFAULT_LIMITS, ProjectError, ProjectLimits
 
 _NAME = re.compile(r"[A-Za-z_][\w.:-]*")
-_ATTRIBUTE = re.compile(r"""\s+([A-Za-z_][\w.:-]*)\s*=\s*(["'])(.*?)\2""", re.DOTALL)
+_ATTRIBUTE = re.compile(r"""\s+([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.DOTALL)
 _ENTITY = re.compile(r"&([^;\s<&]+);")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_TAG_END = re.compile(r"""[^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>""")
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,8 +20,14 @@ class ProjectElement:
     content: tuple[str | int, ...] = field(repr=False)
 
     def value(self, name: str) -> str | None:
-        values = {value for key, value in self.attributes if key == name}
-        return next(iter(values)) if len(values) == 1 else None
+        found = None
+        for key, value in self.attributes:
+            if key == name:
+                if found is None:
+                    found = value
+                elif found != value:
+                    return None
+        return found
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +37,9 @@ class ParsedProject:
 
 
 def _entities(text: str) -> str:
+    if "&" not in text:
+        return text
+
     def replace(match: re.Match[str]) -> str:
         name = match[1]
         builtin = {"lt": "<", "gt": ">", "amp": "&", "quot": '"', "apos": "'"}
@@ -56,7 +67,7 @@ def parse_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Parsed
         text = data.decode("utf-16" if data.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig")
     except UnicodeError:
         raise ProjectError("project_encoding_invalid") from None
-    if any(ord(ch) < 32 and ch not in "\t\r\n" for ch in text):
+    if _CONTROL.search(text):
         raise ProjectError("project_character_invalid")
     tags: list[str] = []
     attributes: list[tuple[tuple[str, str], ...]] = []
@@ -97,20 +108,10 @@ def parse_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Parsed
         if text.startswith(("<!", "<?"), cursor):
             raise ProjectError("project_xml_declaration_unsupported")
         # Locate the tag boundary without crossing a quoted attribute value.
-        end = cursor + 1
-        quote = ""
-        while end < len(text):
-            char = text[end]
-            if quote:
-                if char == quote:
-                    quote = ""
-            elif char in "\"'":
-                quote = char
-            elif char == ">":
-                break
-            end += 1
-        if end == len(text):
+        boundary = _TAG_END.match(text, cursor + 1)
+        if boundary is None:
             raise ProjectError("project_xml_invalid")
+        end = boundary.end() - 1
         body = text[cursor + 1 : end]
         cursor = end + 1
         if body.startswith("/"):
@@ -128,15 +129,13 @@ def parse_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Parsed
         seen: set[str] = set()
         index = len(tags)
         while position < len(body):
-            remaining = position
-            while remaining < len(body) and body[remaining].isspace():
-                remaining += 1
-            if remaining == len(body):
-                break
             attribute = _ATTRIBUTE.match(body, position)
             if attribute is None:
+                if body[position:].isspace():
+                    break
                 raise ProjectError("project_xml_invalid")
-            name, _, raw = attribute.groups()
+            name, double, single = attribute.groups()
+            raw = double if double is not None else single
             value = _entities(raw)
             if name in seen:
                 anomalies.append((index, "duplicate_attribute"))

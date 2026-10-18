@@ -213,12 +213,18 @@
       controls();
     }
   };
-  const inspect = async (draft, offset = 0) => {
+  const inspect = async (draft, offset = 0, initial = null) => {
     rememberSelection(draft, offset);
-    const data = await api('knx_correction_inspect', {target, draft_id: draft.draft_id,
+    const request = {target, draft_id: draft.draft_id,
       draft_revision: draft.draft_revision, offset,
       sort:window.MCPKnx?.tables?.selection('knx-corrections-values',
-        ['address','field','destination','imported','manual','proposed','decision']) || null});
+        ['address','field','destination','imported','manual','proposed','decision']) || null};
+    const retained = initial?.ok && initial.data.target === target
+      && initial.data.draft.draft_id === draft.draft_id
+      && initial.data.draft.draft_revision === draft.draft_revision
+      && initial.request?.target === target && initial.request.draft_id === draft.draft_id
+      && initial.request.offset === offset && JSON.stringify(initial.request.sort) === JSON.stringify(request.sort);
+    const data = retained ? initial.data : await api('knx_correction_inspect', request);
     if (!selected || selected.draft_id !== data.draft.draft_id
         || selected.draft_revision !== data.draft.draft_revision) {exportSelection.clear();reviewSelection.clear();}
     selected = {...data.draft, next_offset: data.next_offset, offset,
@@ -332,7 +338,7 @@
     }
     return data.drafts;
   };
-  const restoreSelection = async (drafts) => {
+  const restoreSelection = async (drafts, initial = null) => {
     if (!savedSelection) return;
     const draft = savedSelection.target === target
       ? drafts.find(item => item.draft_id === savedSelection.draft_id) : null;
@@ -340,7 +346,7 @@
       rememberSelection(); status.textContent = section.dataset.selectionUnavailable; return;
     }
     const offset = savedSelection.offset < draft.change_count ? savedSelection.offset : 0;
-    try { await inspect(draft, offset); }
+    try { await inspect(draft, offset, initial); }
     catch (error) {
       if (!['knx_draft_unavailable', 'knx_draft_expired'].includes(error.code)) throw error;
       selected = null; values.textContent = ''; more.hidden = true; exportButton.hidden = true;
@@ -449,9 +455,10 @@
   controls();
   if (window.MCPKnx?.initialSections) {
     void run(async () => {
-      const initial = (await window.MCPKnx.initialSections)?.knx_correction_page;
+      const sections = await window.MCPKnx.initialSections;
+      const initial = sections?.knx_correction_page;
       if (!initial?.ok) throw new Error('correction_unavailable');
-      await restoreSelection(renderDrafts(initial.data));
+      await restoreSelection(renderDrafts(initial.data), sections?.knx_correction_inspect);
     });
   } else void run(reload);
 })();

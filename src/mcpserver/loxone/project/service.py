@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import logging
+import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -255,7 +256,12 @@ class ProjectService:
                     # Neither a marker nor another family's bytes authorize this
                     # request. Even warm hits and continuations download with the
                     # caller's token before looking up immutable parsed content.
+                    started = time.monotonic()
                     data = await self.client.download_project(token, self.limits)
+                    _LOGGER.info(
+                        "component=project_load phase=download duration_ms=%.1f",
+                        (time.monotonic() - started) * 1000,
+                    )
                     await self._check(access)
                     content_key = (
                         access.miniserver_id,
@@ -279,7 +285,12 @@ class ProjectService:
                     )
                     if shared is None:
                         self._record_cache("miss")
+                        started = time.monotonic()
                         snapshot, serialized_size = await process_project(data, self.limits)
+                        _LOGGER.info(
+                            "component=project_load phase=parse duration_ms=%.1f",
+                            (time.monotonic() - started) * 1000,
+                        )
                         assert isinstance(snapshot, ProjectSnapshot)
                         snapshot = replace(
                             snapshot,

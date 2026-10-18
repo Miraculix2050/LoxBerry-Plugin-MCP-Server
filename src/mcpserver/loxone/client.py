@@ -7,8 +7,13 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+import ssl
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from typing import Any, Final, Protocol
 from urllib.parse import quote
 from uuid import UUID
@@ -235,6 +240,13 @@ async def _websocket_command(
     return _response_value(response)
 
 
+@dataclass(slots=True)
+class _PublicCertificateScope:
+    endpoint: MiniserverEndpoint
+    active: bool = True
+    pem: str | None = None
+
+
 class LoxoneClient:
     """Acquire an ephemeral JWT and open user-filtered WebSocket sessions."""
 
@@ -260,6 +272,22 @@ class LoxoneClient:
         self.max_structure_state_references = max_structure_state_references
         self.max_structure_depth = max_structure_depth
         self._structure_lookup = structure_lookup
+        self._certificate_scope: ContextVar[_PublicCertificateScope | None] = ContextVar(
+            "loxone_public_certificate_scope", default=None
+        )
+
+    @contextmanager
+    def public_certificate_scope(self) -> Iterator[None]:
+        """Reuse only public certificate bytes within one admitted project read."""
+        scope = _PublicCertificateScope(self.endpoint)
+        token = self._certificate_scope.set(scope)
+        try:
+            yield
+        finally:
+            # Child tasks can retain the context after their parent has returned.
+            scope.active = False
+            scope.pem = None
+            self._certificate_scope.reset(token)
 
     async def _get_json(self, path: str) -> Mapping[str, Any]:
         body, _encoding = await self._get_bytes(path)
@@ -278,6 +306,11 @@ class LoxoneClient:
         except (LookupError, UnicodeDecodeError):
             raise LoxoneConnectionError("Miniserver request failed") from None
 
+    @cached_property
+    def _http_verify(self) -> ssl.SSLContext:
+        """Reuse public trust configuration, never connections or authorization."""
+        return httpx.create_ssl_context(trust_env=False)
+
     async def _get_bytes(self, path: str) -> tuple[bytes, str]:
         try:
             async with (
@@ -286,6 +319,7 @@ class LoxoneClient:
                     follow_redirects=False,
                     timeout=self.timeout_seconds,
                     trust_env=False,
+                    verify=self._http_verify,
                 ) as client,
                 client.stream("GET", path) as response,
             ):
@@ -327,6 +361,7 @@ class LoxoneClient:
                         follow_redirects=False,
                         timeout=limits.timeout_seconds,
                         trust_env=False,
+                        verify=self._http_verify,
                     ) as http,
                     http.stream("GET", path, headers={"Accept-Encoding": "identity"}) as response,
                 ):
@@ -407,11 +442,18 @@ class LoxoneClient:
             raise LoxoneConnectionError("Miniserver returned an invalid public key") from exc
 
     async def websocket_public_key(self) -> str:
+        scope = self._certificate_scope.get()
+        endpoint = self.endpoint
+        if scope is not None and scope.active and scope.endpoint == endpoint and scope.pem:
+            return scope.pem
         value = await self._get_text("/jdev/sys/getcertificate")
         try:
-            return normalize_loxone_certificate_chain_pem(value)
+            pem = normalize_loxone_certificate_chain_pem(value)
         except LoxoneSecurityError as exc:
             raise LoxoneConnectionError("Miniserver returned an invalid certificate chain") from exc
+        if scope is not None and scope.active and scope.endpoint == endpoint:
+            scope.pem = pem
+        return pem
 
     async def _connect_websocket(self) -> ClientConnection:
         try:
@@ -513,13 +555,26 @@ class LoxoneClient:
             await session.close()
             token.destroy()
 
+    def _record_project_session_timing(self, phase: str, started: float) -> None:
+        scope = self._certificate_scope.get()
+        if scope is not None and scope.active and scope.endpoint == self.endpoint:
+            _LOGGER.info(
+                "component=project_load phase=%s duration_ms=%.1f",
+                phase,
+                (time.monotonic() - started) * 1000,
+            )
+
     async def open_session(self, token: LoxoneToken) -> LoxoneWebSocketSession:
         if not token.value:
             raise LoxoneConnectionError("Loxone token is no longer available")
         public_key = ""
+        started = time.monotonic()
         if not self.endpoint.secure:
             public_key = await self.websocket_public_key()
+        self._record_project_session_timing("session_certificate", started)
+        started = time.monotonic()
         websocket = await self._connect_websocket()
+        self._record_project_session_timing("session_connect", started)
         session = LoxoneWebSocketSession(
             websocket,
             public_key=public_key,
@@ -534,7 +589,9 @@ class LoxoneClient:
             structure_namespace=self.endpoint.origin,
         )
         try:
+            started = time.monotonic()
             await session.authenticate()
+            self._record_project_session_timing("session_authenticate", started)
         except BaseException as exc:
             if isinstance(exc, asyncio.CancelledError):
                 websocket.transport.abort()

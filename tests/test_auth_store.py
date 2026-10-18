@@ -37,6 +37,19 @@ def test_store_fails_closed_on_corruption(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "not-json"
 
 
+def test_snapshots_are_deeply_isolated_and_observe_external_updates(tmp_path: Path) -> None:
+    path = tmp_path / "sessions.json"
+    first = AtomicJsonAuthStore(path)
+    second = AtomicJsonAuthStore(path)
+    first.mutate(lambda doc: doc["families"].update({"test": {"scopes": ["read"]}}))
+    retained = first.snapshot()
+    retained["families"]["test"]["scopes"].append("uncommitted")
+    assert second.snapshot()["families"]["test"]["scopes"] == ["read"]
+    second.mutate(lambda doc: doc["families"]["test"].update(revoked=True))
+    assert first.snapshot()["families"]["test"]["revoked"] is True
+    assert "revoked" not in retained["families"]["test"]
+
+
 def test_existing_store_is_secured_before_it_is_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

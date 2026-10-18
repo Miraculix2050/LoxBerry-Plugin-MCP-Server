@@ -5,6 +5,7 @@ import re
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from time import perf_counter
 
 from .decoder import decode_loxcc
 from .identity import IdentityEvidence, logical_runtime_nodes
@@ -353,7 +354,7 @@ def build_graph(
                     )
             if len(edges) > limits.edges:
                 raise ProjectError("project_graph_limit")
-        semantic_edges.update(_build_semantic_edges(project, local, state_flows))
+        semantic_edges.update(_build_semantic_edges(project, local, state_flows, by_id))
         if len(semantic_edges) > limits.edges:
             raise ProjectError("project_graph_limit")
     return ProjectGraph(
@@ -366,16 +367,15 @@ def build_graph(
 
 
 def _build_semantic_edges(
-    project: ParsedProject, local: dict[int, GraphNode], state_flows: list[StateFlow]
+    project: ParsedProject,
+    local: dict[int, GraphNode],
+    state_flows: list[StateFlow],
+    source_ids: dict[str, list[GraphNode]],
 ) -> set[SemanticEdge]:
     """Build only explicit, allowlisted internal connector relationships."""
 
     result: set[SemanticEdge] = set()
     children: dict[int, list[int]] = defaultdict(list)
-    source_ids: dict[str, list[GraphNode]] = defaultdict(list)
-    for node in local.values():
-        if node.source_id:
-            source_ids[normalize_id(node.source_id)].append(node)
     for child_index, child in enumerate(project.elements):
         if child.parent is not None:
             children[child.parent].append(child_index)
@@ -398,7 +398,10 @@ def _build_semantic_edges(
     for index, element in enumerate(project.elements):
         if element.tag != "C":
             continue
-        rules = signal_use_rules(element.value("Type"))
+        source_type = element.value("Type")
+        rules = signal_use_rules(source_type)
+        if not rules and source_type not in {"State", "InputRef"}:
+            continue
         connectors: dict[str, list[GraphNode]] = defaultdict(list)
         for child_index in children.get(index, []):
             child = project.elements[child_index]
@@ -408,7 +411,7 @@ def _build_semantic_edges(
             key = child.value("K")
             if connector is not None and key is not None:
                 connectors[key].append(connector)
-        if element.value("Type") == "State":
+        if source_type == "State":
             flow = decode_state_flow(project, index, local[index].key, children, config_version)
             if flow.reason is None and (
                 any(sum(k == name for k, _ in element.attributes) != 1 for name in ("Type", "U"))
@@ -452,7 +455,7 @@ def _build_semantic_edges(
         # This projects the explicit reference onto that output, not containment
         # or an arbitrary internal input/output relationship. Unknown references
         # and duplicated AQ keys cannot acquire this relationship.
-        if element.value("Type") == "InputRef" and element.value("Ref"):
+        if source_type == "InputRef" and element.value("Ref"):
             referred = source_ids.get(normalize_id(element.value("Ref")), [])
             outputs = connectors.get("AQ", [])
             if len(referred) == 1 and referred[0].kind == "block" and len(outputs) == 1:
@@ -633,7 +636,10 @@ def _source_diagnostics(
 
 
 def build_snapshot(
-    bundle: ProjectBundle, limits: ProjectLimits = DEFAULT_LIMITS
+    bundle: ProjectBundle,
+    limits: ProjectLimits = DEFAULT_LIMITS,
+    *,
+    timings: dict[str, float] | None = None,
 ) -> ProjectSnapshot:
     total_bytes = 0
     total_elements = 0
@@ -643,11 +649,17 @@ def build_snapshot(
     anomalies: list[tuple[str, int | None, str]] = []
     unmodeled_node_keys: set[str] = set()
     for member in bundle.files:
+        started = perf_counter()
         data = decode_loxcc(member.content, limits)
+        if timings is not None:
+            timings["decode"] = timings.get("decode", 0.0) + perf_counter() - started
         total_bytes += len(data)
         if total_bytes > limits.decoded_bytes:
             raise ProjectError("project_decoded_limit")
+        started = perf_counter()
         project = parse_project(data, limits)
+        if timings is not None:
+            timings["tokenize"] = timings.get("tokenize", 0.0) + perf_counter() - started
         total_elements += len(project.elements)
         total_attributes += sum(len(element.attributes) for element in project.elements)
         if total_elements > limits.elements or total_attributes > limits.attributes:
@@ -685,7 +697,11 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
+    started = perf_counter()
     graph = build_graph(tuple(parsed_projects), limits)
+    if timings is not None:
+        timings["graph"] = perf_counter() - started
+    started = perf_counter()
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
     runtime_aliases, runtime_sources, identity_evidence = logical_runtime_nodes(
         graph, unmodeled_node_keys=frozenset(unmodeled_node_keys)
@@ -714,12 +730,15 @@ def build_snapshot(
     logical_nodes = tuple(
         node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
     )
+    diagnostics = _source_diagnostics(graph, tuple(anomalies))
+    if timings is not None:
+        timings["diagnostics"] = perf_counter() - started
     return ProjectSnapshot(
         bundle.fingerprint,
         PROJECT_MODEL_VERSION,
         tuple(projects),
         graph,
-        _source_diagnostics(graph, tuple(anomalies)),
+        diagnostics,
         logical_aliases,
         logical_source_ids,
         alias_lookup,

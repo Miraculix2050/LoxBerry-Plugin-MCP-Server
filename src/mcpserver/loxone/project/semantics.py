@@ -173,7 +173,11 @@ def classify_knx(
 ) -> KnxSemantics | None:
     """Return only semantics proven by the exact Loxone project type and attributes."""
     source_type = element.value("Type")
-    if source_type is None:
+    if (
+        source_type not in _ENDPOINT_DIRECTIONS
+        and source_type not in _LOGIC_TYPES
+        and source_type != "EIBline"
+    ):
         return None
     evidence = knx_dpt_evidence(element, verified=dpt_mapping_verified)
     truncated: list[str] = []

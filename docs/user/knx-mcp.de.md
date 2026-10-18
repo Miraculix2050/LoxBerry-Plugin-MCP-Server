@@ -1,5 +1,26 @@
 # KNX-Informationen über MCP
 
+## Laden und Aktualisieren der Adressverwaltung
+
+Beim Öffnen lädt die Seite Katalog, Freigaben und Entwurfsübersicht gemeinsam.
+Eine geöffnete Haupt-/Mittelgruppenansicht wird dabei mitgeladen. Die gespeicherte
+Auswahl eines Korrekturentwurfs wird ebenfalls anhand der aktuellen Übersicht
+mitgeladen; Ziel, Entwurfsrevision, Sortierung und Seite müssen übereinstimmen.
+Die gespeicherte Anmeldung und ein gemerkter Projektabgleich werden parallel wiederhergestellt;
+Abgleichsergebnisse erscheinen erst nach Prüfung des aktuellen Katalogstands.
+Ladehinweise bleiben sichtbar, solange der jeweilige Bereich noch nicht bereit ist.
+
+Im sichtbaren Tab werden gespeicherte MCP-Freigaben alle zehn Sekunden gemeinsam
+geprüft. Diese Hintergrundprüfung überschreibt keine ungespeicherten Eingaben.
+Projektabgleiche laden weiterhin mit der eigenen Loxone-Berechtigung frische
+Projektdaten. Innerhalb eines zugelassenen Projektaufrufs wird nur das normalisierte
+öffentliche Zertifikat wiederverwendet; der nächste Aufruf lädt es erneut.
+Anmeldung und abschließende Projektstandsprüfung nutzen weiterhin neue Verbindungen.
+Die geprüfte HTTP-Vertrauenskonfiguration wird je Client wiederverwendet.
+Besonders nach einem Dienstneustart kann die erneute Modellbildung
+länger dauern; eine vollständige Gesamtladezeit unter fünf Sekunden ist noch
+nicht nachgewiesen.
+
 ## Lokale Config-Datei: EIBType-Zuordnung
 
 Entwickler können eine lokale `.Loxone`-XML-Projektdatei nur lesend auswerten:
