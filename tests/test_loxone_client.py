@@ -1599,3 +1599,163 @@ async def test_state_events_uses_keepalive_after_idle_timeout(
 
     assert len(events) == 1
     assert websocket.sent == ["keepalive"]
+
+
+@pytest.fixture
+def certificate_client(monkeypatch):
+    client = LoxoneClient(MiniserverEndpoint.parse("http://192.168.1.1"), client_uuid=UUID(int=1))
+    fetch = AsyncMock(return_value="public certificate")
+    monkeypatch.setattr(client, "_get_text", fetch)
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.normalize_loxone_certificate_chain_pem",
+        lambda value: "normalized " + value,
+    )
+    return client, fetch
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_nested_and_endpoint_bound(certificate_client):
+    client, fetch = certificate_client
+    with client.public_certificate_scope():
+        await client.websocket_public_key()
+        await client.websocket_public_key()
+        assert fetch.await_count == 1
+        with client.public_certificate_scope():
+            await client.websocket_public_key()
+        await client.websocket_public_key()
+        assert fetch.await_count == 2
+        client.endpoint = MiniserverEndpoint.parse("http://192.168.1.2")
+        await client.websocket_public_key()
+        await client.websocket_public_key()
+        assert fetch.await_count == 4
+    await client.websocket_public_key()
+    assert fetch.await_count == 5
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_concurrent_and_inherited_cleanup(certificate_client):
+    client, fetch = certificate_client
+    release = asyncio.Event()
+
+    async def inherited():
+        await release.wait()
+        await client.websocket_public_key()
+
+    async def query():
+        with client.public_certificate_scope():
+            await client.websocket_public_key()
+            child = asyncio.create_task(inherited())
+            await asyncio.sleep(0)
+            await client.websocket_public_key()
+        return child
+
+    children = await asyncio.gather(query(), query())
+    assert fetch.await_count == 2
+    release.set()
+    await asyncio.gather(*children)
+    assert fetch.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_cancellation_clears_holder(certificate_client):
+    client, fetch = certificate_client
+    started = asyncio.Event()
+    pending = asyncio.Event()
+    holders = []
+
+    async def blocked(_path):
+        started.set()
+        await pending.wait()
+        return "public certificate"
+
+    fetch.side_effect = blocked
+
+    async def query():
+        with client.public_certificate_scope():
+            holders.append(client._certificate_scope.get())
+            await client.websocket_public_key()
+
+    task = asyncio.create_task(query())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert holders[0].active is False
+    assert holders[0].pem is None
+    assert client._certificate_scope.get() is None
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_does_not_store_failed_fetch(certificate_client):
+    client, fetch = certificate_client
+    fetch.side_effect = [LoxoneConnectionError("unavailable"), "public certificate"]
+    with client.public_certificate_scope():
+        with pytest.raises(LoxoneConnectionError):
+            await client.websocket_public_key()
+        await client.websocket_public_key()
+        await client.websocket_public_key()
+    assert fetch.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_inflight_child_cannot_repopulate_expired_scope(
+    certificate_client,
+):
+    client, fetch = certificate_client
+    started = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def blocked(_path):
+        started.set()
+        await finish.wait()
+        return "public certificate"
+
+    fetch.side_effect = blocked
+    with client.public_certificate_scope():
+        holder = client._certificate_scope.get()
+        child = asyncio.create_task(client.websocket_public_key())
+        await started.wait()
+    finish.set()
+    await child
+    assert not holder.active
+    assert holder.pem is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["http://192.168.1.1", "https://miniserver.example"])
+async def test_certificate_memo_preserves_new_socket_and_authentication(monkeypatch, origin):
+    client = LoxoneClient(MiniserverEndpoint.parse(origin), client_uuid=UUID(int=1))
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = (
+        private_key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    fetch = AsyncMock(return_value="certificate")
+    connect = AsyncMock(side_effect=lambda: SimpleNamespace(close=AsyncMock()))
+    commands = []
+
+    async def command(socket, _encryptor, name, **_kwargs):
+        commands.append((socket, name))
+        return "aabbccdd" if name == "jdev/sys/getkey" else "OK"
+
+    monkeypatch.setattr(client, "_get_text", fetch)
+    monkeypatch.setattr(client, "_connect_websocket", connect)
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.normalize_loxone_certificate_chain_pem", lambda _value: pem
+    )
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", command)
+    token = LoxoneToken("test-token", "reader", "key", "SHA256", 100)
+    with client.public_certificate_scope():
+        first = await client.open_session(token)
+        second = await client.open_session(token)
+    assert first is not second
+    assert connect.await_count == 2
+    assert fetch.await_count == (0 if client.endpoint.secure else 1)
+    assert sum(name.startswith("authwithtoken/") for _, name in commands) == 2
+    assert sum(name.startswith("jdev/sys/keyexchange/") for _, name in commands) == (
+        0 if client.endpoint.secure else 2
+    )
+    assert commands[0][0] is not commands[-1][0]
+    await first.close()
+    await second.close()

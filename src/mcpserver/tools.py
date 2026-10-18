@@ -15,6 +15,7 @@ import secrets
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime
 from math import ceil, floor, isfinite
@@ -3586,22 +3587,27 @@ async def _project_query(
         else runtime.project_call_slot(access)
     )
     async with slot:
-        started = time.monotonic()
-        try:
-            snapshot = await runtime.snapshot(access, fresh_visibility=True)
-        except RuntimeUnavailable:
-            runtime.projects.invalidate(access.family_id)
-            raise
-        _LOGGER.info(
-            "component=project_load phase=visibility duration_ms=%.1f",
-            (time.monotonic() - started) * 1000,
+        client = getattr(runtime, "client", None)
+        certificate_scope = (
+            client.public_certificate_scope() if client is not None else nullcontext()
         )
-        started = time.monotonic()
-        query = await runtime.projects.query(access, snapshot)
-        _LOGGER.info(
-            "component=project_load phase=query duration_ms=%.1f",
-            (time.monotonic() - started) * 1000,
-        )
+        with certificate_scope:
+            started = time.monotonic()
+            try:
+                snapshot = await runtime.snapshot(access, fresh_visibility=True)
+            except RuntimeUnavailable:
+                runtime.projects.invalidate(access.family_id)
+                raise
+            _LOGGER.info(
+                "component=project_load phase=visibility duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
+            started = time.monotonic()
+            query = await runtime.projects.query(access, snapshot)
+            _LOGGER.info(
+                "component=project_load phase=query duration_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
     return query, snapshot
 
 

@@ -56,6 +56,11 @@ extracted from the matching version heading.
   checks without retaining their results; preserve unsaved edits and revision
   checks. Start a remembered project comparison alongside catalog hydration, validate its fresh
   binding before display, and speed up bounded XML parsing and worker transport.
+  Reduce bounded LZ4 decoding, KNX graph attribute work and unrelated helper/worker
+  imports. Reuse verified HTTP trust setup per client and normalized public
+  certificate bytes only within one admitted project read; retain fresh sockets,
+  authentication, independent downloads and final marker checks. Add numeric
+  phase timings without project or authentication data.
   The five-second whole-page acceptance target remains open (#522).
 
 - Add a lazy, paginated KNX main/middle-group view including empty imported

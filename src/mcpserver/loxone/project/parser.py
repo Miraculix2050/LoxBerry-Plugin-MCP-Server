@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from .models import DEFAULT_LIMITS, ProjectError, ProjectLimits
 
 _NAME = re.compile(r"[A-Za-z_][\w.:-]*")
-_ATTRIBUTE = re.compile(r"""\s+([A-Za-z_][\w.:-]*)\s*=\s*(["'])(.*?)\2""", re.DOTALL)
+_ATTRIBUTE = re.compile(r"""\s+([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.DOTALL)
 _ENTITY = re.compile(r"&([^;\s<&]+);")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _TAG_END = re.compile(r"""[^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>""")
@@ -129,15 +129,13 @@ def parse_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Parsed
         seen: set[str] = set()
         index = len(tags)
         while position < len(body):
-            remaining = position
-            while remaining < len(body) and body[remaining].isspace():
-                remaining += 1
-            if remaining == len(body):
-                break
             attribute = _ATTRIBUTE.match(body, position)
             if attribute is None:
+                if body[position:].isspace():
+                    break
                 raise ProjectError("project_xml_invalid")
-            name, _, raw = attribute.groups()
+            name, double, single = attribute.groups()
+            raw = double if double is not None else single
             value = _entities(raw)
             if name in seen:
                 anomalies.append((index, "duplicate_attribute"))

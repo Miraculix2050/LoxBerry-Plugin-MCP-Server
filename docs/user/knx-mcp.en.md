@@ -13,6 +13,9 @@ visible until their respective sections are ready.
 In a visible tab, saved MCP grants are checked together every ten seconds.
 This background check does not overwrite unsaved inputs. Project comparisons
 continue downloading fresh project data under the caller's own Loxone permissions.
+Within one admitted project read, only the normalized public certificate is reused;
+subsequent calls fetch it again. Authentication and the final project-marker check
+still use new connections. Verified HTTP trust configuration is reused per client.
 Rebuilding the model can take longer, particularly after a service restart;
 a complete page-loading time below five seconds has not yet been established.
 

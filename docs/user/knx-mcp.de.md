@@ -13,7 +13,11 @@ Ladehinweise bleiben sichtbar, solange der jeweilige Bereich noch nicht bereit i
 Im sichtbaren Tab werden gespeicherte MCP-Freigaben alle zehn Sekunden gemeinsam
 geprÃ¼ft. Diese HintergrundprÃ¼fung Ã¼berschreibt keine ungespeicherten Eingaben.
 Projektabgleiche laden weiterhin mit der eigenen Loxone-Berechtigung frische
-Projektdaten. Besonders nach einem Dienstneustart kann die erneute Modellbildung
+Projektdaten. Innerhalb eines zugelassenen Projektaufrufs wird nur das normalisierte
+öffentliche Zertifikat wiederverwendet; der nächste Aufruf lädt es erneut.
+Anmeldung und abschließende Projektstandsprüfung nutzen weiterhin neue Verbindungen.
+Die geprüfte HTTP-Vertrauenskonfiguration wird je Client wiederverwendet.
+Besonders nach einem Dienstneustart kann die erneute Modellbildung
 lÃ¤nger dauern; eine vollstÃ¤ndige Gesamtladezeit unter fÃ¼nf Sekunden ist noch
 nicht nachgewiesen.
 

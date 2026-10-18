@@ -18,13 +18,7 @@ from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import parse_taxonomy
 from mcpserver.persistence import PersistenceUncertain
 
-from .catalog_service import CatalogService
-from .drafts import DraftStore
-from .file_comparison import FileComparison
-from .import_repository import ImportRepository
 from .model import MAX_FILE_BYTES, KnxError
-from .store import KnxStore
-from .xml_export import XmlCorrectionExport
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +28,9 @@ if TYPE_CHECKING:
 
 def validate_active_labels(config: PluginConfig) -> None:
     """Keep legacy configuration writes within the shared active-label bound."""
+    from .import_repository import ImportRepository
+    from .store import KnxStore
+
     data_root = os.getenv("LBPDATA", "")
     if not data_root or not config.loxone_endpoint:
         return
@@ -375,6 +372,8 @@ def _run(
     )
     if not data_root or not Path(data_root).is_absolute():
         raise AdminError("Plugin data directory unavailable")
+    from .store import KnxStore
+
     store = KnxStore(metadata_path or Path(data_root) / "knx" / "metadata.sqlite3")
     if action in {"knx_correction_xml_preview", "knx_correction_xml_download"}:
         from .admin_export import correction_export
@@ -544,6 +543,8 @@ def _run(
                 payload.get("sort") if not detail else None,
             ),
         }
+    from .import_repository import ImportRepository
+
     repository = ImportRepository(store)
     entries = config.knx_address_taxonomy if config.knx_address_taxonomy_endpoint == target else ()
     taxonomy_document = [
@@ -602,6 +603,9 @@ def _run(
             json.dumps(taxonomy_document, sort_keys=True).encode()
         ).hexdigest()
     if action.startswith("knx_xml_"):
+        from .drafts import DraftStore
+        from .xml_export import XmlCorrectionExport
+
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
         )
@@ -616,6 +620,9 @@ def _run(
             drafts.discard_xml_export()
         return {"discarded": True}
     if action.startswith("knx_compare_"):
+        from .drafts import DraftStore
+        from .file_comparison import FileComparison
+
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
         )
@@ -649,6 +656,9 @@ def _run(
             return {"discarded": True}
         return {**comparison_service.page(payload), "target": token}
     if action.startswith("knx_import_"):
+        from .catalog_service import CatalogService
+        from .drafts import DraftStore
+
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3",
             os.getenv("MCPSERVER_KNX_ADMIN_SESSION", ""),

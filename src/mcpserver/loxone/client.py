@@ -9,7 +9,9 @@ import logging
 import re
 import ssl
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any, Final, Protocol
@@ -238,6 +240,13 @@ async def _websocket_command(
     return _response_value(response)
 
 
+@dataclass(slots=True)
+class _PublicCertificateScope:
+    endpoint: MiniserverEndpoint
+    active: bool = True
+    pem: str | None = None
+
+
 class LoxoneClient:
     """Acquire an ephemeral JWT and open user-filtered WebSocket sessions."""
 
@@ -263,6 +272,22 @@ class LoxoneClient:
         self.max_structure_state_references = max_structure_state_references
         self.max_structure_depth = max_structure_depth
         self._structure_lookup = structure_lookup
+        self._certificate_scope: ContextVar[_PublicCertificateScope | None] = ContextVar(
+            "loxone_public_certificate_scope", default=None
+        )
+
+    @contextmanager
+    def public_certificate_scope(self) -> Iterator[None]:
+        """Reuse only public certificate bytes within one admitted project read."""
+        scope = _PublicCertificateScope(self.endpoint)
+        token = self._certificate_scope.set(scope)
+        try:
+            yield
+        finally:
+            # Child tasks can retain the context after their parent has returned.
+            scope.active = False
+            scope.pem = None
+            self._certificate_scope.reset(token)
 
     async def _get_json(self, path: str) -> Mapping[str, Any]:
         body, _encoding = await self._get_bytes(path)
@@ -417,11 +442,18 @@ class LoxoneClient:
             raise LoxoneConnectionError("Miniserver returned an invalid public key") from exc
 
     async def websocket_public_key(self) -> str:
+        scope = self._certificate_scope.get()
+        endpoint = self.endpoint
+        if scope is not None and scope.active and scope.endpoint == endpoint and scope.pem:
+            return scope.pem
         value = await self._get_text("/jdev/sys/getcertificate")
         try:
-            return normalize_loxone_certificate_chain_pem(value)
+            pem = normalize_loxone_certificate_chain_pem(value)
         except LoxoneSecurityError as exc:
             raise LoxoneConnectionError("Miniserver returned an invalid certificate chain") from exc
+        if scope is not None and scope.active and scope.endpoint == endpoint:
+            scope.pem = pem
+        return pem
 
     async def _connect_websocket(self) -> ClientConnection:
         try:

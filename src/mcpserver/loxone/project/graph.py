@@ -354,7 +354,7 @@ def build_graph(
                     )
             if len(edges) > limits.edges:
                 raise ProjectError("project_graph_limit")
-        semantic_edges.update(_build_semantic_edges(project, local, state_flows))
+        semantic_edges.update(_build_semantic_edges(project, local, state_flows, by_id))
         if len(semantic_edges) > limits.edges:
             raise ProjectError("project_graph_limit")
     return ProjectGraph(
@@ -367,16 +367,15 @@ def build_graph(
 
 
 def _build_semantic_edges(
-    project: ParsedProject, local: dict[int, GraphNode], state_flows: list[StateFlow]
+    project: ParsedProject,
+    local: dict[int, GraphNode],
+    state_flows: list[StateFlow],
+    source_ids: dict[str, list[GraphNode]],
 ) -> set[SemanticEdge]:
     """Build only explicit, allowlisted internal connector relationships."""
 
     result: set[SemanticEdge] = set()
     children: dict[int, list[int]] = defaultdict(list)
-    source_ids: dict[str, list[GraphNode]] = defaultdict(list)
-    for node in local.values():
-        if node.source_id:
-            source_ids[normalize_id(node.source_id)].append(node)
     for child_index, child in enumerate(project.elements):
         if child.parent is not None:
             children[child.parent].append(child_index)
@@ -399,7 +398,10 @@ def _build_semantic_edges(
     for index, element in enumerate(project.elements):
         if element.tag != "C":
             continue
-        rules = signal_use_rules(element.value("Type"))
+        source_type = element.value("Type")
+        rules = signal_use_rules(source_type)
+        if not rules and source_type not in {"State", "InputRef"}:
+            continue
         connectors: dict[str, list[GraphNode]] = defaultdict(list)
         for child_index in children.get(index, []):
             child = project.elements[child_index]
@@ -409,7 +411,7 @@ def _build_semantic_edges(
             key = child.value("K")
             if connector is not None and key is not None:
                 connectors[key].append(connector)
-        if element.value("Type") == "State":
+        if source_type == "State":
             flow = decode_state_flow(project, index, local[index].key, children, config_version)
             if flow.reason is None and (
                 any(sum(k == name for k, _ in element.attributes) != 1 for name in ("Type", "U"))
@@ -453,7 +455,7 @@ def _build_semantic_edges(
         # This projects the explicit reference onto that output, not containment
         # or an arbitrary internal input/output relationship. Unknown references
         # and duplicated AQ keys cannot acquire this relationship.
-        if element.value("Type") == "InputRef" and element.value("Ref"):
+        if source_type == "InputRef" and element.value("Ref"):
             referred = source_ids.get(normalize_id(element.value("Ref")), [])
             outputs = connectors.get("AQ", [])
             if len(referred) == 1 and referred[0].kind == "block" and len(outputs) == 1:

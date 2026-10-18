@@ -84,3 +84,20 @@ def test_long_quoted_boundaries_and_unterminated_values(quote):
 def test_control_character_rejection_covers_each_disallowed_code(code):
     with pytest.raises(ProjectError, match="project_character_invalid"):
         parse_project(b'<P V="' + bytes([code]) + b'"/>')
+
+
+@pytest.mark.parametrize("space", [" ", "\t", "\n", "\r\n", "\u2003", "\u00a0"])
+@pytest.mark.parametrize("quote", ['"', "'"])
+def test_attribute_quotes_whitespace_and_empty_values(space, quote):
+    opposite = "'" if quote == '"' else '"'
+    value = opposite + "a > b &amp; c\nnext"
+    xml = f"<P{space}A{space}={space}{quote}{value}{quote}{space}B={quote}{quote}{space}/>"
+    parsed = parse_project(xml.encode())
+    assert parsed.elements[0].attributes == (("A", opposite + "a > b & c\nnext"), ("B", ""))
+    assert parsed.anomalies == ((0, "attribute_newline"),)
+
+
+@pytest.mark.parametrize("body", ["A=", "A='bad\"", "A=\"bad'", 'A="ok"B="bad"', "bad", "A='ok' ?"])
+def test_attribute_match_failure_does_not_accept_non_whitespace_suffix(body):
+    with pytest.raises(ProjectError, match="project_xml_invalid"):
+        parse_project(("<P " + body + "/>").encode())
