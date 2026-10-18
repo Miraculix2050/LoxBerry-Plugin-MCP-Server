@@ -807,19 +807,31 @@ class EventHistoryStore:
                 solar_deletions += solar_removed
                 deleted += solar_removed
                 continue
-            weather_removed = evict_weather(connection)
+            solar_oldest = connection.execute(
+                "SELECT observed_at FROM solar_samples ORDER BY observed_at,id LIMIT 1"
+            ).fetchone()
+            solar_boundary = solar_oldest[0] if solar_oldest is not None else math.inf
+            weather_removed = evict_weather(connection, before=solar_boundary)
             if weather_removed:
                 weather_deletions += weather_removed
                 deleted += weather_removed
                 continue
+            weather_oldest = connection.execute(
+                "SELECT received_at FROM weather_deliveries ORDER BY received_at,id LIMIT 1"
+            ).fetchone()
+            scalar_boundary = min(
+                solar_boundary, weather_oldest[0] if weather_oldest is not None else math.inf
+            )
             evicted = connection.execute(
                 "SELECT control_uuid, state_uuid, MAX(observed_at) FROM events WHERE id IN "
-                "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256) "
-                "GROUP BY control_uuid, state_uuid"
+                "(SELECT id FROM events WHERE observed_at<=? "
+                "ORDER BY observed_at, id LIMIT 256) GROUP BY control_uuid, state_uuid",
+                (scalar_boundary,),
             ).fetchall()
             removed = connection.execute(
                 "DELETE FROM events WHERE id IN "
-                "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256)"
+                "(SELECT id FROM events WHERE observed_at<=? ORDER BY observed_at, id LIMIT 256)",
+                (scalar_boundary,),
             ).rowcount
             if removed <= 0:
                 removed = connection.execute(

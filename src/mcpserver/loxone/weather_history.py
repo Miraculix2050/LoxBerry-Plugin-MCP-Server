@@ -207,7 +207,7 @@ def prune_weather(connection: sqlite3.Connection, cutoff: float) -> int:
     return deleted
 
 
-def evict_weather(connection: sqlite3.Connection) -> int:
+def evict_weather(connection: sqlite3.Connection, *, before: float = math.inf) -> int:
     """Evict a bounded oldest prefix without crossing an older scalar event."""
     weather = connection.execute(
         "SELECT id,received_at FROM weather_deliveries ORDER BY received_at,id LIMIT 1"
@@ -215,8 +215,8 @@ def evict_weather(connection: sqlite3.Connection) -> int:
     scalar = connection.execute(
         "SELECT observed_at FROM events ORDER BY observed_at,id LIMIT 1"
     ).fetchone()
-    if weather is not None and (scalar is None or weather[1] <= scalar[0]):
-        boundary = scalar[0] if scalar is not None else math.inf
+    boundary = min(before, scalar[0] if scalar is not None else math.inf)
+    if weather is not None and weather[1] <= boundary:
         return connection.execute(
             "DELETE FROM weather_deliveries WHERE id IN (SELECT id FROM weather_deliveries "
             "WHERE received_at <= ? ORDER BY received_at,id LIMIT 256)",

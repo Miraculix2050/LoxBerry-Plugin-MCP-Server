@@ -843,6 +843,7 @@ def solar_sources(action: str, payload: object) -> dict[str, Any]:
     from mcpserver.installation_profile import installation_identity
     from mcpserver.loxone.endpoint import MiniserverEndpoint
     from mcpserver.loxone.event_history import _controls as flatten
+    from mcpserver.loxone.pv_forecast import STATES as PVPF_STATES
     from mcpserver.solar_recording import parse_sources
 
     bridge = _bridge()
@@ -863,7 +864,10 @@ def solar_sources(action: str, payload: object) -> dict[str, Any]:
     if action == "solar_history_options":
         choices = []
         for control in controls.values():
-            if control.control_type == "PvProductionForecast":
+            if (
+                control.control_type == "PvProductionForecast"
+                and dict(control.state_uuids).keys() >= PVPF_STATES
+            ):
                 choices.append(
                     {
                         "control_uuid": control.uuid,

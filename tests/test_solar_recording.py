@@ -130,6 +130,56 @@ def test_pvpf_snapshots_are_complete_and_settled():
     assert sampler.batch({}, 10) == []
 
 
+def test_incomplete_pvpf_cannot_be_registered_for_complete_snapshots():
+    c = replace(control(), control_type="PvProductionForecast", state_uuids=(("ready", S),))
+    s = source(kind="pv_forecast", state_uuid=None, unit="kWh")
+    with pytest.raises(ValueError, match="unsupported_pv_forecast"):
+        s.fingerprint(c, "plant")
+    assert not SolarSampler((s,), (c,), "plant").sources
+
+
+@pytest.mark.parametrize("oldest", ["weather", "scalar"])
+def test_shared_size_eviction_does_not_cross_an_older_dataset(tmp_path, oldest):
+    from test_weather_history import SOURCE, delivery
+
+    from mcpserver.loxone.weather_history import WeatherHistory
+
+    store = EventHistoryStore(tmp_path / "history.sqlite3", retention_days=7, maximum_mib=16)
+    store.initialize()
+    base = time.time() - 1000
+    weather = WeatherHistory(store)
+    capture = weather.begin(SOURCE, "fixture", base)
+    # The first large prefix can free pages on its own. Newer rows in that
+    # dataset must remain when an older row belongs to a different dataset.
+    for i in range(7):
+        at = base + (10 + i if oldest == "weather" and i < 3 else 50 + i)
+        weather.record(capture, SOURCE, delivery(base + 3600 + i, value=i, count=96), at)
+    for i in range(7):
+        at = base + (10 + i if oldest == "scalar" and i < 3 else 80 + i)
+        store.record_transition(C, S, observed_at=at, old_value="a" * 2000, new_value="b" * 2000)
+    s = source()
+    SolarHistory(store).record([(s.key, "fingerprint", base + 40, '{"value":100}')])
+    with store._opened() as db:
+        store.maximum_bytes = store._used_database_bytes(db) - 4096
+        db.execute("BEGIN IMMEDIATE")
+        assert store._prune(db, now=time.time())
+        db.execute("COMMIT")
+        if oldest == "weather":
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM weather_deliveries WHERE received_at>=?", (base + 50,)
+                ).fetchone()[0]
+                == 4
+            )
+        else:
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM events WHERE observed_at>=?", (base + 80,)
+                ).fetchone()[0]
+                == 4
+            )
+
+
 def test_shared_store_migration_retention_index_and_budget(tmp_path):
     path = tmp_path / "events.sqlite3"
     store = EventHistoryStore(path, retention_days=7, maximum_mib=16)

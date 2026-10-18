@@ -65,7 +65,10 @@ class SolarRecordingSource(BaseModel):
         if control.uuid != self.control_uuid or control.is_hidden or not installation:
             raise ValueError("solar_source_not_visible")
         if self.kind == "pv_forecast":
-            if control.control_type != "PvProductionForecast":
+            if (
+                control.control_type != "PvProductionForecast"
+                or not dict(control.state_uuids).keys() >= PVPF_STATES
+            ):
                 raise ValueError("unsupported_pv_forecast_control")
         elif (
             control.control_type != "InfoOnlyAnalog"
