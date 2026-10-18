@@ -14,6 +14,7 @@ from mcpserver.loxone.client import LoxoneWebSocketSession
 from mcpserver.loxone.models import Freshness
 from mcpserver.loxone.pv_forecast import LOXONE_EPOCH, PvForecastError, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
+from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.pv_forecast_runtime import read_pv_forecast
 
 NOW = 1_792_320_000
@@ -112,6 +113,17 @@ def test_unavailable_aggregate_is_not_negative_energy():
     result = decode(states={**STATES, "today": -1, "tomorrow": 1.25})
     assert result.aggregates_kwh["today"] is None
     assert result.aggregates_kwh["tomorrow"] == 1.25
+
+
+@pytest.mark.parametrize("value", [-2, -0.5, -1, 0, 1.25])
+def test_aggregate_semantics_only_accept_documented_negative_sentinel(value):
+    _, structure, _, _ = fixture_runtime()
+    control = replace(structure.controls[0], control_type="PvProductionForecast")
+    metadata, decoded = StateSemanticsResolver().resolve(structure, control, "today", value, {})
+    if value < 0 and value != -1:
+        assert metadata.interpretation_status == "invalid" and decoded is None
+    else:
+        assert metadata.interpretation_status == "known"
 
 
 @pytest.mark.asyncio

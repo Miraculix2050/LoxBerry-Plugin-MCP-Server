@@ -733,6 +733,8 @@ class StateSemanticsResolver:
                 valid = numeric is not None
                 if state_name == "errorInfo":
                     valid = numeric is not None and numeric >= 0 and numeric.is_integer()
+                if state_name in {"period", "today", "tomorrow", "after"}:
+                    valid = numeric is not None and (numeric >= 0 or numeric == -1)
                 if state_name == "ready":
                     valid = valid and numeric in (0, 1)
                 result = StateSemantics(
@@ -750,7 +752,7 @@ class StateSemanticsResolver:
                         )
                     ],
                 )
-                decoded: object | None = numeric
+                decoded: object | None = numeric if valid else None
                 if state_name in {"timestamp", "cycleFrom", "cycleUntil"}:
                     decoded = (
                         {"unix_seconds": numeric + LOXONE_EPOCH}
