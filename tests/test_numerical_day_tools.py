@@ -21,7 +21,7 @@ from mcpserver.loxone.models import StatisticSeries
 from mcpserver.loxone.runtime import RuntimeAuthorizationError
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.statistics import StatisticPoint
-from mcpserver.numerical_day_tools import SolarAnalysisSource, _calculate, _forecast_matches
+from mcpserver.numerical_day_tools import SolarAnalysisSource, _calculate, _forecast_context
 from mcpserver.solar_recording import SolarHistory
 
 T = "12345678-1234-1234-1234567890123458"
@@ -145,7 +145,7 @@ def test_direct_self_consumption_preferred_and_negative_balance_not_clamped():
     assert result.self_consumption.pairs == []
 
 
-def test_forecast_revisions_use_only_previously_captured_exact_native_period():
+def test_forecast_cycles_never_establish_period_bounds_or_actual_comparisons():
     epoch = datetime(2009, 1, 1, tzinfo=UTC).timestamp()
     begin = datetime(2026, 7, 1, 10, tzinfo=UTC).timestamp()
     states = dict(
@@ -160,31 +160,23 @@ def test_forecast_revisions_use_only_previously_captured_exact_native_period():
         cycleFrom=begin - epoch - 3600,
         cycleUntil=begin - epoch,
     )
-    rows = [
-        (begin - 60, {"states": states}),
-        (begin - 30, {"states": states | {"period": 5}}),
-        (begin + 30, {"states": states | {"period": 100}}),
-    ]
-    hours = [begin + i * 3600 for i in range(4)]
-    matches = _forecast_matches(
-        rows, {"2026-07-01": hours}, dict.fromkeys(hours, 1000), time.monotonic() + 5
-    )
-    assert len(matches) == 1 and matches[0]["predicted_wh"] == 5000
-    assert (
-        _forecast_matches(
-            rows, {"2026-07-01": hours[:3]}, dict.fromkeys(hours, 1000), time.monotonic() + 5
-        )
-        == []
+    rows = [(begin - 60, {"states": states}), (begin - 30, {"states": states | {"period": 5}})]
+    contexts = _forecast_context(rows)
+    assert len(contexts) == 2 and contexts[1]["period_kwh"] == 5
+    assert contexts[0]["cycle_until"] is not None
+    first, local, _ = fixture_data()
+    forecast = source(control_uuid=P, kind="pv_forecast", state_uuid=None, unit="kWh")
+    result = calculate(local=[*local, (forecast, "forecast", rows)])
+    assert result.group.count == 3
+    assert all(
+        c.comparison_status == "native_period_bounds_unverified" for c in result.forecast_context
     )
     assert (
-        _forecast_matches(
-            [(begin - 60, {"states": states | {"ready": 0}})],
-            {"2026-07-01": hours},
-            dict.fromkeys(hours, 1000),
-            time.monotonic() + 5,
-        )
-        == []
+        "native_period_bounds_unverified_cycle_times_describe_current_prediction_hour"
+        in result.forecast_limitations
     )
+    unavailable = _forecast_context([(begin - 60, {"states": states | {"ready": 0}})])
+    assert unavailable[0]["status"] == "unavailable" and unavailable[0]["period_kwh"] is None
 
 
 def setup(monkeypatch, tmp_path):

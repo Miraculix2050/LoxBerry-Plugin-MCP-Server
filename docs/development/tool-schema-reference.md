@@ -73,7 +73,8 @@ and recheck access and relevant configuration before publishing.
 `source_kind="solar_observation"` selectors, confirmed hourly production and optional
 self-consumption/export bindings. Tolerances can only become stricter than 15%,
 3 °C and 30 days. The output adds provenance, source coverage, metric pairs/groups,
-negative deviations, separate previously captured native forecast context and
+negative deviations, separate captured native forecast context (not a period-Ist
+comparison without documented bounds) and
 missing-source setup guidance. The generic Explorer form and JSON editor use the
 same generated unions. See [numerical contract](../user/comparable-days.en.md).
 

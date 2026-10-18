@@ -165,18 +165,21 @@ class DayDeviation(Contract):
     relative_difference: FiniteFloat | None
 
 
-class DayForecastComparison(Contract):
-    day: DayString
+class NativeForecastContext(Contract):
     captured_at: str
-    predicted_at: str
-    period_start: str
-    period_end: str
-    predicted_wh: Nonnegative
-    observed_wh: Nonnegative
-    absolute_difference_wh: FiniteFloat
-    relative_difference: FiniteFloat | None
-    method: Literal["previously_captured_exact_native_period"] = (
-        "previously_captured_exact_native_period"
+    predicted_at: str | None
+    cycle_from: str | None
+    cycle_until: str | None
+    status: Literal["available", "unavailable", "incomplete"]
+    unit: Literal["kWh"] = "kWh"
+    period_kwh: Nonnegative | None
+    today_kwh: Nonnegative | None
+    tomorrow_kwh: Nonnegative | None
+    after_kwh: Nonnegative | None
+    inputperiod_hours: Nonnegative | None
+    value_origin: Literal["forecast"] = "forecast"
+    comparison_status: Literal["native_period_bounds_unverified"] = (
+        "native_period_bounds_unverified"
     )
 
 
@@ -202,7 +205,8 @@ class NumericalComparableDaysResult(ComparableDaysResult):
     temperature_position: Literal["hour_start", "within_60s_of_hour_start"]
     self_consumption: DayMetricComparison
     ranked_deviations: list[DayDeviation] = Field(max_length=60)
-    forecast_comparisons: list[DayForecastComparison] = Field(max_length=31)
+    forecast_context: list[NativeForecastContext] = Field(max_length=8)
+    forecast_context_truncated: bool
     forecast_limitations: list[Reason] = Field(max_length=8)
     solar_sources: list[SolarSourceSummary] = Field(max_length=16)
     configuration_guidance: list[Reason] = Field(max_length=8)

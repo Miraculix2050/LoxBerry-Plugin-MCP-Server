@@ -1132,9 +1132,12 @@ Weather selection is not a physical yield-normalization model. Zero denominators
 give no ratio. Keep unavailable self-consumption separate from usable PV results.
 
 Optional PVPF snapshots remain separate forecast context, never observation or
-peer-selection input. Only previously captured exact complete native periods may
-match actuals; exclude late revisions. Do not allocate daily forecasts to partial
-days or assume the native calendar timezone. A functioning method or synthetic
+peer-selection input. Cycle times describe the current prediction hour, not the
+complete period-energy bounds (Structure File 17.1 p.115); actual comparison stays
+`native_period_bounds_unverified`. A separately qualified hourly adapter may later
+match previously captured forecasts to exact complete actual intervals. Do not
+allocate daily forecasts to partial days or assume the native calendar timezone.
+A functioning method or synthetic
 fixture does not close #509/#439: require genuine history and a positive comparison.
 
 ### Qualitative weather peers
