@@ -333,14 +333,15 @@ window.McpAdmin.createConfiguration = (
     };
     const setBusy = (value) => {
       busy = value; load.disabled = value;
-      for (const item of [select, reference, confirmed, enabled, add, save]) item.disabled = value || revision === null;
+      for (const item of [select, reference, confirmed, add]) item.disabled = value || revision === null || !choices.length;
+      for (const item of [enabled, save]) item.disabled = value || revision === null;
       render();
     };
     load.addEventListener('click', async () => {
       if (busy) return;
       setBusy(true);
       try {
-        const result = (await request('solar_history_options', {})).data;
+        const result = (await request('solar_history_options', {discover: true})).data;
         sources = result.sources; choices = result.choices; revision = result.revision;
         enabled.checked = result.enabled; select.replaceChildren();
         for (const choice of choices) {
@@ -372,6 +373,12 @@ window.McpAdmin.createConfiguration = (
       } catch (error) { message.textContent = error.message; }
       finally { setBusy(false); }
     });
+    setBusy(true);
+    request('solar_history_options', {}).then((result) => {
+      sources = result.data.sources; revision = result.data.revision;
+      enabled.checked = result.data.enabled;
+    }).catch((error) => { message.textContent = error.message; })
+      .finally(() => { setBusy(false); });
   }
   syncMiniserverSelection();
   syncOperateDependency();

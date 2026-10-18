@@ -235,6 +235,7 @@ class SolarSampler:
         self.values: dict[str, object] = {}
         self.last: dict[str, float] = {}
         self.changed: dict[str, float] = {}
+        self.forecast_payloads: dict[str, str] = {}
         for source in sources:
             control = by_id.get(source.control_uuid)
             if control is not None:
@@ -283,6 +284,11 @@ class SolarSampler:
                 if not math.isfinite(value) or (source.kind == "irradiance" and value < 0):
                     continue
                 payload = {"value_origin": "observed", "value": value, "unit": source.unit}
-            rows.append((source.key, fingerprint, at, json.dumps(payload, allow_nan=False)))
+            encoded = json.dumps(payload, sort_keys=True, allow_nan=False)
             self.last[source.key] = at
+            if source.kind == "pv_forecast":
+                if self.forecast_payloads.get(source.key) == encoded:
+                    continue
+                self.forecast_payloads[source.key] = encoded
+            rows.append((source.key, fingerprint, at, encoded))
         return rows

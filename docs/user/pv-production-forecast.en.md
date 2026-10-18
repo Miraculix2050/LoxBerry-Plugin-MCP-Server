@@ -12,6 +12,8 @@ the selection, optionally enable recording, then select “Save and apply solar
 recording”. Selection alone does not start recording. Loxone history must be
 enabled. Concurrent changes require reloading. Stored data remains after source
 removal until shared retention or complete deletion.
+Saved selection, disabling and source removal remain available while the
+Miniserver is offline; new sources and enabling require current visibility.
 
 Only selected current irradiance/temperature states or settled PV-forecast
 snapshots are recorded, at a default 60-second interval. State samples are not

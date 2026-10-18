@@ -1433,14 +1433,13 @@ async def _rotating_weather_stream(
 
 
 async def _solar_sampling_stream(
-    stream: AsyncIterator[tuple[StateEvent, ...]], seconds: float
+    stream: AsyncIterator[tuple[StateEvent, ...]], seconds: float = 1
 ) -> AsyncIterator[tuple[StateEvent, ...]]:
-    """One socket reader with local sampling ticks and bounded metadata lifetime."""
+    """One socket reader with local ticks; never split scalar capture coverage."""
     pending = asyncio.ensure_future(anext(stream))
-    deadline = time.monotonic() + seconds
     try:
-        while time.monotonic() < deadline:
-            done, _ = await asyncio.wait({pending}, timeout=min(1, deadline - time.monotonic()))
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=seconds)
             if not done:
                 yield ()
                 continue
@@ -1657,14 +1656,12 @@ class EventHistoryMonitor:
                 baselines: dict[str, object] = {}
                 baseline_times: dict[str, float] = {}
                 batches = session.state_events()
-                if self.config.solar_history_enabled:
-                    batches = _solar_sampling_stream(
-                        batches, max(60, self.config.structure_refresh_seconds)
-                    )
-                elif self.config.weather_history_enabled:
+                if self.config.weather_history_enabled:
                     batches = _rotating_weather_stream(
                         batches, max(60, self.config.structure_refresh_seconds)
                     )
+                if self.config.solar_history_enabled:
+                    batches = _solar_sampling_stream(batches)
                 async for batch in batches:
                     observed_at = time.time()
                     changed = False
