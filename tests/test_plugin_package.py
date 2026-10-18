@@ -17,7 +17,7 @@ import pytest
 from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH, tool_schema_catalog
 from mcpserver.server import create_server
 from mcpserver.settings import ServerSettings
-from mcpserver.skill_delivery import SKILL_REVISION
+from mcpserver.skill_delivery import SKILL_MODULES, SKILL_REVISION
 from tools.build_plugin import (
     _EXECUTABLES,
     _add,
@@ -64,7 +64,17 @@ def _write_project_wheel(
                 wheel.writestr(name, source_bytes)
         if extra_file:
             wheel.writestr(extra_file, b"stale deleted module")
-        wheel.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill")
+        wheel.writestr(
+            "mcpserver/skills/using-loxberry-mcp/SKILL.md",
+            (ROOT / "src/mcpserver/skills/using-loxberry-mcp/SKILL.md").read_bytes(),
+        )
+        for source in (ROOT / "src/mcpserver/skills/using-loxberry-mcp").rglob("*"):
+            if source.is_file() and (
+                source.parent.name == "modules" or source.name == "frontmatter.txt"
+            ):
+                name = source.relative_to(ROOT / "src").as_posix()
+                if name != missing_file:
+                    wheel.writestr(name, b"stale" if name == stale_file else source.read_bytes())
         if include_openai_metadata:
             wheel.writestr(
                 "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
@@ -80,6 +90,18 @@ def test_agent_skill_is_declared_as_wheel_package_data() -> None:
     assert (skill / "agents" / "openai.yaml").is_file()
     assert '"skills/using-loxberry-mcp/SKILL.md"' in pyproject
     assert '"skills/using-loxberry-mcp/agents/openai.yaml"' in pyproject
+    assert '"skills/using-loxberry-mcp/modules/*.md"' in pyproject
+
+
+@pytest.mark.parametrize("variant", ["missing", "stale"])
+def test_wheel_rejects_missing_or_stale_guidance_module(tmp_path: Path, variant: str) -> None:
+    wheel = tmp_path / "project.whl"
+    module = "mcpserver/skills/using-loxberry-mcp/modules/operations.md"
+    _write_project_wheel(wheel, **{f"{variant}_file": module})
+    with pytest.raises(SystemExit):
+        verify_project_wheel_input(wheel, ROOT / "src")
+    with pytest.raises(PackageVerificationError):
+        verify_project_wheel_archive(wheel.read_bytes(), ROOT / "src")
 
 
 def test_package_contract_includes_generated_schema_reference() -> None:
@@ -251,10 +273,19 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
             b'"""Event History selector cache."""\n',
         )
         archive.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill\n")
+        archive.writestr("mcpserver/skills/using-loxberry-mcp/frontmatter.txt", b"header")
+        for module in SKILL_MODULES:
+            archive.writestr(f"mcpserver/skills/using-loxberry-mcp/modules/{module}.md", b"module")
         archive.writestr(
             "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml", b"interface: {}\n"
         )
 
+    with zipfile.ZipFile(wheel) as archive:
+        for name in archive.namelist():
+            if name.endswith((".md", ".txt")):
+                target = source_root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(name).replace(b"\n", b"\r\n"))
     verify_project_wheel_input(wheel, source_root)
     verify_project_wheel_archive(wheel.read_bytes(), source_root)
 

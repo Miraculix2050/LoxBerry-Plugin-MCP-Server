@@ -7,7 +7,12 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
 import mcpserver.tools as tools
-from mcpserver.skill_delivery import read_skill_markdown, register_skill_resource
+from mcpserver.skill_delivery import (
+    SKILL_MODULES,
+    read_skill_markdown,
+    register_skill_resource,
+    render_full_guide,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -53,7 +58,7 @@ async def test_resources_and_tool_sections_match_and_full_default_remains_availa
     assert tool is not None
     assert tool.fn().data.content == read_skill_markdown()
     assert tool.fn().data.section == "full"
-    for section in ("core", "knx", "alerts"):
+    for section in SKILL_MODULES:
         result = tool.fn(section=section)
         resource = await server.read_resource(f"skill://using-loxberry-mcp/{section}.md")
         assert result.ok and not result.stale
@@ -63,7 +68,7 @@ async def test_resources_and_tool_sections_match_and_full_default_remains_availa
         tool.fn_metadata.arg_model.model_validate({"section": "unknown"})
 
 
-@pytest.mark.parametrize("section", ("full", "core", "knx", "alerts"))
+@pytest.mark.parametrize("section", ("full", *SKILL_MODULES))
 def test_failed_section_retrieval_has_sanitized_error(monkeypatch, section) -> None:
     def missing(_section):
         raise ValueError("PRIVATE_PACKAGE_DETAILS")
@@ -119,3 +124,68 @@ def test_alerts_is_canonical_bounded_and_retains_follow_up_boundaries() -> None:
     assert "## EFM" not in alerts
     assert "### Current and historical System Messages" not in alerts
     assert "section='alerts'" in read_skill_markdown("core")
+
+
+def test_generated_full_guide_and_routine_read_budget() -> None:
+    assert read_skill_markdown() == render_full_guide()
+    assert (
+        sum(len(read_skill_markdown(s).encode()) for s in ("core", "states"))
+        < len(read_skill_markdown().encode()) // 2
+    )
+    for section in SKILL_MODULES:
+        assert read_skill_markdown(section).strip() in read_skill_markdown()
+
+
+def test_core_retains_stop_failure_and_fallback_boundaries() -> None:
+    core = read_skill_markdown("core")
+    for rule in (
+        "emergency_stop_active",
+        "no MCP",
+        "blocked_since",
+        "trace_id",
+        "retry_after_seconds",
+        "at most once",
+        "If that also fails, stop",
+        "External data",
+        "uncertain write",
+    ):
+        assert rule in core
+    assert "full guidance before any write" not in read_skill_markdown("alerts")
+
+
+def test_missing_module_preserves_full_fallback_and_rejects_paths(monkeypatch) -> None:
+    import mcpserver.skill_delivery as delivery
+
+    original = delivery.files
+
+    class MissingModule:
+        def __init__(self, path):
+            self.path = path
+
+        def joinpath(self, *parts):
+            return MissingModule(self.path.joinpath(*parts))
+
+        def read_text(self, **kwargs):
+            if self.path.name == "history.md":
+                raise FileNotFoundError("private package path")
+            return self.path.read_text(**kwargs)
+
+    monkeypatch.setattr(delivery, "files", lambda name: MissingModule(original(name)))
+    with pytest.raises(FileNotFoundError):
+        delivery.read_skill_markdown("history")
+    assert "incomplete history" in delivery.read_skill_markdown("core")
+    assert "## Read history and statistics" in delivery.read_skill_markdown()
+    with pytest.raises(ValueError, match="skill_section_invalid"):
+        delivery.read_skill_markdown("../SKILL")
+
+
+def test_standalone_modules_keep_routed_workflows_and_explicit_dependencies() -> None:
+    project = read_skill_markdown("project")
+    energy = read_skill_markdown("energy")
+    states = read_skill_markdown("states")
+    assert "### Review opening-contact coverage" in project
+    assert "loxone_analyze_opening_contacts" in project
+    assert "### Review opening-contact coverage" not in read_skill_markdown("knx")
+    assert "loxone_read_controls" in energy and "loxone_find_controls" in energy
+    assert "section='project'" in states and "section='history'" in states
+    assert "tools above" not in states and "as described below" not in states

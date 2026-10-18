@@ -15,7 +15,7 @@ Admin-only extension and archive management do not refresh source evidence or
 permissions. Archived drafts cannot be applied or exported; reopening resets
 decisions. Local writes and experimental ETS downloads retain their separate
 confirmation, ownership, revision and fresh project-authorization checks.
-Compact-summary migration is additive and preserves legacy drafts. Skill revision 92.
+Compact-summary migration is additive and preserves legacy drafts. Skill revision 93.
 
 ## Qualified local irradiance forecasts (#440)
 
@@ -237,8 +237,8 @@ started can have an uncertain outcome after timeout or cancellation.
 
 ## Task-scoped KNX guidance (#455)
 
-`loxone_get_skill_guide(section="core"|"knx"|"alerts"|"full")` adds optional task selection;
-omitted selection remains the full guide. Static core/KNX/alerts resources expose the
+`loxone_get_skill_guide(section="core"|"states"|"history"|"project"|"knx"|"modbus"|"lighting"|"energy"|"operations"|"diagnostics"|"alerts"|"full")` adds optional task selection;
+omitted selection remains the full guide. Static task-module resources expose the
 same canonical content, derived from the bundled full document without project
 access. Schema help distinguishes local/imported deviations from Loxone/ETS
 name comparison and explicitly limits DPT validation to syntax. Existing tool
