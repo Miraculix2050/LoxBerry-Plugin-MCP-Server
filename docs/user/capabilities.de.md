@@ -263,6 +263,33 @@ Kontaktrollen aus Namen, Kategorien oder Raumzahlen ab.
 
 ### Laufzeit- und Projektfunktionen
 
+Der Projektstatus enthält optional ein paginiertes Mapping-Inventar mit
+`include_mapping_inventory=true`, `mapping_status`, `runtime_control_uuid`,
+`cursor` und `limit` (Standard 20, maximal 100). Filter bei Fortsetzungen
+wiederholen; Filter und Cursor benötigen das aktivierte Inventar.
+`mapping_breakdown` trennt `independent_unmapped`, `derived_from_parent`,
+`derived_parent_unmapped` und `derived_parent_ambiguous`; die bisherigen
+`mapping`-Zähler behalten ihre Definition. Im Inventar bezeichnet `unmapped`
+unabhängig ungemappte Einträge.
+
+Ableitungen benötigen eine explizite sichtbare Runtime-Parent-Beziehung. Ein
+Suffix belegt weder einen Parent noch einen Config-Connector. Die Herkunft nennt
+den unmittelbaren Parent, den exakten Vorfahren als Projektanker, die begrenzte
+Parent-Kette, Quellreferenzen und die Regel `explicit_runtime_parent_v1`.
+Parent-Ketten sind auf 16 Schritte begrenzt; fehlende, widersprüchliche oder
+zyklische Beziehungen ergeben keine erfolgreiche Zuordnung. Eigene exakte oder
+mehrdeutige UUID-Zuordnungen haben Vorrang. Projektsuche, Beschreibung und Trace
+kennzeichnen das ausgewählte Child durch `runtime_target_mapping` und liefern
+die Projekttopologie des Parents.
+
+Bei einem ausgewählten abgeleiteten Ziel enthält Observability separat
+`target_runtime_evidence` mit Zustandsverfügbarkeit, Statistikmetadaten und
+lokaler History-Abdeckung dieses Childs. Dessen `project_node_ids` bleibt leer;
+Parent-Referenzen sind Herkunftsbelege. Bestehende Controls und Summary-Zähler
+bleiben Exact-only. Geschwister werden nicht automatisch aufgenommen.
+Strukturelle Erreichbarkeit belegt keine Kausalität.
+
+
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
 Für bekannte sichtbare UUIDs bevorzugt `loxone_read_controls` für Identität und aktuelle Werte in einem Call nutzen, wie unten beschrieben. Für reine Referenzauswahl, explizite Diagnose versteckter Controls oder Server ohne dieses Tool nach der Suche `loxone_describe_control(view="state_refs")` verwenden. Die Ansicht liefert nur Control-Identität, Sichtbarkeit und die vollständige normalisierte `states`-Liste mit Namen und UUIDs, ohne Raum-/Kategorie-Kontext, Fähigkeiten, Statistiken, Historie, Darstellung oder Beziehungen. Sie lädt die nutzergefilterte Struktur neu und liefert bei fehlgeschlagener Aktualisierung einen Fehler statt zwischengespeicherter Referenzen. `stale` kennzeichnet einen getrennten Ereignisstream; `observed_at` ist der Beschreibungszeitpunkt, kein Messzeitpunkt eines State-Werts. Nur benötigte UUIDs auswählen, Duplikate entfernen und `loxone_get_states` in Gruppen von höchstens 100 aufrufen; bei leerer Auswahl keinen Werte-Read ausführen. Für versteckte Controls bleibt `include_hidden=true` sowohl bei der Diagnose als auch beim Werte-Read erforderlich. `history_targets` dient der Historien-/Statistikauswahl, `operation_targets` der Bedienvorbereitung und `full` der weiterführenden Diagnose.

@@ -22,6 +22,12 @@ extracted from the matching version heading.
   Validate preserved solar policies when saving the main configuration and pause
   solar capture on metadata refresh failure without interrupting scalar coverage.
 
+
+- Represent explicit runtime subcontrols with bounded parent provenance and an
+  optional paginated mapping inventory in project status. Trace parent topology
+  separately from selected-child observability evidence; preserve exact mappings,
+  legacy mapping counts and authorization boundaries (#219).
+
 - Add bounded source-proven LightControllerV2 mood context to the existing control
   description tool; retain operation validation and count guide resource reads in
   offline workflow captures (#442, #443). Centralize all mandatory write guidance

@@ -311,3 +311,38 @@ async def test_real_worker_preserves_logical_identity_and_provenance():
     node = query.resolve(UUID, "runtime_control_uuid")
     assert model.logical_identity[node.key].reason == "equal_topology"
     assert len(model.occurrence_keys_for(node.key)) == 2
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_explicit_child_derivation_respects_cross_source_parent_identity(conflict):
+    from mcpserver.loxone.structure import normalize_structure
+
+    model = snapshot(block(), block(kind="Mode" if conflict else "Actor"))
+    child = UUID + "/AI1"
+    structure = normalize_structure(
+        {
+            "msInfo": {"serialNr": "synthetic"},
+            "controls": {
+                UUID: {
+                    "name": "Parent",
+                    "type": "Actor",
+                    "subControls": {child: {"name": "Child", "type": "Switch"}},
+                }
+            },
+        },
+        username="reader",
+    )
+    query = ProjectQuery(ProjectView(model, map_runtime(model, structure)), {})
+    evidence = query.mapping_evidence(child)
+    assert evidence["project_node_ids"] == []
+    if conflict:
+        assert evidence["mapping_status"] == "derived_parent_ambiguous"
+        with pytest.raises(ProjectQueryError, match="project_mapping_ambiguous"):
+            query.resolve(child, "runtime_control_uuid")
+    else:
+        assert evidence["mapping_status"] == "derived_from_parent"
+        anchor = query.resolve(child, "runtime_control_uuid")
+        detail = query.describe(anchor, limit=100)
+        assert detail["source_occurrence_count"] == 2
+        assert evidence["model_source_ids"] == detail["model_source_ids"]
+        assert evidence["parent_project_node_ids"] == [anchor.key]

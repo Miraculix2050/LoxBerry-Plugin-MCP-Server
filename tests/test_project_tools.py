@@ -173,6 +173,9 @@ def test_project_status_trims_coverage_groups_to_response_limit(monkeypatch):
 
 
 class Query:
+    def derived_target(self, _identifier, _identifier_type):
+        return None
+
     view = SimpleNamespace(
         marker="revision",
         mapping=SimpleNamespace(structure_fingerprint="b" * 64),
