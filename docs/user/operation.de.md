@@ -75,3 +75,11 @@ Unter **Hilfe und Entwicklerwerkzeuge** finden Sie Links zu Projekt und Anleitun
 Zuerst core und danach nur die im Aufgabenindex gewählten Workflow-Module laden. Vor Schreibaktionen core, operations und das passende Lesemodul abrufen. Bei fehlendem Modul den Vollguide verwenden; scheitert auch dieser, den betroffenen Ablauf stoppen. Der bisherige Tool-Default und die URI des Vollguides bleiben verfügbar.
 
 Tool-Beschreibungen nennen Zweck, entscheidende Voraussetzungen und Grenzen. Parametergrenzen und Auswahlregeln stehen an den Schemafeldern; ausführliche Abläufe sind über den Aufgabenindex in core erreichbar. Statistikserien sind keine Energiebilanz, angebotene Historien-Metadaten belegen keinen abgefragten Zeitraum, und strukturelle Erreichbarkeit belegt keine historische Ursache.
+
+Zur Auswahl bestätigter Quellen dient `loxone_get_installation_profile(view="summary")`.
+Die kompakte Seite enthält genaue Quellen, Bestätigungs-/Prüfstatus, Herkunft und
+Nutzbarkeitshinweise. Für Begründungen, Anzeigenamen oder vollständige PV-/Lastparameter
+`view="full"` verwenden, insbesondere vor der Bestätigung einer Ersetzung oder Löschung.
+Beide Ansichten prüfen die Sichtbarkeit je Seite frisch und verwenden dieselbe
+Pagination und Größenbegrenzung; ausgelassene Summary-Felder sind keine fehlenden
+gespeicherten Angaben.

@@ -17,8 +17,11 @@ to invent orientation or reject every simple comparison. Arrays share a source;
 do not infer individual yields or sum completeness. MCP replacement/deletion checks
 old and new source visibility. Use a smaller profile page after `response_too_large`.
 
-Use `loxone_get_installation_profile` for repeated questions about confirmed
-source roles. Follow `next_offset` only as far as needed; every page requires
+Use `loxone_get_installation_profile(view="summary")` to select confirmed
+source roles. Summary retains exact source identities, statuses, provenance and
+usability limitations after fresh authorization and reference cleanup. Request
+`view="full"` for the relevant page when rationale, display names or complete
+PV/load parameters are needed; omitted summary fields are not absent declarations. Follow `next_offset` only as far as needed; every page requires
 fresh caller visibility. Roles, measurement boundaries and directions are user
 declarations, not verified technical units, aggregation or physical topology.
 Use only bindings with `status="confirmed"`; drafts, invalid sources and

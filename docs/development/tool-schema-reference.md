@@ -15,7 +15,7 @@ Admin-only extension and archive management do not refresh source evidence or
 permissions. Archived drafts cannot be applied or exported; reopening resets
 decisions. Local writes and experimental ETS downloads retain their separate
 confirmation, ownership, revision and fresh project-authorization checks.
-Compact-summary migration is additive and preserves legacy drafts. Skill revision 93.
+Compact-summary migration is additive and preserves legacy drafts. Skill revision 94.
 
 ## Qualified local irradiance forecasts (#440)
 
@@ -202,6 +202,17 @@ See the [source/version matrix](analysis-semantic-evidence.md). No historical
 availability, physical-device role or energy inference is added.
 
 ## Locally approved installation-profile maintenance (#434)
+
+`loxone_get_installation_profile(offset=0, limit=100, view="full")` adds
+`view="summary"` for source selection. Both views use the same fresh snapshot,
+visibility filtering, reference cleanup and post-read authorization recheck.
+Summary retains profile status/revision, binding ID/role, exact state/statistic/
+weather source identity, confirmation/review status, provenance and usability
+limitations. It omits control display names, rationale and full PV/load parameters;
+fetch the relevant full page before using those details or confirming mutations.
+Pagination, page limits, warnings, errors and the 64 KiB envelope bound apply to
+both views. Only summary adds `view="summary"`; the full default shape is retained.
+No storage format or mutation contract changes.
 
 Profile reads/writes add a discriminated weather binding alongside unchanged
 state/statistic inputs: `source_kind="weather"`, `role="weather_context"`, exact
