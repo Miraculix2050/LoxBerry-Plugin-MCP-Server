@@ -16,6 +16,7 @@ import mcpserver.admin
 import mcpserver.knx.admin
 import mcpserver.knx.admin_bridge
 assert 'asyncio' not in sys.modules
+assert 'urllib.request' not in sys.modules
 assert 'importlib.metadata' not in sys.modules
 try:
     mcpserver.not_a_public_attribute

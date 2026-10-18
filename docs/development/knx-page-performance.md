@@ -25,8 +25,8 @@ The spans are nested; do not add all header values. Use this hierarchy:
 - Bridge handler: helper-key/proof/body handling, access-token verification,
   admission/preparation, analysis runner, final fresh authorization and response.
 
-Every duration is measured within its own process using a monotonic clock, except
-that existing shell-to-Python bootstrap uses bounded wall-clock timestamps.
+Runtime phases use each process's monotonic clock. The existing shell-to-Python
+handoff and module-startup spans use bounded wall-clock timestamps.
 Cross-process start timestamps are never subtracted. The browser request and
 rendered section state must both be checked. A document response alone does not
 prove that catalog, session restoration or remembered comparison has completed.

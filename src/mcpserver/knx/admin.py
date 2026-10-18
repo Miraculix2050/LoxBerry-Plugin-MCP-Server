@@ -130,7 +130,11 @@ def dispatch_knx(
         ):
             from .admin_bridge import forward
 
-            result = forward(action, payload, config_store, timing=timing)
+            result = (
+                forward(action, payload, config_store, timing=timing)
+                if timing is not None
+                else forward(action, payload, config_store)
+            )
         else:
             result = config_store.transaction(
                 lambda config, save: _run(

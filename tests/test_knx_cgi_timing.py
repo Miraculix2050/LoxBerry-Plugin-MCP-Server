@@ -127,3 +127,43 @@ print encode_json(\@results);
         timeout=10,
     )
     assert json.loads(result.stdout) == [1] * len(inputs)
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_helper_timing_never_includes_request_or_credentials(monkeypatch, fail):
+    import io
+    from types import SimpleNamespace
+
+    from mcpserver import admin
+
+    request = {"action": "knx_project_page", "payload": {"fixture": "private-request-fixture"}}
+    stdout, stderr = io.StringIO(), io.StringIO()
+    monkeypatch.setattr(
+        admin.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(json.dumps(request).encode()))
+    )
+    monkeypatch.setattr(admin.sys, "stdout", stdout)
+    monkeypatch.setattr(admin.sys, "stderr", stderr)
+    monkeypatch.setenv("HTTP_X_LOXONE_AUTHORIZATION", "Bearer private-credential-fixture")
+    monkeypatch.setenv(
+        "MCPSERVER_ADMIN_STARTED_NS", str(admin._MODULE_IMPORT_STARTED_NS - 1_000_000)
+    )
+
+    def dispatch(value, *, timing):
+        assert value == request
+        timing["forward_config_ms"] = 1.25
+        if fail:
+            raise admin.AdminError("Synthetic rejection", code="synthetic_rejection")
+        return {"fixture": "public-result"}
+
+    monkeypatch.setattr(admin, "dispatch", dispatch)
+    admin.main()
+    response = json.loads(stdout.getvalue())
+    assert response["ok"] is not fail
+    assert "timing" not in response
+    diagnostic = stderr.getvalue()
+    assert len(diagnostic.encode()) < 4096
+    assert "private-request-fixture" not in diagnostic
+    assert "private-credential-fixture" not in diagnostic
+    metrics = json.loads(diagnostic.removeprefix("mcpserver_admin_timing="))
+    assert metrics["forward_config_ms"] == 1.25
+    assert all(isinstance(value, int | float) and value >= 0 for value in metrics.values())

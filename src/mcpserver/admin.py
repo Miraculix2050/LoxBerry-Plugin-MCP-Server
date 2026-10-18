@@ -23,7 +23,6 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
-from urllib.request import Request, urlopen
 from uuid import UUID
 
 from mcpserver.admin_errors import AdminError as AdminError
@@ -180,6 +179,8 @@ def _emergency_stop_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
     """Read and validate the running service's own emergency-stop snapshot."""
     if not service.get("active"):
         return {"availability": "service_inactive"}
+    from urllib.request import Request, urlopen
+
     try:
         request = Request(
             _INTERNAL_EMERGENCY_STOP_STATUS_URL,
@@ -228,6 +229,8 @@ def _event_history_runtime_status() -> dict[str, Any]:
     """Read only the running recorder's bounded status, without touching SQLite."""
     if not _service_active():
         return {"availability": "service_inactive"}
+    from urllib.request import Request, urlopen
+
     try:
         with urlopen(
             Request(_INTERNAL_EVENT_HISTORY_STATUS_URL, headers={"Accept": "application/json"}),
@@ -2156,7 +2159,12 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
     if action.startswith("knx_"):
         from mcpserver.knx.admin import dispatch_knx
 
-        return dispatch_knx(action, payload, _config_store(), timing=timing)
+        config_store = _config_store()
+        return (
+            dispatch_knx(action, payload, config_store, timing=timing)
+            if timing is not None
+            else dispatch_knx(action, payload, config_store)
+        )
     if action == "page_snapshot":
         sections: dict[str, dict[str, Any]] = {}
         for section_action in (

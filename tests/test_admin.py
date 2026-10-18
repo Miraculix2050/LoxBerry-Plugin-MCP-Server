@@ -1107,7 +1107,7 @@ def test_emergency_stop_runtime_status_reads_only_the_validated_loopback_snapsho
         captured["timeout"] = timeout
         return _RuntimeResponse(json.dumps(payload).encode())
 
-    monkeypatch.setattr("mcpserver.admin.urlopen", open_runtime)
+    monkeypatch.setattr("urllib.request.urlopen", open_runtime)
 
     assert _emergency_stop_runtime_status({"active": True}) == {
         "availability": "available",
@@ -1125,7 +1125,7 @@ def test_emergency_stop_runtime_status_never_invents_unknown_for_an_invalid_resp
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "mcpserver.admin.urlopen",
+        "urllib.request.urlopen",
         lambda *_args, **_kwargs: _RuntimeResponse(
             b'{"ok":true,"emergency_stop":{"signal_uuid":null,"signal_name":null,"status":"active"}}'
         ),
@@ -1154,7 +1154,7 @@ def test_event_history_runtime_status_accepts_only_bounded_loopback_data(
         return _RuntimeResponse(json.dumps(payload).encode())
 
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
-    monkeypatch.setattr("mcpserver.admin.urlopen", open_runtime)
+    monkeypatch.setattr("urllib.request.urlopen", open_runtime)
     assert _event_history_runtime_status() == {
         "availability": "available",
         **payload["event_history"],
