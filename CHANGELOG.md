@@ -9,6 +9,13 @@ extracted from the matching version heading.
   families while preserving conflicts as ambiguous, physical provenance and
   complementary topology in bounded descriptions and traces (#218).
 
+- Add read-only native PV-production forecast semantics and optional local solar
+  observation/forecast snapshots in the shared history store. Preserve forecast
+  origin, source contracts, current caller visibility and default-off recording;
+  migrate history SQLite V8 to V9 without backfilling observations (#439, #509).
+  Validate preserved solar policies when saving the main configuration and pause
+  solar capture on metadata refresh failure without interrupting scalar coverage.
+
 - Add bounded source-proven LightControllerV2 mood context to the existing control
   description tool; retain operation validation and count guide resource reads in
   offline workflow captures (#442, #443). Centralize all mandatory write guidance

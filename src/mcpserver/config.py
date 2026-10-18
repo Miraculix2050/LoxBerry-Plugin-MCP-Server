@@ -29,6 +29,8 @@ from mcpserver.loxone.uuid import normalize_loxone_uuid
 from mcpserver.loxone.weather_history import MAX_SOURCES as MAX_WEATHER_HISTORY_SOURCES
 from mcpserver.loxone.weather_history import WeatherHistorySource
 from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
+from mcpserver.solar_recording import SolarRecordingSource
+from mcpserver.solar_recording import parse_sources as parse_solar_sources
 
 SCHEMA_VERSION: Final = 12
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
@@ -376,6 +378,8 @@ class PluginConfig:
     event_history_sources: tuple[tuple[str, str], ...] = ()
     weather_history_enabled: bool = False
     weather_history_sources: tuple[WeatherHistorySource, ...] = ()
+    solar_history_enabled: bool = False
+    solar_history_sources: tuple[SolarRecordingSource, ...] = ()
     solar_forecast_enabled: bool = False
     solar_forecast_maximum_age_minutes: int = 180
     solar_forecast_fingerprint: str = ""
@@ -553,6 +557,15 @@ class PluginConfig:
         if weather_history_enabled and not loxone_history_enabled:
             raise ConfigError("event_history.weather_enabled requires loxone history")
         weather_history_sources = _weather_history_sources(event_history.get("weather_sources", []))
+        solar_history_enabled = _boolean(
+            event_history.get("solar_enabled", False), name="event_history.solar_enabled"
+        )
+        if solar_history_enabled and not loxone_history_enabled:
+            raise ConfigError("event_history.solar_enabled requires loxone history")
+        try:
+            solar_history_sources = parse_solar_sources(event_history.get("solar_sources", []))
+        except ValueError as exc:
+            raise ConfigError("event_history.solar_sources is unsupported") from exc
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
         if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
@@ -803,6 +816,8 @@ class PluginConfig:
             event_history_sources=event_history_sources,
             weather_history_enabled=weather_history_enabled,
             weather_history_sources=weather_history_sources,
+            solar_history_enabled=solar_history_enabled,
+            solar_history_sources=solar_history_sources,
             solar_forecast_enabled=solar_forecast_enabled,
             solar_forecast_maximum_age_minutes=solar_forecast_maximum_age_minutes,
             solar_forecast_fingerprint=solar_forecast_fingerprint,
@@ -954,6 +969,10 @@ class PluginConfig:
         document["event_history"]["retention_days"] = self.event_history_retention_days
         document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
         document["event_history"]["weather_enabled"] = self.weather_history_enabled
+        document["event_history"]["solar_enabled"] = self.solar_history_enabled
+        document["event_history"]["solar_sources"] = [
+            s.model_dump() for s in self.solar_history_sources
+        ]
         document["solar_forecast"].update(
             enabled=self.solar_forecast_enabled,
             maximum_age_minutes=self.solar_forecast_maximum_age_minutes,

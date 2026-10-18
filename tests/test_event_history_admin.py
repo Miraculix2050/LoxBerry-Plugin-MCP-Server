@@ -884,7 +884,7 @@ def test_weather_admin_options_migrates_stopped_v7_archive_and_preserves_scalar(
     options = event_history_admin.weather_sources("weather_history_options", {})
     assert options["retained"] == {"deliveries": 0, "points": 0}
     with history._opened() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
         assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 

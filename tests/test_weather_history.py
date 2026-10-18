@@ -309,7 +309,7 @@ def test_schema_migration_restart_and_scalar_data_retained(history):
     store.initialize()
     store.initialize()
     with store._opened() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
         assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
         assert db.execute("SELECT count(*) FROM weather_points").fetchone()[0] == 2
         assert db.execute("SELECT outcome FROM weather_captures").fetchone()[0] == "interrupted"
@@ -350,7 +350,7 @@ def test_direct_v7_read_migrates_to_v8_without_losing_scalar(history, entry):
     else:
         assert _weather.summary() == {"deliveries": 0, "points": 0}
     with store._opened() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
         assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
@@ -384,7 +384,7 @@ def test_weather_only_size_limit_eviction_and_foreign_keys(history):
     capture = weather.begin(SOURCE, "fp", now)
     for n in range(20):
         weather.record(capture, SOURCE, delivery(now + 3600 + n, value=n, count=96), now + n + 1)
-    store.maximum_bytes = 100 * 1024
+    store.maximum_bytes = 128 * 1024
     with store._opened() as db:
         db.execute("BEGIN IMMEDIATE")
         assert store._prune(db, now=now + 30)

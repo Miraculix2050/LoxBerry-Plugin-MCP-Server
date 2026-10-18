@@ -135,6 +135,8 @@ from mcpserver.loxone.project.result_cache import ProjectResultCache
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.project.worker import process_analysis
+from mcpserver.loxone.pv_forecast import DOCUMENT as PVPF_DOCUMENT
+from mcpserver.loxone.pv_forecast import STATES as PVPF_STATES
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,
@@ -487,6 +489,15 @@ class EfmProjectionData(BaseModel):
     diagnostics: list[str]
 
 
+class PvForecastModelData(BaseModel):
+    source_reference: str
+    energy_unit: Literal["kWh"] = "kWh"
+    time_basis: Literal["seconds_since_2009"] = "seconds_since_2009"
+    value_origin: Literal["forecast"] = "forecast"
+    documented_states: list[str] = Field(max_length=10)
+    missing_states: list[str] = Field(max_length=10)
+
+
 class ControlModelData(BaseModel):
     """Bounded documented type metadata; state values remain in loxone_get_states."""
 
@@ -501,6 +512,7 @@ class ControlModelData(BaseModel):
     connected_inputs: int | None = None
     irrigation: IrrigationModelData | None = None
     alarm_clock: AlarmClockModelData | None = None
+    pv_forecast: PvForecastModelData | None = None
 
 
 class CapabilitiesData(BaseModel):
@@ -4065,6 +4077,10 @@ def _semantic_state_items(
     companion_names = (
         {"zones", "entryList"} if control.control_type in {"Irrigation", "AlarmClock"} else set()
     )
+    if control.control_type == "PvProductionForecast":
+        companion_names.update(
+            {"ready", "errorInfo", "timestamp", "cycleFrom", "cycleUntil", "inputperiod"}
+        )
     family = ALERT_FAMILIES.get(control.control_type)
     if family is not None and any(name == family.primary for name, _uuid in page_refs):
         companion_names.update((*family.required, *family.optional))
@@ -5586,6 +5602,17 @@ def register_read_tools(
                 "model": (
                     {
                         "format": control.format,
+                        "pv_forecast": (
+                            {
+                                "source_reference": PVPF_DOCUMENT,
+                                "documented_states": sorted(PVPF_STATES),
+                                "missing_states": sorted(
+                                    PVPF_STATES - dict(control.state_uuids).keys()
+                                ),
+                            }
+                            if control.control_type == "PvProductionForecast"
+                            else None
+                        ),
                         "timer_modes": [
                             {"id": item.option_id, "name": item.name}
                             for item in control.timer_modes
@@ -5665,6 +5692,7 @@ def register_read_tools(
                         "EFM",
                         "Irrigation",
                         "AlarmClock",
+                        "PvProductionForecast",
                     }
                     else None
                 ),

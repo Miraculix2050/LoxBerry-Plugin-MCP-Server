@@ -821,6 +821,8 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         was_active = _service_active()
         updated = replace(previous, **{field: getattr(candidate, field) for field in fields})
         updated = _confirmed_solar_config(previous, updated, payload)
+        # Section payloads omit preserved policies; validate their merged invariants.
+        updated = PluginConfig.from_document(updated.to_document())
         save(updated)
         if not was_active:
             return updated
@@ -2249,6 +2251,10 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         return event_history_admin.purge_source(payload)
     if action == "event_history_runtime_status":
         return _event_history_runtime_status()
+    if action in {"solar_history_options", "solar_history_save"}:
+        from mcpserver.event_history_admin import solar_sources
+
+        return solar_sources(action, payload)
     if action in {
         "weather_history_options",
         "weather_history_add_source",
