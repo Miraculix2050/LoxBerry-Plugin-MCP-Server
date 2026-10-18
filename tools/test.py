@@ -34,6 +34,10 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
+        ("src/mcpserver/analysis_context.py",),
+        ("tests/test_analysis_context.py",),
+    ),
+    (
         ("src/mcpserver/solar_history.py",),
         ("tests/test_solar_history.py", "tests/test_comparable_days.py"),
     ),

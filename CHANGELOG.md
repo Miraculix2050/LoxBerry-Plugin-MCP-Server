@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Establish internal request-local energy scope and provenance contracts with
+  explicit forecast coverage and isolated native EFM membership checks (#556).
+
 - Explain conditional PVPF planning in the DE/EN Tool Explorer and summarize
   suggested UTC windows, conditional PV coverage and additional grid energy (#510).
 
