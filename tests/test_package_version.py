@@ -12,11 +12,6 @@ def test_package_and_admin_import_defer_version_metadata_and_cache_first_use():
     code = """
 import sys
 import mcpserver
-import mcpserver.admin
-import mcpserver.knx.admin
-import mcpserver.knx.admin_bridge
-assert 'asyncio' not in sys.modules
-assert 'urllib.request' not in sys.modules
 assert 'importlib.metadata' not in sys.modules
 try:
     mcpserver.not_a_public_attribute
@@ -27,10 +22,21 @@ else:
 assert 'importlib.metadata' not in sys.modules
 import importlib.metadata
 calls = []
+original_version = importlib.metadata.version
 def version(name):
-    calls.append(name)
-    return '1.2.3'
+    if name == 'loxberry-mcpserver':
+        calls.append(name)
+        return '1.2.3'
+    return original_version(name)
 importlib.metadata.version = version
+import mcpserver.admin
+import mcpserver.knx.admin
+import mcpserver.knx.admin_bridge
+assert 'asyncio' not in sys.modules
+assert 'urllib.request' not in sys.modules
+# Dependencies may need metadata for their own plugin discovery. Admin imports
+# must not resolve this package's public version as a side effect.
+assert calls == []
 from mcpserver import __version__
 assert __version__ == '1.2.3'
 assert mcpserver.__version__ == '1.2.3'

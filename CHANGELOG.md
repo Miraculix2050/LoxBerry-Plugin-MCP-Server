@@ -62,7 +62,7 @@ extracted from the matching version heading.
   authentication, independent downloads and final marker checks. Add numeric
   phase timings without project or authentication data. Attribute CGI/helper
   overhead with numeric request timings, drain bounded helper pipes concurrently,
-  defer version metadata and unrelated async imports, and use an available
+  defer plugin-version lookups and unrelated async imports, and use an available
   JSON::XS response decoder with the original JSON::PP fallback. Drop the unused
   Perl HTTP client import. Combine part-local KNX format checks into one
   attribute pass while preserving duplicate and version ambiguity handling.

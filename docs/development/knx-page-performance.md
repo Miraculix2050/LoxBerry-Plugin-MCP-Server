@@ -102,7 +102,9 @@ is installed automatically.
 Package version metadata is resolved on first public `__version__` access and
 then cached as the same string. Installed distribution metadata remains
 authoritative; the release fallback literal and public import forms remain.
-KNX helper imports do not load version metadata or unrelated async machinery.
+KNX helper imports do not resolve the plugin version or load unrelated async
+machinery. Required Solar configuration validation may load Python metadata for
+Pydantic's own plugin discovery; this is separate from a plugin-version lookup.
 Session phase logs are restricted to an active project certificate scope for the
 same endpoint. Ordinary sessions and inherited tasks after scope exit emit no
 project timings; each session still connects and authenticates independently.
