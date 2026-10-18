@@ -23,11 +23,11 @@ Supported: a bounded existing read workflow. Conditional: required sources, sema
 
 | ID | Question / operation | Status | Workflow and allowed boundaries |
 | --- | --- | --- | --- |
-| lighting-01 | scene inventory | conditional | `loxone_get_structure_overview` → `loxone_describe_control`; Visible scenes only; absent visibility does not prove absent configuration. |
+| lighting-01 | scene inventory | conditional | `loxone_get_structure_overview` → `loxone_describe_control`; Visible source moods via lighting_context only; preserve freshness and omission limits, never infer complete scene inventory. |
 | lighting-02 | naming review | supported | `loxone_find_controls` → `loxone_describe_control`; Naming candidates only; no duplicated physical circuit claim. |
 | lighting-03 | presence links | conditional | `loxone_find_project_objects` → `loxone_trace_project_logic`; Explicit project links required; room membership is not a connection. |
 | lighting-04 | lighting advice | experimental | `loxone_get_installation_profile` → `loxone_describe_control`; Planning advice needs user intent and fixture inventory; no automatic suitability proof. |
-| lighting-05 | scene roles | conditional | `loxone_get_installation_profile` → `loxone_describe_control`; Scene roles must be confirmed; labels alone are not technical roles. |
+| lighting-05 | scene roles | conditional | `loxone_get_installation_profile` → `loxone_describe_control`; Source mood naming candidates via lighting_context; names do not establish scene roles. |
 | lighting-06 | context review | experimental | `loxone_find_project_objects` → `loxone_get_installation_profile`; Qualified design review only; specialist lighting work remains outside this foundation. |
 | basic-07 | temperature summary | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; temperature_summary: actual-temperature unit and UTC samples; sample mean is not time weighted. |
 | basic-08 | consumer energy | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; energy: optional consumer, confirmed boundary; counter endpoint differences remain partial with unknown resets. |

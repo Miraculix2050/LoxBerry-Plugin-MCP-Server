@@ -40,8 +40,8 @@
           "loxone_get_structure_overview",
           "loxone_describe_control"
         ],
-        "scope_en": "Visible scenes only; absent visibility does not prove absent configuration.",
-        "scope_de": "Nur sichtbare Szenen; fehlende Sichtbarkeit belegt keine fehlende Konfiguration.",
+        "scope_en": "Visible source moods via lighting_context only; preserve freshness and omission limits, never infer complete scene inventory.",
+        "scope_de": "Nur sichtbare Quellstimmungen via lighting_context; Aktualität und Auslassungsgrenzen erhalten, keine vollständige Szeneninventur ableiten.",
         "evidence": "source_contract",
         "native_result": "qualified_insufficient_evidence_or_visible_subset",
         "ai_three_independent_runs": "incomplete"
@@ -213,8 +213,8 @@
           "loxone_get_installation_profile",
           "loxone_describe_control"
         ],
-        "scope_en": "Scene roles must be confirmed; labels alone are not technical roles.",
-        "scope_de": "Szenenrollen müssen bestätigt sein; Namen belegen keine technischen Rollen.",
+        "scope_en": "Source mood naming candidates via lighting_context; names do not establish scene roles.",
+        "scope_de": "Benennungskandidaten aus Quellstimmungen via lighting_context; Namen belegen keine Szenenrollen.",
         "evidence": "source_contract",
         "native_result": "qualified_insufficient_evidence_or_visible_subset",
         "ai_three_independent_runs": "incomplete"

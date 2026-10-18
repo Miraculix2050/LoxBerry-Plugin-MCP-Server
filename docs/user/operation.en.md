@@ -70,7 +70,7 @@ Next: [Troubleshooting](troubleshooting.en.md).
 **Help and developer tools** provides links to the project and guides, Tool Explorer, schema reference, local event history, KNX address management, confirmed installation profile and individual message approval. Each link briefly explains the purpose and limits of its destination. KNX address management and the installation profile also remain available under **MCP configuration**, with the same explanations. Message approval opened from Help keeps the current page language.
 
 
-Read core first, then only the workflow sections selected by its task index. Before a write load core, operations and the relevant read module. If section retrieval fails use the complete guide; if that also fails stop the affected workflow. The legacy full-guide tool default and URI remain available.
+Read core first, then only the workflow sections selected by its task index. Before a write load core and operations; add read modules only when their evidence is needed. If section retrieval fails use the complete guide; if that also fails stop the affected workflow. The legacy full-guide tool default and URI remain available.
 
 Tool descriptions summarize purpose, decisive prerequisites and limitations. Read parameter bounds and selection rules in the schema fields; retrieve longer recipes through the core task index. Statistic series are not an energy balance, advertised history metadata is not retrieved period evidence, and project reachability is not historical causation.
 
@@ -80,3 +80,11 @@ and usability warnings. Use `view="full"` when rationale, display names or compl
 PV/load parameters are needed, especially before confirming a replacement or
 deletion. Both views freshly check visibility on every page and share pagination
 and size limits; omitted summary fields are not absent stored declarations.
+
+Use `loxone_describe_control(view="lighting_context")` for bounded source mood
+IDs/names of one visible LightControllerV2. Check status, source state, timestamp,
+freshness and omissions; missing or invalid data is not an empty scene inventory.
+Names never prove scene roles, presence connections or physical luminaires.
+The full default and all existing operation safeguards remain unchanged. The
+complete compact envelope is limited to 64 KiB (`response_too_large` for
+oversized retained control metadata).

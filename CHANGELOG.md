@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded source-proven LightControllerV2 mood context to the existing control
+  description tool; retain operation validation and count guide resource reads in
+  offline workflow captures (#442, #443). Centralize all mandatory write guidance
+  in core/operations while preserving exact approvals, confirmation and uncertainty.
+
 - Add an optional compact installation-profile summary after fresh visibility and
   reference cleanup; retain full defaults, pagination and mutation safeguards (#443).
 

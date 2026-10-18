@@ -74,6 +74,7 @@ from mcpserver.loxone.history_evidence import (
     capture_evidence,
     statistic_evidence,
 )
+from mcpserver.loxone.lighting import project_moods
 from mcpserver.loxone.models import Control, Freshness, StateRecord
 from mcpserver.loxone.native_efm import NativeEfmResult, NativeResultView
 from mcpserver.loxone.opening_contacts import OpeningScopeError, analyze_opening_contacts
@@ -653,6 +654,36 @@ class ControlOperationTargetsData(BaseModel):
     visibility: Literal["direct", "linked", "hidden"]
     view: Literal["operation_targets"]
     capabilities: OperationTargetCapabilitiesData
+
+
+class LightingMoodData(BaseModel):
+    id: str
+    name: str | None
+
+
+class ControlLightingContextData(BaseModel):
+    uuid: str
+    name: str
+    type: str
+    visibility: Literal["direct", "linked", "hidden"]
+    view: Literal["lighting_context"]
+    source_state: StateReferenceData | None
+    source: Literal["cached_moodList"] = "cached_moodList"
+    status: Literal[
+        "available", "unsupported", "missing_reference", "missing_value", "invalid", "source_limit"
+    ]
+    observed_at: str | None
+    freshness: Literal["current", "stale", "unknown", "unavailable"]
+    moods: Annotated[list[LightingMoodData], Field(max_length=100)]
+    returned: int
+    total: int | None
+    omitted: int | None
+    truncated: bool
+    names_complete: bool = Field(
+        description="Returned names are valid and untruncated; not configuration completeness."
+    )
+    name_truncated_indices: list[int]
+    limitations: list[str]
 
 
 class ControlStateRefsData(BaseModel):
@@ -2247,6 +2278,7 @@ class ControlDescriptionEnvelope(ToolEnvelope):
         | ControlOperationTargetsData
         | ControlStateRefsData
         | ControlEnergyContextData
+        | ControlLightingContextData
         | ErrorData
     )
 
@@ -5053,7 +5085,7 @@ def register_read_tools(
         description=(
             "Describe one discovered control; select compact targets or full diagnostic metadata "
             "with view. Hidden diagnosis is read-only. Energy context requires a freshly verified "
-            "Loxone administrator. See states, history, energy or operations guidance."
+            "Loxone administrator. See states, history, lighting, energy or operations guidance."
         ),
         annotations=annotations,
         structured_output=True,
@@ -5073,8 +5105,10 @@ def register_read_tools(
                 description=(
                     "full (default) includes diagnostic metadata; history_targets selects "
                     "series/state references; operation_targets selects currently allowed actions "
-                    "and their targets; state_refs returns only state references; energy_context "
-                    "requires a freshly verified Loxone administrator."
+                    "and their targets; state_refs returns only state references; lighting_context "
+                    "returns bounded cached LightControllerV2 mood IDs/names with provenance and "
+                    "omission limits; energy_context requires a freshly verified "
+                    "Loxone administrator."
                 ),
                 json_schema_extra={
                     "enum": [
@@ -5083,6 +5117,7 @@ def register_read_tools(
                         "operation_targets",
                         "state_refs",
                         "energy_context",
+                        "lighting_context",
                     ]
                 },
             ),
@@ -5097,7 +5132,7 @@ def register_read_tools(
                 )
             access_token, snapshot = (
                 await _snapshot(runtime, fresh_visibility=True)
-                if view in {"operation_targets", "state_refs", "energy_context"}
+                if view in {"operation_targets", "state_refs", "energy_context", "lighting_context"}
                 else await _snapshot(runtime)
             )
             if view == "full" and any(
@@ -5113,6 +5148,7 @@ def register_read_tools(
                 "operation_targets",
                 "state_refs",
                 "energy_context",
+                "lighting_context",
             }:
                 return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(
@@ -5127,6 +5163,82 @@ def register_read_tools(
             )
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
+            if view == "lighting_context":
+                source_uuid = next(
+                    (uuid for name, uuid in control.state_uuids if name == "moodList"), None
+                )
+                record = (
+                    runtime.state(snapshot, source_uuid)
+                    if runtime is not None
+                    and source_uuid is not None
+                    and control.control_type == "LightControllerV2"
+                    else None
+                )
+                projection = (
+                    project_moods(record.value)
+                    if record is not None and record.value is not None
+                    else None
+                )
+                status = (
+                    "unsupported"
+                    if control.control_type != "LightControllerV2"
+                    else "missing_reference"
+                    if source_uuid is None
+                    else "missing_value"
+                    if record is None or record.value is None
+                    else projection.status
+                    if projection is not None
+                    else "invalid"
+                )
+                envelope = _result(
+                    ControlDescriptionEnvelope,
+                    {
+                        "uuid": control.uuid,
+                        "name": control.name,
+                        "type": control.control_type,
+                        "visibility": _control_summary(control, snapshot)["visibility"],
+                        "view": "lighting_context",
+                        "source_state": {"name": "moodList", "uuid": source_uuid}
+                        if source_uuid is not None and control.control_type == "LightControllerV2"
+                        else None,
+                        "status": status,
+                        "observed_at": _state_observed_at(record) if record is not None else None,
+                        "freshness": record.freshness.value
+                        if record is not None
+                        else "unavailable",
+                        "moods": [{"id": item.id, "name": item.name} for item in projection.moods]
+                        if projection is not None
+                        else [],
+                        "returned": len(projection.moods) if projection is not None else 0,
+                        "total": projection.total if projection is not None else None,
+                        "omitted": projection.omitted if projection is not None else None,
+                        "truncated": projection.truncated if projection is not None else False,
+                        "names_complete": projection.names_complete
+                        if projection is not None
+                        else False,
+                        "name_truncated_indices": [
+                            index
+                            for index, item in enumerate(projection.moods)
+                            if item.name_truncated
+                        ]
+                        if projection is not None
+                        else [],
+                        "limitations": [
+                            "Visible source entries do not establish complete configuration, "
+                            "physical luminaires, scene intent or operation permission."
+                        ],
+                    },
+                    stale=not snapshot.connected
+                    or record is None
+                    or record.freshness is not Freshness.CURRENT,
+                )
+                if len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024:
+                    return _error(
+                        ControlDescriptionEnvelope,
+                        "response_too_large",
+                        "Lighting context exceeds the response budget",
+                    )
+                return envelope
             if view == "energy_context":
                 if control.is_hidden:
                     return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")

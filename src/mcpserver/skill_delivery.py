@@ -9,7 +9,7 @@ from typing import Final, Literal, get_args
 from mcp.server.fastmcp import FastMCP
 
 SKILL_NAME: Final = "using-loxberry-mcp"
-SKILL_REVISION: Final = 94
+SKILL_REVISION: Final = 95
 SKILL_MIME_TYPE: Final = "text/markdown"
 SKILL_RESOURCE_URI: Final = f"skill://{SKILL_NAME}/SKILL.md"
 SERVER_INSTRUCTIONS: Final = (
@@ -17,7 +17,8 @@ SERVER_INSTRUCTIONS: Final = (
     "loxone_get_skill_guide(section='core') or skill://using-loxberry-mcp/core.md. "
     "Its task index selects states, history, project, knx, modbus, lighting, energy, "
     "operations, diagnostics or alerts; load only needed modules. Before any write "
-    "load core, operations and the relevant read module. If module retrieval is "
+    "load core and operations; add read modules only when their evidence is needed. "
+    "If module retrieval is "
     "unavailable use loxone_get_skill_guide() or "
     f"{SKILL_RESOURCE_URI}; if both fail stop the affected workflow. "
     "Never retry uncertain writes."

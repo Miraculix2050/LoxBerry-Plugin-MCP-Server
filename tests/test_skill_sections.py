@@ -189,3 +189,30 @@ def test_standalone_modules_keep_routed_workflows_and_explicit_dependencies() ->
     assert "loxone_read_controls" in energy and "loxone_find_controls" in energy
     assert "section='project'" in states and "section='history'" in states
     assert "tools above" not in states and "as described below" not in states
+
+
+def test_core_operations_cover_every_registered_mutation_without_extra_module_prerequisite():
+    from mcpserver.schema_reference import tool_schema_catalog
+    from mcpserver.skill_delivery import SERVER_INSTRUCTIONS
+
+    core = read_skill_markdown("core")
+    mandatory = " ".join((core + read_skill_markdown("operations")).split())
+    writes = [
+        tool["name"]
+        for tool in tool_schema_catalog("synthetic")["tools"]
+        if tool["annotations"]["readOnlyHint"] is False
+    ]
+    assert writes and all(name in mandatory for name in writes)
+    assert "load core and operations" in SERVER_INSTRUCTIONS
+    assert "operations plus the relevant" not in core
+    for rule in (
+        "inactive source",
+        "Never retry a purge",
+        "default-off",
+        "accepted IDs",
+        "absent receipt permits no automatic retry",
+        "whole exact load_flexibility",
+        "reused operating binding ID does not retarget",
+        "explicit confirmation",
+    ):
+        assert rule in mandatory

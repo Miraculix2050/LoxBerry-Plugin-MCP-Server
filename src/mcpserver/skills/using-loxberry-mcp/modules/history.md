@@ -90,16 +90,9 @@ it requires `loxone:read` and `loxone:history`. The complete, cursor-paged
 `loxberry_list_event_history_sources` additionally requires either enabled
 `loxberry:read` with its exact local approval or enabled `loxberry:operate`
 with its exact local approval. Neither LoxBerry scope implies the other.
-Adding, removing, and purging sources still require approved `loxberry:operate`;
-never infer or construct UUIDs. These operations do not enable the feature,
-change retention or operate a Loxone control. Removal stops capture while retained
-events remain readable only for a currently visible control/state. Check
-`recording_status` separately from the requested period's `coverage`; removal
-and re-addition leave a coverage gap. If removal metadata has an unknown outcome,
-inspect the source list and history before a manual retry; a missing end time
-must not be inferred. Purge only on an explicit user request,
-using `loxberry_purge_event_history_source` with `confirm=true` for an inactive
-source and exact local approval. Never retry a purge with an unknown outcome.
+Capture changes are separate approved writes described in operations. Removed
+and re-added sources leave coverage gaps; keep `recording_status` separate from
+requested-period coverage when interpreting retained observations.
 
 For a time-bounded diagnostic question about one known project target, use
 `loxone_analyze_observability` with the exact target identity, a structural
