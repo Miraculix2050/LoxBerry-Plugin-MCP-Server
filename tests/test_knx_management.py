@@ -631,3 +631,43 @@ def test_delegation_poll_shares_one_fresh_snapshot_and_matches_separate_reads(
     for payload in ({"include_delegations": "true"}, {"include_delegations": True, "extra": True}):
         with pytest.raises(AdminError):
             dispatch_knx("knx_read_page", payload, store)
+
+
+@pytest.mark.parametrize("failed", ["knx_read", "knx_drafts", "knx_write"])
+@pytest.mark.parametrize("unexpected", [False, True])
+def test_combined_delegation_poll_isolates_each_projection_failure(
+    tmp_path, monkeypatch, failed, unexpected
+):
+    from mcpserver import admin as admin_module
+    from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.knx import read_admin
+
+    monkeypatch.setenv("LBPDATA", str(tmp_path))
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    monkeypatch.setattr(admin_module, "_auth_store", lambda: auth)
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20"))
+    original = read_admin.snapshot
+    calls = []
+
+    def project(config, view, target, policy):
+        calls.append(policy.prefix)
+        if policy.prefix == failed:
+            if unexpected:
+                raise RuntimeError("private diagnostic")
+            raise KnxError("knx_delegation_capacity")
+        return original(config, view, target, policy)
+
+    monkeypatch.setattr(read_admin, "snapshot", project)
+    result = dispatch_knx("knx_read_page", {"include_delegations": True}, store)
+    assert calls == ["knx_read", "knx_drafts", "knx_write"]
+    for action, section in result["delegations"].items():
+        if action == f"{failed}_page":
+            assert section == {
+                "ok": False,
+                "error": {"code": "internal_error" if unexpected else "knx_delegation_capacity"},
+            }
+        else:
+            assert section["ok"]
+            assert section["data"] == dispatch_knx(action, {}, store)
+    assert "private diagnostic" not in str(result)

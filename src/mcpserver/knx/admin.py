@@ -277,15 +277,23 @@ def _run(
             if type(payload["include_delegations"]) is not bool:
                 raise KnxError("knx_delegation_invalid")
             request = {key: value for key, value in payload.items() if key != "include_delegations"}
+            if not request.keys() <= {"target"}:
+                raise KnxError("knx_delegation_invalid")
             view = _ReadPageAuthSnapshot(_auth_store().snapshot())
-            data = dispatch(action, request, config, save, view, target, policy)
-            if payload["include_delegations"]:
-                data["delegations"] = {
-                    f"{selected.prefix}_page": {
+            if not payload["include_delegations"]:
+                return {
+                    **dispatch(action, request, config, save, view, target, policy),
+                    "target": token,
+                }
+            delegations: dict[str, Any] = {}
+            for selected in (READ_POLICY, DRAFT_POLICY, WRITE_POLICY):
+                selected_action = f"{selected.prefix}_page"
+                try:
+                    delegations[selected_action] = {
                         "ok": True,
                         "data": {
                             **dispatch(
-                                f"{selected.prefix}_page",
+                                selected_action,
                                 request,
                                 config,
                                 save,
@@ -296,9 +304,16 @@ def _run(
                             "target": token,
                         },
                     }
-                    for selected in (READ_POLICY, DRAFT_POLICY, WRITE_POLICY)
-                }
-            return {**data, "target": token}
+                except (AdminError, KnxError) as exc:
+                    delegations[selected_action] = {"ok": False, "error": {"code": exc.code}}
+                except Exception:
+                    delegations[selected_action] = {
+                        "ok": False,
+                        "error": {"code": "internal_error"},
+                    }
+            primary = delegations[action]
+            data = dict(primary["data"]) if primary["ok"] else {"target": token}
+            return {**data, "delegations": delegations}
         return {
             **dispatch(action, payload, config, save, read_auth or _auth_store(), target, policy),
             "target": token,
