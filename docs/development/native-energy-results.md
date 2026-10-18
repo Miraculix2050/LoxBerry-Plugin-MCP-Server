@@ -34,6 +34,12 @@ unit/sign inference, balance or self-consumption calculation is performed.
 
 ## Partial report components
 
+The versioned [EFM semantic evidence matrix v1](efm-semantic-matrix.v1.md)
+records the #534 documentation/KB investigation, per-field decisions and exact
+missing prerequisites for firmware 17.2.8.28. It confirms the existing subset
+without adding runtime semantics; node/meter direction rules and block-output
+descriptions do not establish aggregate field mappings.
+
 The native transport rule remains `native_efm_17_2_8_28.v1`. Results now use
 `native_efm_result.v2`; its additive semantic fields and widened `unit` enum
 explicitly distinguish known W/kW from null. The pure rule

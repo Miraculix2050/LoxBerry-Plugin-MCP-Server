@@ -545,6 +545,11 @@ Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
 leeren `values` und null gelesenen States. Für `Gpwr`, `Ppwr` und `Spwr` werden
 Leistungsgröße und W/kW aus dem unveränderten, belegten EFM-Format ergänzt.
 `Cpwr` ist belegte Lastleistung mit unbekannter Einheit; `Rest` bleibt unbekannt.
+Die [Semantikprüfung für Firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
+bestätigt diese Grenze: Die Loxone-KB beschreibt den Bausteinausgang `Rest` als
+berechnete Restleistung der Spitzengruppe. Eine belegte Zuordnung zum nativen
+Ergebnis fehlt weiterhin. Vorzeichen von Zähler- oder Knotenwerten und deren
+Einheiten werden nicht auf native Gesamtergebnisse übertragen.
 Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische und Periodengrenzen
 bleiben unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
 Herkunft; bei geändertem Format bleiben Einheiten unbekannt.
