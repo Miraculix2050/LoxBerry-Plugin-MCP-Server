@@ -1,6 +1,7 @@
 # Bounded native acceptance for issue #485
 
-Status: execution in progress; no acceptance is asserted by this plan.
+Status: native comparison complete; answer-cohort continuation awaits a new
+reserved device phase. Overall acceptance remains incomplete.
 
 ## Fixed scope and budget
 
@@ -141,6 +142,10 @@ Frozen baseline: `eebcd3ed50124a81cb1482e3940ca18eecb60274`.
 Frozen final: `124fb581b02b1119666e314c94943235a2fa1639`, with green CI.
 Both use target Python 3.13.5 and the same installed dependency environment.
 The later unrelated KNX startup merge is outside this frozen comparison.
+Baseline guide revision is 60; frozen final guide revision is 103. The independent
+AI cohort uses Codex CLI 0.163.0-alpha.10.2, configured and session-verified
+gpt-6.1-sol/medium with the same ChatGPT login. Tool-result tokens and tokenizer
+identity remain unavailable optional metrics.
 
 Each table cell has five runtime-cold or ten runtime-warm samples per variant.
 All requests completed successfully. Common settings, caller and source geometry
@@ -192,8 +197,8 @@ it does not represent the entire installed LoxBerry catalog or cold caches.
 | Actual canonical UTF-8 bytes / calls | Baseline | Final |
 | --- | ---: | ---: |
 | Catalog response | 264860 | 486209 |
-| Catalog description UTF-8 text | 5891 | 11264 |
-| Catalog input/output schema JSON | 255235 | 468928 |
+| Catalog description-list JSON | 5891 | 11264 |
+| Catalog input/output schema-list JSON | 255235 | 468928 |
 | Loaded guide module text | 57270 | 25962 |
 | Tasks and guides, excluding catalog | 227303 | 109804 |
 | Entire workflow including catalog | 492163 | 596013 |
@@ -203,9 +208,13 @@ Task/guide bytes decreased 51.69%, while complete-workflow bytes increased 21.10
 because the released tool surface grew. Both results are retained. This is no
 claim of total byte, token, effective-context or cost savings. Actual catalog,
 guide and complete-response accounting replaces the obsolete universal byte target.
-Description bytes are the sum of actual description UTF-8 text; schema bytes sum
-canonical JSON for each input/output schema. They describe parts of the catalog
-and are not added again to the complete-response total.
+Description bytes serialize the catalog-order list of description strings;
+schema bytes serialize the catalog-order list of input/output-schema objects.
+Both use canonical JSON/UTF-8, consistently for baseline and final. They describe
+catalog projections and are not added again to the complete-response total.
+This native stateless-HTTP window starts at tools/list and issues no initialize
+request. Native connection/authorization setup is outside it. The separate AI
+capture retains its actual initialize/notification traffic in protocol metrics.
 
 
 ### One bounded authorization/capture repair
@@ -272,6 +281,66 @@ regenerated for either count or review adjudication.
 
 Primary-session audit found only configured read-only MCP calls dispatched via
 the CLI's JavaScript transport orchestration; no shell or other connector calls.
+
+### Bounded source-selection adjudication and phase handoff
+
+The first device phase ended after six independent initial answers and four valid
+repeats: 15 of the shared 50 generation slots consumed, including the five retained
+earlier/incomplete attempts. Nine answers were independently accepted semantically,
+including the documented context-corrected review. Lighting-06 received
+`incomplete` for unattempted profile/fixture checks.
+Generation stopped, and the original answer and review remain unchanged.
+
+A separate code/capture review found that `lighting_intent` is an existing profile
+role, while the profile offers no structured fixture/driver/24-V inventory. The
+answer does not assert that a profile or confirmed intent is absent; its actual
+claims remain a qualified visible project subset. That subset was independently
+accepted under the scenario's explicit partial-answer allowance. Profile source
+selection remains **not checked**, and no complete profile-supported lighting
+review or exhaustion of relevant sources is claimed. The omitted profile read is
+a real workflow gap, distinct from a factual/safety error or missing tool data.
+Specialist lighting work remains under #441.
+
+The remaining-case prompt now explicitly requests relevant profile discovery
+before asserting missing confirmations/context, with full reads for required
+rationale/intent. This source-order clarification supplies no expected counts or
+answers. Earlier answers are not regenerated or relabeled as following it. The
+quality cohort therefore records its prompt revision; it is not a matched
+baseline/final AI-effort experiment.
+
+The original Capture v2 outcomes retain the incomplete review. The separate
+immutable adjudication records the accepted subset and the untested profile path.
+Continuation has at most 35 more primary answers: 19 initial and 16 repeats.
+Further generation requires a new queue slot and fresh target/source/environment
+checks. No polling automation is used.
+
+The [per-answer metric table](evidence/analysis-acceptance-quality-20261018.csv)
+retains all ten observed answers, their current retained semantic-review verdicts
+and the separate lighting-06 scope. The earlier lighting-01 review is preserved
+separately as described above. They made 239 source/guide attempts plus ten catalog reads,
+with zero observed errors/timeouts, no continuation pages/retries and 14
+independently classified fallback calls. The catalog costs 500165 bytes per
+retrieval in this adapter-complete quality server; it differs from the Loxone-only
+native byte workload above. Description/schema projections are 11601/482016 bytes.
+
+Observed answers transferred 2859005 response bytes plus 5001650 catalog bytes;
+loaded guide text was 214702 bytes within guide responses, not an extra total.
+Twenty protocol requests added 8540 response bytes. The separate inventory
+validator added six requests, 521902 bytes and 3695.972 ms. Complete observed
+answer/protocol/validator effort is therefore 275 requests and 8391097 bytes;
+it excludes earlier failed/historical attempts and setup probes, so it is not a
+complete 15-generation campaign cost. Unknown old HTTP-error bytes stay unknown.
+Measured answer/catalog time sums to 469771.335 ms, protocol to 2461.237 ms;
+parallel overlap, model/user time and authorization-maintenance waits prevent
+interpreting these sums as task wall time. One earlier initial capture lacks
+separate authorization-maintenance telemetry; its CSV fields remain empty.
+
+Postflight confirmed active service, health HTTP 200, unchanged 14 common read
+settings, and no changes to the 171 package files or configuration since the later
+preservation checkpoint. The earlier configuration-byte gap below remains open.
+The own temporary server was stopped and the reservation released before local
+analysis/review. Reacquisition must preserve intervening installed changes and
+start a new isolated-server phase; it must not assume cache continuity.
 
 ### Configuration preservation boundary
 

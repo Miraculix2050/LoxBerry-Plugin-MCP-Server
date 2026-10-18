@@ -1,0 +1,11 @@
+case_id,phase,quality_verdict,answer_class,result_call_count,catalog_call_count,guide_fetch_count,page_count,retry_count,fallback_count,error_count,timeout_count,response_bytes,catalog_response_bytes,total_response_bytes,guide_module_bytes,result_mcp_sum_ms,mcp_sum_ms,protocol_calls,protocol_response_bytes,protocol_sum_ms,catalog_description_bytes,catalog_schema_bytes,authorization_maintenance_count,authorization_maintenance_ms,adjudicated_scope
+lighting-01,cold,pass,partial,22,1,3,0,0,0,0,0,131945,500165,632110,25962,32503.121,32981.548,2,854,233.052,11601,482016,,,
+lighting-01,warm,pass,partial,18,1,0,0,0,0,0,0,55943,500165,556108,0,28793.958,29282.517,2,854,236.332,11601,482016,1,193.502,
+lighting-02,cold,pass,partial,30,1,4,0,0,7,0,0,382352,500165,882517,39928,55638.076,56120.264,2,854,234.757,11601,482016,1,565.121,
+lighting-02,warm,pass,partial,24,1,0,0,0,6,0,0,355784,500165,855949,0,36752.737,37255.296,2,854,247.897,11601,482016,1,189.777,
+lighting-03,cold,pass,partial,30,1,5,0,0,0,0,0,796997,500165,1297162,41461,87479.33,87980.27500000001,2,854,246.88,11601,482016,1,191.427,
+lighting-03,warm,pass,partial,22,1,0,0,0,0,0,0,491459,500165,991624,0,78798.78,79295.559,2,854,255.886,11601,482016,2,67829.336,
+lighting-04,cold,pass,partial,30,1,4,0,0,0,0,0,209755,500165,709920,39928,30784.339,31286.403,2,854,251.286,11601,482016,1,191.687,
+lighting-05,cold,pass,partial,19,1,3,0,0,0,0,0,100588,500165,600753,25962,26747.816,27245.141,2,854,248.37,11601,482016,1,191.548,
+lighting-05,warm,pass,partial,16,1,0,0,0,0,0,0,45253,500165,545418,0,27517.609,28015.413,2,854,248.992,11601,482016,1,211.847,
+lighting-06,cold,incomplete,partial,28,1,5,0,0,1,0,0,288929,500165,789094,41461,59809.964,60308.919,2,854,257.785,11601,482016,2,61944.779,pass_qualified_visible_project_subset_profile_not_checked
