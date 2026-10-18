@@ -300,3 +300,250 @@ def test_unknown_model_identity_cannot_establish_matching_benchmark() -> None:
     assert result["status"] == "incomplete"
     assert result["reference"]["identity_complete"] is False
     assert result["comparisons"][0]["duration_ms_change_percent"] == 0
+
+
+def capture_v2() -> dict:
+    identity = capture()["identity"]
+    identity.update(
+        {
+            "runtime": "synthetic",
+            "workload_sha256": "1" * 64,
+            "serialization": "canonical_json_utf8_v1",
+            "measurement_boundary": "synthetic",
+            "cold_conditions": "new_runtime_fresh_authorization",
+            "warm_conditions": "primed_runtime_fresh_authorization",
+        }
+    )
+    identity["tokenizer"] = identity["tokenizer_version"] = "unavailable"
+    cases = [c["id"] for c in CATALOG["cases"] if c["group"] != "knx"]
+    return {
+        "version": 2,
+        "identity": identity,
+        "plan": {"case_ids": cases, "runs_per_case": 1, "record_limit": 50},
+        "catalog_reads": [
+            {
+                "response_bytes": 1000,
+                "description_bytes": 100,
+                "schema_bytes": 500,
+                "duration_ms": 5,
+                "status": "ok",
+                "page": False,
+                "retry": False,
+                "fallback_reason": None,
+                "task": None,
+            }
+        ],
+        "runs": [
+            {
+                "case_id": c,
+                "run": 1,
+                "phase": p,
+                "outcome": "pass",
+                "optional_metrics": {m: None for m in acceptance.V2_OPTIONAL_METRICS},
+                "calls": [
+                    {
+                        "tool": name,
+                        "status": "ok",
+                        "duration_ms": 10,
+                        "response_bytes": size,
+                        "page": False,
+                        "retry": False,
+                        "fallback_reason": None,
+                        "guide_section": section,
+                        "guide_module_bytes": module,
+                    }
+                    for name, size, section, module in [
+                        ("loxone_get_skill_guide", 100, "core", 60),
+                        ("loxone_get_structure_overview", 200, None, None),
+                    ]
+                ],
+            }
+            for c in cases
+            for p in ("cold", "warm")
+        ],
+    }
+
+
+def test_v2_optional_tokens_identity_and_phase_metrics_do_not_block() -> None:
+    report = acceptance.summarize(capture_v2(), CATALOG)
+    assert report["status"] == "pass"
+    assert report["runs"] == report["record_limit"] == 50
+    assert not report["unavailable_mandatory_metrics"]
+    assert "tool_result_tokens" in report["optional_unavailable_metrics"]
+    assert report["unavailable_identity_fields"] == ["tokenizer", "tokenizer_version"]
+    row = report["results"][0]
+    assert row["response_bytes"] == row["guide_response_bytes"] + row["other_response_bytes"] == 300
+    assert row["guide_module_bytes"] == 60
+    assert row["mcp_sum_ms"] == 20
+    assert report["distributions"][0]["samples"] == 1
+    assert report["distributions"][0]["p95_kind"] == "descriptive_only_no_stability_claim"
+    assert report["acceptance"] == "requires_independent_review"
+    assert "synthetic" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("metric", ["duration_ms", "response_bytes", "guide_module_bytes"])
+def test_v2_missing_mandatory_call_metrics_are_incomplete_not_zero(metric) -> None:
+    data = capture_v2()
+    data["runs"][0]["calls"][0][metric] = None
+    report = acceptance.summarize(data, CATALOG)
+    assert report["status"] == "incomplete"
+    assert report["unavailable_mandatory_metrics"]
+    assert any(v is None for v in report["results"][0].values())
+
+
+def test_v2_counts_all_pages_retries_fallbacks_failures_and_repeated_guides() -> None:
+    data = capture_v2()
+    calls = data["runs"][0]["calls"]
+    retry = copy.deepcopy(calls[1])
+    retry.update(
+        status="timeout",
+        response_bytes=0,
+        duration_ms=50,
+        retry=True,
+        page=True,
+        fallback_reason="source_unavailable",
+    )
+    calls.extend([retry, copy.deepcopy(calls[0])])
+    row = acceptance.summarize(data, CATALOG)["results"][0]
+    assert row["call_count"] == 4
+    assert row["guide_fetch_count"] == 2
+    assert row["response_bytes"] == 400
+    assert row["guide_module_bytes"] == 120
+    assert row["page_count"] == row["retry_count"] == row["fallback_count"] == 1
+    assert row["failure_rate"] == row["timeout_rate"] == 0.25
+    assert row["mcp_sum_ms"] == 80
+
+
+def test_v2_enforces_50_record_plan_and_reports_original_question_gaps() -> None:
+    data = capture_v2()
+    data["plan"]["runs_per_case"] = 3
+    with pytest.raises(ValueError, match="plan_invalid"):
+        acceptance.validate_capture(data, CATALOG)
+    data = capture_v2()
+    data["runs"].append(copy.deepcopy(data["runs"][0]))
+    with pytest.raises(ValueError, match="run_limit"):
+        acceptance.validate_capture(data, CATALOG)
+    data = capture_v2()
+    dropped = data["plan"]["case_ids"].pop()
+    data["runs"] = [r for r in data["runs"] if r["case_id"] != dropped]
+    report = acceptance.summarize(data, CATALOG)
+    assert report["status"] == "incomplete"
+    assert report["missing_original_cases"] == [dropped]
+    data = capture_v2()
+    data["runs"].pop()
+    assert acceptance.summarize(data, CATALOG)["missing_runs"]
+
+
+def test_v2_catalog_sizes_and_conditions_are_mandatory() -> None:
+    data = capture_v2()
+    data["catalog_reads"][0]["schema_bytes"] = None
+    assert acceptance.summarize(data, CATALOG)["status"] == "incomplete"
+    data = capture_v2()
+    data["identity"]["cold_conditions"] = "unavailable"
+    assert (
+        "identity.cold_conditions"
+        in acceptance.summarize(data, CATALOG)["unavailable_mandatory_metrics"]
+    )
+
+
+@pytest.mark.parametrize("field", ["client", "client_version", "model", "guide_revision"])
+@pytest.mark.parametrize("label", ["unavailable", "unknown", "unverified"])
+def test_v2_missing_execution_identity_does_not_certify_a_matched_run(field, label) -> None:
+    data = capture_v2()
+    data["identity"][field] = label
+    report = acceptance.summarize(data, CATALOG)
+    assert report["status"] == "incomplete"
+    assert "identity." + field in report["unavailable_mandatory_metrics"]
+    assert field in report["unavailable_identity_fields"]
+    assert acceptance.compare(data, copy.deepcopy(data), CATALOG)["status"] == "incomplete"
+
+
+def test_v2_comparison_reports_bytes_counts_and_quality_without_threshold() -> None:
+    before = capture_v2()
+    after = copy.deepcopy(before)
+    after["identity"]["tokenizer_version"] = "other_optional_version"
+    after["catalog_reads"][0]["response_bytes"] = 1200
+    after["runs"][0]["calls"][1]["response_bytes"] = 100
+    report = acceptance.compare(before, after, CATALOG)
+    assert report["status"] == "measured"
+    assert report["pairs"][0]["response_bytes"]["change_percent"] == pytest.approx(-100 / 3)
+    assert report["catalog_comparison"]["response_bytes"]["change_percent"] == pytest.approx(20)
+    assert report["acceptance"] == "requires_independent_quality_equivalence_and_performance_review"
+    after["runs"][0]["outcome"] = "incomplete"
+    assert acceptance.compare(before, after, CATALOG)["status"] == "incomplete"
+    after["runs"][0]["outcome"] = "fail"
+    after["runs"][0]["calls"][0]["response_bytes"] = None
+    assert acceptance.compare(before, after, CATALOG)["status"] == "fail"
+
+
+@pytest.mark.parametrize("field", ["model", "runtime", "workload_sha256", "cold_conditions"])
+def test_v2_rejects_unmatched_workload_and_environment(field) -> None:
+    before, after = capture_v2(), capture_v2()
+    after["identity"][field] = "2" * 64 if field.endswith("sha256") else "other"
+    with pytest.raises(ValueError, match="environment_mismatch"):
+        acceptance.compare(before, after, CATALOG)
+
+
+@pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf"), "10", 10**400])
+def test_v2_rejects_invalid_counters(value) -> None:
+    data = capture_v2()
+    data["runs"][0]["calls"][0]["response_bytes"] = value
+    with pytest.raises(ValueError, match="metric"):
+        acceptance.validate_capture(data, CATALOG)
+
+
+def test_v2_rejects_private_payloads_writes_and_mixed_versions() -> None:
+    data = capture_v2()
+    data["runs"][0]["calls"][0]["arguments"] = {"secret": "not-public"}
+    with pytest.raises(ValueError, match="call_invalid"):
+        acceptance.validate_capture(data, CATALOG)
+    data = capture_v2()
+    data["runs"][0]["calls"][0]["tool"] = "loxone_operate_control"
+    with pytest.raises(ValueError, match="read_workflow"):
+        acceptance.validate_capture(data, CATALOG)
+    with pytest.raises(ValueError, match="version_mismatch"):
+        acceptance.compare(capture(), capture_v2(), CATALOG)
+
+
+def test_v2_catalog_calls_keep_task_timing_retries_pages_and_failures_separate() -> None:
+    data = capture_v2()
+    row = data["runs"][0]
+    data["catalog_reads"][0]["task"] = {k: row[k] for k in ("case_id", "run", "phase")}
+    retry = copy.deepcopy(data["catalog_reads"][0])
+    retry.update(
+        duration_ms=15,
+        status="timeout",
+        page=True,
+        retry=True,
+        fallback_reason="tool_error",
+        response_bytes=0,
+        description_bytes=0,
+        schema_bytes=0,
+    )
+    data["catalog_reads"].append(retry)
+    report = acceptance.summarize(data, CATALOG)
+    totals = report["results"][0]
+    assert totals["mcp_sum_ms"] == 40
+    assert totals["result_mcp_sum_ms"] == 20
+    assert totals["catalog_call_count"] == 2
+    assert totals["call_count"] == 4
+    assert totals["page_count"] == totals["retry_count"] == totals["fallback_count"] == 1
+    assert totals["timeout_rate"] == 0.25
+    assert totals["catalog_response_bytes"] == 1000
+    assert totals["response_bytes"] == 300  # Result traffic excludes the catalog.
+    assert totals["total_response_bytes"] == 1300
+    assert report["catalog_call_totals"]["mcp_sum_ms"] == 20
+    assert report["setup_catalog_call_totals"]["call_count"] == 0
+    assert report["results"][1]["mcp_sum_ms"] == 20
+
+
+def test_v2_setup_catalog_calls_and_missing_catalog_timings_are_visible() -> None:
+    data = capture_v2()
+    report = acceptance.summarize(data, CATALOG)
+    assert report["setup_catalog_call_totals"]["mcp_sum_ms"] == 5
+    data["catalog_reads"][0]["duration_ms"] = None
+    assert acceptance.summarize(data, CATALOG)["status"] == "incomplete"
+    data = capture_v2()
+    data["catalog_reads"][0]["task"] = {"case_id": "unknown", "run": 1, "phase": "cold"}
+    with pytest.raises(ValueError, match="catalog_task_invalid"):
+        acceptance.validate_capture(data, CATALOG)

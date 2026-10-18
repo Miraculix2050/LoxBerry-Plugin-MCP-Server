@@ -1,5 +1,11 @@
 # Analysis questions: support and boundaries
 
+Renewed #485 acceptance uses bytes, complete call counts, cold/warm durations and
+domain answer quality. Token metrics are optional; bytes do not establish token
+or cost savings. The confirmed limit remains 50 answer records. Changing the
+criteria does not constitute passed acceptance; earlier measurements retain their
+evidenced limitations.
+
 PR 6 adds [qualitative radiation-class peers](comparable-days.en.md) under an
 explicitly owner-assumed native mapping. Unexpected values remain in the archive
 and appear as bounded diagnostics with an AI warning and correlated sanitized

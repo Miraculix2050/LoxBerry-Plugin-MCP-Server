@@ -1,5 +1,11 @@
 # Analysefragen: Support und Grenzen
 
+Für die erneute Abnahme in #485 gelten Bytes, vollständige Aufrufzahlen,
+Kalt-/Warm-Laufzeiten und fachliche Antwortqualität. Tokenwerte sind optional;
+aus Bytes werden keine Token- oder Kosteneinsparungen abgeleitet. Die bestätigte
+Obergrenze bleibt bei 50 Antwortdatensätzen. Diese Änderung der Kriterien ist
+keine bestandene Abnahme; frühere Messungen behalten ihre belegten Grenzen.
+
 PR 6 ergänzt [qualitative Strahlungsklassen-Peers](comparable-days.de.md) mit
 einer ausdrücklich angenommenen nativen Zuordnung. Unerwartete Werte bleiben
 in der Historie und erscheinen als begrenzte Diagnostik mit KI-Warnung und
