@@ -509,6 +509,9 @@
         return;
       }
       elements.summary.append(element('h2', {text: state.selectedTool.name}));
+      if (state.selectedTool.name === 'loxone_plan_loads') {
+        elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('planningNotice')}));
+      }
       const description = state.selectedTool.description || '';
       if (description.length > 180) {
         const excerpt = description.slice(0, 100).replace(/\s+\S*$/, '').trimEnd();
@@ -602,6 +605,30 @@
         collapseResult: label('collapseResult'),
         moreResults: label('moreResults'),
       }, actions.openTransfer));
+      if (context?.tool === 'loxone_plan_loads' && displayed?.ok &&
+          displayed.data?.method_version === 'conditional_load_planning.v1') {
+        const summary = element('div', {className: 'mcp-explorer-stack'});
+        summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('planningNotice')}));
+        if (displayed.data.status === 'unavailable') {
+          summary.append(element('p', {className: 'mcp-explorer-warning', text: label('planningUnavailable')}));
+        }
+        for (const row of (displayed.data.allocations || []).slice(0, 16)) {
+          const card = element('div', {className: 'mcp-explorer-stack'});
+          card.append(element('strong', {text: row.binding_id}));
+          const start = new Date(row.start * 1000);
+          const end = new Date(row.end * 1000);
+          if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())) {
+            card.append(element('p', {text: `${start.toISOString()} – ${end.toISOString()} (UTC)`}));
+          }
+          card.append(element('p', {text: `${label('planningPv')}: ${row.conditional_pv_wh} Wh; ${label('planningGrid')}: ${row.additional_grid_wh} Wh`}));
+          summary.append(card);
+        }
+        elements.resultTree.prepend(summary);
+      }
+      if (context?.tool === 'loxone_read_controls' && displayed?.ok &&
+          displayed.data?.items?.[0]?.native_result?.source_kind === 'native_pv_forecast') {
+        elements.resultTree.prepend(element('p', {className: 'mcp-explorer-hint-notice', text: label('pvpfNotice')}));
+      }
       if (displayed?.ok && ['loxone_find_project_objects', 'loxone_describe_project_object'].includes(context?.tool)) {
         const records = context.tool === 'loxone_find_project_objects'
           ? displayed.data?.items || [] : [displayed.data];

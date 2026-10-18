@@ -52,6 +52,18 @@ planning share two analysis slots. One PVPF forecast is read per plan; search
 performs no source I/O. Results describe conditional PV coverage and additional
 grid energy, not measured savings, an optimal schedule or operating permission.
 
+## Tool Explorer
+
+In the authenticated Explorer first discover PVPF, then select
+`loxone_read_controls`, one target and `native_result_view=pv_forecast`.
+For `loxone_plan_loads`, use the JSON editor for the structured `options` object
+and the confirmed profile identifiers. Submit the explicit scenarios; the UI
+never chooses a battery reserve or operates a device. Conditional windows show
+UTC boundaries, PV coverage and additional grid energy; the full result retains
+assumptions, conditions and unplanned reasons. An unavailable source has a
+separate visible explanation. No configuration change is needed to expose the
+new tools after the plugin update.
+
 A current native `ready=0` returns `not_ready` without requesting unavailable hourly data. Authorization and source visibility are still rechecked.
 
 An unknown or stale current native lock is explicitly reported as `native_current_lock_unresolved`; it is never a confirmed clear lock.
