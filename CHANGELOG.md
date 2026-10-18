@@ -10,6 +10,9 @@ extracted from the matching version heading.
   compatibility across reads and existing source selection. Deliver shared-state
   events to every explicitly configured source pair (#553, follow-up #219).
 
+- Explain request-local energy context, real versus hypothetical loads and unresolved
+  associations in the bilingual Explorer and task-scoped skill (#556).
+
 - Add optional request-local energy planning with explicit plant coverage, up to
   four PVPFs in one confirmed supply budget, profile or declared real cycles and
   separately labelled hypothetical loads. Preserve legacy requests/results and

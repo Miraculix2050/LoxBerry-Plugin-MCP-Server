@@ -1202,6 +1202,40 @@ models use existing history, declared energy is a uniform estimate. Preserve
 conditional results, unknown future locks, hourly/subhour limitations and source
 status; never turn suggestions into device actions or guaranteed savings.
 
+
+### Request-local energy context
+
+For future planning, choose legacy profile selection OR `analysis_context` in
+`options`, never both. Contexts select one EFM or an explicit scenario, production
+assets with exact forecast coverage, and profile/real/hypothetical loads. Keep
+start/end/timezone and baseload/storage scenarios explicit. Never assume one PV,
+EFM, weather source or consumer per installation. Independent supplies require
+separate requests; their plans are not coordinated energy reservations.
+
+Use at most four distinct PVPFs only with confirmed common supply and disjoint
+asset coverage. Do not sum an aggregate forecast and forecasts for included
+plants. Unknown overlap needs clarification. Native EFM membership comes only
+from configured source references, not names, categories or user declarations.
+Additional non-member loads require a scenario. A visualization-only PVPF does
+not require invented wiring: clarify the intended production coverage instead.
+
+A real visible control without a dedicated meter may use a user-confirmed complete
+declared cycle, duration and energy, labelled uniform estimate. A hypothetical
+load has no device identity and must use scenario_assumption origin. Neither
+metadata nor a switching command proves measured running. For unknown socket
+loads suggest a description naming the actual device, electrical circuit,
+measurement/estimate and operating restrictions; ask only for facts not in sources.
+Do not auto-write descriptions, confirmations, profiles or recorders. Existing
+profiles are optional reusable declarations and never replace fresh authorization.
+
+The context result conditional_context_planning.v1 reports individual forecasts,
+coverage, association provenance, real/hypothetical kinds and unresolved feedback.
+Unknown native locks remain conditions. Do not upgrade scenarios to physical
+installation facts, device permission, measured savings or positive hardware
+acceptance. A confirmed declared cycle for a real device can satisfy the real-load
+model gate; purely hypothetical cycles cannot. Source production acceptance still
+requires actual native forecasts captured before comparison intervals.
+
 Load core rules first. Core and operations contain all mandatory MCP write
 prerequisites. Read modules are needed only to interpret additional evidence.
 
