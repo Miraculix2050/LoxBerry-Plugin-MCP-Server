@@ -12,6 +12,17 @@ do not publish a competing resolver or introduce another profile abstraction.
 Lighting PRs start from its merged master. The plan-recording PR changes no runtime
 behavior and does not claim that any of the acceptance gates below have passed.
 
+Coordination with the #559 owner confirmed these shared interfaces:
+`read_profile_bindings`, `resolve_source_association` and
+`SourceSnapshot.capture/validate`. Lighting adapters use them rather than adding
+another resolver. Typed light selections belong to the lighting domain. Preserve
+the released energy provenance values; represent unresolved light relationships
+as lighting diagnostics, not a new energy origin. Runtime child IDs remain exact
+keys; published profile models retain their existing UUID contract. Profile
+state/statistic membership is already checked by `project_profile.evidence`;
+direct profileless mood/state selections require exact adapter-level membership
+checks against fresh visible sources. The unaccepted local prototype is not merged.
+
 ## Goal and boundaries
 
 Answer the six collected lighting questions with evidence-backed findings,
