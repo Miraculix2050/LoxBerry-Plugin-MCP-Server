@@ -341,7 +341,9 @@ def _calculate(
         guidance.append(
             "selected_irradiance_has_no_complete_hours_no_backfill_enable_or_continue_recording"
             if "irradiance" in normalized
-            else "admin_register_independent_irradiance_with_documented_unit_cadence_and_enable_recording"
+            else (
+                "admin_register_independent_irradiance_with_documented_unit_cadence_and_enable_recording"
+            )
         )
     if not temperatures:
         guidance.append(
@@ -537,6 +539,6 @@ async def numerical_day_analysis(
         or MiniserverEndpoint.parse(current.loxone_endpoint).origin != runtime.endpoint.origin
     ):
         raise ControlOperationError("permission_denied", "Solar history configuration changed")
-    for summary in result.solar_sources:
-        summary.recording_enabled = current.solar_history_enabled
+    for solar_summary in result.solar_sources:
+        solar_summary.recording_enabled = current.solar_history_enabled
     return result, count

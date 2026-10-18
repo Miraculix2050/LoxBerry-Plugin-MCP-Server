@@ -2036,7 +2036,10 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1"' in template
+    assert (
+        'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1"'
+        in template
+    )
     assert (
         '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>'
         '-collapsible-v2">' in explorer
@@ -2956,7 +2959,10 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1"' in template
+    assert (
+        'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1"'
+        in template
+    )
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
