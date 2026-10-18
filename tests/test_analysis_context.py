@@ -149,6 +149,8 @@ def test_hypothetical_load_cannot_claim_real_source_or_native_membership():
     value = EnergyAnalysisContext.model_validate(doc)
     rows = resolve_membership(value, controls(), {})
     assert rows[-1].control_uuid is None
+    assert value.loads[0].cycle.flexibility("pump").cycle_identity == "active_episode_only"
+    assert resolve_membership(value, controls(), {"pump": LOAD})[-1].control_uuid is None
     doc["scope"].update(kind="efm", monitor_uuid=MONITOR)
     with pytest.raises(ValidationError):
         EnergyAnalysisContext.model_validate(doc)

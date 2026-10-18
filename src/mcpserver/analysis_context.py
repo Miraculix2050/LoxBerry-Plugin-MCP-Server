@@ -80,7 +80,11 @@ class DeclaredCycle(ContextContract):
             {
                 **self.model_dump(exclude={"origin", "cycle_energy_wh"}),
                 "operating_binding_id": load_id,
-                "cycle_identity": "user_confirmed_cycle",
+                "cycle_identity": (
+                    "user_confirmed_cycle"
+                    if self.origin == "user_confirmed"
+                    else "active_episode_only"
+                ),
                 "energy_profile_origin": "user_declared",
                 "declared_cycle_energy_wh": self.cycle_energy_wh,
             }
@@ -222,7 +226,11 @@ def resolve_membership(
     ] + [
         (
             load.load_id,
-            load.control_uuid if load.kind == "real" else load_controls.get(load.load_id),
+            load.control_uuid
+            if load.kind == "real"
+            else load_controls.get(load.load_id)
+            if load.kind == "profile"
+            else None,
             "scenario_assumption"
             if load.kind == "hypothetical"
             else load.cycle.origin
