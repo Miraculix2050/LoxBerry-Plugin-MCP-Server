@@ -71,3 +71,5 @@ Next: [Troubleshooting](troubleshooting.en.md).
 
 
 Read core first, then only the workflow sections selected by its task index. Before a write load core, operations and the relevant read module. If section retrieval fails use the complete guide; if that also fails stop the affected workflow. The legacy full-guide tool default and URI remain available.
+
+Tool descriptions summarize purpose, decisive prerequisites and limitations. Read parameter bounds and selection rules in the schema fields; retrieve longer recipes through the core task index. Statistic series are not an energy balance, advertised history metadata is not retrieved period evidence, and project reachability is not historical causation.

@@ -760,3 +760,10 @@ The existing scalar selector and aggregate comparison behavior remain intact.
 Original companion control/state anchors are retained privately with the trusted
 fingerprint. Old-source visibility checks use those original anchors, never a
 reused current binding ID. Private references are withheld from every projection.
+
+
+Routing descriptions identify purpose, decisive prerequisites and limitations.
+Field help owns parameter selection and bounds; the canonical workflow modules
+own longer recipes. Native values, supplemental calculations, statistic-series
+reads, observability metadata and historical causation remain distinct. The
+routing revision changes no tool names, defaults, bounds or authorization.

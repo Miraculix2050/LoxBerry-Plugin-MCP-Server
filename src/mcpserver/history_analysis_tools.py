@@ -713,31 +713,62 @@ def register_history_analysis_tool(
     @server.tool(
         name="loxone_analyze_history",
         description=(
-            "Compute compact temperature, energy, state duration, consumer ranking, PV/load "
-            "windows, operating phases, nighttime estimates or qualitative radiation-class "
-            "comparable days. Classes do not establish radiation energy or normalized yield. "
-            "Operating phases can describe confirmed load activity cycles. "
-            "Retrospective shift analysis provides conditional shared-export absorption "
-            "examples with unproven admissibility and unknown native locks; no scheduling "
-            "or saving claim. "
-            "Interval energy analysis requires hour granularity; "
-            "non-hourly aggregates remain unqualified. "
-            "Exact sources or confirmed "
-            "visible profile bindings; UTC half-open "
-            "period and explicit IANA timezone. Requires loxone:read and loxone:history. "
-            "No raw data unless requested."
+            "Compute bounded historical summaries and comparisons from exact sources or confirmed "
+            "visible profile bindings. Requires loxone:read and loxone:history. Source semantics "
+            "and coverage qualify findings; overlap is not solar attribution, and shift examples "
+            "do not establish admissibility or savings. Raw evidence is opt-in. See history and "
+            "energy guidance."
         ),
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
         structured_output=True,
     )
     async def analyze_history(
-        operation: AnalysisOperation,
-        sources: Annotated[
-            list[AnalysisSource | WeatherAnalysisSource], Field(min_length=1, max_length=16)
+        operation: Annotated[
+            AnalysisOperation,
+            Field(
+                description=(
+                    "Interval energy requires hour granularity. Comparable-day classes do not "
+                    "establish radiation energy or normalized yield. Retrospective shifts are "
+                    "conditional, with unknown native locks and unproven admissibility; no "
+                    "scheduling or savings claim."
+                )
+            ),
         ],
-        start: Annotated[str, Field(max_length=64, json_schema_extra={"format": "date-time"})],
-        end: Annotated[str, Field(max_length=64, json_schema_extra={"format": "date-time"})],
-        timezone: Annotated[str, Field(min_length=1, max_length=128)],
+        sources: Annotated[
+            list[AnalysisSource | WeatherAnalysisSource],
+            Field(
+                min_length=1,
+                max_length=16,
+                description=(
+                    "Exact advertised source IDs or currently confirmed visible profile bindings; "
+                    "roles do not establish technical quantities."
+                ),
+            ),
+        ],
+        start: Annotated[
+            str,
+            Field(
+                max_length=64,
+                description="Inclusive RFC3339 UTC instant; half-open analysis interval.",
+                json_schema_extra={"format": "date-time"},
+            ),
+        ],
+        end: Annotated[
+            str,
+            Field(
+                max_length=64,
+                description="Exclusive RFC3339 UTC instant; half-open analysis interval.",
+                json_schema_extra={"format": "date-time"},
+            ),
+        ],
+        timezone: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=128,
+                description="Explicit IANA timezone for local calendar analysis, including DST.",
+            ),
+        ],
         include_raw: bool = False,
         cursor: Annotated[str | None, Field(max_length=512)] = None,
         comparison_options: ComparisonOptions | None = None,
