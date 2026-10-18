@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add versioned offline #485 acceptance captures for complete-workflow UTF-8
+  bytes, calls/pages/retries/fallbacks and cold/warm MCP timings with a 50-record
+  plan limit. Make token/phase telemetry optional in v2, preserve historical v1
+  evidence and require independent quality and performance review.
+
 - Reuse checked MCP output validators per server and tool schema while retaining
   complete validation of every structured answer, schema-change detection and
   per-call authorization. No new performance measurements are claimed (#529).
