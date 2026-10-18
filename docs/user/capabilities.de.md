@@ -375,6 +375,15 @@ begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reas
 liefert opake `model_sources`; identische KNX-Quellvorkommen aus getrennten Modellquellen werden
 einmal als logisches Objekt mit `source_occurrence_count` und `model_source_ids` dargestellt.
 Gleiche Titel oder Gruppenadressen führen nie zu einer solchen Zusammenführung.
+Für `SysVar`, `DigitalIn`, `Actor`, `Online`, `Mode` und `VoltageOut` löst Modellversion
+15 außerdem belegte quellenübergreifende UUID-Vorkommen mit gleicher oder ergänzender
+expliziter Anschlusstopologie auf. Konflikte und unzureichende Belege bleiben mehrdeutig.
+`source_project_node_ids` erhält physische Referenzen; `logical_identity` erklärt die
+Klassifikation mit einem festen Grund und begrenzten Kandidatenreferenzen. Beschreibung
+und Trace berücksichtigen alle bestätigten Vorkommen innerhalb ihrer üblichen Grenzen.
+Dies belegt nur statische Identität und Verdrahtung, keine Berechtigung oder physische Wirkung.
+Exakte Quell-ID-Filter prüfen jedes dargestellte Vorkommen.
+Die Textsuche prüft ebenfalls alle dargestellten physischen Knoten- und Quell-IDs.
 Projektmodellversion 13 erlaubt einem `OutputRef` ohne lokales Ziel, über eine
 exakte normalisierte UUID auf einen
 eindeutigen `VirtualOutCmd` in einer anderen Modellquelle desselben autorisierten

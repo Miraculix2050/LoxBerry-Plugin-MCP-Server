@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Resolve verified cross-source project UUID occurrences for six bounded block
+  families while preserving conflicts as ambiguous, physical provenance and
+  complementary topology in bounded descriptions and traces (#218).
+
 - Add bounded source-proven LightControllerV2 mood context to the existing control
   description tool; retain operation validation and count guide resource reads in
   offline workflow captures (#442, #443). Centralize all mandatory write guidance

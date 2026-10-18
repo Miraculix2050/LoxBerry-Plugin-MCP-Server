@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .decoder import decode_loxcc
+from .identity import IdentityEvidence, logical_runtime_nodes
 from .knx_datatypes import verified_knx_format
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
@@ -20,7 +21,7 @@ from .semantics import (
     signal_use_rules,
 )
 
-PROJECT_MODEL_VERSION = 14
+PROJECT_MODEL_VERSION = 15
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
 _DIAGNOSTIC_LABEL_LIMIT = 100
@@ -176,6 +177,15 @@ class ProjectSnapshot:
     # Successful loaders inspect every admitted source or fail the whole load.
     # Diagnostic presentation truncation is independent of source ingestion.
     source_ingestion_complete: bool = field(default=True, kw_only=True)
+    logical_identity: Mapping[str, IdentityEvidence] = field(
+        default_factory=dict, repr=False, kw_only=True
+    )
+    _logical_occurrences: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False, kw_only=True
+    )
+    _logical_ports: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False, kw_only=True
+    )
     _logical_alias_lookup: Mapping[str, str] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -195,6 +205,8 @@ class ProjectSnapshot:
 
     def occurrence_keys_for(self, key: str) -> tuple[str, ...]:
         canonical = self.canonical_node_key(key)
+        if self._logical_occurrences:
+            return self._logical_occurrences.get(canonical, (key,))
         aliases = self._logical_alias_lookup or dict(self.logical_aliases)
         return tuple(alias for alias, target in aliases.items() if target == canonical) or (key,)
 
@@ -629,6 +641,7 @@ def build_snapshot(
     projects: list[ProjectPartSummary] = []
     parsed_projects: list[tuple[str, ParsedProject]] = []
     anomalies: list[tuple[str, int | None, str]] = []
+    unmodeled_node_keys: set[str] = set()
     for member in bundle.files:
         data = decode_loxcc(member.content, limits)
         total_bytes += len(data)
@@ -641,11 +654,30 @@ def build_snapshot(
             raise ProjectError("project_parse_limit")
         namespace = hashlib.sha256(member.key.encode()).hexdigest()[:24]
         parsed_projects.append((namespace, project))
+        owners: list[int | None] = []
+        for index, element in enumerate(project.elements):
+            owner = (
+                index
+                if element.tag in {"C", "Co"}
+                else (owners[element.parent] if element.parent is not None else None)
+            )
+            owners.append(owner)
+            if owner is not None and (
+                any(isinstance(value, str) and value.strip() for value in element.content)
+                or element.tag not in {"C", "Co", "In"}
+                or (
+                    element.tag == "In"
+                    and (len(element.attributes) != 1 or element.attributes[0][0] != "Input")
+                )
+            ):
+                unmodeled_node_keys.add(f"{namespace}:{owner}")
         for index, code in project.anomalies:
             context: int | None = index
             while context is not None and project.elements[context].tag not in {"C", "Co"}:
                 context = project.elements[context].parent
             anomalies.append((namespace, context, code))
+            if context is not None:
+                unmodeled_node_keys.add(f"{namespace}:{context}")
         projects.append(
             ProjectPartSummary(
                 namespace,
@@ -655,11 +687,30 @@ def build_snapshot(
         )
     graph = build_graph(tuple(parsed_projects), limits)
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
+    runtime_aliases, runtime_sources, identity_evidence = logical_runtime_nodes(
+        graph, unmodeled_node_keys=frozenset(unmodeled_node_keys)
+    )
+    logical_aliases = tuple(sorted((*logical_aliases, *runtime_aliases)))
+    logical_source_ids = tuple(sorted((*logical_source_ids, *runtime_sources)))
+    occurrences: dict[str, list[str]] = defaultdict(list)
+    for key, canonical in logical_aliases:
+        occurrences[canonical].append(key)
     # These private dicts are constructed once with the immutable snapshot and
     # never exposed to callers. They must remain pickle-compatible because the
     # isolated project worker returns snapshots over its local IPC boundary.
     alias_lookup = dict(logical_aliases)
     source_lookup = dict(logical_source_ids)
+    raw_nodes = {node.key: node for node in graph.nodes}
+    port_groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for edge in graph.edges:
+        if edge.kind != "contains" or edge.source not in identity_evidence:
+            continue
+        port_canonical = alias_lookup.get(edge.source)
+        child = raw_nodes[edge.target]
+        port = dict(child.attributes).get("K")
+        if port_canonical is not None and child.kind == "connector" and port:
+            port_groups[port_canonical, port].append(child.key)
+    port_lookup = {key: tuple(sorted(group)) for group in port_groups.values() for key in group}
     logical_nodes = tuple(
         node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
     )
@@ -674,4 +725,7 @@ def build_snapshot(
         alias_lookup,
         source_lookup,
         logical_nodes,
+        logical_identity=identity_evidence,
+        _logical_occurrences={key: tuple(values) for key, values in occurrences.items()},
+        _logical_ports=port_lookup,
     )

@@ -1451,7 +1451,26 @@ class ProjectApiConnectorData(BaseModel):
     rule_id: Literal["api_connector_metadata_v1"]
 
 
+class ProjectLogicalIdentityData(BaseModel):
+    classification: Literal["single_source", "equivalent", "complementary", "ambiguous"]
+    reason: Literal[
+        "single_occurrence",
+        "equal_topology",
+        "disjoint_connectors",
+        "duplicate_source",
+        "type_conflict",
+        "attribute_conflict",
+        "topology_conflict",
+        "topology_unresolved",
+        "source_limit",
+    ]
+    candidate_project_node_ids: list[str] = Field(max_length=32)
+    candidates_omitted: int = Field(default=0, ge=0)
+
+
 class ProjectNodeSummaryData(BaseModel):
+    source_project_node_ids: list[str] = Field(default_factory=list, max_length=32)
+    logical_identity: ProjectLogicalIdentityData | None = None
     api_connector: ProjectApiConnectorData | None = None
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -1518,6 +1537,8 @@ class ProjectStateFlowData(BaseModel):
 
 
 class ProjectNodeData(BaseModel):
+    source_project_node_ids: list[str] = Field(default_factory=list, max_length=32)
+    logical_identity: ProjectLogicalIdentityData | None = None
     api_connector: ProjectApiConnectorData | None = None
     state_table: ProjectStateTableData | None = None
     state_semantics: ProjectStateFlowData | None = None
