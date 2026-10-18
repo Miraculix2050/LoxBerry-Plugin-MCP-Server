@@ -21,3 +21,5 @@ do not account for inverter limitations; compare them with real production.
 The PVPF needs an active Loxone Weather Service and a configured installed kWp
 value. Report missing setup; do not activate, subscribe or reconfigure automatically.
 Native forecast support is distinct from the existing W/m² weather guidance.
+
+A current native `ready=0` returns `not_ready` without requesting unavailable hourly data. Authorization and source visibility are still rechecked.

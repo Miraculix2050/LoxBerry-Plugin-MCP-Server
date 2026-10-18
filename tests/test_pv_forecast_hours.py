@@ -144,7 +144,13 @@ async def test_invalid_target_returns_stable_error():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("revoke", [False, True])
-async def test_native_read_once_with_visibility_recheck_and_cleanup(revoke):
+@pytest.mark.parametrize(
+    "ready,freshness,calls",
+    [(0, Freshness.CURRENT, 0), (1, Freshness.CURRENT, 1), (0, Freshness.STALE, 1)],
+)
+async def test_native_read_once_with_visibility_recheck_and_cleanup(
+    revoke, ready, freshness, calls
+):
     runtime, structure, session, token = fixture_runtime()
     control = replace(
         structure.controls[0],
@@ -160,7 +166,7 @@ async def test_native_read_once_with_visibility_recheck_and_cleanup(revoke):
     runtime.snapshot_context = snapshot_context
     runtime.token_health = SimpleNamespace(record_successful_authentication=Mock())
     runtime.cache = SimpleNamespace(
-        get=Mock(return_value=SimpleNamespace(value=0, freshness=Freshness.CURRENT))
+        get=Mock(return_value=SimpleNamespace(value=ready, freshness=freshness))
     )
     session.pv_forecast = AsyncMock(return_value="{}")
     session.load_structure = AsyncMock(
@@ -171,8 +177,12 @@ async def test_native_read_once_with_visibility_recheck_and_cleanup(revoke):
             await read_pv_forecast(runtime, access(), TARGET)
     else:
         _, _, result = await read_pv_forecast(runtime, access(), TARGET)
-        assert result.status == "not_ready"
-    session.pv_forecast.assert_awaited_once_with(ACTION)
+        assert result.status == (
+            "not_ready" if ready == 0 and freshness is Freshness.CURRENT else "incomplete"
+        )
+    assert session.pv_forecast.await_count == calls
+    if calls:
+        session.pv_forecast.assert_awaited_once_with(ACTION)
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
     runtime.token_health.record_successful_authentication.assert_called_once_with("family")

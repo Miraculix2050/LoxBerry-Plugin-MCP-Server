@@ -24,3 +24,5 @@ PVPF benötigt einen aktiven Loxone-Wetterdienst und die konfigurierte installie
 kWp-Leistung. Fehlende Einrichtung erklären; nicht automatisch aktivieren,
 abonnieren oder umkonfigurieren. Native Prognosen sind von der bestehenden
 W/m²-Wetterorientierung getrennt.
+
+Bei aktuellem nativem `ready=0` wird `not_ready` ohne Abruf nicht verfügbarer Stundenwerte zurückgegeben. Autorisierung und Quellensichtbarkeit werden weiterhin geprüft.

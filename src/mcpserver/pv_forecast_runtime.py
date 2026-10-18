@@ -67,7 +67,19 @@ async def read_pv_forecast(
             )
             if runtime.token_health is not None:
                 runtime.token_health.record_successful_authentication(access.family_id)
-            raw = await session.pv_forecast(action)
+            # A current native not-ready state has no hourly forecast to request.
+            ready_records = [
+                runtime.cache.get(snapshot.subject, state_uuid)
+                for name, state_uuid in control.state_uuids
+                if name == "ready"
+            ]
+            not_ready = any(
+                record.freshness is Freshness.CURRENT
+                and type(record.value) in {int, float}
+                and record.value == 0
+                for record in ready_records
+            )
+            raw = "{}" if not_ready else await session.pv_forecast(action)
             refreshed = await session.load_structure()
             after = visible_pvpf(refreshed, uuid)
             if (
