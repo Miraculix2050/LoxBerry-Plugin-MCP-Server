@@ -87,8 +87,11 @@ A v2 object has exactly `version`, `identity`, `plan`, `catalog_reads`, and `run
   `serialization`, `measurement_boundary`, `cold_conditions`, `warm_conditions`.
   Labels are non-secret version/method descriptions of at most 256 characters.
   Use `unavailable` for unobservable model/client/tokenizer identifiers. Optional
-  tokenizer identity and token counters do not block v2 completeness. Runtime,
-  boundary and cold/warm conditions must be specified. Digests are SHA-256 of
+  tokenizer identity and token counters do not block v2 completeness. Missing
+  mandatory execution labels (client/version, model, guide revision, environment,
+  runtime, boundary and cold/warm conditions) remain incomplete; they cannot
+  establish matched execution. Unavailable identity-field names are disclosed
+  without echoing the private labels. Digests are SHA-256 of
   canonical ASCII JSON (sorted keys, compact separators). The private workload
   digest binds caller authorization identity, source selection, period and data
   fingerprints; report only the combined identity digest publicly. Baseline/final
@@ -98,8 +101,12 @@ A v2 object has exactly `version`, `identity`, `plan`, `catalog_reads`, and `run
   `record_limit` (at most 50). Planned initial/warm records must fit the limit.
   For the current original matrix use all 25 original IDs, one run, limit 50.
 - `catalog_reads` lists every actual tools/list retrieval separately, each with
-  `response_bytes`, `description_bytes` and `schema_bytes`. Missing values are
-  `null`, not zero. Do not assume an unobserved client cache or equate offered
+  `response_bytes`, `description_bytes`, `schema_bytes`, `duration_ms`, `status`,
+  `page`, `retry`, `fallback_reason`, and `task`. Status/count labels follow the
+  call rules below. `task` is `{case_id, run, phase}` for retrievals within that
+  task, or `null` only for a measured setup retrieval outside all task intervals.
+  Unobserved client retrievals must be disclosed as a capture gap, not silently
+  classified as absent or setup. Missing numeric values are `null`, not zero. Do not assume an unobserved client cache or equate offered
   tool metadata with content inserted into model context.
 - Each run contains `case_id`, `run`, `phase` (`cold`/`warm`), independently
   adjudicated `outcome` (`pass`/`fail`/`incomplete`), `calls`, `optional_metrics`.
@@ -143,7 +150,13 @@ separately the ordered list of objects with `inputSchema` and `outputSchema`
 components reported separately, not additional traffic to add to response bytes.
 For a fetched guide module, count the actual decoded module text's UTF-8 bytes;
 its enclosing MCP response is already included in response traffic. The report
-separates guide responses from other results to avoid double-counting.
+separates guide responses from other results to avoid double-counting. Per-task
+`response_bytes` excludes catalog traffic, `catalog_response_bytes` reports the
+assigned catalog responses, and `total_response_bytes` combines them once.
+Task call counts/duration sums include assigned catalog retrievals, including
+failures, pages, retries and fallbacks. Unassigned setup catalog calls remain
+visible separately in `setup_catalog_call_totals`; all catalog calls are also
+reported together without adding description/schema component sizes as traffic.
 
 Measure each MCP call from dispatch to complete response/error/timeout using a
 monotonic clock. `mcp_sum_ms` is the sum of these measured durations, **not** wall

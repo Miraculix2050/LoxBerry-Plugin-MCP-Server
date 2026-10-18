@@ -331,10 +331,40 @@ def validate_capture_v2(document: dict, catalog: dict) -> list[dict]:
             "response_bytes",
             "description_bytes",
             "schema_bytes",
+            "duration_ms",
+            "status",
+            "page",
+            "retry",
+            "fallback_reason",
+            "task",
         }:
             raise ValueError("capture_catalog_reads_invalid")
-        if any(v is not None and (type(v) is not int or not _number(v)) for v in read.values()):
+        if any(
+            read[k] is not None and (type(read[k]) is not int or not _number(read[k]))
+            for k in ("response_bytes", "description_bytes", "schema_bytes")
+        ):
             raise ValueError("capture_counter_invalid")
+        if read["duration_ms"] is not None and not _number(read["duration_ms"]):
+            raise ValueError("capture_metric_invalid")
+        if (
+            read["status"] not in ("ok", "error", "timeout")
+            or any(type(read[k]) is not bool for k in ("page", "retry"))
+            or (
+                read["fallback_reason"] is not None
+                and read["fallback_reason"] not in FALLBACK_REASONS
+            )
+        ):
+            raise ValueError("capture_catalog_reads_invalid")
+        task = read["task"]
+        if task is not None and (
+            not isinstance(task, dict)
+            or set(task) != {"case_id", "run", "phase"}
+            or task["case_id"] not in plan["case_ids"]
+            or type(task["run"]) is not int
+            or task["run"] not in range(1, plan["runs_per_case"] + 1)
+            or task["phase"] not in ("cold", "warm")
+        ):
+            raise ValueError("capture_catalog_task_invalid")
     runs = document["runs"]
     if not isinstance(runs, list) or len(runs) > plan["record_limit"]:
         raise ValueError("capture_run_limit")
@@ -436,6 +466,28 @@ def _v2_totals(run: dict) -> dict:
     }
 
 
+def _v2_catalog_calls(reads: list[dict]) -> list[dict]:
+    return [
+        {
+            "tool": "tools/list",
+            "guide_section": None,
+            "guide_module_bytes": None,
+            **{
+                k: read[k]
+                for k in (
+                    "status",
+                    "duration_ms",
+                    "response_bytes",
+                    "page",
+                    "retry",
+                    "fallback_reason",
+                )
+            },
+        }
+        for read in reads
+    ]
+
+
 def summarize_v2(document: dict, catalog: dict) -> dict:
     runs = validate_capture_v2(document, catalog)
     plan = document["plan"]
@@ -450,18 +502,40 @@ def summarize_v2(document: dict, catalog: dict) -> dict:
     original = {c["id"] for c in catalog["cases"] if c["group"] != "knx"}
     missing_cases = sorted(original - set(plan["case_ids"]))
     unavailable = set()
-    for key in (
-        "environment",
-        "runtime",
-        "measurement_boundary",
-        "cold_conditions",
-        "warm_conditions",
-    ):
+    for key in V2_IDENTITY_FIELDS:
+        if key in {"tokenizer", "tokenizer_version"}:
+            continue
         if document["identity"][key].casefold() in {"unknown", "unavailable", "unverified"}:
             unavailable.add("identity." + key)
     rows = []
     for run in runs:
         totals = _v2_totals(run)
+        task = {k: run[k] for k in ("case_id", "run", "phase")}
+        catalog_calls = _v2_catalog_calls(
+            [r for r in document["catalog_reads"] if r["task"] == task]
+        )
+        complete = _v2_totals({"calls": run["calls"] + catalog_calls})
+        totals.update(
+            {
+                "result_call_count": len(run["calls"]),
+                "result_mcp_sum_ms": totals["mcp_sum_ms"],
+                "catalog_call_count": len(catalog_calls),
+                "catalog_response_bytes": _v2_totals({"calls": catalog_calls})["response_bytes"],
+            }
+        )
+        totals["total_response_bytes"] = complete["response_bytes"]
+        for k in (
+            "mcp_sum_ms",
+            "call_count",
+            "page_count",
+            "retry_count",
+            "fallback_count",
+            "error_count",
+            "timeout_count",
+            "failure_rate",
+            "timeout_rate",
+        ):
+            totals[k] = complete[k]
         unavailable.update(k for k, v in totals.items() if v is None)
         if not run["calls"]:
             unavailable.add("task_call_evidence")
@@ -482,7 +556,9 @@ def summarize_v2(document: dict, catalog: dict) -> dict:
             }
         )
     if not document["catalog_reads"] or any(
-        v is None for r in document["catalog_reads"] for v in r.values()
+        r[k] is None
+        for r in document["catalog_reads"]
+        for k in ("response_bytes", "description_bytes", "schema_bytes", "duration_ms")
     ):
         unavailable.add("catalog_bytes")
     failed = any(r["outcome"] == "fail" for r in runs)
@@ -513,12 +589,25 @@ def summarize_v2(document: dict, catalog: dict) -> dict:
         "catalog_sha256": digest(catalog),
         "runs": len(runs),
         "record_limit": plan["record_limit"],
+        "unavailable_identity_fields": sorted(
+            k
+            for k, v in document["identity"].items()
+            if v.casefold() in {"unknown", "unavailable", "unverified"}
+        ),
         "missing_runs": missing,
         "missing_original_cases": missing_cases,
         "unavailable_mandatory_metrics": sorted(unavailable),
         "timing_mode": "sum_of_call_durations_not_elapsed_wall_time",
         "catalog_retrieval_count": len(document["catalog_reads"]),
         "catalog_reads": document["catalog_reads"],
+        "catalog_call_totals": _v2_totals({"calls": _v2_catalog_calls(document["catalog_reads"])}),
+        "setup_catalog_call_totals": _v2_totals(
+            {
+                "calls": _v2_catalog_calls(
+                    [r for r in document["catalog_reads"] if r["task"] is None]
+                )
+            }
+        ),
         "results": rows,
         "distributions": distributions,
         "acceptance": "requires_independent_review",
@@ -569,6 +658,10 @@ def compare_v2(reference: dict, observed: dict, catalog: dict) -> dict:
             "guide_module_bytes",
             "other_response_bytes",
             "guide_fetch_count",
+            "result_call_count",
+            "catalog_call_count",
+            "catalog_response_bytes",
+            "total_response_bytes",
         ):
             old, new = base[name] if base else None, after[name]
             row[name] = {
