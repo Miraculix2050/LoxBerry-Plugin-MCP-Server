@@ -339,10 +339,16 @@ def _calculate(
     guidance = []
     if not radiation:
         guidance.append(
-            "admin_register_independent_irradiance_with_documented_unit_cadence_and_enable_recording"
+            "selected_irradiance_has_no_complete_hours_no_backfill_enable_or_continue_recording"
+            if "irradiance" in normalized
+            else "admin_register_independent_irradiance_with_documented_unit_cadence_and_enable_recording"
         )
     if not temperatures:
-        guidance.append("admin_register_outside_temperature_celsius_and_enable_recording")
+        guidance.append(
+            "selected_temperature_has_no_complete_hours_no_backfill_enable_or_continue_recording"
+            if "temperature" in normalized
+            else "admin_register_outside_temperature_celsius_and_enable_recording"
+        )
     if not pv:
         guidance.append(
             "confirm_visible_production_profile_binding_to_documented_hourly_energy_statistic"
@@ -434,7 +440,12 @@ async def numerical_day_analysis(
                 raise ValueError("one distinct local source per solar quantity required")
             seen.add(key)
             local_kinds.add(source.kind)
-            fingerprint = source.fingerprint(controls[source.control_uuid], installation)
+            try:
+                fingerprint = source.fingerprint(controls[source.control_uuid], installation)
+            except ValueError as exc:
+                raise ControlOperationError(
+                    "not_found", "Registered visible solar source is not available"
+                ) from exc
             margin = min(3600, 2 * source.sampling_period_seconds)
             await runtime._require_access(access)
             rows, consumed = await run_admitted_worker(
@@ -526,4 +537,6 @@ async def numerical_day_analysis(
         or MiniserverEndpoint.parse(current.loxone_endpoint).origin != runtime.endpoint.origin
     ):
         raise ControlOperationError("permission_denied", "Solar history configuration changed")
+    for summary in result.solar_sources:
+        summary.recording_enabled = current.solar_history_enabled
     return result, count

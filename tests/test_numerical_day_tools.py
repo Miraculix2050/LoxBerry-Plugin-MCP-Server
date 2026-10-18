@@ -89,7 +89,7 @@ def test_missing_hour_excludes_candidate_without_shrinking_reference():
     result = calculate(local=local)
     assert result.common_hour_positions == [10, 11, 12, 13]
     assert len(result.candidates) == 2 and result.group is None
-    assert result.exclusions[0].reason == "radiation_values_invalid"
+    assert result.exclusions[0].reason == "radiation_intervals_incomplete"
 
 
 def test_missing_data_gives_configuration_guidance_not_zero_yield():
@@ -300,6 +300,23 @@ async def test_revocation_and_configuration_change_prevent_output(monkeypatch, t
 async def test_hidden_and_unregistered_solar_sources_are_not_read(monkeypatch, tmp_path):
     runtime, tool, args, current = setup(monkeypatch, tmp_path)
     current[0] = replace(current[0], solar_history_sources=())
+    result = await tool.fn(**args)
+    assert not result.ok and result.data.error == "not_found"
+    runtime.authorized_statistics.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    [{"is_hidden": True}, {"format": "%.0flux"}, {"state_uuids": ()}, {"control_type": "Slider"}],
+)
+async def test_stale_registered_source_is_unavailable_not_invalid_input(
+    monkeypatch, tmp_path, change
+):
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+    runtime.structure = replace(
+        runtime.structure, controls=(replace(control(), **change), *runtime.structure.controls[1:])
+    )
     result = await tool.fn(**args)
     assert not result.ok and result.data.error == "not_found"
     runtime.authorized_statistics.assert_not_awaited()

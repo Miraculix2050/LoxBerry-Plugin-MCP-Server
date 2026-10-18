@@ -211,6 +211,10 @@ def _summary(
             return None, "duplicate_or_overlapping_intervals"
     radiation = [item.radiation_wh_m2 for item in selected]
     temperature = [item.temperature_c for item in selected]
+    if any(v is None for v in radiation):
+        return None, "radiation_intervals_incomplete"
+    if any(v is None for v in temperature):
+        return None, "temperature_observations_incomplete"
     if any(v is None or isinstance(v, bool) or not isfinite(v) or v < 0 for v in radiation):
         return None, "radiation_values_invalid"
     if any(v is None or isinstance(v, bool) or not isfinite(v) for v in temperature):
