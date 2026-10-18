@@ -438,6 +438,14 @@ did not occur. At most 20 statistic series per control are returned; omitted met
 by `native_statistics_truncated`. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap;
 `control_metadata_truncated` marks omitted text.
+`mapping_coverage` counts exact runtime controls, ambiguously mapped blocks and
+blocks lacking mapping evidence within the same bounded traversal. Canonical blocks
+count once; connectors and containers are not mapping gaps. `exact_runtime_controls`
+equals `summary.relevant_controls`. `complete` requires no mapping gaps, unresolved
+relationships or traversal/diagnostic truncation; `truncated` marks truncation.
+Missing mapping evidence does not prove physical absence. Counts apply to the whole
+analysis independently of `next_cursor` and `page_truncated`; they do not establish
+historical completeness.
 The bundled `using-loxberry-mcp` guide combines these existing tools into a
 diagnostic workflow: identify the target, check current observations and their
 timestamps, verify historical coverage for the requested period, and distinguish

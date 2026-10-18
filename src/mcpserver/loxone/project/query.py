@@ -1191,6 +1191,7 @@ class ProjectQuery:
             raise ProjectQueryError("project_query_invalid")
         directions = ("upstream", "downstream") if direction == "both" else (direction,)
         controls: dict[str, dict[str, object]] = {}
+        reached_blocks: set[str] = set()
         truncated = False
         truncation_reasons: list[str] = []
         unresolved_relationship_counts: dict[tuple[str, str], int] = {}
@@ -1235,6 +1236,8 @@ class ProjectQuery:
                 node_key = item.get("project_node_id")
                 if not isinstance(node_key, str):
                     continue
+                if self._nodes[node_key].kind == "block":
+                    reached_blocks.add(self.view.snapshot.canonical_node_key(node_key))
                 for mapping in self._mapped_nodes.get(
                     self.view.snapshot.canonical_node_key(node_key), ()
                 ):
@@ -1258,8 +1261,29 @@ class ProjectQuery:
                         and trace_direction not in record_directions
                     ):
                         record_directions.append(trace_direction)
+        ambiguous_objects = 0
+        unmapped_objects = 0
+        for block_key in reached_blocks:
+            mappings = self._mapped_nodes.get(block_key, ())
+            ambiguous_objects += any(mapping.status == "ambiguous" for mapping in mappings)
+            unmapped_objects += not any(
+                mapping.status in {"exact", "ambiguous"} for mapping in mappings
+            )
+        coverage_truncated = truncated or unresolved_truncated
         return {
             "target": self._summary(node),
+            "mapping_coverage": {
+                "exact_runtime_controls": len(controls),
+                "ambiguous_project_objects": ambiguous_objects,
+                "unmapped_project_objects": unmapped_objects,
+                "complete": not (
+                    ambiguous_objects
+                    or unmapped_objects
+                    or coverage_truncated
+                    or unresolved_relationship_counts
+                ),
+                "truncated": coverage_truncated,
+            },
             "controls": [controls[key] for key in sorted(controls)],
             "truncated": truncated,
             "truncation_reasons": truncation_reasons,

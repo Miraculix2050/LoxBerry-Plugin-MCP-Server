@@ -79,6 +79,23 @@ references. Existing controls and summary counts remain exact-only. All overlays
 require fresh visibility and existing authorization. Explicit runtime containment
 is evidence only for parent topology, never connector identity. Skill revision 98.
 
+## Target-local observability mapping coverage (#213)
+
+`loxone_analyze_observability` adds required `data.mapping_coverage` fields:
+nonnegative integer `exact_runtime_controls`, `ambiguous_project_objects`,
+`unmapped_project_objects`, and boolean `complete`, `truncated`.
+Counts use the existing bounded traces, deduplicating canonical blocks and
+excluding connectors/containers. Exact controls equal `summary.relevant_controls`
+after visibility filtering. Ambiguous blocks include candidates with an additional
+exact mapping; unmapped blocks lack both exact and ambiguous mapping evidence.
+`complete` requires zero gaps, zero unresolved relationships and no graph/semantic
+or unresolved-diagnostic truncation. Unresolved relationships alone do not set
+`truncated`. Coverage is analysis-wide and independent of `limit`, `next_cursor`
+and byte-driven `page_truncated`; truncated counts describe observed subsets.
+Missing mappings never prove absence or non-occurrence. Inputs, scopes,
+`analysis_version=1` and the project model version remain unchanged.
+The bundled project guidance is published as skill revision 99.
+
 ## KNX correction draft descriptions and retention (#524)
 
 `loxberry_prepare_knx_corrections` adds optional `metadata` in prepare mode only:

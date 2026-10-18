@@ -247,6 +247,19 @@ marks omitted metadata. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap and
 `control_metadata_truncated` marks omitted text. Missing or partial local coverage is an evidence
 gap, never proof of non-occurrence.
+`mapping_coverage` summarizes the same bounded traces across both directions,
+deduplicating canonical block identities and excluding connectors and containers.
+`exact_runtime_controls` equals `summary.relevant_controls` after the existing
+visibility filter. `ambiguous_project_objects` counts reached blocks that are
+candidates of any ambiguous mapping, even if an exact mapping also exists.
+`unmapped_project_objects` counts reached blocks with neither exact nor ambiguous
+mapping evidence in the authorized runtime view; it does not imply physical absence.
+`complete` requires no mapping gaps, no unresolved relationships and no graph,
+semantic or unresolved-diagnostic truncation. `truncated` marks those truncation
+limits, while unresolved relationships alone only clear `complete`. Counts under
+truncation describe the observed subset. Coverage is analysis-wide and independent
+of control pagination and byte-driven `page_truncated`; inspect `next_cursor` and
+page metadata separately. It never establishes historical completeness or causation.
 Each returned control also carries bounded, per-state `recommendations` for
 incomplete local coverage. They classify from the observed value and explicit
 control metadata, never from names; ambiguous behavior remains `undetermined`.

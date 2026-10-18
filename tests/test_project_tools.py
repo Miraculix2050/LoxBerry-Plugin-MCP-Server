@@ -247,6 +247,13 @@ class Query:
     def observable_controls(self, _node, **_kwargs):
         return {
             "target": self.find()[0],
+            "mapping_coverage": {
+                "exact_runtime_controls": 1,
+                "ambiguous_project_objects": 0,
+                "unmapped_project_objects": 0,
+                "complete": True,
+                "truncated": False,
+            },
             "controls": [
                 {
                     "control_uuid": "control",
@@ -516,6 +523,13 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
     assert data.controls[0].recommendations[0].state_uuid == "state-missing"
     assert "minute" not in data.controls[0].recommendations[0].interval_guidance
     assert data.summary.local_history_partial == 1
+    assert data.mapping_coverage.model_dump() == {
+        "exact_runtime_controls": data.summary.relevant_controls,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": True,
+        "truncated": False,
+    }
     assert result.stale is True
 
 
@@ -1041,6 +1055,67 @@ async def test_observability_recommendations_remain_bounded_and_paginated(monkey
     assert second.ok
     assert second.data.controls[0].control_uuid != first.data.controls[0].control_uuid
     assert len(second.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    assert first.data.page_truncated is True
+    assert first.data.mapping_coverage == second.data.mapping_coverage
+    assert first.data.mapping_coverage.exact_runtime_controls == 30
+    assert (
+        first.data.mapping_coverage.exact_runtime_controls == first.data.summary.relevant_controls
+    )
+    assert first.data.mapping_coverage.complete is True
+    assert first.data.mapping_coverage.truncated is False
+    small_page = await tool.fn(*arguments, limit=1)  # type: ignore[union-attr]
+    assert small_page.ok
+    assert len(small_page.data.controls) == 1
+    assert small_page.data.next_cursor is not None
+    assert small_page.data.page_truncated is False
+    assert small_page.data.mapping_coverage == first.data.mapping_coverage
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("ambiguous", "unmapped", "truncated"), [(0, 0, False), (2, 0, False), (0, 1, True)]
+)
+async def test_observability_coverage_keeps_gaps_without_exposing_invisible_controls(
+    monkeypatch, ambiguous, unmapped, truncated
+):
+    class CoverageQuery(Query):
+        def observable_controls(self, _node, **_kwargs):
+            analysis = super().observable_controls(_node, **_kwargs)
+            analysis["mapping_coverage"] = {
+                "exact_runtime_controls": 1,
+                "ambiguous_project_objects": ambiguous,
+                "unmapped_project_objects": unmapped,
+                "complete": not (ambiguous or unmapped or truncated),
+                "truncated": truncated,
+            }
+            return analysis
+
+    async def history_project_query(_runtime, _access):
+        structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), ())
+        return CoverageQuery(), SimpleNamespace(connected=True, structure=structure)
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-hidden")
+    register_observability_tools(server, None, None)
+    tool = server._tool_manager.get_tool("loxone_analyze_observability")
+    result = await tool.fn(  # type: ignore[union-attr]
+        "p:1", "project_node_id", "both", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"
+    )
+    assert result.ok
+    assert result.data.controls == []
+    assert result.data.summary.relevant_controls == 0
+    assert result.data.mapping_coverage.model_dump() == {
+        "exact_runtime_controls": 0,
+        "ambiguous_project_objects": ambiguous,
+        "unmapped_project_objects": unmapped,
+        "complete": not (ambiguous or unmapped or truncated),
+        "truncated": truncated,
+    }
 
 
 @pytest.mark.asyncio

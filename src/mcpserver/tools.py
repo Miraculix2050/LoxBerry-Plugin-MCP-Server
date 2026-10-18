@@ -2318,6 +2318,27 @@ class ObservabilitySummaryData(BaseModel):
     historical_unverified: int
 
 
+class ObservabilityMappingCoverageData(BaseModel):
+    """Analysis-wide mapping evidence, independent of control response pages."""
+
+    exact_runtime_controls: int = Field(
+        ge=0, description="Visible exact runtime controls; equals summary.relevant_controls."
+    )
+    ambiguous_project_objects: int = Field(
+        ge=0, description="Distinct reached canonical blocks with any ambiguous mapping candidate."
+    )
+    unmapped_project_objects: int = Field(
+        ge=0,
+        description="Reached canonical blocks without exact or ambiguous mapping evidence.",
+    )
+    complete: bool = Field(
+        description="No mapping gaps, unresolved relationships or graph/diagnostic truncation."
+    )
+    truncated: bool = Field(
+        description="Graph, semantic or unresolved-diagnostic limits reduced traversal evidence."
+    )
+
+
 class ObservabilityData(BaseModel):
     target_runtime_evidence: DerivedObservabilityControlData | None = None
     analysis_version: Literal[1] = 1
@@ -2328,6 +2349,7 @@ class ObservabilityData(BaseModel):
     start: str
     end: str
     summary: ObservabilitySummaryData
+    mapping_coverage: ObservabilityMappingCoverageData
     controls: list[ObservabilityControlData]
     next_cursor: str | None
     graph_truncated: bool
@@ -7712,6 +7734,10 @@ def register_observability_tools(
                     "end": end_time.isoformat().replace("+00:00", "Z"),
                     "summary": summary,
                     "target_runtime_evidence": target_runtime_evidence,
+"mapping_coverage": {
+                        **cast(dict[str, object], analysis["mapping_coverage"]),
+                        "exact_runtime_controls": len(source_controls),
+                    },
                     "controls": page["items"],
                     "next_cursor": page["next_cursor"],
                     "graph_truncated": analysis["truncated"],
