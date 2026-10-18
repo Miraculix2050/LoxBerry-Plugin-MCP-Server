@@ -1,10 +1,11 @@
 # Comparable days methods (PR 6)
 
-Status: Owner-approved qualitative runtime branch; numerical reference logic has no qualified runtime adapter. Review and acceptance evidence is recorded in PR #505.
-Predecessor: PR #496, merged as a9f499df. The runtime adapter and acceptance remain
-required before this package can merge. Parent issue: #439.
+Status: Qualitative runtime branch plus explicit numerical local-source adapter.
+The numerical adapter consumes Admin-confirmed observations and current confirmed
+energy-statistic bindings in the existing fresh history context. Real-source
+acceptance remains required before #509/#439 close. #501 remains independent.
 
-## Numerical reference method (no runtime adapter)
+## Numerical method and local runtime adapter
 
 The numerical pure method accepts adapter-produced hourly evidence for one to 31 contiguous
 local days. Callers cannot assert evidence-rule identifiers. A reference day and
@@ -33,25 +34,28 @@ requires an index and explicit budget. Recheck authorization/configuration befor
 output and preserve cancellation admission. Existing exact scalar AnalysisSource
 contracts cannot be relaxed to represent structured weather.
 
-The installed recorder currently has no reviewed numerical solar-radiation rule.
-Its raw numerical field, presentation formats and user-declared profile roles
-cannot qualify radiation interval energy. The integration must return explicit
-insufficient_evidence for such sources. Positive method fixtures do not prove
-real-source qualification or compatibility. Define and review the actual adapter
-qualification rules before claiming usable numerical comparisons.
+The structured-weather radiation-class field does not qualify as numerical
+radiation energy. The separate solar recorder admits only documented,
+administrator-confirmed independent W/m² observations. Bounded trapezoidal
+integration explicitly estimates Wh/m²; no extrapolation, gap above twice cadence
+or above 60 minutes is permitted. Temperature uses a recorded source state within
+60 seconds of hour start, bounded by cadence, retaining the actual sample offset.
+Native Meter energy channels additionally recognize exact decimal-place formats
+such as `0,000kWh` with their own semantic rule, invalidating only affected profile
+bindings. Roles and names alone never establish technical quantities.
 
-59 numerical reference/contract cases cover thresholds, fixed windows, missing evidence,
-source changes, DST, zero/invalid/overflow values, group completeness and deadline
-checks. Runtime/schema/Explorer/DE-EN documentation and target acceptance are still
-pending. #501 is independent, excluded from this chat and not declared passed.
+Regression cases cover thresholds, fixed windows, missing evidence, source changes,
+DST, zero/invalid/overflow values, group completeness, deadlines, source isolation
+and unchanged qualitative calls. Positive fixtures do not prove real-source
+qualification or target compatibility. See [user contract](../user/comparable-days.en.md).
 
 ## First method review corrections
 
 Only closed RadiationRule, TemperatureRule and PVRule enum objects qualify
 internal adapter evidence. Nonempty raw strings, serialized enum values and
 profile roles are rejected. Source generation and installation identity are
-mandatory. No current recorder adapter is granted qualification by these types;
-an adapter must establish each documented quantity/unit/time/interval predicate.
+mandatory. Enum objects alone do not qualify a source; adapters establish the
+quantity/unit/time/interval predicate from the registered source contract.
 
 Differences and ratios use the decimal representation of finite source summaries
 before conversion to output floats. Inclusive 15-percent/3-degree bounds and the

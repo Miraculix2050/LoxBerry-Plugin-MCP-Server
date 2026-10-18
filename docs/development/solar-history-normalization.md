@@ -9,7 +9,10 @@ caller cannot submit this contract as evidence.
 
 Observed interval radiation energy accepts Wh/m² or MJ/m²; isolated electrical
 energy accepts Wh or kWh. Only exact complete hourly intervals are used. A
-temperature source supplies a Celsius observation at the exact hour start.
+temperature source supplies a Celsius observation at the exact hour start. An
+adapter declaring cadence may instead select the nearest actual source-state
+sample within min(cadence, 60 seconds), retaining `sample_at` and explicitly
+labelling the offset model. An absent cadence preserves exact-only behavior.
 Missing observations never become zero or shrink the common comparison window.
 
 Observed irradiance samples accept W/m² with an explicit sampling period. The

@@ -45,8 +45,14 @@ def test_interval_radiation_unit_conversion(unit, value, expected):
 
 def test_temperature_requires_exact_hour_start_and_energy_retains_boundary():
     assert normalize([Observation(0, -3)], contract("temperature", "°C"))[0].value == -3
-    assert normalize([Observation(1, 20)], contract("temperature", "°C")) == ()
+    assert normalize([Observation(1, 20)], contract("temperature", "°C", cadence=None)) == ()
     assert normalize([Observation(0, 2, 3600)], contract("energy", "kWh"))[0].value == 2000
+
+
+def test_temperature_bounded_sample_offset_is_explicit():
+    hour = normalize([Observation(60, 20)], contract("temperature", "°C", cadence=60))[0]
+    assert hour.method == "within_60s_of_hour_start" and hour.sample_at == 60
+    assert normalize([Observation(61, 20)], contract("temperature", "°C", cadence=60)) == ()
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), True, -1])

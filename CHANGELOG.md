@@ -9,6 +9,12 @@ extracted from the matching version heading.
   families while preserving conflicts as ambiguous, physical provenance and
   complementary topology in bounded descriptions and traces (#218).
 
+- Connect explicit numerical comparable-day analysis to administrator-qualified
+  local observations and confirmed hourly energy bindings. Explain estimated
+  irradiance, fixed windows, weather-ranked peers, yield/self-consumption
+  differences and separately captured native forecasts; preserve qualitative
+  defaults and bounded source reads (#439, #509). Real-source acceptance remains open.
+
 - Add read-only native PV-production forecast semantics and optional local solar
   observation/forecast snapshots in the shared history store. Preserve forecast
   origin, source contracts, current caller visibility and default-off recording;

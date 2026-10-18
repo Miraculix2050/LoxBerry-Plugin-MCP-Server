@@ -193,6 +193,40 @@ yield is a circular baseline and must be excluded. Samples establish observation
 of source states, not continuous physical measurements. Recording starts now and
 never backfills history. Forecast snapshots retain forecast origin.
 
+### Numerical weather peers
+
+Use `loxone_analyze_history(operation="comparable_days")` with explicit
+`comparable_day_options.method="numerical"`, reference day, past bounds and timezone.
+Select registered Admin observation contracts with `source_kind="solar_observation"`,
+exact control/value UUIDs. Caller-supplied units/rules are forbidden. Confirm
+installation, independence from the PV under assessment, cadence and unit with a
+representative sample. Missing sources remain unavailable, with setup guidance.
+PV uses a confirmed `production` binding to hourly energy statistics; names do
+not establish roles. Prefer a direct `self_consumption` binding. PV minus export
+also requires explicit `pv_export_balance_confirmed`, equal confirmed boundaries,
+declared export direction and exclusion of storage discharge/other generation.
+No storage model or negative-value clamping is introduced.
+
+The shared fixed window uses completed hours; missing candidates cannot shrink it.
+Defaults are seasonal distance 30 days, radiation-energy tolerance 15%, temperature
+tolerance 3 °C, with stricter choices allowed. W/m² states yield explicitly estimated
+Wh/m² by bounded trapezoidal integration. Temperature may use a recorded state
+within 60 seconds of hour start; inspect actual maximum offset and coverage.
+Neither implies calibrated continuous physical measurements. Peers sort by weather
+distance, with separate strongest-negative differences. At least three complete
+peers establish a median group; PV strictly below −20% is a check candidate only.
+Weather selection is not a physical yield-normalization model. Zero denominators
+give no ratio. Keep unavailable self-consumption separate from usable PV results.
+
+Optional PVPF snapshots remain separate forecast context, never observation or
+peer-selection input. Cycle times describe the current prediction hour, not the
+complete period-energy bounds (Structure File 17.1 p.115); actual comparison stays
+`native_period_bounds_unverified`. A separately qualified hourly adapter may later
+match previously captured forecasts to exact complete actual intervals. Do not
+allocate daily forecasts to partial days or assume the native calendar timezone.
+A functioning method or synthetic
+fixture does not close #509/#439: require genuine history and a positive comparison.
+
 ### Qualitative weather peers
 
 For qualitative weather peers use `loxone_analyze_history(operation="comparable_days")`

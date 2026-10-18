@@ -90,7 +90,16 @@ and recheck access and relevant configuration before publishing.
 
 ## Compact historical calculations (#438)
 
-`operation="comparable_days"` adds a compact qualitative class branch. Select one
+`operation="comparable_days"` offers an explicit `method="numerical"` with registered
+`source_kind="solar_observation"` selectors, confirmed hourly production and optional
+self-consumption/export bindings. Tolerances can only become stricter than 15%,
+3 °C and 30 days. The output adds provenance, source coverage, metric pairs/groups,
+negative deviations, separate captured native forecast context (not a period-Ist
+comparison without documented bounds) and
+missing-source setup guidance. The generic Explorer form and JSON editor use the
+same generated unions. See [numerical contract](../user/comparable-days.en.md).
+
+The unchanged default is the compact qualitative class branch. Select one
 deduplicated `source_kind="structured_weather"`, exact `state_uuid` and
 `stored_mode="actual"`, or a confirmed actual-weather `binding_id` for
 `solar_radiation`. Scalar selector contracts remain unchanged. Strict
