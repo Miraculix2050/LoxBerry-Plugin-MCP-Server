@@ -15,11 +15,15 @@
   const snapshotMaxChars = 2 * 1024 * 1024;
   const snapshotMaxAge = 5 * 60;
   const sourcePattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{16}$/;
+  // Runtime control keys are opaque here. The server validates UUID prefixes
+  // and exact live control/state membership before preparing any chart data.
+  const boundedControlId = (value) => typeof value === 'string' && value.length > 0
+    && value.length <= 256 && [...value].length <= 128;
   let requested = [];
   try {
     const parsed = JSON.parse(new URL(window.location.href).searchParams.get('sources') || 'null');
     if (Array.isArray(parsed) && parsed.length >= 1 && parsed.length <= 4 && parsed.every(
-      (item) => item && sourcePattern.test(item.control_uuid)
+      (item) => item && boundedControlId(item.control_uuid)
         && sourcePattern.test(item.state_uuid))) requested = parsed;
   } catch { /* Invalid selections show a safe empty state. */ }
   let selection = null;

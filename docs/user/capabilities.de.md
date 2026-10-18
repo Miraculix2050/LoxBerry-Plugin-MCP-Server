@@ -6,7 +6,8 @@ erhalten; State-IDs bleiben UUIDs. Abfragen und die bestehende Quellenauswahl
 verwenden ausschließlich das sichtbare Child/State-Paar, ohne Rückfall auf Parent
 oder Geschwister. Ohne aufbewahrte lokale Historie liefert ein sichtbares Child
 `not_found`; das beweist keine Inaktivität. Aufzeichnungs- und LoxBerry-Freigaben
-bleiben unverändert.
+bleiben unverändert. Die Chart-Auswahl reicht begrenzte Control-IDs unverändert
+an dieselbe serverseitige Prüfung weiter.
 
 [English](capabilities.en.md)
 
