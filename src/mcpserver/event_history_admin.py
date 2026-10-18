@@ -836,6 +836,108 @@ def _weather_structure(config: PluginConfig) -> LoxoneStructure:
         ) from exc
 
 
+def solar_sources(action: str, payload: object) -> dict[str, Any]:
+    """Explicit local Admin source contracts, separate from MCP authorization."""
+    import hashlib
+
+    from mcpserver.installation_profile import installation_identity
+    from mcpserver.loxone.endpoint import MiniserverEndpoint
+    from mcpserver.loxone.event_history import _controls as flatten
+    from mcpserver.solar_recording import parse_sources
+
+    bridge = _bridge()
+    config = bridge._config_store().load()
+
+    def revision(value: PluginConfig) -> str:
+        document = [
+            value.solar_history_enabled,
+            [s.model_dump() for s in value.solar_history_sources],
+        ]
+        return hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
+
+    structure = _weather_structure(config)
+    identity = installation_identity(
+        MiniserverEndpoint.parse(config.loxone_endpoint).origin, structure
+    )
+    controls = {c.uuid: c for c in flatten(structure.controls) if not c.is_hidden}
+    if action == "solar_history_options":
+        choices = []
+        for control in controls.values():
+            if control.control_type == "PvProductionForecast":
+                choices.append(
+                    {
+                        "control_uuid": control.uuid,
+                        "state_uuid": None,
+                        "kind": "pv_forecast",
+                        "unit": "kWh",
+                        "name": control.name,
+                    }
+                )
+            elif control.control_type == "InfoOnlyAnalog" and control.format:
+                kind = (
+                    "irradiance"
+                    if control.format.endswith("W/m²")
+                    else "temperature"
+                    if control.format.endswith("°C")
+                    else None
+                )
+                if kind is None:
+                    continue
+                for name, state in control.state_uuids:
+                    if name == "value":
+                        choices.append(
+                            {
+                                "control_uuid": control.uuid,
+                                "state_uuid": state,
+                                "kind": kind,
+                                "unit": "W/m²" if kind == "irradiance" else "°C",
+                                "name": control.name,
+                            }
+                        )
+        return {
+            "sources": [s.model_dump() for s in config.solar_history_sources],
+            "enabled": config.solar_history_enabled,
+            "revision": revision(config),
+            "choices": choices[:100],
+            "truncated": len(choices) > 100,
+            "limitation": "choices_are_candidates_not_source_qualification",
+        }
+    _confirmed(payload)
+    if not isinstance(payload, dict) or type(payload.get("enabled")) is not bool:
+        raise bridge.AdminError("solar policy is invalid")
+    try:
+        sources = parse_sources(payload.get("sources"))
+        for source in sources:
+            selected_control = controls.get(source.control_uuid)
+            if selected_control is None:
+                raise ValueError("source is not visible")
+            source.fingerprint(selected_control, identity)
+    except ValueError as exc:
+        raise bridge.AdminError("solar source contract or visibility is invalid") from exc
+    if payload["enabled"] and not config.loxone_history_enabled:
+        raise bridge.AdminError("Loxone history must be enabled first")
+
+    def change(current: PluginConfig) -> PluginConfig:
+        _require_same_visibility_context(config, current)
+        if revision(current) != payload.get("revision"):
+            raise bridge.AdminError(
+                "solar configuration changed; reload", code="stale_configuration"
+            )
+        if payload["enabled"] and not current.loxone_history_enabled:
+            raise bridge.AdminError("Loxone history must be enabled first")
+        return replace(
+            current, solar_history_sources=sources, solar_history_enabled=payload["enabled"]
+        )
+
+    updated, changed = _apply(change)
+    return {
+        "sources": [s.model_dump() for s in updated.solar_history_sources],
+        "enabled": updated.solar_history_enabled,
+        "revision": revision(updated),
+        "changed": changed,
+    }
+
+
 def weather_sources(action: str, payload: object) -> dict[str, Any]:
     """Local authenticated Admin configures exact weather sources, independently of MCP."""
     from mcpserver.installation_profile import installation_identity

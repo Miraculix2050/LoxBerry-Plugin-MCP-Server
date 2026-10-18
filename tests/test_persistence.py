@@ -250,7 +250,7 @@ def test_admin_uncertainty_is_localized_for_ajax_and_fallback():
     assert "persistence_uncertain => $L{'AJAX.PERSISTENCE_UNCERTAIN'}" in cgi
     assert "$notice_value eq 'persistence_uncertain' ? $L{'AJAX.PERSISTENCE_UNCERTAIN'}" in cgi
     for language in ("de", "en"):
-        text = (root / f"templates/lang/language_{language}.ini").read_text()
+        text = (root / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
         assert "PERSISTENCE_UNCERTAIN=" in text
 
 

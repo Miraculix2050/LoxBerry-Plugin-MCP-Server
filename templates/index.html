@@ -109,6 +109,21 @@
         <label class="mcp-check"><input name="confirm_solar_forecast_source" type="checkbox" value="1"> <span><TMPL_VAR SETUP.SOLAR_FORECAST_CONFIRM></span></label>
         <a href="../weather4lox/" target="_blank" rel="noopener noreferrer"><TMPL_VAR SETUP.SOLAR_FORECAST_REVIEW></a>
       </fieldset>
+      <details id="solar-recorder-settings">
+        <summary><TMPL_VAR SETUP.SOLAR_HISTORY_TITLE></summary>
+        <p class="mcp-help"><TMPL_VAR SETUP.SOLAR_HISTORY_HELP></p>
+        <button id="solar-recorder-load" type="button" class="lb-button"><TMPL_VAR SETUP.SOLAR_HISTORY_LOAD></button>
+        <label for="solar-recorder-source"><TMPL_VAR SETUP.SOLAR_HISTORY_SOURCE></label>
+        <select id="solar-recorder-source" disabled></select>
+        <label for="solar-recorder-reference"><TMPL_VAR SETUP.SOLAR_HISTORY_REFERENCE></label>
+        <input id="solar-recorder-reference" type="text" maxlength="256" disabled>
+        <label class="mcp-check"><input id="solar-recorder-confirm" type="checkbox" disabled><span><TMPL_VAR SETUP.SOLAR_HISTORY_CONFIRM></span></label>
+        <button id="solar-recorder-add" type="button" class="lb-button" disabled><TMPL_VAR SETUP.SOLAR_HISTORY_ADD></button>
+        <ul id="solar-recorder-configured"></ul>
+        <label class="mcp-check"><input id="solar-recorder-enabled" type="checkbox" disabled><span><TMPL_VAR SETUP.SOLAR_HISTORY_ENABLED></span></label>
+        <button id="solar-recorder-save" type="button" class="lb-button" disabled><TMPL_VAR SETUP.SOLAR_HISTORY_SAVE></button>
+        <p id="solar-recorder-status" role="status" class="mcp-help"></p>
+      </details>
       <details id="weather-recorder-settings">
         <summary><TMPL_VAR SETUP.WEATHER_HISTORY_SOURCES></summary>
         <button id="weather-recorder-load" type="button" class="lb-button"><TMPL_VAR SETUP.WEATHER_HISTORY_LOAD></button>
@@ -390,6 +405,10 @@
 
 <TMPL_UNLESS SERVER_RENDERED_FALLBACK>
 <div id="admin-labels" hidden
+  data-l-setup-solar-history-dirty="<TMPL_VAR SETUP.SOLAR_HISTORY_DIRTY ESCAPE=HTML>"
+  data-l-setup-solar-history-saved="<TMPL_VAR SETUP.SOLAR_HISTORY_SAVED ESCAPE=HTML>"
+  data-l-setup-solar-history-confirm="<TMPL_VAR SETUP.SOLAR_HISTORY_CONFIRM ESCAPE=HTML>"
+  data-l-setup-solar-history-truncated="<TMPL_VAR SETUP.SOLAR_HISTORY_TRUNCATED ESCAPE=HTML>"
   data-l-setup-weather-history-help="<TMPL_VAR SETUP.WEATHER_HISTORY_HELP ESCAPE=HTML>"
   data-l-setup-weather-history-actual="<TMPL_VAR SETUP.WEATHER_HISTORY_ACTUAL ESCAPE=HTML>"
   data-l-setup-weather-history-forecast="<TMPL_VAR SETUP.WEATHER_HISTORY_FORECAST ESCAPE=HTML>"

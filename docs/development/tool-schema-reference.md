@@ -21,6 +21,17 @@ Text search also checks every represented physical node ID and source ID.
 Existing KNX identity rules are retained. This establishes static graph evidence,
 not physical behavior, causality or permission. No new tool or store is added.
 
+## Native PV-production forecast reads (#439)
+
+Existing state readers optionally decode exact `PvProductionForecast` fields.
+Semantics add energy/predicted_pv_energy with kWh; source-native timestamps use the
+2009 epoch. Missing companions and unavailable sentinels retain explicit status.
+The full control description adds optional `capabilities.model.pv_forecast` with
+documented and missing state names, forecast origin and time basis. No new tool,
+control action or change to read authorization is introduced. Local solar sampling
+is an independent default-off Admin setting in shared SQLite V9. See
+[source and storage contract](solar-recording.md). Skill revision 96.
+
 ## KNX correction draft descriptions and retention (#524)
 
 `loxberry_prepare_knx_corrections` adds optional `metadata` in prepare mode only:

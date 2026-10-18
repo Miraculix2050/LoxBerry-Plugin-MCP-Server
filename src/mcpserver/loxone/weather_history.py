@@ -264,7 +264,7 @@ class WeatherHistory:
             db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
             try:
                 db.execute("BEGIN")
-                if db.execute("PRAGMA user_version").fetchone()[0] != 8:
+                if db.execute("PRAGMA user_version").fetchone()[0] != 9:
                     raise EventHistoryUnavailable("local weather history needs migration")
                 rows = db.execute(
                     "SELECT p.point_at,p.fields_json,p.received_at,p.point_predates_capture "
@@ -457,7 +457,7 @@ class WeatherHistory:
                 deadline = time.monotonic() + 10
                 db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
                 db.execute("BEGIN")
-                if db.execute("PRAGMA user_version").fetchone()[0] != 8:
+                if db.execute("PRAGMA user_version").fetchone()[0] != 9:
                     raise EventHistoryUnavailable("local weather history needs migration")
                 current = int(
                     db.execute(
