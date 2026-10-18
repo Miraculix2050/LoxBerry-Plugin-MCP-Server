@@ -55,7 +55,8 @@ extracted from the matching version heading.
 
 - Report target-local mapping coverage in the Observability Analyzer, including
   ambiguous and unmapped reached blocks and conservative completeness flags;
-  keep exact runtime controls and control pagination unchanged (#213).
+  include unresolved references on appended trace boundary blocks and keep exact
+  runtime controls and control pagination unchanged (#213).
 
 - Add bounded source-proven LightControllerV2 mood context to the existing control
   description tool; retain operation validation and count guide resource reads in

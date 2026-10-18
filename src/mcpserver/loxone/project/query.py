@@ -1124,17 +1124,18 @@ class ProjectQuery:
                     edges.append(self._edge_data(relationship))
             if truncated:
                 break
+        semantic_scope = tuple(keys)
+        boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
+        trace_keys = set(keys)
         unresolved_relationships: list[dict[str, str]] = []
         unresolved_truncated = False
         for key, code in self.view.snapshot.graph.unresolved:
-            if key not in visited:
+            if key not in trace_keys:
                 continue
             if len(unresolved_relationships) >= max_nodes:
                 unresolved_truncated = True
                 break
             unresolved_relationships.append({"project_node_id": key, "code": code})
-        semantic_scope = tuple(keys)
-        boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
         signal_predecessors, signal_truncated = self._signal_predecessors(
             seeds, [*edges, *semantic_edges], direction, max_depth
         )

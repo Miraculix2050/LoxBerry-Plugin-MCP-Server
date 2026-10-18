@@ -256,7 +256,9 @@ candidates of any ambiguous mapping, even if an exact mapping also exists.
 mapping evidence in the authorized runtime view; it does not imply physical absence.
 `complete` requires no mapping gaps, no unresolved relationships and no graph,
 semantic or unresolved-diagnostic truncation. `truncated` marks those truncation
-limits, while unresolved relationships alone only clear `complete`. Counts under
+limits. Trace unresolved diagnostics include appended containing boundary blocks;
+their diagnostic count remains bounded by the existing trace limit. Unresolved
+relationships alone only clear `complete`. Counts under
 truncation describe the observed subset. Coverage is analysis-wide and independent
 of control pagination and byte-driven `page_truncated`; inspect `next_cursor` and
 page metadata separately. It never establishes historical completeness or causation.

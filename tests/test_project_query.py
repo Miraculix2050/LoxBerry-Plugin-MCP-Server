@@ -371,6 +371,38 @@ def test_observability_mapping_coverage_counts_only_the_truncated_traversal(
     }
 
 
+@pytest.mark.parametrize("diagnostics_truncated", [False, True])
+def test_observability_mapping_coverage_checks_unresolved_appended_boundaries(
+    diagnostics_truncated,
+):
+    uuid = "a" * 32
+    parsed = parse_project(f'<P><C U="{uuid}" Ref="missing"><Co U="connector"/></C></P>'.encode())
+    graph = build_graph((("p", parsed),))
+    if diagnostics_truncated:
+        graph = replace(graph, unresolved=graph.unresolved * 3)
+    snapshot = ProjectSnapshot("project", 1, (), graph)
+    project = ProjectQuery(
+        ProjectView(
+            snapshot,
+            map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=(control(uuid),))),
+        ),
+        {},
+    )
+    node = project.resolve("p:2", "project_node_id")
+    trace = project.trace(node, direction="upstream", max_depth=6, max_nodes=2)
+    assert {item["project_node_id"] for item in trace["nodes"]} == {"p:1", "p:2"}
+    assert trace["unresolved_relationships"]
+    assert trace["unresolved_truncated"] is diagnostics_truncated
+    result = project.observable_controls(node, direction="both", max_depth=6, max_nodes=2)
+    assert result["mapping_coverage"] == {
+        "exact_runtime_controls": 1,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": False,
+        "truncated": diagnostics_truncated,
+    }
+
+
 def test_source_diagnostics_are_available_without_unknown_values():
     parsed = parse_project(
         b'<P><C Type="EIBsensor" U="sensor" EibAddr="invalid" Extra="secret"/></P>'
