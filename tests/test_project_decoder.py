@@ -43,6 +43,29 @@ def test_match_boundaries_preserve_exact_output_and_limits(distance, count):
         decode_loxcc(envelope(packed, plain[:-1] + b"?"))
 
 
+@pytest.mark.parametrize("distance,count", [(1, 16), (7, 30), (257, 400), (7, 65536), (7, 65537)])
+def test_repeated_matches_retain_rotating_suffix_and_final_literal(distance, count):
+    def extension(value):
+        return b"\xff" * (value // 255) + bytes([value % 255])
+
+    seed = bytes(index % 251 for index in range(distance))
+    packed = bytearray()
+    for index in range(4):
+        literals = distance if index == 0 else 0
+        packed.append((min(literals, 15) << 4) | min(count - 4, 15))
+        if literals >= 15:
+            packed.extend(extension(literals - 15))
+        if literals:
+            packed.extend(seed)
+        packed.extend(distance.to_bytes(2, "little"))
+        if count >= 19:
+            packed.extend(extension(count - 19))
+    packed.extend(b"\x50tail!")
+    repeated = (seed * ((count * 4 + distance - 1) // distance))[: count * 4]
+    plain = seed + repeated + b"tail!"
+    assert decode_loxcc(envelope(packed, plain)) == plain
+
+
 @pytest.mark.parametrize("packed", [b"\x1fa\x01\x00", b"\x1fa\x01\x00\xff"])
 def test_missing_match_length_extension_is_rejected(packed):
     with pytest.raises(ProjectError, match="truncated|size_limit"):

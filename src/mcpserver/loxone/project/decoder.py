@@ -63,6 +63,14 @@ def decode_loxcc(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> bytes:
             start = len(output) - distance
             output.extend(output[start : start + count])
             continue
+        if count <= 65536:
+            # A single bounded chunk needs no loop or empty-tail append.
+            pattern = output[-distance:]
+            repeats, tail = divmod(count, distance)
+            output.extend(pattern * repeats)
+            if tail:
+                output.extend(pattern[:tail])
+            continue
         # Overlapping matches repeat a finite existing suffix. Copy in bounded
         # chunks rather than allocating an attacker-controlled repeat buffer.
         while count:

@@ -34,17 +34,31 @@ class KnxDptEvidence:
 def verified_knx_format(project: ParsedProject) -> bool:
     """Require exactly the evidenced, unambiguous part-local format boundary."""
     root = project.elements[0]
-    documents = [e for e in project.elements if e.value("Type") == "Document"]
-    versions = [e for e in project.elements if any(k == "ConfigVersion" for k, _ in e.attributes)]
-    return (
-        root.tag == "ControlList"
-        and [v for k, v in root.attributes if k == "Version"] == ["274"]
-        and len(documents) == 1
-        and versions == documents
-        and documents[0].tag == "C"
-        and [v for k, v in documents[0].attributes if k == "Type"] == ["Document"]
-        and [v for k, v in documents[0].attributes if k == "ConfigVersion"] == ["17020828"]
-    )
+    if root.tag != "ControlList" or [v for k, v in root.attributes if k == "Version"] != ["274"]:
+        return False
+    document_found = False
+    for element in project.elements:
+        types: list[str] = []
+        versions: list[str] = []
+        for key, value in element.attributes:
+            if key == "Type":
+                types.append(value)
+            elif key == "ConfigVersion":
+                versions.append(value)
+        if versions:
+            if (
+                document_found
+                or element.tag != "C"
+                or types != ["Document"]
+                or versions != ["17020828"]
+            ):
+                return False
+            document_found = True
+        elif types and all(value == "Document" for value in types):
+            # Equal duplicate types still identify a candidate document, which
+            # cannot establish the format without its own unique version.
+            return False
+    return document_found
 
 
 def knx_dpt_evidence(element: ProjectElement, *, verified: bool) -> KnxDptEvidence | None:

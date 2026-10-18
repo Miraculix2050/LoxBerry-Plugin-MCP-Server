@@ -2,7 +2,11 @@
 
 Issue #522 targets at most five seconds from opening or refreshing the native
 KNX page until every requested section is loaded. A green functional test run
-or an isolated CPU improvement does not satisfy that end-to-end gate.
+or an isolated CPU improvement does not establish that end-to-end target.
+The owner accepted closing this optimization iteration after snapshot work,
+review and functional live acceptance on 2026-10-18, even if the five-second
+target remains unmet. Record achieved times explicitly; closure is not evidence
+of a five-second result.
 
 ## Request boundaries
 
@@ -68,6 +72,25 @@ pipe checks passed. A fresh helper import loaded neither `importlib.metadata`
 nor `asyncio`. These checks do not establish whole-page acceptance.
 
 ## Implementation constraints and checks
+
+The snapshot follow-up combines part-local KNX format checks into one attribute
+pass and rejects an unsupported root boundary before scanning the part. Exact
+document/type/version multiplicity requirements remain unchanged. A valid-shape
+synthetic profile measured about 28% less CPU in this format-check subphase;
+this is neither the whole graph phase nor a native page-loading result.
+
+Short overlapping LZ4 matches of at most 65,536 bytes use one bounded copy
+instead of setting up the chunk loop. Larger matches retain the existing loop;
+non-overlapping matches, length/reference checks and final checksum validation
+remain unchanged. Alternating-order synthetic CPU samples showed about 17% less
+CPU for distance-one, length-16 copies. This does not reproduce the native
+compressed-match distribution and must not be projected onto total decode time.
+
+Two parser candidates were rejected after repeated CPU measurements: sharing
+attribute-name strings reduced graph IPC size by about 3% but increased parsing
+CPU, and a special closing-tag path showed no reliable benefit. Worker model
+serialization was also profiled; existing graph reducers already cover the
+dominant object types, so no additional reducer complexity was introduced.
 
 The optional platform `JSON::XS` accelerator handles only bounded ASCII helper
 responses. Request payload parsing remains unchanged. Non-ASCII responses,

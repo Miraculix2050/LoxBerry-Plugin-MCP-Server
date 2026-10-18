@@ -64,8 +64,12 @@ extracted from the matching version heading.
   overhead with numeric request timings, drain bounded helper pipes concurrently,
   defer version metadata and unrelated async imports, and use an available
   JSON::XS response decoder with the original JSON::PP fallback. Drop the unused
-  Perl HTTP client import.
-  The five-second whole-page acceptance target remains open (#522).
+  Perl HTTP client import. Combine part-local KNX format checks into one
+  attribute pass while preserving duplicate and version ambiguity handling.
+  Avoid loop setup for bounded short overlapping LZ4 matches; retain the existing
+  chunked path for larger copies, output limits and checksum verification.
+  Whole-page times remain workload-dependent; the five-second target is not
+  guaranteed. Measured improvements and remaining costs are documented (#522).
 
 - Add a lazy, paginated KNX main/middle-group view including empty imported
   groups, source-preserving address counts and global header sorting. Create,
