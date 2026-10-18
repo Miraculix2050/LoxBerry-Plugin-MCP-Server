@@ -19,6 +19,11 @@ still use new connections. Verified HTTP trust configuration is reused per clien
 Rebuilding the model can take longer, particularly after a service restart;
 a complete page-loading time below five seconds has not yet been established.
 
+The KNX helper loads solar analysis models only when they are used. With an
+empty solar source list, source models are deferred too; configured sources
+remain fully validated even when recording is disabled. Project identity and
+authorization checks remain unchanged; no additional result cache is introduced.
+
 ## Local Config file: EIBType mapping
 
 Developers can inspect a local `.Loxone` XML project file read-only:

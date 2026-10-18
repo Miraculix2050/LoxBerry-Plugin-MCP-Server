@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .graph import GraphNode, ProjectGraph
 
 SUPPORTED_TYPES = frozenset({"SysVar", "DigitalIn", "Actor", "Online", "Mode", "VoltageOut"})
+_UUID_PATTERN = re.compile("[0-9a-f]{32}")
 Classification = Literal["single_source", "equivalent", "complementary", "ambiguous"]
 Reason = Literal[
     "single_occurrence",
@@ -32,8 +33,10 @@ class IdentityEvidence:
 
 
 def _uuid(value: str | None) -> str | None:
-    normalized = (value or "").replace("-", "").lower()
-    return normalized if re.fullmatch("[0-9a-f]{32}", normalized) else None
+    if not value:
+        return None
+    normalized = value.replace("-", "").lower()
+    return normalized if _UUID_PATTERN.fullmatch(normalized) else None
 
 
 def _attributes(node: "GraphNode") -> tuple[tuple[str, str], ...]:

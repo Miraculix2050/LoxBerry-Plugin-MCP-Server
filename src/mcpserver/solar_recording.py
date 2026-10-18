@@ -15,11 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from mcpserver.loxone.pv_forecast import STATES as PVPF_STATES
 from mcpserver.loxone.pv_forecast import decode as decode_pv_forecast
 from mcpserver.loxone.uuid import normalize_loxone_uuid
-from mcpserver.solar_history import Observation
 
 if TYPE_CHECKING:
     from mcpserver.loxone.event_history import EventHistoryStore
     from mcpserver.loxone.models import Control
+    from mcpserver.solar_history import Observation
 
 
 class SolarRecordingSource(BaseModel):
@@ -212,6 +212,8 @@ class SolarHistory:
 
 
 def observations(rows: list[tuple[float, dict[str, object]]]) -> list[Observation]:
+    from mcpserver.solar_history import Observation
+
     result = []
     for at, payload in rows:
         value = payload.get("value")

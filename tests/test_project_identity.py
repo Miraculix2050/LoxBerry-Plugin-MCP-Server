@@ -242,6 +242,16 @@ def test_uuid_normalization_single_source_and_control_action_conflicts():
     assert not invalid.logical_aliases and not invalid.logical_identity
 
 
+@pytest.mark.parametrize(
+    "source_id",
+    ["", "a" * 31, "a" * 33, "g" * 32, "a" * 32 + "\n", " " + "a" * 32],
+)
+def test_invalid_uuid_forms_never_establish_cross_source_identity(source_id):
+    model = snapshot(block(uuid=source_id), block(uuid=source_id))
+    assert not model.logical_aliases
+    assert not model.logical_identity
+
+
 def test_group_bounds_order_and_unmodeled_families():
     assert len(snapshot(*[block()] * 32).logical_aliases) == 32
     model = snapshot(*[block()] * 33)

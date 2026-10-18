@@ -105,6 +105,11 @@ authoritative; the release fallback literal and public import forms remain.
 KNX helper imports do not resolve the plugin version or load unrelated async
 machinery. Required Solar configuration validation may load Python metadata for
 Pydantic's own plugin discovery; this is separate from a plugin-version lookup.
+Empty Solar source lists defer source-model imports. Nonempty or malformed lists
+still use the same authoritative validator, even with recording disabled. Solar
+observation analysis models load only when observations are actually constructed.
+For configured sources, import time can move into configuration parsing: compare
+the combined time, not the module-import span in isolation.
 Session phase logs are restricted to an active project certificate scope for the
 same endpoint. Ordinary sessions and inherited tasks after scope exit emit no
 project timings; each session still connects and authenticates independently.
@@ -118,3 +123,41 @@ hashes, configuration/catalog integrity, service health and reservation release
 with each native acceptance run. Preserve independent downloads, fresh visibility,
 final marker authentication, authorization and revision checks. Do not use cached
 private results or omit remembered sections to claim the five-second target.
+
+## Same-functionality follow-up (#552)
+
+The historical 18.283 s and 21.459 s service-cold observations used different
+functional baselines. Cross-source identity/provenance and Solar configuration
+validation were integrated between them. The measured post-graph identity and
+diagnostic span grew by 1.591 s, helper imports by 0.947 s; graph construction fell
+by 0.417 s. These nested observations are attribution clues, not a controlled
+causal comparison or proof that every remaining difference is measurement noise.
+
+A Performance-Analyzer compared pre-#536 snapshot modules from `16a8ae3a` with
+the current implementation while retaining identical model-15 identity semantics,
+project input and snapshot fields. Eight alternating fresh-process pairs on the
+development host measured median snapshot construction of 979.71 -> 446.26 ms
+(CPU 968.75 -> 437.50 ms). Every field, including private lookup dictionaries,
+was canonically identical independently of pickle reducers. This bounds the
+finding to snapshot CPU for that input; it is not native whole-page acceptance.
+
+Two local caches were rejected: attribute and UUID memoization slowed the actual
+saved project despite positive synthetic cases. Reusing the identical compiled
+UUID pattern and returning early for empty UUIDs retained all conservative
+identity checks and reduced local identity time from 87.97 to 78.85 ms across
+24 alternating pairs with identical results. No new cache or model version is
+required because interpretations remain unchanged.
+
+On reserved Loxberry-Test, eight alternating fresh-process helper probes loaded
+the same configuration with three Solar sources. Combined import and complete
+configuration validation measured median 1162.78 -> 825.61 ms, with equal parsed
+documents. The probe uses source overrides in both variants; it isolates startup
+CPU rather than reproducing Apache, CGI, OAuth or browser latency. Empty-list
+benefits must not be projected onto this configured installation.
+
+For whole-page comparison, alternate the unchanged master reference `6704f6e0`
+with only the three optimized runtime files. Keep project/configuration, shared
+OAuth session, remembered comparison, periodic polling and all security checks
+unchanged. A cold sample means restarting the plugin service, not clearing OS or
+browser caches. Record initial response completion and separately verify rendered
+rows/loading indicators. Do not call this a precise paint timestamp or p95.
