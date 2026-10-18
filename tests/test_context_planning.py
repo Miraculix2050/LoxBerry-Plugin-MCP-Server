@@ -195,3 +195,65 @@ def test_maximum_load_and_window_context_is_bounded_without_changing_legacy():
     doc["loads"].append(doc["loads"][0])
     with pytest.raises(ValidationError):
         context_options(doc)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("observed", [False, True])
+async def test_profile_cycles_keep_request_alias_and_share_one_history_read(monkeypatch, observed):
+    from test_load_flexibility import flexibility
+
+    visible = controls()
+    visible[PV] = replace(visible[LOAD], uuid=PV, control_type="PvProductionForecast")
+    structure = LoxoneStructure(
+        LoxoneIdentity("reader", SERIAL), "current", (), (), tuple(visible.values())
+    )
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", structure, True)
+
+    runtime = SimpleNamespace(
+        endpoint=SimpleNamespace(origin="http://synthetic.local"),
+        snapshot_context=snapshots,
+        cache=SimpleNamespace(
+            get=Mock(return_value=SimpleNamespace(value=None, freshness=Freshness.STALE))
+        ),
+    )
+    flex = flexibility(
+        cycle_identity="user_confirmed_cycle",
+        energy_profile_origin="observed_intervals" if observed else "user_declared",
+        declared_cycle_energy_wh=None if observed else 2000.0,
+    )
+    binding = {
+        "binding_id": "stored",
+        "control_uuid": LOAD,
+        "role": "consumer",
+        "load_constraints_usable": True,
+        "load_flexibility": flex.model_dump(),
+    }
+    operating = {
+        "binding_id": "load-active",
+        "control_uuid": LOAD,
+        "role": "operating_state",
+        "state_uuid": "active",
+    }
+    resolver = AsyncMock(return_value=({"stored": binding, "load-active": operating}, 7))
+    monkeypatch.setattr(module, "_bindings", resolver)
+    history = AsyncMock(return_value={"request-load": ((7200, 2000.0),)})
+    monkeypatch.setattr(module, "_observed_profiles", history)
+    f = forecast().model_copy(update={"prediction_at": int(time.time())})
+    monkeypatch.setattr(
+        module, "read_pv_forecasts", AsyncMock(return_value=[(visible[PV], structure, f)])
+    )
+    doc = context_document()
+    doc["loads"] = [{"load_id": "request-load", "kind": "profile", "binding_id": "stored"}]
+    result = await calculate_context_plan(
+        runtime, None, None, access(), context_options(doc), deadline=time.monotonic() + 5
+    )
+    assert result.profile_revision == 7
+    assert result.allocations[0].load_id == "request-load"
+    assert result.load_models[0].energy_origin == (
+        "observed_intervals" if observed else "user_declared_uniform"
+    )
+    assert resolver.await_count == 2
+    assert history.await_count == int(observed)
