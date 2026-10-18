@@ -202,6 +202,22 @@ async def test_temperature_needs_one_selector_and_control_path_skips_profile_mod
 
 
 @pytest.mark.asyncio
+async def test_room_presence_recipe_resolves_runtime_controls_before_project_mapping(server, tools):
+    result = await server.get_prompt("presence_light_association", {"room_uuid": "room-kitchen"})
+    text = result.messages[0].content.text
+    assert '"room_uuid": "room-kitchen"' in text
+    assert "Required modules: states, project, lighting." in text
+    assert text.index("loxone_find_controls") < text.index("loxone_find_project_objects(")
+    assert "supplied room_uuid as its exact room_uuid filter" in text
+    assert "runtime_control_uuid=selected_control_uuid" in text
+    assert "project search has no room filter" in text
+    assert "Preserve ambiguous mappings and runtime_target_mapping provenance" in text
+    assert "room_uuid" in tools["loxone_find_controls"]["inputSchema"]["properties"]
+    project_fields = tools["loxone_find_project_objects"]["inputSchema"]["properties"]
+    assert "runtime_control_uuid" in project_fields and "room_uuid" not in project_fields
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("name", CASES)
 async def test_maximum_selector_lengths_still_fit_expansion_budget(server, name):
     arguments = dict(CASES[name][0])
@@ -216,6 +232,32 @@ async def test_maximum_selector_lengths_still_fit_expansion_budget(server, name)
         arguments[field] = "a" * (64 if "binding_id" in field else 128)
     result = await server.get_prompt(name, arguments)
     assert len(result.messages[0].content.text.encode("utf-8")) <= 4096
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "name,field,choice",
+    [
+        ("lighting_naming_review", "focus", "all"),
+        ("lighting_naming_review", "focus", "names"),
+        ("lighting_naming_review", "focus", "moods"),
+        ("current_state_summary", "focus", "temperature"),
+        ("current_state_summary", "focus", "operating_state"),
+        ("consumer_pv_comparison", "focus", "overlap"),
+        ("consumer_pv_comparison", "focus", "ranking"),
+        ("energy_period_report", "period", "week"),
+        ("energy_period_report", "period", "month"),
+    ],
+)
+async def test_advertised_choices_expand_and_ranking_retains_separate_pv_read(
+    server, name, field, choice
+):
+    result = await server.get_prompt(name, {**CASES[name][0], field: choice})
+    text = result.messages[0].content.text
+    assert f'"{field}": "{choice}"' in text
+    if name == "consumer_pv_comparison" and choice == "ranking":
+        assert "Read production energy separately with operation='energy'" in text
+        assert "Do not treat selecting this prompt as confirmation" in text
 
 
 def test_recipes_map_to_versioned_scenarios_without_claiming_acceptance():

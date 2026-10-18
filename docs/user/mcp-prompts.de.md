@@ -72,6 +72,9 @@ keine Vergleichbarkeit von Messgrenzen und erlaubt keine Schreiboperation.
 - Lichtnamen und Quellstimmungen belegen weder vollständige Szeneninventare noch
   physische Lichtkreise, Szenenrollen oder professionelle Lichtplanung (#441).
   Präsenzzuordnungen brauchen explizite Projektpfade; Raumgleichheit genügt nicht.
+  Bei `room_uuid` werden zuerst sichtbare Raum-Controls gesucht und deren genaue
+  UUIDs auf Projektobjekte abgebildet; die Projektsuche hat keinen Raumfilter.
+  Mehrdeutige Zuordnungen und raumübergreifende Endpunkte bleiben sichtbar.
 - Temperaturmittel sind Stichprobenmittel, keine zeitgewichteten Mittelwerte.
   Ist- und Solltemperaturen sowie Aktualität und Abdeckung bleiben getrennt.
 - Solarberichte bleiben Komponentenberichte. Native EFM-Kalenderansichten zeigen

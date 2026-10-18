@@ -68,6 +68,9 @@ measurement-boundary comparability nor permission for writes.
 - Light names and source moods prove neither complete scene inventory nor
   physical circuits, scene roles or professional lighting design (#441).
   Presence associations require explicit project paths; room membership is insufficient.
+  With `room_uuid`, first discover visible room controls and map their exact UUIDs
+  to project objects; project search has no room filter. Preserve ambiguous
+  mappings and cross-room endpoints.
 - Temperature means are sample means, not time-weighted means. Actual/setpoint
   temperatures, freshness and coverage remain separate.
 - Solar reports remain component reports. Native EFM calendar views describe

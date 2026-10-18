@@ -188,9 +188,15 @@ def analysis_prompts() -> tuple[Prompt, ...]:
     add(
         "presence_light_association",
         "Explain project-proven presence/light connections by room.",
-        "project, lighting",
-        "Resolve visible project objects with loxone_find_project_objects, then inspect explicit "
-        "paths using loxone_trace_project_logic and exact descriptions where needed. Room "
+        "states, project, lighting",
+        "First resolve visible presence/lighting controls with loxone_find_controls, passing "
+        "the supplied room_uuid as its exact room_uuid filter and following required pages. "
+        "Use explicit types/capabilities, never names, to identify candidates. Map their returned "
+        "UUIDs with loxone_find_project_objects(runtime_control_uuid=selected_control_uuid); "
+        "this project search has no room filter. Inspect explicit paths using "
+        "loxone_trace_project_logic and exact descriptions where needed. Preserve ambiguous "
+        "mappings and runtime_target_mapping provenance; never guess a parent from a UUID suffix. "
+        "Report cross-room endpoints explicitly rather than inventing a same-room relation. Room "
         "membership alone is not a connection. Report direction, unresolved references, source "
         "revision and traversal bounds; graph reachability proves no physical effect or causality.",
         {"room_uuid": _TARGETS["room_uuid"]},
@@ -272,7 +278,9 @@ def analysis_prompts() -> tuple[Prompt, ...]:
         "operation='consumer_ranking' only after explicit human confirmation of comparable "
         "measurement boundaries and exclusion of parent/child overlap; only then set "
         "comparison_options.comparable_boundaries_confirmed=true. Do not treat selecting this "
-        "prompt as confirmation. Never sum individual ranked counters. Retain per-source "
+        "prompt as confirmation. Read production energy separately with operation='energy' for "
+        "the same interval and timezone to compare it with ranked consumers. Never sum individual "
+        "ranked counters. Retain per-source "
         "coverage, units, reset uncertainty and mismatched windows; missing PV leaves no "
         "PV comparison.",
         _RANGE
