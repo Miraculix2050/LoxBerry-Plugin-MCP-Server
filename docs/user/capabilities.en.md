@@ -441,7 +441,8 @@ by `native_statistics_truncated`. State names are capped at 200 UTF-8 bytes and
 `mapping_coverage` counts exact runtime controls, ambiguously mapped blocks and
 blocks lacking mapping evidence within the same bounded traversal. Canonical blocks
 count once; connectors and containers are not mapping gaps. `exact_runtime_controls`
-equals `summary.relevant_controls`. `complete` requires no mapping gaps, unresolved
+equals `summary.relevant_controls`; separate derived-target evidence does not add
+an exact control. `complete` requires no mapping gaps, unresolved
 relationships or traversal/diagnostic truncation; `truncated` marks truncation.
 Missing mapping evidence does not prove physical absence. Counts apply to the whole
 analysis independently of `next_cursor` and `page_truncated`; they do not establish

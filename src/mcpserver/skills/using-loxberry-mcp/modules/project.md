@@ -53,7 +53,8 @@ represented occurrence; the returned logical representative remains deterministi
 
 For `loxone_analyze_observability`, inspect target-local `mapping_coverage` as
 well as historical coverage. Its exact runtime-control count equals
-`summary.relevant_controls`; ambiguous and unmapped counts refer to distinct
+`summary.relevant_controls`; separate derived-target evidence does not add an
+exact control. Ambiguous and unmapped counts refer to distinct
 canonical blocks reached by the same bounded traces, excluding connectors and
 containers. Ambiguous candidates remain ambiguous even with an additional exact
 mapping. Missing mapping evidence in the authorized runtime view is not physical

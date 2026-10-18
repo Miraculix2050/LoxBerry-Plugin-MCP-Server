@@ -484,7 +484,8 @@ haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncat
 `mapping_coverage` zählt die exakten Runtime-Controls sowie mehrdeutig zugeordnete
 und ohne Zuordnungsevidenz gebliebene Bausteine innerhalb derselben begrenzten Suche.
 Kanonische Bausteine zählen einmal; Konnektoren und Container zählen nicht als Lücken.
-`exact_runtime_controls` entspricht `summary.relevant_controls`. `complete` ist nur
+`exact_runtime_controls` entspricht `summary.relevant_controls`. Die separate Evidenz
+eines abgeleiteten Runtime-Ziels erhöht diesen exakten Zähler nicht. `complete` ist nur
 ohne Mapping-Lücken, ungelöste Beziehungen oder Such-/Diagnoseabschneidung wahr;
 `truncated` kennzeichnet die Abschneidung. Fehlende Zuordnungsevidenz beweist keine
 physische Abwesenheit. Die Zähler gelten für die gesamte Analyse und bleiben von

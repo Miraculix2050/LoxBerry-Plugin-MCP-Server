@@ -250,7 +250,8 @@ gap, never proof of non-occurrence.
 `mapping_coverage` summarizes the same bounded traces across both directions,
 deduplicating canonical block identities and excluding connectors and containers.
 `exact_runtime_controls` equals `summary.relevant_controls` after the existing
-visibility filter. `ambiguous_project_objects` counts reached blocks that are
+visibility filter; separate derived-target evidence does not add an exact control.
+`ambiguous_project_objects` counts reached blocks that are
 candidates of any ambiguous mapping, even if an exact mapping also exists.
 `unmapped_project_objects` counts reached blocks with neither exact nor ambiguous
 mapping evidence in the authorized runtime view; it does not imply physical absence.
