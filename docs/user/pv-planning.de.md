@@ -108,8 +108,8 @@ Bei aktuellem nativem `ready=0` wird `not_ready` ohne Abruf nicht verfügbarer S
 
 Eine unbekannte oder veraltete aktuelle native Sperre wird ausdrücklich als `native_current_lock_unresolved` ausgewiesen; sie gilt nicht als bestätigt aufgehoben.
 
-Beispiel nur f�r `options.analysis_context`; UUID ersetzen und Zeitraum sowie
-Grundlast/Speicherreserve in `options` erg�nzen. Die Zahlen sind reine Annahmen:
+Beispiel nur für `options.analysis_context`; UUID ersetzen und Zeitraum sowie
+Grundlast/Speicherreserve in `options` ergänzen. Die Zahlen sind reine Annahmen:
 
 ```json
 {

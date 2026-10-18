@@ -60,10 +60,10 @@ Korrekt begrÃ¼ndete Teilantworten gelten bei fehlenden Quellen als zulÃ¤ssig. Ke
 
 ## Anfragebezogene Energieplanung (#556)
 
-Der optionale Analysekontext unterstützt ein ausdrücklich gewähltes gemeinsames
-Versorgungsbudget mit bis zu vier bestätigten überschneidungsfreien PVPFs,
-Profilreferenzen, realen deklarierten Zyklen und ausdrücklich hypothetischen Lasten.
+Der optionale Analysekontext unterstÃ¼tzt ein ausdrÃ¼cklich gewÃ¤hltes gemeinsames
+Versorgungsbudget mit bis zu vier bestÃ¤tigten Ã¼berschneidungsfreien PVPFs,
+Profilreferenzen, realen deklarierten Zyklen und ausdrÃ¼cklich hypothetischen Lasten.
 Native EFM-Mitgliedschaft und Nutzerzuordnungen bleiben getrennt. Mehranlagen-
-Fixtures belegen Isolation und Berechnung, keine reale Mehranlagenkompatibilität.
-Alte Aufrufe bleiben unterstützt. Positive reale PVPF-/Verbraucherabnahme bleibt
+Fixtures belegen Isolation und Berechnung, keine reale MehranlagenkompatibilitÃ¤t.
+Alte Aufrufe bleiben unterstÃ¼tzt. Positive reale PVPF-/Verbraucherabnahme bleibt
 unter #440/#510 offen; fehlende Quellen werden nicht durch Fixtures ersetzt.
