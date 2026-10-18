@@ -519,6 +519,13 @@ Generation 1 and generation 2 retain separate capability and missing-evidence
 lists. Other families remain unsupported; the documented contract alone does not
 establish device compatibility.
 
+The read-only [#533 device investigation](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/533)
+on 2026-10-18 found neither family in the authorized visible inventory of the test
+target (firmware 17.2.8.28). Real-device acceptance remains **unverified** for
+generation 1 and generation 2 independently. This does not establish absence
+from inaccessible areas or other installations; positive context and load-state
+evidence is still missing.
+
 Generation 1 exposes declared load metadata separately from cached load states;
 names do not establish an association. A zero minimum on-time means the documented
 trigger is unavailable. Generation 2 exposes parameter editing locks separately

@@ -128,3 +128,19 @@ oversized output returns an error without partial metadata. New family-specific
 technical rulesets version source fingerprints independently of disclosure rights,
 preserving unchanged legacy families. Rule references alone establish neither
 semantic completeness, present administration nor physical truth.
+
+### Real-device evidence disposition
+
+The [#533 read-only investigation](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/533#issuecomment-6243892031)
+recorded the following scoped dispositions on firmware 17.2.8.28:
+
+| Family | Availability in this caller's visible structure | Real-device context acceptance |
+| --- | --- | --- |
+| EnergyManager | Not available in the inspected scope | Unverified |
+| EnergyManager2 | Not available in the inspected scope | Unverified |
+
+This does not establish absence from inaccessible controls, Config or other
+installations. No real manager metadata/state specimen, positive `energy_context`
+result, load observation or manager Browser acceptance was possible. Documented
+contracts and synthetic tests remain separate from these missing device proofs;
+neither generation is declared compatible or defective by this disposition.
