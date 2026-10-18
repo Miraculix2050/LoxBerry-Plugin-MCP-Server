@@ -18,6 +18,29 @@ def segments():
     )
 
 
+def test_newest_complete_selection_is_independent_of_display_episode_budget():
+    state = [StateSegment(0, 3600, False, 0)]
+    energy = {}
+    for index in range(21):
+        at = (1 + index * 3) * 3600
+        state.extend(
+            (StateSegment(at, at + 7200, True, 0), StateSegment(at + 7200, at + 10800, False, 0))
+        )
+        energy[at] = energy[at + 3600] = float(index + 1)
+    result = describe_load_cycles(
+        tuple(state),
+        energy,
+        flexibility(cycle_identity="user_confirmed_cycle"),
+        "consumer",
+        start=0,
+        end=state[-1].end,
+        deadline=time.monotonic() + 5,
+        newest_complete_only=True,
+    )
+    assert len(result.episodes) == 1 and not result.truncated
+    assert result.episodes[0].observed_energy_wh == 42
+
+
 def describe(state=None, energy=None, **options):
     return describe_load_cycles(
         state if state is not None else segments(),

@@ -62,6 +62,7 @@ def describe_load_cycles(
     start: float,
     end: float,
     deadline: float,
+    newest_complete_only: bool = False,
 ) -> LoadCyclesResult:
     """Energy hours are already qualified by the existing native interval adapter."""
 
@@ -100,7 +101,7 @@ def describe_load_cycles(
         energy_profile_origin=flexibility.energy_profile_origin,
         episode_count=count,
         episodes=[],
-        truncated=count > 16,
+        truncated=count > 16 and not newest_complete_only,
         limitations=[
             "local_observation_edges_are_not_native_program_identity",
             "constraints_and_cycle_identity_are_user_declarations",
@@ -109,10 +110,14 @@ def describe_load_cycles(
         ],
     )
     remaining = 128
-    for index, active in enumerate(merged):
+    indices = range(len(merged) - 1, -1, -1) if newest_complete_only else range(len(merged))
+    for index in indices:
+        active = merged[index]
         check()
         if not active.active or len(result.episodes) == 16:
             continue
+        if newest_complete_only:
+            remaining = 128
         before = merged[index - 1] if index else None
         after = merged[index + 1] if index + 1 < len(merged) else None
         complete = (
@@ -170,6 +175,13 @@ def describe_load_cycles(
             limits.append("derived_numeric_overflow")
         if flexibility.cycle_identity == "active_episode_only":
             limits.append("complete_program_cycle_identity_not_confirmed")
+        if newest_complete_only and not (
+            complete
+            and energy_complete
+            and not discrepancies
+            and flexibility.cycle_identity == "user_confirmed_cycle"
+        ):
+            continue
         result.episodes.append(
             ActivityEpisode(
                 start=utc_timestamp(active.start),
@@ -185,6 +197,8 @@ def describe_load_cycles(
                 limitations=limits,
             )
         )
+        if newest_complete_only:
+            break
     if result.episodes:
         result.status = "partial"
     return result

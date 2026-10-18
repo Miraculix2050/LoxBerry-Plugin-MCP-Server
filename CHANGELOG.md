@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add read-only conditional future load planning from native PVPF hours, confirmed
+  complete-cycle models and explicit baseload/storage scenarios; allocate one
+  shared energy budget with bounded source reads and computation (#440, #510).
 - Add a bounded read-only native PVPF hourly-production view; preserve readiness,
   prediction age, fresh authorization and explicit model limitations (#440, #510).
 

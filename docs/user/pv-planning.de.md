@@ -25,4 +25,40 @@ kWp-Leistung. Fehlende Einrichtung erklären; nicht automatisch aktivieren,
 abonnieren oder umkonfigurieren. Native Prognosen sind von der bestehenden
 W/m²-Wetterorientierung getrennt.
 
+## Bedingte zukünftige Lastplanung
+
+`loxone_plan_loads(options=...)` benötigt `forecast_control_uuid`, zukünftige
+`start`/`end` mit UTC-Offset, `timezone` und bis zu 16 `consumer_binding_ids` aus
+dem bestätigten Installationsprofil. `baseload` und `storage_reserve` jeweils
+mit `origin="user_confirmed"` oder `"user_estimate"` und entweder `constant_w`
+oder `hours=[{"start":<Unix-Stunde>,"power_w":<W>}]` angeben. Reserve null ist
+ein ausdrückliches Szenario und belegt keine fehlende Batterie. Ausgewählte
+flexible Verbraucher nicht zusätzlich in die Grundlast einrechnen. Fehlende
+Szenariostunden werden nicht verplant.
+
+Jede Last benötigt bestätigte Flexibilität und `cycle_identity="user_confirmed_cycle"`.
+Vollständige gemessene Zyklen werden aus den letzten sieben abgeschlossenen
+lokalen Tagen ausgewählt (`history_days` 1–31); dies benötigt aktivierte
+loxone:history und vorhandene lokale Aktivitätshistorie. Alternativ werden
+bestätigte deklarierte Zyklusenergie und Dauer als gleichmäßiges geschätztes
+Lastprofil verwendet. Keine Aufzeichnung wird automatisch aktiviert.
+
+Pro Verbraucher wird ein zusammenhängender Zyklus in das gemeinsame stündliche
+PV-Budget nach Abzug von Grundlast und Speicherreserve eingeordnet. Bestätigte
+Fenster und Fertigstellungsgrenzen werden eingehalten. Bekannte unterstützte
+aktuelle Sperren schließen eine Last aus. Zukünftige Sperren, andere Aktivität
+und die Freigabe nach Mindestpause bleiben vor dem Betrieb zu bestätigende
+Bedingungen. Stundenbudgets setzen Energieverfügbarkeit innerhalb der Stunde
+voraus und belegen keine ausreichende momentane Leistung. Batterieentladung
+wird nicht verplant. Annahmen, Gründe ungeplanter Lasten und Grenzen beachten.
+
+Maximal 72 Prognosestunden, 16 Lasten, 100.000 historische Punkte, 100.000
+Kandidatenprüfungen und 64 KiB Ausgabe innerhalb von 30 Sekunden. Historien-
+und Zukunftsanalyse teilen zwei Plätze. Pro Plan ein PVPF-Prognoseabruf; die
+Suche führt keine Quellzugriffe aus. Ergebnisse beschreiben bedingte PV-Abdeckung
+und zusätzliche Netzenergie, keine gemessene Einsparung, optimale Planung oder
+Betriebsfreigabe.
+
 Bei aktuellem nativem `ready=0` wird `not_ready` ohne Abruf nicht verfügbarer Stundenwerte zurückgegeben. Autorisierung und Quellensichtbarkeit werden weiterhin geprüft.
+
+Eine unbekannte oder veraltete aktuelle native Sperre wird ausdrücklich als `native_current_lock_unresolved` ausgewiesen; sie gilt nicht als bestätigt aufgehoben.
