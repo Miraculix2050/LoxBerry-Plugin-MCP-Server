@@ -14,9 +14,9 @@ Im sichtbaren Tab werden gespeicherte MCP-Freigaben alle zehn Sekunden gemeinsam
 geprüft. Diese Hintergrundprüfung überschreibt keine ungespeicherten Eingaben.
 Projektabgleiche laden weiterhin mit der eigenen Loxone-Berechtigung frische
 Projektdaten. Innerhalb eines zugelassenen Projektaufrufs wird nur das normalisierte
-�ffentliche Zertifikat wiederverwendet; der n�chste Aufruf l�dt es erneut.
-Anmeldung und abschlie�ende Projektstandspr�fung nutzen weiterhin neue Verbindungen.
-Die gepr�fte HTTP-Vertrauenskonfiguration wird je Client wiederverwendet.
+öffentliche Zertifikat wiederverwendet; der nächste Aufruf lädt es erneut.
+Anmeldung und abschließende Projektstandsprüfung nutzen weiterhin neue Verbindungen.
+Die geprüfte HTTP-Vertrauenskonfiguration wird je Client wiederverwendet.
 Besonders nach einem Dienstneustart kann die erneute Modellbildung
 länger dauern; eine vollständige Gesamtladezeit unter fünf Sekunden ist noch
 nicht nachgewiesen.
