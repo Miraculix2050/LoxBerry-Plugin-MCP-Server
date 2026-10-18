@@ -85,6 +85,7 @@ def test_equal_occurrences_map_exact_without_using_names(kind):
         ((block(), block(kind="Mode")), "type_conflict"),
         ((block(), block(attrs='Unknown="value"')), "attribute_conflict"),
         ((block() + block(), block()), "duplicate_source"),
+        ((block(children=f'<Co K="I" U="{UUID}"/>'),) * 2, "duplicate_source"),
         ((block(), block(), block(kind="Mode")), "type_conflict"),
         ((block(), block(children='<Co K="I"><In Input="missing"/></Co>')), "topology_unresolved"),
         ((block(), block(children="<Co/><Co/>")), "topology_unresolved"),

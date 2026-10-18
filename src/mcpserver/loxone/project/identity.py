@@ -184,7 +184,9 @@ def logical_runtime_nodes(
         reason: Reason
         if len(occurrences) > 32:
             reason = "source_limit"
-        elif len({node.project for node in occurrences}) != len(occurrences):
+        elif len({node.project for node in occurrences}) != len(occurrences) or any(
+            local_ids[node.project, _uuid(node.source_id) or ""] != 1 for node in occurrences
+        ):
             reason = "duplicate_source"
         elif len({node.block_type for node in occurrences}) != 1:
             reason = "type_conflict"
