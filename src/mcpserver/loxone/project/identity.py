@@ -230,5 +230,7 @@ def logical_runtime_nodes(
             tuple(node.key for node in occurrences[:32]),
             max(0, len(occurrences) - 32),
         )
-        evidence.update((node.key, item) for node in occurrences)
+        evidence.update(
+            (node.key, item) for node in occurrences if node.block_type in SUPPORTED_TYPES
+        )
     return tuple(sorted(aliases)), tuple(sorted(sources)), evidence

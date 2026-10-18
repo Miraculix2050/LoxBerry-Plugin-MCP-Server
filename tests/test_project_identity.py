@@ -118,6 +118,31 @@ def test_conflicts_never_partially_merge(sources, reason):
         query.resolve(UUID, "runtime_control_uuid")
 
 
+def test_mixed_uuid_conflict_does_not_reclassify_existing_knx_aliases():
+    model = snapshot(
+        block(kind="EIBactor", attrs='EibAddr="1/2/3"'),
+        block(kind="EIBactor", attrs='EibAddr="1/2/3"'),
+        block(),
+    )
+    query = project_query(model, UUID)
+    assert query.view.mapping.entries[0].status == "ambiguous"
+    nodes = {node.key: node for node in model.graph.nodes}
+    assert len(model.logical_identity) == 1
+    assert all(nodes[key].block_type == "Actor" for key in model.logical_identity)
+    assert next(iter(model.logical_identity.values())).reason == "type_conflict"
+    found = query.find(
+        query=None,
+        kind="block",
+        block_type="EIBactor",
+        source_id=None,
+        runtime_control_uuid=None,
+        technology="knx_eib",
+    )
+    assert len(found) == 1
+    assert found[0]["source_occurrence_count"] == 2
+    assert found[0].get("logical_identity") is None
+
+
 def test_disjoint_connector_topology_preserves_every_source_in_queries():
     source = block(uuid=OTHER, kind="Source", children=f'<Co K="Q" U="{PORT}"/>')
     first = source + block(children=f'<Co K="I1"><In Input="{PORT}"/></Co>')
