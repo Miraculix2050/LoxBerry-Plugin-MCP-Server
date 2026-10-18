@@ -36,11 +36,15 @@ and a median group with at least three complete peers. PV strictly below −20%
 marks a check candidate, never a fault diagnosis. A separate ranking shows the
 strongest negative differences. Zero baselines have no ratio.
 
-Optional PVPF uses the same selector with `state_uuid=null`. Previously captured
-native period forecasts are separate context and must exactly match a complete
-observed window. Revisions captured after the period begins are excluded. Daily
-horizons have no independently established native timezone here and are never
-allocated to partial days. Forecasts do not select weather peers.
+Optional PVPF uses the same selector with `state_uuid=null`. The latest eight
+captured snapshots remain separate forecast context, with capture time, issue
+time and native cycle times. Structure File 17.1 p.115 defines cycle times as the
+current prediction hour, not the bounds of the complete `period` energy. Its
+actual comparison remains `native_period_bounds_unverified`. Daily horizons have
+no independently established native timezone here and are never allocated to
+partial days. A future documented hourly adapter can supply exact valid periods;
+only forecasts captured before those periods may then match complete actuals.
+Forecasts do not select weather peers.
 
 Each unique source/range is read once in one fresh authorized context. Limits:
 16 sources, 100,000 points, 31 local days, 30 seconds, two analyses, 64 KiB.

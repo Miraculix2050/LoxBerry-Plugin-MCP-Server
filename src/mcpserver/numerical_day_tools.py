@@ -137,68 +137,35 @@ def _metric(
     )
 
 
-def _forecast_matches(
-    rows: list[tuple[float, dict[str, object]]],
-    windows: dict[str, list[float]],
-    pv: dict[float, float],
-    deadline: float,
-) -> list[dict[str, Any]]:
-    # Resolve revisions once by exact native period; daily horizons have no
-    # independently established native timezone and are never apportioned.
-    periods: dict[tuple[float, float], tuple[float, str, float]] = {}
-    for captured, payload in rows:
-        _check(deadline)
+def _forecast_context(rows: list[tuple[float, dict[str, object]]]) -> list[dict[str, Any]]:
+    """Bounded latest revisions; native cycle times do not establish period bounds."""
+    result = []
+    for captured, payload in rows[-8:]:
         states = payload.get("states")
         if not isinstance(states, dict):
             continue
         try:
-            forecast = decode("period", states.get("period"), states)
-            times = forecast.get("times")
-            if forecast["status"] != "available" or not isinstance(times, dict):
-                continue
-            start = datetime.fromisoformat(times["cycle_until"]).timestamp()
-            issued = datetime.fromisoformat(times["predicted_at"]).timestamp()
-            hours, kwh = forecast["period_hours"], forecast["energy_kwh"]
-            if not isinstance(hours, int | float) or not isinstance(kwh, int | float):
-                continue
-            end = start + hours * 3600
-            energy = kwh * 1000
-        except (ValueError, TypeError, KeyError):
+            decoded = {
+                name: decode(name, states.get(name), states)
+                for name in ("period", "today", "tomorrow", "after")
+            }
+        except ValueError:
             continue
-        if not issued <= captured <= start or not isfinite(energy):
-            continue
-        key = (start, end)
-        if key not in periods or periods[key][0] < captured:
-            periods[key] = (captured, times["predicted_at"], energy)
-    result = []
-    for day, starts in windows.items():
-        _check(deadline)
-        if not starts or not all(t in pv for t in starts):
-            continue
-        key = (starts[0], starts[-1] + 3600)
-        selected = periods.get(key)
-        if selected is None:
-            continue
-        captured, issued_at, predicted = selected
-        try:
-            observed = fsum(pv[t] for t in starts)
-        except OverflowError:
-            continue
-        difference = observed - predicted
-        relative = difference / predicted if predicted > 0 else None
-        if not isfinite(difference) or (relative is not None and not isfinite(relative)):
-            continue
+        period = decoded["period"]
+        times = period.get("times")
+        times = times if isinstance(times, dict) else {}
         result.append(
             dict(
-                day=day,
                 captured_at=datetime.fromtimestamp(captured, UTC).isoformat(),
-                predicted_at=issued_at,
-                period_start=datetime.fromtimestamp(key[0], UTC).isoformat(),
-                period_end=datetime.fromtimestamp(key[1], UTC).isoformat(),
-                predicted_wh=predicted,
-                observed_wh=observed,
-                absolute_difference_wh=difference,
-                relative_difference=relative,
+                predicted_at=times.get("predicted_at"),
+                cycle_from=times.get("cycle_from"),
+                cycle_until=times.get("cycle_until"),
+                status=period["status"],
+                period_kwh=period["energy_kwh"],
+                today_kwh=decoded["today"]["energy_kwh"],
+                tomorrow_kwh=decoded["tomorrow"]["energy_kwh"],
+                after_kwh=decoded["after"]["energy_kwh"],
+                inputperiod_hours=period["period_hours"],
             )
         )
     return result
@@ -387,9 +354,10 @@ def _calculate(
             "temperature_position": "within_60s_of_hour_start",
             "self_consumption": metric,
             "ranked_deviations": deviations,
-            "forecast_comparisons": _forecast_matches(forecasts, metric_starts, pv, deadline),
+            "forecast_context": _forecast_context(forecasts),
+            "forecast_context_truncated": len(forecasts) > 8,
             "forecast_limitations": [
-                "forecast_context_requires_previously_captured_exact_complete_native_period",
+                "native_period_bounds_unverified_cycle_times_describe_current_prediction_hour",
                 "no_subdaily_forecast_distribution",
             ],
             "solar_sources": summaries,

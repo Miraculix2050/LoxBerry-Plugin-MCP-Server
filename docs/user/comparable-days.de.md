@@ -40,11 +40,15 @@ PV-Abweichungen strikt unter −20 % kennzeichnen Prüfkandidaten, keine Fehlerd
 Eine getrennte Rangfolge zeigt die stärksten negativen Abweichungen. Bei Null-Basis
 entsteht kein Verhältnis.
 
-Optionales PVPF nutzt denselben Selektor mit `state_uuid=null`. Zuvor erfasste native
-Periodenprognosen bleiben separater Kontext und müssen exakt zu einem vollständigen
-Istfenster passen. Nach Periodenbeginn erfasste Revisionen sind ausgeschlossen.
+Optionales PVPF nutzt denselben Selektor mit `state_uuid=null`. Die letzten acht
+aufgezeichneten Snapshots bleiben separater Prognosekontext mit Erfassungs-,
+Prognose- und nativen Zykluszeiten. Structure File 17.1 S.115 definiert die
+Zykluszeiten als aktuelle Prognosestunde, nicht als Grenzen der gesamten
+`period`-Energie. Der Istvergleich bleibt `native_period_bounds_unverified`.
 Für Tageshorizonte fehlt hier eine unabhängig bestätigte native Zeitzone; sie werden
-nicht auf unvollständige Tage verteilt. Prognosen beeinflussen keine Wetterauswahl.
+nicht auf unvollständige Tage verteilt. Ein späterer dokumentierter Stundenadapter
+kann exakte Gültigkeitsintervalle liefern; nur zuvor erfasste Prognosen dürfen dann
+mit vollständigen Istintervallen verglichen werden. Keine Wetterauswahl aus Prognosen.
 
 Jede eindeutige Quelle wird pro Zeitraum einmal gemeinsam frisch autorisiert gelesen.
 Grenzen: 16 Quellen, 100.000 Punkte, 31 lokale Tage, 30 Sekunden, zwei Analysen,
