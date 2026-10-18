@@ -229,6 +229,7 @@ class SolarSampler:
         controls: tuple[Control, ...],
         installation: str,
     ):
+        self.configured_sources = sources
         by_id = {c.uuid: c for c in controls}
         self.sources = []
         self.needed: set[str] = set()
@@ -250,6 +251,28 @@ class SolarSampler:
                     self.needed.add(source.state_uuid)
                     if "error" in dict(control.state_uuids):
                         self.needed.add(dict(control.state_uuids)["error"])
+
+    def revalidated(self, controls: tuple[Control, ...], installation: str) -> SolarSampler:
+        """Keep cached observations only for identically reauthorized source contracts."""
+        fresh = SolarSampler(self.configured_sources, controls, installation)
+        unchanged = {
+            source.key
+            for source, _, fingerprint in fresh.sources
+            if any(old.key == source.key and prior == fingerprint for old, _, prior in self.sources)
+        }
+        reusable = {
+            uuid
+            for source, control, _ in fresh.sources
+            if source.key in unchanged
+            for _, uuid in control.state_uuids
+        }
+        fresh.values = {k: v for k, v in self.values.items() if k in reusable and k in fresh.needed}
+        fresh.last = {k: v for k, v in self.last.items() if k in unchanged}
+        fresh.changed = {k: v for k, v in self.changed.items() if k in unchanged}
+        fresh.forecast_payloads = {
+            k: v for k, v in self.forecast_payloads.items() if k in unchanged
+        }
+        return fresh
 
     def batch(self, values: Mapping[str, object], at: float) -> list[tuple[str, str, float, str]]:
         self.values.update((key, value) for key, value in values.items() if key in self.needed)
