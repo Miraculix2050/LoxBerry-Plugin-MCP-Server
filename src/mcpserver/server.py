@@ -60,6 +60,7 @@ from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.statistics import StatisticsCache
 from mcpserver.mqtt_health import MqttHealthPublisher
+from mcpserver.output_validation import OutputValidatedFastMCP
 from mcpserver.prompts import register_prompt_surface
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
@@ -274,7 +275,7 @@ class _EmergencyStopMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class _ForwardedHostFastMCP(FastMCP):
+class _ForwardedHostFastMCP(OutputValidatedFastMCP):
     """FastMCP application that also validates Apache's original Host header."""
 
     async def get_prompt(

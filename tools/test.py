@@ -278,6 +278,14 @@ _TEST_GROUPS: Final = (
         ),
     ),
     (
+        ("src/mcpserver/output_validation.py",),
+        (
+            "tests/test_output_validation.py",
+            "tests/test_server.py",
+            "tests/test_schema_reference.py",
+        ),
+    ),
+    (
         ("src/mcpserver/settings.py",),
         ("tests/test_config.py", "tests/test_server.py", "tests/test_settings.py"),
     ),

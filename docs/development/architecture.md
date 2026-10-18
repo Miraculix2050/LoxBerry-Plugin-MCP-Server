@@ -27,6 +27,15 @@ MCP client -- HTTPS/OAuth --> LoxBerry Apache -- loopback --> mcpserver service
 | Admin UI and Explorer | Local configuration, session management and a separate OAuth test client |
 | Installation profile | Bounded, versioned user declarations linked to exact currently visible sources |
 
+The transport uses a server-local output-validator cache for the pinned MCP SDK.
+Each unchanged tool output schema is checked once against its meta-schema; every
+structured response still undergoes complete instance validation. Independent
+schema snapshots detect replacement and in-place edits, and tool removal clears
+the corresponding entry. In-flight calls retain the validator for their original
+registration. Pydantic argument validation, authorization and cancellation remain
+in the existing SDK and policy paths. This removes repeated schema checking; it
+does not establish a measured latency improvement (#529).
+
 The installation profile stores metadata in `installation-profile.json` in the
 plugin data directory. Its strict schema, cross-process lock, atomic replacement
 and monotonically increasing revision protect concurrent Admin edits and restart
