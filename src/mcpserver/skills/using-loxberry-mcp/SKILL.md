@@ -899,7 +899,8 @@ Distinguish `unsupported`, `missing_reference`, `missing_value`, `invalid` and
 `source_limit` from a valid empty list. `total` counts validated source entries;
 it does not establish complete configured inventory. Respect `truncated`,
 `omitted`, `name_truncated_indices` and `names_complete`. Unknown names remain
-unknown. Do not silently replace omitted entries with guessed scene names.
+unknown. The complete view envelope is capped at 64 KiB; respect
+`response_too_large` if retained control metadata prevents that bound. Do not silently replace omitted entries with guessed scene names.
 Use existing full descriptions and bounded state reads only if their details
 are required, and count those reads in workflow measurements.
 

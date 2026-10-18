@@ -792,7 +792,9 @@ configuration. At most 100 moods, 200 characters per name and 32 KiB of normaliz
 mood-row JSON are retained; serialized input is limited to 1,048,576 characters.
 `returned`, `truncated`, `name_truncated_indices` and `names_complete` distinguish
 collection and name omissions; absent/invalid source counts remain null.
-Unknown names remain null. Existing response bounds remain in force.
+Unknown names remain null. The complete view envelope is capped at 64 KiB;
+oversized retained control metadata returns `response_too_large` without changing
+the legacy full view.
 Explicit hidden diagnosis remains read-only. No scene roles, presence mapping,
 physical fixture inventory, operation targets or new operation permission are
 inferred. The shared released mood-ID validation and operation behavior remain

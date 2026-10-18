@@ -5190,7 +5190,7 @@ def register_read_tools(
                     if projection is not None
                     else "invalid"
                 )
-                return _result(
+                envelope = _result(
                     ControlDescriptionEnvelope,
                     {
                         "uuid": control.uuid,
@@ -5232,6 +5232,13 @@ def register_read_tools(
                     or record is None
                     or record.freshness is not Freshness.CURRENT,
                 )
+                if len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024:
+                    return _error(
+                        ControlDescriptionEnvelope,
+                        "response_too_large",
+                        "Lighting context exceeds the response budget",
+                    )
+                return envelope
             if view == "energy_context":
                 if control.is_hidden:
                     return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")

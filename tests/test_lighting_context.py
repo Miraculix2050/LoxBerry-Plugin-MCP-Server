@@ -43,6 +43,7 @@ def setup_tool(
     *,
     freshness=Freshness.CURRENT,
     control_type="LightControllerV2",
+    control_name="Light",
     references=True,
     connected=True,
     controls=True,
@@ -50,7 +51,7 @@ def setup_tool(
 ):
     control = Control(
         "light",
-        "Light",
+        control_name,
         control_type,
         None,
         None,
@@ -213,3 +214,15 @@ async def test_lighting_fresh_authorization_failure_blocks_source_read(monkeypat
         "light", view="lighting_context"
     )
     assert not result.ok and result.data.error == "unauthenticated"
+
+
+@pytest.mark.asyncio
+async def test_lighting_envelope_bound_includes_untrusted_control_metadata(monkeypatch):
+    name = "x" * 65536
+    server, _ = setup_tool(monkeypatch, [{"id": 1, "name": "Synthetic"}], control_name=name)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    compact = await tool.fn("light", view="lighting_context")
+    assert not compact.ok and compact.data.error == "response_too_large"
+    assert len(compact.model_dump_json().encode("utf-8")) < 1024
+    full = await tool.fn("light")
+    assert full.ok and full.data.name == name

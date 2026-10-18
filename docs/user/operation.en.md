@@ -85,4 +85,6 @@ Use `loxone_describe_control(view="lighting_context")` for bounded source mood
 IDs/names of one visible LightControllerV2. Check status, source state, timestamp,
 freshness and omissions; missing or invalid data is not an empty scene inventory.
 Names never prove scene roles, presence connections or physical luminaires.
-The full default and all existing operation safeguards remain unchanged.
+The full default and all existing operation safeguards remain unchanged. The
+complete compact envelope is limited to 64 KiB (`response_too_large` for
+oversized retained control metadata).

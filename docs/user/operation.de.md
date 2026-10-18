@@ -89,4 +89,6 @@ Quell-IDs und Namen der Lichtstimmungen eines sichtbaren LightControllerV2 lesen
 Status, Quellzustand, Zeitstempel, Aktualität und Auslassungen beachten; fehlende
 oder ungültige Daten sind kein leeres Szeneninventar. Namen belegen weder
 Szenenrollen noch Präsenzverbindungen oder physische Leuchten. Der Full-Default
-und alle bestehenden Schutzregeln für Operationen bleiben erhalten.
+und alle bestehenden Schutzregeln für Operationen bleiben erhalten. Die gesamte
+kompakte Antwort ist auf 64 KiB begrenzt (`response_too_large` bei zu großen
+beibehaltenen Control-Metadaten).
