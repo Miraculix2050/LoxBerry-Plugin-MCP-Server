@@ -60,6 +60,7 @@ def test_explorer_catalog_publishes_operation_targets_view() -> None:
         "operation_targets",
         "state_refs",
         "energy_context",
+        "lighting_context",
     ]
 
 

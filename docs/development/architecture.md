@@ -404,7 +404,9 @@ these sources; regression tests reject drift. Resources and the existing guide
 tool share the same module loader, revision and allowlisted section type.
 Clients fall back to the full guide if a module is unavailable and stop the
 affected workflow if both retrieval paths fail. Core and operations are required
-before writes; source-specific read modules retain their independent policy.
+before writes and contain all mandatory mutation prerequisites, including KNX
+draft/apply and event-source management. Read modules are loaded only for needed
+source evidence; they add no independent universal pre-write loading requirement.
 
 
 The existing mood operation validator and the compact lighting read share one

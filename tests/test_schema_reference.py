@@ -189,6 +189,7 @@ def test_describe_schema_publishes_minimal_state_refs_contract() -> None:
         "operation_targets",
         "state_refs",
         "energy_context",
+        "lighting_context",
     ]
     definitions = describe["outputSchema"]["$defs"]
     state_refs = definitions["ControlStateRefsData"]

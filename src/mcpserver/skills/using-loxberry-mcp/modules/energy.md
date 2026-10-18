@@ -11,8 +11,7 @@ explicitly configured local recording sources; it never backfills old days.
 The qualitative comparable-day branch uses an explicitly owner-assumed native
 class mapping, never verified radiation energy. Inspect its diagnostics/warnings.
 Production bindings may include user-declared `pv_parameters`; only a currently
-confirmed valid binding makes them usable. Obtain confirmation of the complete
-proposal, including changed parameters. Missing geometry is unknown, not a reason
+confirmed valid binding makes them usable. Profile mutation confirmation rules are in operations. Missing geometry is unknown, not a reason
 to invent orientation or reject every simple comparison. Arrays share a source;
 do not infer individual yields or sum completeness. MCP replacement/deletion checks
 old and new source visibility. Use a smaller profile page after `response_too_large`.
@@ -136,10 +135,7 @@ Read the current installation profile first. Only confirmed consumer bindings
 with load_constraints_usable=true provide declared windows/deadlines, duration,
 interruptibility, minimum run/off times and exact operating-state association.
 Hidden/unconfirmed/changed companions cannot qualify; do not invent IDs or native
-lock observations. For profile replacement or deletion include the whole exact
-load_flexibility proposal in the user's explicit confirmation, including linked
-source and cycle identity. A reused operating binding ID does not retarget a load
-without renewed confirmation. Local Admin can review orphaned metadata.
+lock observations. Profile mutation safeguards are in operations.
 
 Use operating_phases with this confirmed consumer statistic at hour granularity
 and its confirmed binary operating-state binding at raw granularity. Inspect

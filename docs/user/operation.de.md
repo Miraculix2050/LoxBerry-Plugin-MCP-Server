@@ -72,7 +72,7 @@ Weiter: [Fehlerbehebung](troubleshooting.de.md).
 Unter **Hilfe und Entwicklerwerkzeuge** finden Sie Links zu Projekt und Anleitungen, Tool Explorer, Schema-Referenz, lokaler Ereignishistorie, KNX-Adressverwaltung, bestätigtem Anlagenprofil und der Freigabe einzelner Meldungen. Jeder Link erklärt kurz Zweck und Grenzen der jeweiligen Seite. KNX-Adressverwaltung und Anlagenprofil bleiben zusätzlich unter **MCP Konfiguration** erreichbar und zeigen dort dieselben Erklärungen. Die Meldungsfreigabe aus dem Hilfebereich übernimmt die aktuelle Seitensprache.
 
 
-Zuerst core und danach nur die im Aufgabenindex gewählten Workflow-Module laden. Vor Schreibaktionen core, operations und das passende Lesemodul abrufen. Bei fehlendem Modul den Vollguide verwenden; scheitert auch dieser, den betroffenen Ablauf stoppen. Der bisherige Tool-Default und die URI des Vollguides bleiben verfügbar.
+Zuerst core und danach nur die im Aufgabenindex gewählten Workflow-Module laden. Vor Schreibaktionen core und operations abrufen; Lesemodule nur bei Bedarf für die jeweiligen Belege hinzunehmen. Bei fehlendem Modul den Vollguide verwenden; scheitert auch dieser, den betroffenen Ablauf stoppen. Der bisherige Tool-Default und die URI des Vollguides bleiben verfügbar.
 
 Tool-Beschreibungen nennen Zweck, entscheidende Voraussetzungen und Grenzen. Parametergrenzen und Auswahlregeln stehen an den Schemafeldern; ausführliche Abläufe sind über den Aufgabenindex in core erreichbar. Statistikserien sind keine Energiebilanz, angebotene Historien-Metadaten belegen keinen abgefragten Zeitraum, und strukturelle Erreichbarkeit belegt keine historische Ursache.
 

@@ -35,7 +35,7 @@ For active alerts use section='alerts'. Read core rules first. Retrieve only the
 | Static Modbus configuration | project, modbus |
 | Lighting and presence questions | states, lighting; project for configured paths |
 | Confirmed profiles, native energy, solar and load analysis | energy; history for calculations |
-| Any write, including profile/event-source/message/cache changes | operations plus the relevant read module |
+| Any write, including profile/event-source/message/cache changes | operations |
 | Sanitized LoxBerry diagnostics and System Messages | diagnostics |
 | Active visible alerts | alerts |
 
@@ -43,8 +43,8 @@ Only implemented capabilities in the current schemas are available. This index
 does not activate optional capabilities or grant permissions. If a module cannot
 be retrieved, request the complete legacy guide with no section or section='full'.
 If that also fails, stop the affected workflow. Before any write read core and
-operations plus the relevant source workflow; never automatically retry an
-uncertain write. Resource loading differs by client; tool retrieval is the fallback.
+operations; add read modules only when their evidence is needed. Never
+automatically retry an uncertain write. Resource loading differs by client; tool retrieval is the fallback.
 
 For every read, check the complete result envelope. Do not treat a response as
 successful when `ok` is false. Surface relevant `warnings`, and qualify answers

@@ -797,3 +797,8 @@ Explicit hidden diagnosis remains read-only. No scene roles, presence mapping,
 physical fixture inventory, operation targets or new operation permission are
 inferred. The shared released mood-ID validation and operation behavior remain
 unchanged; source parsing limits for this read do not change operation validation.
+
+Core plus operations supply the complete mandatory write guidance, including
+profile, message, event-source and KNX draft/apply safeguards; source-specific
+read modules are loaded only when their evidence is needed. This changes no
+runtime permission, approval, confirmation or uncertainty contract.
