@@ -715,6 +715,49 @@ class StateSemanticsResolver:
         value: object,
         companion_values: Mapping[str, object],
     ) -> tuple[StateSemantics, object | None]:
+        if control.control_type.casefold() == "pvproductionforecast":
+            units = {
+                "period": "kWh",
+                "today": "kWh",
+                "tomorrow": "kWh",
+                "after": "kWh",
+                "inputperiod": "h",
+                "timestamp": "s",
+                "cycleFrom": "s",
+                "cycleUntil": "s",
+            }
+            if state_name in units or state_name in {"ready", "errorInfo"}:
+                from .pv_forecast import LOXONE_EPOCH, number
+
+                numeric = number(value)
+                valid = numeric is not None
+                if state_name == "ready":
+                    valid = valid and numeric in (0, 1)
+                result = StateSemantics(
+                    interpretation_status="known" if valid else "invalid",
+                    reason="documented_decoder" if valid else "invalid_documented_value",
+                    value_type="number",
+                    unit=units.get(state_name),
+                    sources=[
+                        SemanticsSource(
+                            "decoder_rule",
+                            "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=115",
+                            ("unit", "semantic_value"),
+                            rule_id="pvpf.17_1.v1",
+                            document_version="17.1",
+                        )
+                    ],
+                )
+                decoded: object | None = numeric
+                if state_name in {"timestamp", "cycleFrom", "cycleUntil"}:
+                    decoded = (
+                        {"unix_seconds": numeric + LOXONE_EPOCH}
+                        if numeric and numeric > 0
+                        else None
+                    )
+                elif state_name in {"period", "today", "tomorrow", "after"} and numeric == -1:
+                    decoded = {"available": False}
+                return result, decoded
         manager = _resolve_energy_manager(structure, control, state_name, value)
         if manager is not None:
             return manager

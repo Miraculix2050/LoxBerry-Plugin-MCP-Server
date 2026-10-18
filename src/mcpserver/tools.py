@@ -135,6 +135,7 @@ from mcpserver.loxone.project.result_cache import ProjectResultCache
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.project.worker import process_analysis
+from mcpserver.loxone.pv_forecast import PvForecastResult
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,
@@ -153,6 +154,7 @@ from mcpserver.loxone.state_semantics import (
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.loxone.system_messages import MessageSourceError, canonical_serial
 from mcpserver.loxone.uuid import normalize_loxone_uuid
+from mcpserver.pv_forecast_runtime import read_pv_forecast
 from mcpserver.skill_delivery import (
     SKILL_MIME_TYPE,
     SKILL_NAME,
@@ -799,7 +801,7 @@ class ControlReadItemData(BaseModel):
     identity: ControlSummaryData
     values: list[CompactStateData] = Field(max_length=100)
     semantics: list[StateSemanticsItemData] | None = Field(default=None, max_length=100)
-    native_result: NativeEfmResult | None = Field(
+    native_result: NativeEfmResult | PvForecastResult | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 
@@ -5763,10 +5765,11 @@ def register_read_tools(
             ),
         ] = False,
         native_result_view: Annotated[
-            NativeResultView | None,
+            NativeResultView | Literal["pv_forecast"] | None,
             Field(
                 description=(
-                    "Native EFM only: one plain target, no state_names or semantics; exact "
+                    "pv_forecast reads native PVPF hourly kWh (loxone:read). All native views "
+                    "require one plain target, no state_names or semantics. EFM requires exact "
                     "firmware 17.2.8.28 and fresh Loxone administrator. Period views require "
                     "history activation and scope. Only Gpwr/Ppwr/Spwr have metadata-bound W/kW "
                     "units; other units, signs and period boundaries remain unknown."
@@ -5795,9 +5798,15 @@ def register_read_tools(
                 access = _access()
                 if runtime is None:
                     raise RuntimeUnavailable("the service is not configured")
-                native_control, structure, native = await runtime.read_native_efm(
-                    access, targets[0].control_uuid, native_result_view
-                )
+                native: NativeEfmResult | PvForecastResult
+                if native_result_view == "pv_forecast":
+                    native_control, structure, native = await read_pv_forecast(
+                        runtime, access, targets[0].control_uuid
+                    )
+                else:
+                    native_control, structure, native = await runtime.read_native_efm(
+                        access, targets[0].control_uuid, native_result_view
+                    )
                 native_snapshot = RuntimeSnapshot(access.family_id, structure, True)
                 envelope = _result(
                     ControlsReadEnvelope,

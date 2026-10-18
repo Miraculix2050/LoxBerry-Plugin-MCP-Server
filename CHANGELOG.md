@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a bounded read-only native PVPF hourly-production view and documented state
+  semantics; preserve separate availability, prediction age and model limitations (#440, #510).
+
 - Add bounded source-proven LightControllerV2 mood context to the existing control
   description tool; retain operation validation and count guide resource reads in
   offline workflow captures (#442, #443). Centralize all mandatory write guidance

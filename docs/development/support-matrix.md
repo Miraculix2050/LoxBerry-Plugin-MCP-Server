@@ -83,3 +83,7 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   independently authenticated Admin helper and fresh authorized project evidence,
   with cancellation-safe bounded workers. Fixture coverage is not installed-device
   acceptance or actual ETS import evidence. No new firmware compatibility claim.
+
+- Native PVPF (#510): typed hourly energy and state semantics follow Structure File
+  17.1 pp.115–116. Availability and prediction age are explicit; automated fixtures
+  do not establish an available real Weather Service or forecast accuracy.

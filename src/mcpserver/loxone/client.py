@@ -780,6 +780,21 @@ class LoxoneWebSocketSession:
             encrypted=not self._secure_transport,
         )
 
+    async def pv_forecast(self, action_uuid: str) -> Any:
+        """Read the fixed PVPF getForecasts command (Structure File 17.1)."""
+        from mcpserver.loxone.pv_forecast import MAX_BYTES
+        from mcpserver.loxone.uuid import normalize_loxone_uuid
+
+        action_uuid = normalize_loxone_uuid(action_uuid)
+        return await _websocket_command(
+            self._websocket,
+            self._encryptor,
+            f"jdev/sps/io/{action_uuid}/getForecasts",
+            encrypted=not self._secure_transport,
+            timeout_seconds=min(self._timeout, 10.0),
+            max_payload_bytes=min(self._max_payload, MAX_BYTES),
+        )
+
     async def native_efm_result(self, action_uuid: str, view: str) -> Any:
         """Read one fixed evidenced EFM view with strict transport bounds."""
         from mcpserver.loxone.native_efm import MAX_OUTER_BYTES, VIEWS
