@@ -481,6 +481,15 @@ State nicht eingetreten ist. Pro Control werden höchstens 20 Statistikserien zu
 ausgelassene Metadaten markiert `native_statistics_truncated`. State-Namen sind auf 200 UTF-8-
 Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Namen und -Typen
 haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
+`mapping_coverage` zählt die exakten Runtime-Controls sowie mehrdeutig zugeordnete
+und ohne Zuordnungsevidenz gebliebene Bausteine innerhalb derselben begrenzten Suche.
+Kanonische Bausteine zählen einmal; Konnektoren und Container zählen nicht als Lücken.
+`exact_runtime_controls` entspricht `summary.relevant_controls`. Die separate Evidenz
+eines abgeleiteten Runtime-Ziels erhöht diesen exakten Zähler nicht. `complete` ist nur
+ohne Mapping-Lücken, ungelöste Beziehungen oder Such-/Diagnoseabschneidung wahr;
+`truncated` kennzeichnet die Abschneidung. Fehlende Zuordnungsevidenz beweist keine
+physische Abwesenheit. Die Zähler gelten für die gesamte Analyse und bleiben von
+`next_cursor` und `page_truncated` unabhängig; sie belegen keine historische Vollständigkeit.
 Die mitgelieferte Anleitung `using-loxberry-mcp` verbindet diese vorhandenen Tools
 zu einem Diagnoseablauf: Ziel bestimmen, aktuelle Beobachtungen samt Zeitstempel
 prüfen, historische Abdeckung für den angefragten Zeitraum belegen und strukturelle

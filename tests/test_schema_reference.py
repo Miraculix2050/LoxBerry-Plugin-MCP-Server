@@ -117,6 +117,30 @@ EXPECTED_TOOLS = {
 }
 
 
+@pytest.mark.asyncio
+async def test_observability_mapping_coverage_is_required_in_published_and_generated_schema():
+    server = FastMCP("observability-coverage-contract")
+    register_observability_tools(server, None, None)
+    published = next(
+        tool for tool in await server.list_tools() if tool.name == "loxone_analyze_observability"
+    )
+    reference = next(
+        tool for tool in tool_schema_catalog(VERSION)["tools"] if tool["name"] == published.name
+    )
+    assert published.outputSchema == reference["outputSchema"]
+    definitions = reference["outputSchema"]["$defs"]
+    assert "mapping_coverage" in definitions["ObservabilityData"]["required"]
+    coverage = definitions["ObservabilityMappingCoverageData"]
+    counts = {"exact_runtime_controls", "ambiguous_project_objects", "unmapped_project_objects"}
+    assert set(coverage["required"]) == counts | {"complete", "truncated"}
+    assert set(coverage["properties"]) == set(coverage["required"])
+    for field in counts:
+        assert coverage["properties"][field]["type"] == "integer"
+        assert coverage["properties"][field]["minimum"] == 0
+    for field in ("complete", "truncated"):
+        assert coverage["properties"][field]["type"] == "boolean"
+
+
 def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
     catalog = tool_schema_catalog(VERSION)
     tools = catalog["tools"]

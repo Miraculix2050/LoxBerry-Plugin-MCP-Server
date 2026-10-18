@@ -72,6 +72,16 @@ def test_equal_occurrences_map_exact_without_using_names(kind):
     assert len(detail["source_project_node_ids"]) == 2
     assert detail["logical_identity"]["classification"] == "equivalent"
     assert len(model.graph.nodes) == 2
+    coverage = query.observable_controls(node, direction="both", max_depth=6, max_nodes=100)[
+        "mapping_coverage"
+    ]
+    assert coverage == {
+        "exact_runtime_controls": 1,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": True,
+        "truncated": False,
+    }
     ProjectDescriptionData.model_validate(detail)
     found = query.find(
         query=None, kind="block", block_type=None, source_id=None, runtime_control_uuid=UUID

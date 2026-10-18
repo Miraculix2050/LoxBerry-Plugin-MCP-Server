@@ -74,6 +74,13 @@ def test_query_keeps_parent_topology_and_legacy_counters_separate():
         query.resolve(CHILD, "runtime_control_uuid"), direction="both", max_depth=2, max_nodes=10
     )
     assert [item["control_uuid"] for item in analysis["controls"]] == [PARENT]
+    assert analysis["mapping_coverage"] == {
+        "exact_runtime_controls": 1,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": True,
+        "truncated": False,
+    }
 
 
 def test_hidden_parent_subtree_never_enters_mapping_inventory():
@@ -200,6 +207,9 @@ async def test_child_trace_describe_and_observability_do_not_claim_child_topolog
     assert child.current_states[0].uuid == "child-0"
     assert child.runtime_target_mapping.mapping_status == "derived_from_parent"
     assert data.controls[0].current_states[0].uuid == "parent-state"
+    assert data.mapping_coverage.exact_runtime_controls == data.summary.relevant_controls == 1
+    assert data.mapping_coverage.complete is True
+    assert data.mapping_coverage.unmapped_project_objects == 0
 
 
 @pytest.mark.asyncio

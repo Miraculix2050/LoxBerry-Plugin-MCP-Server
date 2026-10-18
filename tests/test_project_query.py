@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from mcpserver.loxone.project.graph import (
+    GraphEdge,
     ProjectPartSummary,
     ProjectSnapshot,
     ProjectSourceDiagnostic,
@@ -179,6 +180,7 @@ def test_observable_controls_include_all_exact_shared_mappings():
             "directions": ["upstream", "downstream"],
         },
     ]
+    assert result["mapping_coverage"]["exact_runtime_controls"] == 2
 
 
 def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unresolved(
@@ -212,6 +214,193 @@ def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unreso
     assert result["truncated"] is True
     assert result["truncation_reasons"] == ["semantic_incomplete"]
     assert result["unresolved_relationships"] == 2
+    assert result["mapping_coverage"]["complete"] is False
+    assert result["mapping_coverage"]["truncated"] is True
+
+
+@pytest.mark.parametrize(
+    ("runtime_controls", "ambiguous", "unmapped", "exact"),
+    [
+        ((control("a" * 32), control("b" * 32)), 0, 0, 2),
+        ((control("b" * 32),), 0, 1, 1),
+        ((control("a" * 32, "b" * 32),), 2, 0, 0),
+        ((control("shared", "a" * 32), control("a" * 32, "b" * 32)), 2, 0, 1),
+        ((), 0, 2, 0),
+    ],
+)
+def test_observability_mapping_coverage_is_target_local(
+    runtime_controls, ambiguous, unmapped, exact
+):
+    project = query()
+    structure = SimpleNamespace(last_modified="coverage", controls=runtime_controls)
+    project = ProjectQuery(
+        replace(project.view, mapping=map_runtime(project.view.snapshot, structure)), {}
+    )
+    result = project.observable_controls(
+        project.resolve("p:4", "project_node_id"), direction="both", max_depth=6, max_nodes=100
+    )
+    # The disconnected Unknown block and the connectors are not mapping gaps.
+    assert result["mapping_coverage"] == {
+        "exact_runtime_controls": exact,
+        "ambiguous_project_objects": ambiguous,
+        "unmapped_project_objects": unmapped,
+        "complete": not (ambiguous or unmapped),
+        "truncated": False,
+    }
+    assert len(result["controls"]) == exact
+
+
+@pytest.mark.parametrize(
+    ("reason", "semantic", "unresolved", "unresolved_truncated", "complete", "truncated"),
+    [
+        (None, False, [], False, True, False),
+        ("max_nodes", False, [], False, False, True),
+        ("max_edges", False, [], False, False, True),
+        ("max_depth", False, [], False, False, True),
+        (None, True, [], False, False, True),
+        (
+            None,
+            False,
+            [{"project_node_id": "p:3", "code": "unresolved_signal"}],
+            False,
+            False,
+            False,
+        ),
+        (None, False, [], True, False, True),
+    ],
+)
+def test_observability_mapping_coverage_preserves_trace_limits(
+    monkeypatch, reason, semantic, unresolved, unresolved_truncated, complete, truncated
+):
+    project = query()
+    mapped = project.resolve("p:3", "project_node_id")
+
+    def bounded_trace(self, _node, **_kwargs):
+        return {
+            "nodes": [self._summary(mapped)],
+            "truncated": reason is not None,
+            "semantic_truncated": semantic,
+            "truncation_reason": reason,
+            "unresolved_relationships": unresolved,
+            "unresolved_truncated": unresolved_truncated,
+        }
+
+    monkeypatch.setattr(ProjectQuery, "trace", bounded_trace)
+    result = project.observable_controls(mapped, direction="both", max_depth=6, max_nodes=100)
+    assert result["mapping_coverage"] == {
+        "exact_runtime_controls": 1,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": complete,
+        "truncated": truncated,
+    }
+
+
+def test_observability_mapping_coverage_deduplicates_canonical_source_occurrences(monkeypatch):
+    parsed = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
+    graph = build_graph((("one", parsed), ("two", parsed)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project", 1, (), graph, logical_aliases=aliases, logical_source_ids=source_ids
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    def source_trace(self, _node, *, direction, **_kwargs):
+        source = "one" if direction == "upstream" else "two"
+        return {
+            "nodes": [
+                self._summary(self.resolve(f"{source}:{index}", "project_node_id"))
+                for index in (1,)
+            ],
+            "truncated": False,
+            "truncation_reason": None,
+            "unresolved_relationships": [],
+            "unresolved_truncated": False,
+        }
+
+    monkeypatch.setattr(ProjectQuery, "trace", source_trace)
+    result = project.observable_controls(
+        project.resolve("one:1", "project_node_id"), direction="both", max_depth=6, max_nodes=100
+    )
+    assert result["mapping_coverage"]["unmapped_project_objects"] == 1
+
+
+@pytest.mark.parametrize(
+    ("edges", "max_depth", "max_nodes", "reason", "unmapped"),
+    [
+        (((1, 2), (2, 3)), 6, 2, "max_nodes", 1),
+        (((1, 1), (1, 1), (1, 2)), 6, 2, "max_edges", 0),
+        (((1, 2), (2, 3)), 1, 100, "max_depth", 1),
+    ],
+)
+def test_observability_mapping_coverage_counts_only_the_truncated_traversal(
+    edges, max_depth, max_nodes, reason, unmapped
+):
+    uuid = "a" * 32
+    parsed = parse_project(f'<P><C U="{uuid}"/><C U="unmapped"/><C U="outside"/></P>'.encode())
+    graph = replace(
+        build_graph((("p", parsed),)),
+        edges=tuple(GraphEdge(f"p:{source}", f"p:{target}", "signal") for source, target in edges),
+    )
+    snapshot = ProjectSnapshot("project", 1, (), graph)
+    project = ProjectQuery(
+        ProjectView(
+            snapshot,
+            map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=(control(uuid),))),
+        ),
+        {},
+    )
+    result = project.observable_controls(
+        project.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=max_depth,
+        max_nodes=max_nodes,
+    )
+    assert result["truncation_reasons"] == [reason]
+    assert result["mapping_coverage"] == {
+        "exact_runtime_controls": 1,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": unmapped,
+        "complete": False,
+        "truncated": True,
+    }
+
+
+@pytest.mark.parametrize("diagnostics_truncated", [False, True])
+def test_observability_mapping_coverage_checks_unresolved_appended_boundaries(
+    diagnostics_truncated,
+):
+    uuid = "a" * 32
+    parsed = parse_project(f'<P><C U="{uuid}" Ref="missing"><Co U="connector"/></C></P>'.encode())
+    graph = build_graph((("p", parsed),))
+    if diagnostics_truncated:
+        graph = replace(graph, unresolved=graph.unresolved * 3)
+    snapshot = ProjectSnapshot("project", 1, (), graph)
+    project = ProjectQuery(
+        ProjectView(
+            snapshot,
+            map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=(control(uuid),))),
+        ),
+        {},
+    )
+    node = project.resolve("p:2", "project_node_id")
+    trace = project.trace(node, direction="upstream", max_depth=6, max_nodes=2)
+    assert {item["project_node_id"] for item in trace["nodes"]} == {"p:1", "p:2"}
+    assert trace["unresolved_relationships"]
+    assert trace["unresolved_truncated"] is diagnostics_truncated
+    result = project.observable_controls(node, direction="both", max_depth=6, max_nodes=2)
+    assert result["mapping_coverage"] == {
+        "exact_runtime_controls": 1,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": False,
+        "truncated": diagnostics_truncated,
+    }
 
 
 def test_source_diagnostics_are_available_without_unknown_values():

@@ -568,6 +568,19 @@ not resolved by this rule.
 Exact source_id filters and text searches include the stored references of every
 represented occurrence; the returned logical representative remains deterministic.
 
+For `loxone_analyze_observability`, inspect target-local `mapping_coverage` as
+well as historical coverage. Its exact runtime-control count equals
+`summary.relevant_controls`; separate derived-target evidence does not add an
+exact control. Ambiguous and unmapped counts refer to distinct
+canonical blocks reached by the same bounded traces, excluding connectors and
+containers. Ambiguous candidates remain ambiguous even with an additional exact
+mapping. Missing mapping evidence in the authorized runtime view is not physical
+absence. `complete=false` also covers unresolved relationships; `truncated=true`
+marks graph/semantic or unresolved-diagnostic limits. Counts under truncation are
+observed subsets. Coverage is analysis-wide: follow `next_cursor` and inspect
+`page_truncated` independently. Mapping completeness never proves event occurrence
+or historical completeness.
+
 State internal signal flow is version- and configuration-bound. Rule
 `state_table_aq_v3` covers complete fixed-operand tables for Config 17020828 /
 XML 274 / State 178, selecting I1–I8 with up to four AND conditions per row,
