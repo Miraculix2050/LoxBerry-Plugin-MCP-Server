@@ -20,6 +20,10 @@ extracted from the matching version heading.
 
 - Establish internal request-local energy scope and provenance contracts with
   explicit forecast coverage and isolated native EFM membership checks (#556).
+- Reduce KNX helper startup by deferring unrelated solar analysis imports;
+  avoid unused topology indexes for single-occurrence project identities and
+  reuse the strict UUID pattern. Configured sources, local UUID conflicts and
+  all authorization checks remain fully validated (#552).
 
 - Explain conditional PVPF planning in the DE/EN Tool Explorer and summarize
   suggested UTC windows, conditional PV coverage and additional grid energy (#510).

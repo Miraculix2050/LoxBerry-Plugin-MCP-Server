@@ -21,6 +21,12 @@ Besonders nach einem Dienstneustart kann die erneute Modellbildung
 länger dauern; eine vollständige Gesamtladezeit unter fünf Sekunden ist noch
 nicht nachgewiesen.
 
+Der KNX-Helper lädt Solar-Analysemodelle erst bei tatsächlicher Verwendung.
+Gespeicherte Quellen werden weiterhin vollständig geprüft, selbst bei
+deaktivierter Aufzeichnung. Für eindeutig einzelne Projektvorkommen werden
+unbenötigte Topologie-Indizes vermieden; lokale UUID-Konflikte und Berechtigungen
+werden unverändert geprüft. Es entsteht kein zusätzlicher Ergebnis-Cache.
+
 ## Lokale Config-Datei: EIBType-Zuordnung
 
 Entwickler können eine lokale `.Loxone`-XML-Projektdatei nur lesend auswerten:

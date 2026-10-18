@@ -105,6 +105,10 @@ authoritative; the release fallback literal and public import forms remain.
 KNX helper imports do not resolve the plugin version or load unrelated async
 machinery. Required Solar configuration validation may load Python metadata for
 Pydantic's own plugin discovery; this is separate from a plugin-version lookup.
+Solar observation analysis models load only when observations are actually
+constructed. Source models remain imported before the configuration lock;
+configured sources use the same authoritative validator even with recording
+disabled. Avoid moving cold model imports inside the shared configuration lock.
 Session phase logs are restricted to an active project certificate scope for the
 same endpoint. Ordinary sessions and inherited tasks after scope exit emit no
 project timings; each session still connects and authenticates independently.
@@ -118,3 +122,84 @@ hashes, configuration/catalog integrity, service health and reservation release
 with each native acceptance run. Preserve independent downloads, fresh visibility,
 final marker authentication, authorization and revision checks. Do not use cached
 private results or omit remembered sections to claim the five-second target.
+
+## Same-functionality follow-up (#552)
+
+The historical 18.283 s and 21.459 s service-cold observations used different
+functional baselines. Cross-source identity/provenance and Solar configuration
+validation were integrated between them. The measured post-graph identity and
+diagnostic span grew by 1.591 s, helper imports by 0.947 s; graph construction fell
+by 0.417 s. These nested observations are attribution clues, not a controlled
+causal comparison or proof that every remaining difference is measurement noise.
+
+A Performance-Analyzer compared pre-#536 snapshot modules from `16a8ae3a` with
+the current implementation while retaining identical model-15 identity semantics,
+project input and snapshot fields. Eight alternating fresh-process pairs on the
+development host measured median snapshot construction of 979.71 -> 446.26 ms
+(CPU 968.75 -> 437.50 ms). Every field, including private lookup dictionaries,
+was canonically identical independently of pickle reducers. This bounds the
+finding to snapshot CPU for that input; it is not native whole-page acceptance.
+
+Two local caches were rejected: attribute and UUID memoization slowed the actual
+saved project despite positive synthetic cases. Reusing the identical compiled
+UUID pattern and returning early for empty UUIDs retained all conservative
+identity checks and reduced local identity time from 87.97 to 78.85 ms across
+24 alternating pairs with identical results. No new cache or model version is
+required because interpretations remain unchanged. When every block UUID has
+one occurrence, topology indexes are unused by existing identity decisions.
+A fast path retains the complete UUID/local-duplicate pass and the existing
+single-source or ambiguous/duplicate-source evidence, including connector
+collisions. Multi-occurrence groups retain the complete existing topology path.
+Twelve alternating local pairs reduced identity time from 79.51 to 16.90 ms;
+equivalent duplicate groups and groups over the source limit retained equal
+results and comparable fallback times.
+
+An initially tested source-model lazy import was rejected. On reserved
+Loxberry-Test, eight alternating fresh-process probes loaded the same three
+Solar sources and measured combined import/validation of 1162.78 -> 825.61 ms,
+with equal parsed documents. However, actual parallel initial CGI requests moved
+cold source-model imports into the shared configuration lock: project forwarding
+configuration time grew from about 24 ms to 897-1492 ms. The whole-page pilot did
+not improve reliably. The retained change defers only observation analysis,
+leaving source-model imports outside the configuration lock. A standalone CPU
+improvement is insufficient when it introduces contention in the real page path.
+
+For whole-page comparison, alternate the unchanged master reference `6704f6e0`
+with only the two optimized runtime files. Keep project/configuration, shared
+OAuth session, remembered comparison, periodic polling and all security checks
+unchanged. A cold sample means restarting the plugin service, not clearing OS or
+browser caches. Record initial response completion and separately verify rendered
+rows/loading indicators. Do not call this a precise paint timestamp or p95.
+
+The retained observation-import change was checked separately on the native host
+with eight alternating fresh-process pairs and the same three configured sources:
+combined import/complete validation 1563.57 -> 997.09 ms (CPU 1562.39 -> 996.81 ms),
+with equal parsed documents. Configuration validation remained about 20 ms in
+both variants; source-model imports were no longer moved under the config lock.
+
+Successful whole-page pairs, in seconds, on the unchanged functional baseline:
+
+| Pair | Reference cold | Candidate cold | Reference cached refresh | Candidate cached refresh |
+| --- | ---: | ---: | ---: | ---: |
+| A2 / C1 | 20.671 | 19.973 | 8.553 | 8.363 |
+| A3 / C2R | 24.014 | 22.650 | 10.185 | 8.864 |
+| A4 / C3 | 25.246 | 24.914 | 11.275 | 11.568 |
+
+All accepted samples restored 22 comparison rows with no remaining initial
+loading indicators. The cold definition is service restart; each accepted cached
+refresh follows a successful cold run. One earlier cold request returned no rows
+and is retained as failed acceptance, excluded from successful timing statistics.
+Its error body was unavailable after navigation, so its cause remains unknown.
+The immediate recovery rebuilt the model and took 20.173 s; it is not a cached
+refresh. Later successes do not resolve the original functional finding, and the
+native acceptance must not be described as entirely clean on that evidence.
+
+Device conditions varied materially during measurement: temperature rose from
+about 67.7 to 73.1 C, and firmware reported frequency capping (`0x60002`), with an
+observed actual ARM clock of about 0.841 GHz versus an earlier 1.200 GHz. The
+[official firmware status reference](https://www.raspberrypi.com/documentation/computers/os.html#get_throttled)
+distinguishes current capping from historical flags. These readings do not prove
+the reason for capping or explain the exact historical 3.176 s difference.
+Unchanged reference times also increased. Whole-page deltas therefore remain
+observations under drifting device conditions, not an isolated causal speedup,
+p95 or a five-second guarantee. The five-second target remains unmet.

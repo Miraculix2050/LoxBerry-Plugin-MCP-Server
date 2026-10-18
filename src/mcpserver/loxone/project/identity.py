@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .graph import GraphNode, ProjectGraph
 
 SUPPORTED_TYPES = frozenset({"SysVar", "DigitalIn", "Actor", "Online", "Mode", "VoltageOut"})
+_UUID_PATTERN = re.compile("[0-9a-f]{32}")
 Classification = Literal["single_source", "equivalent", "complementary", "ambiguous"]
 Reason = Literal[
     "single_occurrence",
@@ -32,8 +33,10 @@ class IdentityEvidence:
 
 
 def _uuid(value: str | None) -> str | None:
-    normalized = (value or "").replace("-", "").lower()
-    return normalized if re.fullmatch("[0-9a-f]{32}", normalized) else None
+    if not value:
+        return None
+    normalized = value.replace("-", "").lower()
+    return normalized if _UUID_PATTERN.fullmatch(normalized) else None
 
 
 def _attributes(node: "GraphNode") -> tuple[tuple[str, str], ...]:
@@ -76,6 +79,21 @@ def logical_runtime_nodes(
             local_ids[node.project, uuid] += 1
             if node.kind == "block":
                 groups[uuid].append(node)
+    if all(len(members) == 1 for members in groups.values()):
+        # Single occurrences never use topology; still reject UUID collisions
+        # with connectors or other nodes in the same project.
+        single_evidence: dict[str, IdentityEvidence] = {}
+        for uuid, single_members in groups.items():
+            node = single_members[0]
+            if node.block_type not in SUPPORTED_TYPES:
+                continue
+            duplicate = local_ids[node.project, uuid] != 1
+            single_evidence[node.key] = IdentityEvidence(
+                "ambiguous" if duplicate else "single_source",
+                "duplicate_source" if duplicate else "single_occurrence",
+                (node.key,),
+            )
+        return (), (), single_evidence
     for edge in graph.edges:
         if edge.kind == "contains":
             parents[edge.target].append(edge.source)
