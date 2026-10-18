@@ -10,13 +10,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from mcp.server.fastmcp.prompts.base import Prompt, PromptArgument
 
+from mcpserver.loxone.uuid import normalize_history_control_id
+
 _COMMON = {
     "language": "en (default) or de",
     "detail": "summary (default) or findings",
 }
 _TARGETS = {
     "room_uuid": "Exact visible room ID; omit to resolve the requested rooms",
-    "control_uuid": "Exact visible control ID; never a name or instruction",
+    "control_uuid": "Exact visible control ID, including its opaque runtime suffix if present",
     "binding_id": "Exact currently confirmed installation-profile binding ID",
 }
 _RANGE = {
@@ -76,7 +78,10 @@ def _validated(
     for key, value in arguments.items():
         if not isinstance(value, str) or not value or len(value) > 128:
             raise _invalid()
-        if key in _TARGETS or key == "consumer_binding_id":
+        if key == "control_uuid" and "/" in value:
+            # This is an opaque runtime key, never a path or inferred parent.
+            normalize_history_control_id(value)
+        elif key in _TARGETS or key == "consumer_binding_id":
             maximum = 64 if "binding_id" in key else 128
             if not re.fullmatch(rf"[A-Za-z0-9_-]{{1,{maximum}}}", value):
                 raise _invalid()

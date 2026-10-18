@@ -25,8 +25,11 @@ proves completeness. Responses retain the 50-record upper bound.
 
 Identifiers must come from current authorized discovery or a currently confirmed
 profile. UUID selectors allow 1–128 ASCII letters, digits, underscores and
-hyphens; binding IDs allow at most 64. Validation proves syntax only, never
-existence, visibility or role. Names, free-form instructions, paths and URLs are
+hyphens; binding IDs allow at most 64. `control_uuid` also retains the existing
+contract for runtime child-control IDs of at most 128 characters: a UUID prefix
+and an unchanged opaque suffix such as `…/AI1`. This key is not a file path or
+evidence of a parent object; it remains unchanged JSON data. Validation proves
+syntax only, never existence, visibility or role. Names, free-form instructions, paths and URLs are
 not selectors. Missing or ambiguous targets are resolved in the subsequent
 workflow. Selecting a temperature control still requires selecting an advertised
 actual-temperature series there; a profile binding must be confirmed and usable.

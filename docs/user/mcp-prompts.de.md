@@ -26,8 +26,12 @@ Seitenobergrenze belegt Vollständigkeit. Höchstens 50 Datensätze pro Antwort.
 
 Kennungen müssen aus der aktuellen autorisierten Discovery oder einem aktuell
 bestätigten Profil stammen. UUID-Selektoren erlauben 1–128 ASCII-Buchstaben,
-Ziffern, Unterstriche und Bindestriche; Bindungskennungen höchstens 64. Die
-Validierung belegt nur die Syntax, keine Existenz, Sichtbarkeit oder Rolle.
+Ziffern, Unterstriche und Bindestriche; Bindungskennungen höchstens 64.
+`control_uuid` erhält außerdem den vorhandenen Vertrag für maximal 128 Zeichen
+lange Runtime-Unter-Control-IDs: UUID-Präfix und unveränderter opaker Suffix
+wie `…/AI1`. Dieser Schlüssel ist kein Dateipfad und kein Beleg für ein
+Elternobjekt; er bleibt als JSON-Wert unverändert. Die Validierung belegt nur
+die Syntax, keine Existenz, Sichtbarkeit oder Rolle.
 Namen, Freitextanweisungen, Pfade und URLs sind keine Selektoren. Fehlende oder
 mehrdeutige Ziele werden im anschließenden Ablauf gezielt geklärt. Bei einer
 Temperatur-Control-Auswahl muss dort eine passende veröffentlichte Istserie
