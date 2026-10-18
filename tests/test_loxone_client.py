@@ -1723,7 +1723,9 @@ async def test_public_certificate_inflight_child_cannot_repopulate_expired_scope
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("origin", ["http://192.168.1.1", "https://miniserver.example"])
-async def test_certificate_memo_preserves_new_socket_and_authentication(monkeypatch, origin):
+async def test_certificate_memo_preserves_new_socket_and_authentication(
+    monkeypatch, origin, caplog
+):
     client = LoxoneClient(MiniserverEndpoint.parse(origin), client_uuid=UUID(int=1))
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pem = (
@@ -1746,9 +1748,17 @@ async def test_certificate_memo_preserves_new_socket_and_authentication(monkeypa
     )
     monkeypatch.setattr("mcpserver.loxone.client._websocket_command", command)
     token = LoxoneToken("test-token", "reader", "key", "SHA256", 100)
+    caplog.set_level("INFO", logger="mcpserver.loxone.client")
+    release = asyncio.Event()
+
+    async def inherited_reconnect():
+        await release.wait()
+        return await client.open_session(token)
+
     with client.public_certificate_scope():
         first = await client.open_session(token)
         second = await client.open_session(token)
+        reconnect = asyncio.create_task(inherited_reconnect())
     assert first is not second
     assert connect.await_count == 2
     assert fetch.await_count == (0 if client.endpoint.secure else 1)
@@ -1759,3 +1769,19 @@ async def test_certificate_memo_preserves_new_socket_and_authentication(monkeypa
     assert commands[0][0] is not commands[-1][0]
     await first.close()
     await second.close()
+    phases = [
+        record.getMessage()
+        for record in caplog.records
+        if "component=project_load" in record.getMessage()
+    ]
+    assert len(phases) == 6
+    release.set()
+    inherited = await reconnect
+    await inherited.close()
+    ordinary = await client.open_session(token)
+    await ordinary.close()
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if "component=project_load" in record.getMessage()
+    ] == phases

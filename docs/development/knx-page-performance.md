@@ -80,6 +80,9 @@ Package version metadata is resolved on first public `__version__` access and
 then cached as the same string. Installed distribution metadata remains
 authoritative; the release fallback literal and public import forms remain.
 KNX helper imports do not load version metadata or unrelated async machinery.
+Session phase logs are restricted to an active project certificate scope for the
+same endpoint. Ordinary sessions and inherited tasks after scope exit emit no
+project timings; each session still connects and authenticates independently.
 
 Helper stdout and stderr are drained concurrently with fixed size limits and
 the existing timeout/child cleanup. This prevents timing diagnostics from

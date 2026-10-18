@@ -555,6 +555,15 @@ class LoxoneClient:
             await session.close()
             token.destroy()
 
+    def _record_project_session_timing(self, phase: str, started: float) -> None:
+        scope = self._certificate_scope.get()
+        if scope is not None and scope.active and scope.endpoint == self.endpoint:
+            _LOGGER.info(
+                "component=project_load phase=%s duration_ms=%.1f",
+                phase,
+                (time.monotonic() - started) * 1000,
+            )
+
     async def open_session(self, token: LoxoneToken) -> LoxoneWebSocketSession:
         if not token.value:
             raise LoxoneConnectionError("Loxone token is no longer available")
@@ -562,16 +571,10 @@ class LoxoneClient:
         started = time.monotonic()
         if not self.endpoint.secure:
             public_key = await self.websocket_public_key()
-        _LOGGER.info(
-            "component=project_load phase=session_certificate duration_ms=%.1f",
-            (time.monotonic() - started) * 1000,
-        )
+        self._record_project_session_timing("session_certificate", started)
         started = time.monotonic()
         websocket = await self._connect_websocket()
-        _LOGGER.info(
-            "component=project_load phase=session_connect duration_ms=%.1f",
-            (time.monotonic() - started) * 1000,
-        )
+        self._record_project_session_timing("session_connect", started)
         session = LoxoneWebSocketSession(
             websocket,
             public_key=public_key,
@@ -588,10 +591,7 @@ class LoxoneClient:
         try:
             started = time.monotonic()
             await session.authenticate()
-            _LOGGER.info(
-                "component=project_load phase=session_authenticate duration_ms=%.1f",
-                (time.monotonic() - started) * 1000,
-            )
+            self._record_project_session_timing("session_authenticate", started)
         except BaseException as exc:
             if isinstance(exc, asyncio.CancelledError):
                 websocket.transport.abort()
