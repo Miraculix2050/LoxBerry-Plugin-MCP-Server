@@ -326,3 +326,63 @@ def test_offline_local_configuration_can_be_disabled_and_cleared(tmp_path, monke
                 confirm=True,
             ),
         )
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_main_form_rejects_revoking_history_with_preserved_solar_policy(
+    tmp_path, monkeypatch, active
+):
+    from mcpserver import admin
+    from mcpserver.config import AtomicConfigStore
+
+    store = AtomicConfigStore(tmp_path / "config.json")
+    previous = PluginConfig(
+        loxone_history_enabled=True, solar_history_enabled=True, solar_history_sources=(source(),)
+    )
+    store.save(previous)
+    monkeypatch.setattr(admin, "_config_store", lambda: store)
+    monkeypatch.setattr(admin, "_service_active", lambda: active)
+    monkeypatch.setattr(admin, "_restart_service", lambda: pytest.fail("invalid policy restarted"))
+    with pytest.raises(ConfigError, match="solar"):
+        admin._save_mcp({"schema_version": 10, "tools": {"loxone_history_enabled": False}})
+    assert store.load().to_document() == previous.to_document()
+
+
+@pytest.mark.asyncio
+async def test_solar_metadata_failure_pauses_only_solar_and_can_recover(tmp_path, monkeypatch):
+    from mcpserver.installation_profile import installation_identity
+    from mcpserver.loxone.event_history import EventHistoryMonitor
+    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+
+    structure = LoxoneStructure(LoxoneIdentity("service", "serial"), "17.2", (), (), (control(),))
+    origin = "http://192.168.10.20"
+    sampler = SolarSampler((source(),), (control(),), installation_identity(origin, structure))
+    sampler.batch({S: 100}, 100)
+    monitor = EventHistoryMonitor(
+        PluginConfig(loxone_endpoint=origin),
+        EventHistoryStore(tmp_path / "s.sqlite3", retention_days=7, maximum_mib=16),
+        object(),
+    )
+
+    async def unavailable():
+        raise TimeoutError("private upstream message")
+
+    monkeypatch.setattr(monitor, "visible_structure", unavailable)
+    paused = await monitor._refresh_solar_sampler(sampler)
+    assert not paused.sources and not paused.values
+    assert paused.configured_sources == sampler.configured_sources
+
+    async def available():
+        return structure
+
+    monkeypatch.setattr(monitor, "visible_structure", available)
+    restored = await monitor._refresh_solar_sampler(paused)
+    assert restored.sources and not restored.values
+    assert restored.batch({S: 150}, 200)
+
+    async def cancelled():
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(monitor, "visible_structure", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await monitor._refresh_solar_sampler(restored)

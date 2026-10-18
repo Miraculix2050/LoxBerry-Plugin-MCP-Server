@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from mcpserver.config import PluginConfig
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.models import Control, LoxoneStructure
+    from mcpserver.solar_recording import SolarSampler
 
 
 from mcpserver.loxone.events import StateEvent
@@ -1667,14 +1668,7 @@ class EventHistoryMonitor:
                     if self.config.solar_history_enabled and time.monotonic() >= solar_refresh_at:
                         # A separate authorized metadata connection avoids competing
                         # with the sole state reader or splitting scalar coverage.
-                        refreshed = await self.visible_structure()
-                        solar_sampler = solar_sampler.revalidated(
-                            _controls(refreshed.controls),
-                            installation_identity(
-                                MiniserverEndpoint.parse(self.config.loxone_endpoint).origin,
-                                refreshed,
-                            ),
-                        )
+                        solar_sampler = await self._refresh_solar_sampler(solar_sampler)
                         solar_refresh_at = time.monotonic() + max(
                             60, self.config.structure_refresh_seconds
                         )
@@ -1838,6 +1832,24 @@ class EventHistoryMonitor:
             with suppress(asyncio.CancelledError):
                 await self._backfill_task
             self._backfill_task = None
+
+    async def _refresh_solar_sampler(self, sampler: SolarSampler) -> SolarSampler:
+        """Pause solar capture on failed revalidation without interrupting scalar coverage."""
+        from mcpserver.installation_profile import installation_identity
+        from mcpserver.loxone.client import MiniserverEndpoint
+
+        try:
+            refreshed = await asyncio.wait_for(self.visible_structure(), timeout=30)
+            return sampler.revalidated(
+                _controls(refreshed.controls),
+                installation_identity(
+                    MiniserverEndpoint.parse(self.config.loxone_endpoint).origin, refreshed
+                ),
+            )
+        except Exception:
+            _LOGGER.warning("component=event_history outcome=solar_metadata_refresh_unavailable")
+            # Keep configured selectors for the next refresh, discard stale authorization/data.
+            return sampler.revalidated((), "")
 
     async def visible_structure(
         self, *, timing: dict[str, float | int] | None = None
