@@ -190,6 +190,7 @@ class SolarSourceSummary(Contract):
     unit: Literal["W/m²", "°C", "kWh"]
     input_points: int = Field(ge=0, le=100_000)
     normalized_hours: int = Field(ge=0, le=744)
+    recording_enabled: bool = False
     value_origin: Literal[
         "observed_source_states", "estimated_from_observed_source_states", "forecast"
     ]
