@@ -193,7 +193,11 @@ async def test_native_read_once_with_visibility_recheck_and_cleanup(
 async def test_multiple_forecasts_share_authentication_structure_read_and_cleanup():
     runtime, structure, session, token = fixture_runtime()
     first = replace(structure.controls[0], control_type="PvProductionForecast")
-    second = replace(first, uuid="00000000-0000-0000-0000000000000009")
+    second = replace(
+        first,
+        uuid="00000000-0000-0000-0000000000000009",
+        action_uuid="00000000-0000-0000-0000000000000008",
+    )
     structure = replace(structure, controls=(first, second))
 
     @asynccontextmanager
@@ -212,3 +216,21 @@ async def test_multiple_forecasts_share_authentication_structure_read_and_cleanu
     session.load_structure.assert_awaited_once()
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_forecast_actions_are_rejected_before_transport():
+    runtime, structure, session, _ = fixture_runtime()
+    first = replace(structure.controls[0], control_type="PvProductionForecast")
+    second = replace(first, uuid="00000000-0000-0000-0000000000000009")
+    structure = replace(structure, controls=(first, second))
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", structure, True)
+
+    runtime.snapshot_context = snapshots
+    with pytest.raises(ControlOperationError, match="action identity"):
+        await read_pv_forecasts(runtime, access(), [first.uuid, second.uuid])
+    runtime._open_session.assert_not_awaited()
+    session.load_structure.assert_not_awaited()

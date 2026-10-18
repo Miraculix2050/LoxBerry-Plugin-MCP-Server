@@ -58,6 +58,8 @@ async def read_pv_forecasts(
             controls = [visible_pvpf(snapshot.structure, uuid) for uuid in uuids]
             try:
                 actions = [normalize_loxone_uuid(control.action_uuid) for control in controls]
+                if len(set(actions)) != len(actions):
+                    raise ValueError("duplicate forecast action identity")
             except ValueError:
                 raise ControlOperationError(
                     "unsupported_source", "Invalid PVPF action identity"
