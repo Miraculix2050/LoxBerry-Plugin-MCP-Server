@@ -99,4 +99,3 @@ results do not establish absence of alarms. The tool does not classify StatusMon
 WindowMonitor states as alarms. Use source control/state references for targeted
 reads; do not infer danger, cause or severity from names or colors. This snapshot
 is not an emergency notification service and never acknowledges alarms.
-

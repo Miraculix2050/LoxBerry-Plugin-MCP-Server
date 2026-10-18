@@ -321,4 +321,3 @@ The bounded interpretations are wrong contact wiring or misleading consumer
 naming. Names alone cannot decide which physical opening the blind controls or
 justify prescribing a correction. If the tools expose only separate path
 segments, explain that limitation rather than claiming the entire chain is proven.
-

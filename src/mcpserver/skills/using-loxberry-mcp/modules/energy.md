@@ -189,4 +189,3 @@ be converted universally to irradiance. Numerical source/method gates remain ope
 and in bounded point-time/raw-value/reason diagnostics with a trace-correlated
 sanitized log. Tell the user when the tool warns about mapping/data incompatibility;
 do not call it a proven device fault or silently treat those values as valid classes.
-
