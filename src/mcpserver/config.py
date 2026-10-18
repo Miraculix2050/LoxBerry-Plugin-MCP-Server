@@ -25,7 +25,7 @@ import idna
 from mcpserver.knx.prefix_receipts import PrefixReceipt, parse_receipts
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
-from mcpserver.loxone.uuid import normalize_loxone_uuid
+from mcpserver.loxone.uuid import normalize_history_control_id, normalize_loxone_uuid
 from mcpserver.loxone.weather_history import MAX_SOURCES as MAX_WEATHER_HISTORY_SOURCES
 from mcpserver.loxone.weather_history import WeatherHistorySource
 from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
@@ -186,7 +186,7 @@ def _event_history_sources(value: object) -> tuple[tuple[str, str], ...]:
         if not isinstance(control_value, str) or not isinstance(state_value, str):
             raise ConfigError("event_history.sources is unsupported")
         try:
-            control_uuid = normalize_loxone_uuid(control_value)
+            control_uuid = normalize_history_control_id(control_value)
             state_uuid = normalize_loxone_uuid(state_value)
         except ValueError as exc:
             raise ConfigError("event_history.sources is unsupported") from exc

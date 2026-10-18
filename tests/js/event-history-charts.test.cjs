@@ -707,3 +707,42 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.document.querySelector('#chart-status').textContent, 'Denied');
   dom.window.close();
 });
+
+
+test('chart bootstrap forwards exact bounded runtime suffix IDs for server authorization', async () => {
+  const prefix = source.control_uuid + '/';
+  const ids = [prefix + 'AI1', prefix + 'zone 1', prefix + '../AI1',
+    prefix + 'x'.repeat(128 - prefix.length), prefix + '😀'.repeat(128 - prefix.length)];
+  for (const control_uuid of ids) {
+    const requested = [{control_uuid, state_uuid: source.state_uuid}];
+    const dom = new JSDOM(html, {url: 'https://example.test/?sources=' +
+      encodeURIComponent(JSON.stringify(requested)), runScripts: 'outside-only', pretendToBeVisual: true});
+    const calls = [];
+    dom.window.setInterval = () => 1;
+    dom.window.McpEventHistoryApi = {request: async (action, fields) => {
+      calls.push({action, fields});
+      throw Object.assign(new Error(), {code: 'forbidden'});
+    }};
+    dom.window.eval(cacheScript); dom.window.eval(script); await flush();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].action, 'event_history_chart_prepare');
+    assert.deepEqual(JSON.parse(calls[0].fields.sources), requested);
+    assert.equal(dom.window.document.querySelector('#chart-panels').textContent, '');
+    assert.equal(dom.window.document.querySelector('#chart-status').textContent, 'Denied');
+    dom.window.close();
+  }
+});
+
+test('chart bootstrap retains source bounds and strict state UUIDs', async () => {
+  for (const item of [{...source, control_uuid: ''}, {...source, control_uuid: 'x'.repeat(129)},
+    {...source, control_uuid: {}}, {...source, state_uuid: source.state_uuid + '/AI1'}]) {
+    const dom = new JSDOM(html, {url: 'https://example.test/?sources=' +
+      encodeURIComponent(JSON.stringify([item])), runScripts: 'outside-only', pretendToBeVisual: true});
+    let calls = 0;
+    dom.window.setInterval = () => 1;
+    dom.window.McpEventHistoryApi = {request: async () => { calls++; }};
+    dom.window.eval(cacheScript); dom.window.eval(script); await flush();
+    assert.equal(calls, 0);
+    dom.window.close();
+  }
+});

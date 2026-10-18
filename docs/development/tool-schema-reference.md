@@ -1,5 +1,21 @@
 # Tool schema reference
 
+## Local Event History runtime control IDs (#553)
+
+`loxone_get_event_history.control_uuid` accepts a plain UUID (existing canonical
+normalization) or an exact bounded runtime key with UUID prefix and subcontrol
+suffix (maximum 128 characters). Suffix IDs retain the entire discovered spelling
+and case. State UUID parsing remains strict. The same identity validation applies
+to persisted Event History sources, Admin selection and existing approved
+add/remove/purge tools. Suffixes do not prove parent or connector identity.
+Fresh whole-control visibility and exact state membership still gate reads;
+unknown/hidden/mismatched controls return `not_found`. Retained removed sources
+remain readable only while visible; no evidence returns the existing `not_found`.
+Cursors retain exact source/family binding. If explicitly configured pairs share
+a state UUID, capture waits for unique state baselines and records each pair
+separately; unconfigured parents or siblings are never added. No new tool, permission, database
+schema, automatic source activation or migration is introduced. Guide revision 101.
+
 ## Native PVPF forecast (#510)
 
 `loxone_read_controls` adds `native_result_view="pv_forecast"` for one plain visible

@@ -156,7 +156,7 @@ from mcpserver.loxone.state_semantics import (
 )
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.loxone.system_messages import MessageSourceError, canonical_serial
-from mcpserver.loxone.uuid import normalize_loxone_uuid
+from mcpserver.loxone.uuid import normalize_history_control_id, normalize_loxone_uuid
 from mcpserver.pv_forecast_runtime import read_pv_forecast
 from mcpserver.skill_delivery import (
     SKILL_MIME_TYPE,
@@ -8069,7 +8069,11 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
     )
     async def get_event_history(
         control_uuid: Annotated[
-            str, Field(description="Exact visible control UUID.", max_length=128)
+            str,
+            Field(
+                description="Exact visible runtime control ID; preserve any subcontrol suffix.",
+                max_length=128,
+            ),
         ],
         state_uuid: Annotated[
             str, Field(description="Exact state UUID belonging to control_uuid.", max_length=128)
@@ -8092,7 +8096,7 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
             end_seconds = end_time.timestamp()
             if start_seconds > end_seconds or end_seconds - start_seconds > 90 * 24 * 60 * 60:
                 raise ValueError("event history range is invalid")
-            control_uuid = normalize_loxone_uuid(control_uuid)
+            control_uuid = normalize_history_control_id(control_uuid)
             state_uuid = normalize_loxone_uuid(state_uuid)
             access = _access()
             scope = (
@@ -8524,6 +8528,9 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             if value is None:
                 return "none"
             try:
+                if "/" in value:
+                    normalize_history_control_id(value)
+                    return "runtime:" + _audit_identity(value)
                 return str(UUID(value))
             except ValueError:
                 return "invalid"
@@ -8639,7 +8646,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         access: StoredAccessToken | None = None
         try:
             access = _access()
-            control_uuid = normalize_loxone_uuid(control_uuid)
+            control_uuid = normalize_history_control_id(control_uuid)
             state_uuid = normalize_loxone_uuid(state_uuid)
             if add:
                 changed, details = await runtime.add_event_history_source(
@@ -8753,7 +8760,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             access = _access()
             if confirm is not True:
                 raise ValueError("confirm=true is required")
-            control_uuid = normalize_loxone_uuid(control_uuid)
+            control_uuid = normalize_history_control_id(control_uuid)
             state_uuid = normalize_loxone_uuid(state_uuid)
             events, coverage = await runtime.purge_event_history_source(
                 access, control_uuid, state_uuid

@@ -84,7 +84,9 @@ history fetch.
 `loxone_get_event_history` is separate plugin-owned event history. It reports
 capture and coverage evidence, so `not_recorded` and `partial_coverage` are not
 evidence that a state did not occur. Use exact `control_uuid` and `state_uuid`
-from current discovery. `loxone_list_event_history_sources` lists active and
+from current discovery. Keep runtime subcontrol suffixes in `control_uuid` exactly
+as discovered, including case; `state_uuid` remains a plain UUID. History uses
+only that child/state pair and never falls back to parent or sibling records. `loxone_list_event_history_sources` lists active and
 retained removed sources whose exact control and state are currently visible;
 it requires `loxone:read` and `loxone:history`. The complete, cursor-paged
 `loxberry_list_event_history_sources` additionally requires either enabled
