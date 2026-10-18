@@ -92,3 +92,11 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   explicit base/storage scenarios and shared hourly budget. Unknown future native
   constraints remain conditions. Automated evidence is separate from positive
   source/device acceptance and measured forecast accuracy.
+
+
+- Request-local energy context (#556): one budget per request; up to four
+  explicitly confirmed disjoint PVPFs; optional profile references or declared
+  real/hypothetical cycles. Native membership is server-derived and physical
+  boundaries remain explicit. Multiple independent plant fixtures establish
+  isolation/arithmetic only, not real multi-plant or new firmware compatibility.
+  Positive native-source/real-consumer gates remain open in #440/#510.

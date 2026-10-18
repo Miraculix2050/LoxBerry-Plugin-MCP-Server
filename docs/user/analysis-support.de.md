@@ -56,3 +56,14 @@ Unterstützt: begrenzter vorhandener Leseworkflow. Bedingt: benötigte Quelle, B
 Numerische Referenzen: Stichprobenmittel 21 °C; Zählerdifferenz 3 kWh; Rangfolge 3/2 kWh; gemischtes Stundenfenster 3600 s; Nachtmedian 100 W und geschätzte 2,4 kWh/Tag. Die Transformation belegter synthetischer Leistungsintervalle in ganze Stundenenergien ist ein Fixture-Vertrag, kein neuer Decoder. Details und Messgrenzen: [Abnahmebericht](../development/analysis-acceptance.md).
 
 Korrekt begründete Teilantworten gelten bei fehlenden Quellen als zulässig. Keine Rollen aus Namen, nachträgliche Anfangswerte, verborgene Identitäten, Steuerbefehle oder kausale Solarzuordnung. Tokenbedarf und 20-Prozent-Tokenziel bleiben mangels verfügbarer Tokenmesswerte unvollständig; Antwortbytes sind keine Tokens.
+
+
+## Anfragebezogene Energieplanung (#556)
+
+Der optionale Analysekontext unterstützt ein ausdrücklich gewähltes gemeinsames
+Versorgungsbudget mit bis zu vier bestätigten überschneidungsfreien PVPFs,
+Profilreferenzen, realen deklarierten Zyklen und ausdrücklich hypothetischen Lasten.
+Native EFM-Mitgliedschaft und Nutzerzuordnungen bleiben getrennt. Mehranlagen-
+Fixtures belegen Isolation und Berechnung, keine reale Mehranlagenkompatibilität.
+Alte Aufrufe bleiben unterstützt. Positive reale PVPF-/Verbraucherabnahme bleibt
+unter #440/#510 offen; fehlende Quellen werden nicht durch Fixtures ersetzt.

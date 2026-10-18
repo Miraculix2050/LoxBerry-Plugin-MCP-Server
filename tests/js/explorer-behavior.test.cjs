@@ -25,6 +25,26 @@ test('future planning keeps conditional guidance and energy results visible', as
   assert.equal(h.window.McpExplorerAdapters.toolGroup('loxone_plan_loads'), 'loxoneRead');
 });
 
+test('request-local planning separates hypothetical loads and unresolved associations safely', async (t) => {
+  const tool = {...readTool, name: 'loxone_plan_loads', inputSchema: {type: 'object', properties: {}}};
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    method_version: 'conditional_context_planning.v1', status: 'conditional',
+    scope: {kind: 'scenario', description: '<img src=x onerror=alert(1)>'},
+    unresolved_associations: ['running_feedback_missing_confirm_program_description'],
+    allocations: [{load_id: 'scenario-pump', load_kind: 'hypothetical', start: 1792396800,
+      end: 1792400400, conditional_pv_wh: 600, additional_grid_wh: 400}],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  assert.match(h.byId('tool-summary').textContent, /PLANNING_CONTEXT/);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('600 Wh'));
+  assert.match(h.byId('result-tree').textContent, /PLANNING_HYPOTHETICAL/);
+  assert.match(h.byId('result-tree').textContent, /PLANNING_CLARIFY/);
+  assert.match(h.byId('result-tree').textContent, /scenario-pump/);
+  assert.equal(h.byId('result-tree').querySelector('img'), null);
+});
+
 for (const reason of ['source', 'requested_future_forecast_hours_unavailable', 'requested_scenario_hour_coverage_unavailable']) {
 test(`unavailable planning explains source or coverage: ${reason}`, async (t) => {
   const tool = {...readTool, name: 'loxone_plan_loads',

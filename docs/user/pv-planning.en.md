@@ -99,3 +99,25 @@ new tools after the plugin update.
 A current native `ready=0` returns `not_ready` without requesting unavailable hourly data. Authorization and source visibility are still rechecked.
 
 An unknown or stale current native lock is explicitly reported as `native_current_lock_unresolved`; it is never a confirmed clear lock.
+
+Example for `options.analysis_context` only; replace the UUID and supply the future
+time range, baseload and storage reserve in `options`. Numbers are assumptions:
+
+```json
+{
+  "scope": {"kind": "scenario", "description": "Example only",
+            "common_supply_origin": "scenario_assumption"},
+  "assets": [{"asset_id": "pv", "description": "Explicit example coverage",
+              "association_origin": "scenario_assumption"}],
+  "forecasts": [{"control_uuid": "<visible PVPF UUID>", "asset_ids": ["pv"],
+                 "coverage_origin": "scenario_assumption"}],
+  "loads": [{"load_id": "example", "kind": "hypothetical", "cycle": {
+    "timezone": "Europe/Berlin",
+    "windows": [{"weekdays": [0,1,2,3,4,5,6], "start": "09:00", "end": "17:00"}],
+    "latest_completion": "17:00", "duration_seconds": 3600,
+    "interruptible": false, "minimum_run_seconds": 0, "minimum_off_seconds": 0,
+    "cycle_energy_wh": 1000.0, "origin": "scenario_assumption",
+    "rationale": "Illustrative complete job; no real appliance claim"
+  }}]
+}
+```

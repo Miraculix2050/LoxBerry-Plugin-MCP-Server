@@ -54,3 +54,14 @@ Supported: a bounded existing read workflow. Conditional: required sources, sema
 Numeric references: sample mean 21 °C; counter difference 3 kWh; rank 3/2 kWh; mixed hourly window 3600 s; night median 100 W and estimated 2.4 kWh/day. Conversion of evidenced synthetic power intervals into whole-hour energies is a fixture contract, not a new decoder. Details and measurement limits: [Acceptance report](../development/analysis-acceptance.md).
 
 Correct qualified partial answers are allowed when sources are absent. No roles inferred from names, backfilled initial values, hidden identities, control commands or causal solar attribution. Token consumption and the 20-percent token target remain incomplete without available token measurements; response bytes are not tokens.
+
+
+## Request-local energy planning (#556)
+
+The optional analysis context supports one explicitly selected common supply
+budget with up to four confirmed disjoint PVPFs, profile references, real declared
+cycles and explicitly hypothetical loads. Native EFM membership remains separate
+from user associations. Multi-plant fixtures prove isolation and calculation,
+not real multi-plant compatibility. Legacy calls remain supported. Positive real
+PVPF/consumer acceptance remains open under #440/#510; fixtures cannot replace
+missing real sources.

@@ -511,6 +511,7 @@
       elements.summary.append(element('h2', {text: state.selectedTool.name}));
       if (state.selectedTool.name === 'loxone_plan_loads') {
         elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('planningNotice')}));
+        elements.summary.append(element('p', {className: 'mcp-explorer-muted', text: label('planningContext')}));
       }
       const description = state.selectedTool.description || '';
       if (description.length > 180) {
@@ -606,15 +607,24 @@
         moreResults: label('moreResults'),
       }, actions.openTransfer));
       if (context?.tool === 'loxone_plan_loads' && displayed?.ok &&
-          displayed.data?.method_version === 'conditional_load_planning.v1') {
+          ['conditional_load_planning.v1', 'conditional_context_planning.v1'].includes(displayed.data?.method_version)) {
         const summary = element('div', {className: 'mcp-explorer-stack'});
         summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('planningNotice')}));
+        if (displayed.data.method_version === 'conditional_context_planning.v1') {
+          summary.append(element('p', {text: `${label('planningContext')}: ${displayed.data.scope?.description || ''}`}));
+          if ((displayed.data.unresolved_associations || []).length) {
+            summary.append(element('p', {className: 'mcp-explorer-warning', text: label('planningClarify')}));
+          }
+        }
         if (displayed.data.status === 'unavailable') {
           summary.append(element('p', {className: 'mcp-explorer-warning', text: label('planningUnavailable')}));
         }
         for (const row of (displayed.data.allocations || []).slice(0, 16)) {
           const card = element('div', {className: 'mcp-explorer-stack'});
-          card.append(element('strong', {text: row.binding_id}));
+          card.append(element('strong', {text: row.load_id || row.binding_id}));
+          if (row.load_kind) {
+            card.append(element('p', {text: label(row.load_kind === 'hypothetical' ? 'planningHypothetical' : 'planningReal')}));
+          }
           const start = new Date(row.start * 1000);
           const end = new Date(row.end * 1000);
           if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())) {

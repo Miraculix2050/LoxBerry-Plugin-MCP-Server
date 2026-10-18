@@ -107,3 +107,25 @@ benötigen nach dem Plugin-Update keine zusätzliche Konfigurationsänderung.
 Bei aktuellem nativem `ready=0` wird `not_ready` ohne Abruf nicht verfügbarer Stundenwerte zurückgegeben. Autorisierung und Quellensichtbarkeit werden weiterhin geprüft.
 
 Eine unbekannte oder veraltete aktuelle native Sperre wird ausdrücklich als `native_current_lock_unresolved` ausgewiesen; sie gilt nicht als bestätigt aufgehoben.
+
+Beispiel nur für `options.analysis_context`; UUID ersetzen und Zeitraum sowie
+Grundlast/Speicherreserve in `options` ergänzen. Die Zahlen sind reine Annahmen:
+
+```json
+{
+  "scope": {"kind": "scenario", "description": "Example only",
+            "common_supply_origin": "scenario_assumption"},
+  "assets": [{"asset_id": "pv", "description": "Explicit example coverage",
+              "association_origin": "scenario_assumption"}],
+  "forecasts": [{"control_uuid": "<visible PVPF UUID>", "asset_ids": ["pv"],
+                 "coverage_origin": "scenario_assumption"}],
+  "loads": [{"load_id": "example", "kind": "hypothetical", "cycle": {
+    "timezone": "Europe/Berlin",
+    "windows": [{"weekdays": [0,1,2,3,4,5,6], "start": "09:00", "end": "17:00"}],
+    "latest_completion": "17:00", "duration_seconds": 3600,
+    "interruptible": false, "minimum_run_seconds": 0, "minimum_off_seconds": 0,
+    "cycle_energy_wh": 1000.0, "origin": "scenario_assumption",
+    "rationale": "Illustrative complete job; no real appliance claim"
+  }}]
+}
+```
