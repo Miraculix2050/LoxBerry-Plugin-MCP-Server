@@ -244,3 +244,13 @@ be converted universally to irradiance. Numerical source/method gates remain ope
 and in bounded point-time/raw-value/reason diagnostics with a trace-correlated
 sanitized log. Tell the user when the tool warns about mapping/data incompatibility;
 do not call it a proven device fault or silently treat those values as valid classes.
+
+### Native PV forecast
+
+Discover `PvProductionForecast`, then use `loxone_read_controls` with one plain
+target and `native_result_view="pv_forecast"`. This needs loxone:read only. Check
+status, ready, error_info and prediction_at before using hourly energy_wh. The
+fixed getForecasts source supplies hourly kWh, converted to Wh; timestamp states
+use the 2009 epoch while hourly timestamps use Unix. Do not fill gaps or treat
+model estimates as measured production. Explain unavailable Weather Service
+without automatically changing configuration.

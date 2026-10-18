@@ -1,5 +1,14 @@
 # Tool schema reference
 
+## Native PVPF forecast (#510)
+
+`loxone_read_controls` adds `native_result_view="pv_forecast"` for one plain visible
+PVPF target. It requires `loxone:read`; no EFM administrator/firmware gate or local
+file approval is added. Native fields are returned in the existing `native_result`
+slot with `source_kind="native_pv_forecast"`. Source hours are bounded to 78, native
+response to 32 KiB and the MCP envelope to 64 KiB. See [user guidance](../user/pv-planning.en.md).
+
+
 ## Cross-source project identity (#218)
 
 Project node summaries and descriptions add `source_project_node_ids` (at most

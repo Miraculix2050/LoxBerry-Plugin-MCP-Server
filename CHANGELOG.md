@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a bounded read-only native PVPF hourly-production view; preserve readiness,
+  prediction age, fresh authorization and explicit model limitations (#440, #510).
+
 - Resolve verified cross-source project UUID occurrences for six bounded block
   families while preserving conflicts as ambiguous, physical provenance and
   complementary topology in bounded descriptions and traces (#218).
