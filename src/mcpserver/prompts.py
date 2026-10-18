@@ -10,9 +10,10 @@ from mcp.server.fastmcp.prompts.base import Prompt
 
 def register_prompt_surface(server: FastMCP) -> None:
     """Register recipes only; rendering never reads a project or grants access."""
+    from mcpserver.analysis_prompts import analysis_prompts
     from mcpserver.knx.prompts import knx_prompts
 
-    for prompt in knx_prompts():
+    for prompt in (*knx_prompts(), *analysis_prompts()):
         server.add_prompt(prompt)
 
 

@@ -314,14 +314,33 @@ try {
     $promptListId = Get-NextId
     Send-JsonRpc @{ jsonrpc = '2.0'; id = $promptListId; method = 'prompts/list'; params = @{} }
     $promptListResponse = Read-JsonRpc $promptListId
-    $expectedPromptNames = @('knx_ets_inventory_review', 'knx_address_explanation')
+    $expectedPromptNames = @(
+        'knx_ets_inventory_review', 'knx_address_explanation',
+        'lighting_naming_review', 'presence_light_association', 'current_state_summary',
+        'temperature_history_summary', 'solar_daily_report', 'comparable_day_review',
+        'consumer_pv_comparison', 'energy_period_report'
+    )
     if ($promptListResponse.error -or
         @(Compare-Object ($expectedPromptNames | Sort-Object) ($promptListResponse.result.prompts.name | Sort-Object)).Count -ne 0) {
         throw 'MCP prompt inventory differs from the expected contract.'
     }
     foreach ($promptName in $expectedPromptNames) {
         $promptId = Get-NextId
-        $promptArguments = if ($promptName -eq 'knx_address_explanation') { @{ address = '1/2/3:1' } } else { @{} }
+        $promptArguments = switch ($promptName) {
+            'knx_address_explanation' { @{ address = '1/2/3:1' } }
+            'temperature_history_summary' {
+                @{ binding_id = 'temperature'; start = '2026-10-01T00:00:00+02:00'; end = '2026-10-02T00:00:00+02:00'; timezone = 'Europe/Berlin' }
+            }
+            'solar_daily_report' { @{ date = '2026-10-01'; timezone = 'Europe/Berlin' } }
+            'comparable_day_review' {
+                @{ reference_date = '2026-10-01'; start = '2026-10-01T00:00:00+02:00'; end = '2026-10-08T00:00:00+02:00'; timezone = 'Europe/Berlin' }
+            }
+            'consumer_pv_comparison' {
+                @{ start = '2026-10-01T00:00:00+02:00'; end = '2026-10-02T00:00:00+02:00'; timezone = 'Europe/Berlin' }
+            }
+            'energy_period_report' { @{ period = 'week'; date = '2026-10-01'; timezone = 'Europe/Berlin' } }
+            default { @{} }
+        }
         Send-JsonRpc @{
             jsonrpc = '2.0'; id = $promptId; method = 'prompts/get'
             params = @{ name = $promptName; arguments = $promptArguments }
@@ -330,7 +349,7 @@ try {
         $promptMessages = @($promptResponse.result.messages)
         if ($promptResponse.error -or $promptMessages.Count -ne 1 -or
             $promptMessages[0].role -ne 'user' -or $promptMessages[0].content.type -ne 'text' -or
-            $promptMessages[0].content.text.Length -gt 4096 -or
+            [System.Text.Encoding]::UTF8.GetByteCount($promptMessages[0].content.text) -gt 4096 -or
             $promptMessages[0].content.text -notlike '*read-only*') {
             throw 'MCP prompt recipe differs from the expected contract.'
         }

@@ -14,6 +14,13 @@ workflow, completeness conditions, valid insufficient-evidence answers and
 prohibited claims. Tool sequences are routing candidates, not proof that a source
 exists. The catalog is not a promise to implement every roadmap workstream here.
 
+The additive `prompt_recipes` mapping links the eight #444 task starters to
+existing cases without changing the original baseline rows or their checksum.
+It is routing metadata, not new AI-run, source, device or performance acceptance.
+In particular, comparable-day retrieval covers only the qualitative class recipe.
+The catalog digest changes when this metadata is added; historical captures remain
+bound to their original catalog revision and must not be relabelled or rehashed.
+
 Two KNX workflows from #457 extend this original 25-question matrix to 27 cases:
 `knx-01` inventory review and `knx-02` exact address explanation with explicit
 project variant. Both allow qualified answers for missing discovery, permissions,

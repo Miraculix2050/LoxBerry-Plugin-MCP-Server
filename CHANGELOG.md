@@ -23,6 +23,11 @@ extracted from the matching version heading.
   reject stale or hidden references and recheck operating companions before
   publishing results, without changing profile documents or legacy contracts (#559).
 
+- Add eight parameterized read-only MCP task starters for lighting, presence,
+  current states, temperature history and qualified solar/energy reports (#444).
+  Prompt retrieval performs no data reads or writes; recipes retain module,
+  authorization and partial-evidence boundaries. Existing KNX prompts remain.
+
 - Fix local Event History rejecting exact runtime subcontrol suffix IDs. Preserve
   child/state storage identity, visibility, recording approval and plain-UUID
   compatibility across reads and existing source selection. Deliver shared-state
