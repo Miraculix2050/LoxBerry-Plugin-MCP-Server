@@ -145,9 +145,31 @@ def test_hypothetical_load_cannot_claim_real_source_or_native_membership():
     with pytest.raises(ValidationError):
         EnergyAnalysisContext.model_validate(doc)
     del load["control_uuid"]
+    load["cycle"]["origin"] = "scenario_assumption"
     value = EnergyAnalysisContext.model_validate(doc)
     rows = resolve_membership(value, controls(), {})
     assert rows[-1].control_uuid is None
     doc["scope"].update(kind="efm", monitor_uuid=MONITOR)
     with pytest.raises(ValidationError):
         EnergyAnalysisContext.model_validate(doc)
+
+
+def test_real_source_is_derived_and_contradictory_mapping_is_rejected():
+    value = EnergyAnalysisContext.model_validate(context_document())
+    assert resolve_membership(value, controls(), {})[-1].control_uuid == LOAD
+    with pytest.raises(ValueError, match="contradicts"):
+        resolve_membership(value, controls(), {"pump": METER})
+
+
+def test_display_diagnostics_do_not_remove_valid_efm_membership():
+    visible = controls()
+    projection = visible[MONITOR].efm
+    projection = replace(
+        projection,
+        participants=tuple(
+            replace(row, diagnostics=("invalid_role_token", "invalid_title", "invalid_icon"))
+            for row in projection.participants
+        ),
+    )
+    visible[MONITOR] = replace(visible[MONITOR], efm=projection)
+    assert resolve_membership(efm_context(), visible, {"pump": LOAD})

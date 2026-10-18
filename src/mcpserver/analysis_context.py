@@ -125,6 +125,7 @@ class ContextLoad(ContextContract):
             or self.control_uuid is not None
             or self.operating_control_uuid is not None
             or self.cycle is None
+            or self.cycle.origin != "scenario_assumption"
         ):
             raise ValueError("hypothetical load requires only a declared scenario cycle")
         return self
@@ -191,23 +192,38 @@ def resolve_membership(
             or monitor.control_type != "EFM"
             or projection is None
             or projection.omitted_subtrees
-            or projection.diagnostics
+            or set(projection.diagnostics)
+            & {"invalid_nodes_collection", "repeated_node_identity", "participant_limit"}
         ):
             raise ValueError("complete selected EFM topology required")
         for row in projection.participants:
-            if row.diagnostics:
+            if (
+                set(row.diagnostics)
+                & {"invalid_participant", "invalid_node_identity", "invalid_child_collection"}
+                or row.reference_status == "malformed"
+            ):
                 raise ValueError("complete selected EFM topology required")
             if row.control_uuid:
                 if row.control_uuid not in visible or row.control_uuid in members:
                     raise ValueError("ambiguous or inaccessible EFM participant")
                 members[row.control_uuid] = row.path
+    for load in context.loads:
+        if load.kind == "real" and load.load_id in load_controls:
+            if load_controls[load.load_id] != load.control_uuid:
+                raise ValueError("real load mapping contradicts declared source")
+        if load.kind == "profile" and load.load_id not in load_controls:
+            raise ValueError("profile load source must be resolved")
     selections = [
         (a.asset_id, a.production_control_uuid, a.association_origin) for a in context.assets
     ] + [
         (
             load.load_id,
-            load_controls.get(load.load_id),
-            load.cycle.origin if load.cycle else "user_confirmed",
+            load.control_uuid if load.kind == "real" else load_controls.get(load.load_id),
+            "scenario_assumption"
+            if load.kind == "hypothetical"
+            else load.cycle.origin
+            if load.cycle
+            else "user_confirmed",
         )
         for load in context.loads
     ]
