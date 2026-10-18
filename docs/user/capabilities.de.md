@@ -382,6 +382,8 @@ expliziter Anschlusstopologie auf. Konflikte und unzureichende Belege bleiben me
 Klassifikation mit einem festen Grund und begrenzten Kandidatenreferenzen. Beschreibung
 und Trace berücksichtigen alle bestätigten Vorkommen innerhalb ihrer üblichen Grenzen.
 Dies belegt nur statische Identität und Verdrahtung, keine Berechtigung oder physische Wirkung.
+Exakte Quell-ID-Filter prüfen jedes dargestellte Vorkommen.
+Die Textsuche prüft ebenfalls alle dargestellten physischen Knoten- und Quell-IDs.
 Projektmodellversion 13 erlaubt einem `OutputRef` ohne lokales Ziel, über eine
 exakte normalisierte UUID auf einen
 eindeutigen `VirtualOutCmd` in einer anderen Modellquelle desselben autorisierten

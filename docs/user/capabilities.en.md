@@ -350,6 +350,8 @@ explicit connector topology. Conflicts and insufficient evidence remain ambiguou
 the classification with a fixed reason and bounded candidate references. Description
 and trace include all verified occurrences within their normal limits. This proves
 static identity and wiring only; it establishes no permission or physical behavior.
+Exact source ID filters check every represented occurrence.
+Text search also checks every represented physical node ID and source ID.
 Project model version 13 allows an `OutputRef` without a local target to resolve
 to a unique `VirtualOutCmd` in
 another model source of the same authorized bundle using an exact normalized UUID.

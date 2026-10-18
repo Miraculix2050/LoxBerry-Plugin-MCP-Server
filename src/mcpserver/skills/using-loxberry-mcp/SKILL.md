@@ -552,6 +552,8 @@ check candidates_omitted. Description and trace retain all verified occurrences
 within their normal limits. This is static graph evidence, never authorization,
 historical causality or observed physical behavior. Derived runtime children are
 not resolved by this rule.
+Exact source_id filters and text searches include the stored references of every
+represented occurrence; the returned logical representative remains deterministic.
 
 State internal signal flow is version- and configuration-bound. Rule
 `state_table_aq_v3` covers complete fixed-operand tables for Config 17020828 /

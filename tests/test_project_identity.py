@@ -175,6 +175,25 @@ def test_uuid_normalization_single_source_and_control_action_conflicts():
     normalized = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
     model = snapshot(block(), block(uuid=normalized))
     assert project_query(model, UUID).view.mapping.entries[0].status == "exact"
+    for stored_spelling in (UUID, normalized):
+        matches = project_query(model, UUID).find(
+            query=None,
+            kind="block",
+            block_type=None,
+            source_id=stored_spelling,
+            runtime_control_uuid=None,
+        )
+        assert len(matches) == 1
+        assert len(matches[0]["source_project_node_ids"]) == 2
+    for reference in (UUID, normalized, *model.logical_identity):
+        matches = project_query(model, UUID).find(
+            query=reference,
+            kind="block",
+            block_type=None,
+            source_id=None,
+            runtime_control_uuid=None,
+        )
+        assert len(matches) == 1
     distinct = snapshot(block(), block(uuid=OTHER))
     query = project_query(distinct, UUID, OTHER)
     assert [item.status for item in query.view.mapping.entries] == ["exact", "exact"]

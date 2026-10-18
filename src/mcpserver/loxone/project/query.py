@@ -649,7 +649,10 @@ class ProjectQuery:
                 continue
             if block_type is not None and node.block_type != block_type:
                 continue
-            if source_id is not None and node.source_id != source_id:
+            if source_id is not None and not any(
+                self._nodes[key].source_id == source_id
+                for key in self.view.snapshot.occurrence_keys_for(node.key)
+            ):
                 continue
             if technology == "knx_eib" and knx is None:
                 continue
@@ -680,7 +683,12 @@ class ProjectQuery:
                     if knx is not None
                     else ()
                 )
-                searchable = (node.key, node.source_id, node.block_type, connector_key, *knx_values)
+                source_references = tuple(
+                    value
+                    for key in self.view.snapshot.occurrence_keys_for(node.key)
+                    for value in (key, self._nodes[key].source_id)
+                )
+                searchable = (*source_references, node.block_type, connector_key, *knx_values)
                 runtime = item["runtime_control"]
                 runtime_name = runtime.get("name") if isinstance(runtime, dict) else None
                 metadata_number = self.graph_index.knx_addresses.get(node.key)

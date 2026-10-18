@@ -16,6 +16,8 @@ normalized. Equal topology or disjoint explicit connectors may complement each
 other. Conflicts, repeated source IDs, unknown topology or unresolved references
 prevent the entire group from merging. Raw graphs and physical IDs remain
 available. Description and trace aggregate occurrences within existing limits.
+Exact `source_id` filters check stored spellings across every represented occurrence.
+Text search also checks every represented physical node ID and source ID.
 Existing KNX identity rules are retained. This establishes static graph evidence,
 not physical behavior, causality or permission. No new tool or store is added.
 
