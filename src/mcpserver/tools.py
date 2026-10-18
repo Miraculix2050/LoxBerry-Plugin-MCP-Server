@@ -1595,8 +1595,6 @@ class ProjectStateFlowData(BaseModel):
 class ProjectNodeData(BaseModel):
     source_project_node_ids: list[str] = Field(default_factory=list, max_length=32)
     logical_identity: ProjectLogicalIdentityData | None = None
-
-
     runtime_target_mapping: RuntimeMappingEvidenceData | None = None
     api_connector: ProjectApiConnectorData | None = None
     state_table: ProjectStateTableData | None = None
