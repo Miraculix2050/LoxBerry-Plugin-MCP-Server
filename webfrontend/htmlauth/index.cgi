@@ -725,6 +725,15 @@ if ($action ne '') {
         $result = admin_call('revoke_loxberry_operate', {binding_id => ($q->{binding_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=revoke_loxberry_operate outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'solar_history_options' || $action eq 'solar_history_save') {
+        my $payload = eval { JSON::PP::decode_json($q->{payload} // '{}') };
+        $result = $@ || ref($payload) ne 'HASH'
+            ? {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Invalid solar source'}}
+            : admin_call($action, $payload);
+        admin_log($result->{ok} ? 'info' : 'warning', sprintf(
+            'component=solar_history request_id=%s action=%s outcome=%s',
+            $request_id, $action, $result->{ok} ? 'completed' : 'rejected',
+        ));
     } elsif ($action eq 'weather_history_options') {
         $result = admin_call($action, {});
     } elsif ($action eq 'weather_history_add_source' || $action eq 'weather_history_remove_source') {

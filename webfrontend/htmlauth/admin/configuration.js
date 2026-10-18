@@ -301,6 +301,78 @@ window.McpAdmin.createConfiguration = (
       finally { busy = false; add.disabled = false; }
     });
   }
+  const solarPanel = document.getElementById('solar-recorder-settings');
+  if (solarPanel) {
+    const select = document.getElementById('solar-recorder-source');
+    const reference = document.getElementById('solar-recorder-reference');
+    const confirmed = document.getElementById('solar-recorder-confirm');
+    const enabled = document.getElementById('solar-recorder-enabled');
+    const list = document.getElementById('solar-recorder-configured');
+    const message = document.getElementById('solar-recorder-status');
+    const load = document.getElementById('solar-recorder-load');
+    const add = document.getElementById('solar-recorder-add');
+    const save = document.getElementById('solar-recorder-save');
+    let sources = [], choices = [], revision = null, busy = false;
+    const request = (action, payload) => postAjax(new URLSearchParams({
+      action, ajax: '1', payload: JSON.stringify(payload),
+    }), action === 'solar_history_options' ? 35000 : 120000);
+    const dirty = () => { message.textContent = label('SETUP.SOLAR_HISTORY_DIRTY'); };
+    const render = () => {
+      list.replaceChildren();
+      for (const source of sources) {
+        const row = document.createElement('li');
+        const name = choices.find((c) => c.control_uuid === source.control_uuid && c.state_uuid === source.state_uuid)?.name || source.control_uuid;
+        const text = document.createElement('span'); text.textContent = `${name} (${source.unit}) `;
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'lb-button';
+        remove.textContent = label('SETUP.WEATHER_HISTORY_REMOVE');
+        remove.disabled = busy;
+        remove.addEventListener('click', () => { if (!busy) { sources = sources.filter((s) => s !== source); render(); dirty(); } });
+        row.append(text, remove); list.append(row);
+      }
+    };
+    const setBusy = (value) => {
+      busy = value; load.disabled = value;
+      for (const item of [select, reference, confirmed, enabled, add, save]) item.disabled = value || revision === null;
+      render();
+    };
+    load.addEventListener('click', async () => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const result = (await request('solar_history_options', {})).data;
+        sources = result.sources; choices = result.choices; revision = result.revision;
+        enabled.checked = result.enabled; select.replaceChildren();
+        for (const choice of choices) {
+          const option = document.createElement('option'); option.value = JSON.stringify(choice);
+          option.textContent = `${choice.name} (${choice.unit})`; select.append(option);
+        }
+        message.textContent = result.truncated ? label('SETUP.SOLAR_HISTORY_TRUNCATED') : '';
+      } catch (error) { message.textContent = error.message; }
+      finally { setBusy(false); }
+    });
+    add.addEventListener('click', () => {
+      if (busy || !select.value) return;
+      if (!confirmed.checked || !reference.value.trim()) { message.textContent = label('SETUP.SOLAR_HISTORY_CONFIRM'); return; }
+      const choice = JSON.parse(select.value);
+      const source = {control_uuid: choice.control_uuid, state_uuid: choice.state_uuid,
+        kind: choice.kind, unit: choice.unit, sampling_period_seconds: 60,
+        source_reference: reference.value.trim(), confirmed: true};
+      if (sources.length >= 16 || sources.some((s) => s.control_uuid === source.control_uuid && s.state_uuid === source.state_uuid)) return;
+      sources.push(source); confirmed.checked = false; render(); dirty();
+    });
+    enabled.addEventListener('change', dirty);
+    save.addEventListener('click', async () => {
+      if (busy || revision === null) return;
+      setBusy(true);
+      try {
+        const result = (await request('solar_history_save', {sources, enabled: enabled.checked, revision, confirm: true})).data;
+        sources = result.sources; revision = result.revision; enabled.checked = result.enabled;
+        message.textContent = label('SETUP.SOLAR_HISTORY_SAVED');
+      } catch (error) { message.textContent = error.message; }
+      finally { setBusy(false); }
+    });
+  }
   syncMiniserverSelection();
   syncOperateDependency();
   const addEmergencyStopOption = (value, label, selected = false) => {
