@@ -128,6 +128,9 @@ def test_pvpf_snapshots_are_complete_and_settled():
     assert len(rows) == 1
     assert json.loads(rows[0][3])["value_origin"] == "forecast"
     assert sampler.batch({}, 10) == []
+    assert sampler.batch({}, 63) == []
+    assert sampler.batch({"state-inputperiod": 1}, 64) == []
+    assert len(sampler.batch({}, 124)) == 1
 
 
 def test_incomplete_pvpf_cannot_be_registered_for_complete_snapshots():
@@ -233,7 +236,9 @@ async def test_sampling_stream_has_one_reader_and_closes_on_cancellation():
             closed = True
 
     wrapper = _solar_sampling_stream(stream(), 0.01)
-    assert await anext(wrapper) == ()
+    for _ in range(3):
+        assert await anext(wrapper) == ()
+        assert not closed
     await wrapper.aclose()
     assert closed
 
@@ -251,7 +256,7 @@ def test_local_admin_source_policy_preserves_other_fields_and_rejects_stale_edit
     monkeypatch.setattr(admin, "_config_store", lambda: store)
     monkeypatch.setattr(admin, "_service_active", lambda: False)
     monkeypatch.setattr(event_history_admin, "_weather_structure", lambda cfg: structure)
-    options = event_history_admin.solar_sources("solar_history_options", {})
+    options = event_history_admin.solar_sources("solar_history_options", {"discover": True})
     assert options["choices"][0]["kind"] == "irradiance"
     payload = dict(
         sources=[source().model_dump()], enabled=True, revision=options["revision"], confirm=True
@@ -263,3 +268,44 @@ def test_local_admin_source_policy_preserves_other_fields_and_rejects_stale_edit
     assert store.load().loxone_endpoint == "http://192.168.10.20"
     with pytest.raises(admin.AdminError, match="changed"):
         event_history_admin.solar_sources("solar_history_save", payload | {"enabled": False})
+
+
+def test_offline_local_configuration_can_be_disabled_and_cleared(tmp_path, monkeypatch):
+    from mcpserver import admin, event_history_admin
+    from mcpserver.config import AtomicConfigStore
+
+    store = AtomicConfigStore(tmp_path / "config.json")
+    store.save(
+        PluginConfig(
+            loxone_endpoint="http://192.168.10.20",
+            loxone_history_enabled=True,
+            solar_history_enabled=True,
+            solar_history_sources=(source(),),
+        )
+    )
+    monkeypatch.setattr(admin, "_config_store", lambda: store)
+    monkeypatch.setattr(admin, "_service_active", lambda: False)
+
+    def offline(_config):
+        raise admin.AdminError("offline", code="temporarily_unavailable")
+
+    monkeypatch.setattr(event_history_admin, "_weather_structure", offline)
+    local = event_history_admin.solar_sources("solar_history_options", {})
+    assert local["enabled"] and len(local["sources"]) == 1 and local["choices"] == []
+    with pytest.raises(admin.AdminError, match="offline"):
+        event_history_admin.solar_sources("solar_history_options", {"discover": True})
+    saved = event_history_admin.solar_sources(
+        "solar_history_save",
+        dict(enabled=False, sources=[], revision=local["revision"], confirm=True),
+    )
+    assert not saved["enabled"] and not store.load().solar_history_sources
+    with pytest.raises(admin.AdminError, match="offline"):
+        event_history_admin.solar_sources(
+            "solar_history_save",
+            dict(
+                enabled=True,
+                sources=[source().model_dump()],
+                revision=saved["revision"],
+                confirm=True,
+            ),
+        )

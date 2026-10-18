@@ -13,6 +13,9 @@ Auswahl hinzufügen, bei Bedarf die Aufzeichnung aktivieren und anschließend
 keine Aufzeichnung. Loxone-Historie muss aktiviert sein. Konkurrierende Änderungen
 erfordern erneutes Laden. Gespeicherte Daten bleiben nach Entfernen einer Quelle
 bis zur gemeinsamen Aufbewahrungsgrenze oder vollständigen Löschung erhalten.
+Gespeicherte Auswahl, Abschalten und Entfernen sind auch ohne erreichbaren
+Miniserver verfügbar; neue Quellen und das Einschalten benötigen eine aktuelle
+Sichtbarkeitsprüfung.
 
 Es werden nur ausgewählte aktuelle Strahlungs-/Temperaturzustände oder
 zusammengehörige PV-Prognosesnapshots aufgezeichnet. Standardmäßig gilt ein

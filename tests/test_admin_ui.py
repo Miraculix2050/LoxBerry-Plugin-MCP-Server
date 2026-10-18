@@ -18,6 +18,72 @@ ADMIN_SCRIPTS = (
 )
 
 
+def test_solar_recording_can_be_disabled_after_discovery_failure() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const solarPanel =');
+const panel = source.slice(start, source.indexOf('  syncMiniserverSelection();', start));
+class Element {
+  constructor() {
+    this.children = []; this.events = {}; this.disabled = false;
+    this.value = ''; this.checked = false;
+  }
+  addEventListener(event, handler) { this.events[event] = handler; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren() { this.children = []; }
+}
+const elements = new Map();
+const get = (id) => {
+  if (!elements.has(id)) elements.set(id, new Element());
+  return elements.get(id);
+};
+const requests = [];
+const configured = {
+  control_uuid:'pv-control',state_uuid:null,kind:'pv_forecast',unit:'kWh',
+  source_reference:'fixture',confirmed:true,
+};
+vm.runInNewContext(panel, {
+  URLSearchParams, document:{getElementById:get,createElement:()=>new Element()}, label:(key)=>key,
+  postAjax:async (body, timeout)=>{
+    const action = body.get('action'), payload = JSON.parse(body.get('payload'));
+    requests.push({action,payload});
+    if (action === 'solar_history_options') {
+      if (payload.discover) throw new Error('offline');
+      return {data:{sources:[configured],enabled:true,revision:'local',choices:[]}};
+    }
+    assert.equal(action, 'solar_history_save'); assert.ok(timeout > 65000);
+    assert.equal(payload.enabled,false); assert.equal(payload.sources.length,0);
+    return {data:{sources:[],enabled:false,revision:'next'}};
+  },
+});
+(async()=>{
+  await new Promise(setImmediate);
+  assert.equal(requests.length,1); assert.equal(requests[0].payload.discover,undefined);
+  assert.equal(get('solar-recorder-enabled').checked,true);
+  assert.equal(get('solar-recorder-save').disabled,false);
+  assert.equal(get('solar-recorder-add').disabled,true);
+  await get('solar-recorder-load').events.click();
+  assert.equal(get('solar-recorder-status').textContent,'offline');
+  assert.equal(get('solar-recorder-save').disabled,false);
+  get('solar-recorder-configured').children[0].children[1].events.click();
+  get('solar-recorder-enabled').checked=false;
+  await get('solar-recorder-save').events.click();
+  assert.equal(get('solar-recorder-status').textContent,'SETUP.SOLAR_HISTORY_SAVED');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_weather_source_mutations_wait_for_discovery_and_restart() -> None:
     node = shutil.which("node")
     assert node is not None
@@ -27,7 +93,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
 const start = source.indexOf("  const weatherPanel =");
-const panel = source.slice(start, source.indexOf("  syncMiniserverSelection();", start));
+const panel = source.slice(start, source.indexOf("  const solarPanel =", start));
 class Element {
   constructor() { this.children = []; this.events = {}; this.disabled = false; }
   addEventListener(event, handler) { this.events[event] = handler; }
@@ -177,7 +243,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v17", "page.js": "v14", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v18", "page.js": "v14", "sessions.js": "v13"}.get(
             name, "v12"
         )
         assert (
@@ -790,7 +856,7 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
-    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v17" in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v18" in _admin_source()
     assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v13" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi

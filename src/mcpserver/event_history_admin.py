@@ -856,12 +856,18 @@ def solar_sources(action: str, payload: object) -> dict[str, Any]:
         ]
         return hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
 
-    structure = _weather_structure(config)
-    identity = installation_identity(
-        MiniserverEndpoint.parse(config.loxone_endpoint).origin, structure
-    )
-    controls = {c.uuid: c for c in flatten(structure.controls) if not c.is_hidden}
+    local = {
+        "sources": [s.model_dump() for s in config.solar_history_sources],
+        "enabled": config.solar_history_enabled,
+        "revision": revision(config),
+        "choices": [],
+        "truncated": False,
+    }
     if action == "solar_history_options":
+        if not isinstance(payload, dict) or payload.get("discover") is not True:
+            return local
+        structure = _weather_structure(config)
+        controls = {c.uuid: c for c in flatten(structure.controls) if not c.is_hidden}
         choices = []
         for control in controls.values():
             if (
@@ -899,9 +905,7 @@ def solar_sources(action: str, payload: object) -> dict[str, Any]:
                             }
                         )
         return {
-            "sources": [s.model_dump() for s in config.solar_history_sources],
-            "enabled": config.solar_history_enabled,
-            "revision": revision(config),
+            **local,
             "choices": choices[:100],
             "truncated": len(choices) > 100,
             "limitation": "choices_are_candidates_not_source_qualification",
@@ -911,11 +915,20 @@ def solar_sources(action: str, payload: object) -> dict[str, Any]:
         raise bridge.AdminError("solar policy is invalid")
     try:
         sources = parse_sources(payload.get("sources"))
-        for source in sources:
-            selected_control = controls.get(source.control_uuid)
-            if selected_control is None:
-                raise ValueError("source is not visible")
-            source.fingerprint(selected_control, identity)
+        requires_visibility = (payload["enabled"] and not config.solar_history_enabled) or any(
+            source not in config.solar_history_sources for source in sources
+        )
+        if requires_visibility:
+            structure = _weather_structure(config)
+            identity = installation_identity(
+                MiniserverEndpoint.parse(config.loxone_endpoint).origin, structure
+            )
+            controls = {c.uuid: c for c in flatten(structure.controls) if not c.is_hidden}
+            for source in sources:
+                selected_control = controls.get(source.control_uuid)
+                if selected_control is None:
+                    raise ValueError("source is not visible")
+                source.fingerprint(selected_control, identity)
     except ValueError as exc:
         raise bridge.AdminError("solar source contract or visibility is invalid") from exc
     if payload["enabled"] and not config.loxone_history_enabled:

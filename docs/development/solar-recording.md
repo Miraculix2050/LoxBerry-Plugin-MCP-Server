@@ -12,12 +12,22 @@ distinct from the raw structured-weather radiation-class field.
 
 The existing service-owned history stream supplies samples. No new connection per
 source, external provider request, database or service is introduced. Local ticks
-sample the current connected stream cache, including unchanged states; reconnects
+do not rotate the socket or create scalar capture phases; existing weather-stream
+rotation and genuine disconnect behavior are preserved. Local configuration can
+be loaded, disabled or reduced without Miniserver discovery; adding sources and
+enabling recording still require a fresh visible structure. Candidate discovery
+is a separate explicit Admin action.
+
+Local ticks sample the current connected stream cache, including unchanged states; reconnects
 start with an empty cache. A source error blocks scalar capture when its error
 state is advertised. PVPF snapshots require all ten documented states and at least
 two quiet seconds after an update; this is a practical settled-cache snapshot,
-not a protocol guarantee of atomic native updates. Reception timestamps establish
-local observations, not continuous physical measurement timestamps. Sampling
+not a protocol guarantee of atomic native updates. Unchanged forecast snapshots
+are not repeated until their
+source state set changes (or the stream reconnects). Scalar samples retain their
+regular sampling positions.
+
+Reception timestamps establish local observations, not continuous physical measurement timestamps. Sampling
 cannot reconstruct a pre-existing history.
 
 The shared SQLite schema migrates V8 to V9 transactionally, preserving scalar and
