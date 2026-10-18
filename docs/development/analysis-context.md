@@ -23,10 +23,12 @@ Incomplete EFM topology, ambiguous references and selected parent/child meters
 fail closed. Native membership alone does not establish measurement boundaries,
 units or signs. Existing version-gated adapters retain their evidence boundaries.
 
-The initial contract/resolver commit is internal groundwork; it does not yet add
-a new MCP invocation mode. Planning integration and bilingual Explorer guidance
-are separate reviewed changes under #556. Legacy tools and profile stores retain
-their contracts. Follow-ups: #557 history, #558 weather/solar, #559 profile reuse;
+The context is an optional alternative selection in `loxone_plan_loads(options)`.
+It cannot be mixed with legacy forecast/binding selection. The legacy path retains
+its result type; the context path returns `conditional_context_planning.v1`.
+Multiple forecasts share one authenticated transport and one final structure read.
+Legacy tools and profile stores retain their contracts.
+Follow-ups: #557 history, #558 weather/solar, #559 profile reuse;
 existing #357, #441 and #444 own their respective EFM, lighting and prompt domains.
 
 ## Deutscher Überblick
@@ -37,6 +39,6 @@ Energiebudget. Mehrere PVPFs benötigen bestätigte, überschneidungsfreie Abdec
 Reale Lasten ohne eigenen Zähler sind mit bestätigtem vollständigem deklariertem
 Zyklus möglich; hypothetische Lasten bleiben getrennte Szenarien. Profile werden
 nur gelesen. Fehlende Verdrahtung eines nur visualisierten PVPF ist für sich kein
-Konfigurationsfehler. Diese erste Änderung ist eine interne Vertragsgrundlage;
-die MCP-Integration und Benutzerführung folgen separat. #440/#510 bleiben bis zur
+Konfigurationsfehler. Der Kontext ist eine optionale alternative Auswahl in der
+bestehenden Lastplanung; Altaufrufe und Profilformate bleiben erhalten. #440/#510 bleiben bis zur
 positiven realen Prognose- und Verbraucherabnahme offen.

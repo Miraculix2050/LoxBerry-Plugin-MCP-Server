@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from mcpserver.analysis_context import EnergyAnalysisContext
 from mcpserver.history_analysis import HistoryAnalysisDeadline
 from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.history_evidence import timezone as get_timezone
@@ -45,11 +46,12 @@ class PowerScenario(BaseModel):
 
 class LoadPlanningOptions(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    forecast_control_uuid: str = Field(min_length=1, max_length=128)
+    forecast_control_uuid: str | None = Field(default=None, min_length=1, max_length=128)
     start: str = Field(max_length=64)
     end: str = Field(max_length=64)
     timezone: str = Field(min_length=1, max_length=128)
-    consumer_binding_ids: list[str] = Field(min_length=1, max_length=16)
+    consumer_binding_ids: list[str] | None = Field(default=None, min_length=1, max_length=16)
+    analysis_context: EnergyAnalysisContext | None = None
     baseload: PowerScenario
     storage_reserve: PowerScenario
     history_days: int = Field(default=7, ge=1, le=31)
@@ -58,10 +60,19 @@ class LoadPlanningOptions(BaseModel):
     def selection(self) -> LoadPlanningOptions:
         import re
 
-        if len(set(self.consumer_binding_ids)) != len(self.consumer_binding_ids) or any(
-            re.fullmatch(r"[A-Za-z0-9_-]{1,64}", item) is None for item in self.consumer_binding_ids
-        ):
-            raise ValueError("consumer bindings must be unique valid identifiers")
+        if self.analysis_context is not None:
+            if self.forecast_control_uuid is not None or self.consumer_binding_ids is not None:
+                raise ValueError("choose legacy selection or analysis_context")
+            if len(self.model_dump_json().encode()) > 65_536:
+                raise ValueError("context planning input exceeds 64 KiB")
+        else:
+            if not self.forecast_control_uuid or not self.consumer_binding_ids:
+                raise ValueError("legacy planning requires forecast and consumer bindings")
+            if len(set(self.consumer_binding_ids)) != len(self.consumer_binding_ids) or any(
+                re.fullmatch(r"[A-Za-z0-9_-]{1,64}", item) is None
+                for item in self.consumer_binding_ids
+            ):
+                raise ValueError("consumer bindings must be unique valid identifiers")
         get_timezone(self.timezone)
         self.interval()
         return self
