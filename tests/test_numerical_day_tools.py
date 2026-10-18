@@ -358,6 +358,24 @@ async def test_hidden_and_unregistered_solar_sources_are_not_read(monkeypatch, t
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("missing_source", [False, True])
+async def test_stale_energy_binding_returns_not_found_without_statistic_read(
+    monkeypatch, tmp_path, missing_source
+):
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+    if missing_source:
+        runtime.structure = replace(
+            runtime.structure,
+            controls=tuple(c for c in runtime.structure.controls if c.uuid != P),
+        )
+    else:
+        args["sources"][-1] = AnalysisSource(binding_id="deleted-production", granularity="hour")
+    result = await tool.fn(**args)
+    assert not result.ok and result.data.error == "not_found"
+    runtime.authorized_statistics.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "change",
     [{"is_hidden": True}, {"format": "%.0flux"}, {"state_uuids": ()}, {"control_type": "Slider"}],

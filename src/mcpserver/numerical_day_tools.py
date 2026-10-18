@@ -473,11 +473,9 @@ async def numerical_day_analysis(
             local.append((source, fingerprint, rows))
             continue
         binding = bindings.get(selector.get("binding_id", ""))
-        if (
-            binding is None
-            or binding.get("source_kind") != "statistic"
-            or selector.get("granularity") != "hour"
-        ):
+        if binding is None:
+            raise ControlOperationError("not_found", "Confirmed energy binding is not available")
+        if binding.get("source_kind") != "statistic" or selector.get("granularity") != "hour":
             raise ValueError("numerical energy sources require confirmed hourly statistic bindings")
         role = binding["role"]
         if role not in {"production", "self_consumption", "grid_export"}:
