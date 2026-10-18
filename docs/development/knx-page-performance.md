@@ -165,7 +165,7 @@ leaving source-model imports outside the configuration lock. A standalone CPU
 improvement is insufficient when it introduces contention in the real page path.
 
 For whole-page comparison, alternate the unchanged master reference `6704f6e0`
-with only the three optimized runtime files. Keep project/configuration, shared
+with only the two optimized runtime files. Keep project/configuration, shared
 OAuth session, remembered comparison, periodic polling and all security checks
 unchanged. A cold sample means restarting the plugin service, not clearing OS or
 browser caches. Record initial response completion and separately verify rendered

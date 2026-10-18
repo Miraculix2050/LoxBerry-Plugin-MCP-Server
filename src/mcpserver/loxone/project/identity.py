@@ -83,8 +83,8 @@ def logical_runtime_nodes(
         # Single occurrences never use topology; still reject UUID collisions
         # with connectors or other nodes in the same project.
         single_evidence: dict[str, IdentityEvidence] = {}
-        for uuid, members in groups.items():
-            node = members[0]
+        for uuid, single_members in groups.items():
+            node = single_members[0]
             if node.block_type not in SUPPORTED_TYPES:
                 continue
             duplicate = local_ids[node.project, uuid] != 1
