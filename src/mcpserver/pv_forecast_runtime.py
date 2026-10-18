@@ -7,6 +7,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from mcpserver.auth.loxone_store import LoxoneTokenStoreError
 from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import (
     LoxoneConnectionError,
@@ -37,13 +38,21 @@ async def read_pv_forecast(
     """One forecast request; visibility and identity checked before publication."""
     if READ_SCOPE not in access.scopes:
         raise PermissionError("loxone:read scope is required")
-    uuid = normalize_loxone_uuid(uuid)
+    try:
+        uuid = normalize_loxone_uuid(uuid)
+    except ValueError:
+        raise ControlOperationError("invalid_input", "Invalid PV forecast target") from None
     session: LoxoneWebSocketSession | None = None
     token = None
     try:
         async with asyncio.timeout(30), runtime.snapshot_context(access) as snapshot:
             control = visible_pvpf(snapshot.structure, uuid)
-            action = normalize_loxone_uuid(control.action_uuid)
+            try:
+                action = normalize_loxone_uuid(control.action_uuid)
+            except ValueError:
+                raise ControlOperationError(
+                    "unsupported_source", "Invalid PVPF action identity"
+                ) from None
             token = runtime.token_store.get(
                 access.family_id, access.miniserver_id, access.identity_id
             )
@@ -90,7 +99,7 @@ async def read_pv_forecast(
         if runtime.token_health is not None:
             runtime.token_health.record_rejected_authentication(access.family_id)
         raise ControlOperationError("permission_denied", "Loxone authentication rejected") from None
-    except (TimeoutError, LoxoneConnectionError, LoxoneProtocolError):
+    except (TimeoutError, LoxoneConnectionError, LoxoneProtocolError, LoxoneTokenStoreError):
         raise ControlOperationError(
             "temporarily_unavailable", "PV forecast read timed out"
         ) from None

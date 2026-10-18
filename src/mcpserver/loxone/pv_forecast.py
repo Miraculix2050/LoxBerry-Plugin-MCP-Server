@@ -103,6 +103,11 @@ def decode_forecast(
             at, energy = row["t"], number(row["v"])
             if type(at) is not int or not 0 < at < 4_102_444_800 or energy is None or energy < 0:
                 raise PvForecastError("pv_forecast_invalid_hour")
+            if (
+                prediction is not None
+                and not prediction - 26 * 3600 <= at <= prediction + 74 * 3600
+            ):
+                raise PvForecastError("pv_forecast_hour_outside_horizon")
             if at in seen:
                 raise PvForecastError("pv_forecast_duplicate_hour")
             seen.add(at)
@@ -111,7 +116,10 @@ def decode_forecast(
     if any(a.end > b.start for a, b in zip(result.hours, result.hours[1:], strict=False)):
         raise PvForecastError("pv_forecast_overlapping_hours")
     result.field_delivery_complete = (
-        bool(result.hours) and result.ready is not None and prediction is not None
+        bool(result.hours)
+        and result.ready is not None
+        and prediction is not None
+        and result.error_info is not None
     )
     if prediction is not None and (now - prediction > 3 * 3600 or prediction > now + 300):
         result.status = "stale"

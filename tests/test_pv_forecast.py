@@ -101,6 +101,22 @@ def test_hour_gaps_are_preserved():
     assert len(result.hours) == 2 and result.hours[0].end < result.hours[1].start
 
 
+def test_missing_error_status_is_not_complete_and_old_hour_is_rejected():
+    states = {key: value for key, value in STATES.items() if key != "errorInfo"}
+    assert not decode(states=states).field_delivery_complete
+    with pytest.raises(PvForecastError, match="outside_horizon"):
+        decode('{"today":[{"t":1,"v":1}]}')
+
+
+@pytest.mark.asyncio
+async def test_invalid_target_returns_stable_error():
+    runtime, _, session, _ = fixture_runtime()
+    with pytest.raises(ControlOperationError) as exc:
+        await read_pv_forecast(runtime, access(), "invalid")
+    assert exc.value.code == "invalid_input"
+    session.native_efm_result.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("revoke", [False, True])
 async def test_native_read_once_with_visibility_recheck_and_cleanup(revoke):

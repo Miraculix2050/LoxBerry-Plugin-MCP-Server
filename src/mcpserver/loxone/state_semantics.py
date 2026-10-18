@@ -731,6 +731,8 @@ class StateSemanticsResolver:
 
                 numeric = number(value)
                 valid = numeric is not None
+                if state_name == "errorInfo":
+                    valid = numeric is not None and numeric >= 0 and numeric.is_integer()
                 if state_name == "ready":
                     valid = valid and numeric in (0, 1)
                 result = StateSemantics(
