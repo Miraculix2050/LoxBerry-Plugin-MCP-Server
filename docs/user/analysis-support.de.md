@@ -85,3 +85,16 @@ Native EFM-Mitgliedschaft und Nutzerzuordnungen bleiben getrennt. Mehranlagen-
 Fixtures belegen Isolation und Berechnung, keine reale Mehranlagenkompatibilität.
 Alte Aufrufe bleiben unterstützt. Positive reale PVPF-/Verbraucherabnahme bleibt
 unter #440/#510 offen; fehlende Quellen werden nicht durch Fixtures ersetzt.
+
+## Erhaltene Messbasis des Katalogs v1
+
+Die folgenden Beschreibungen dokumentieren die frühere Analysegrundlage vom 11. Oktober 2026. Der versionierte Messkatalog und seine Hashes bleiben für bestehende #485-Aufzeichnungen unverändert. Für die aktuellen Lichtfunktionen gilt die Matrix oben; diese historischen Grenzen sind keine neue Messung oder Abnahme.
+
+| ID | Historische Ablaufgrenze |
+| --- | --- |
+| lighting-01 | Nur sichtbare Quellstimmungen via lighting_context; Aktualität und Auslassungsgrenzen erhalten, keine vollständige Szeneninventur ableiten. |
+| lighting-02 | Nur Benennungskandidaten; keine behaupteten doppelten Stromkreise. |
+| lighting-03 | Explizite Projektverbindungen nötig; Raumzugehörigkeit ist keine Verbindung. |
+| lighting-04 | Planungsberatung benötigt Nutzerabsicht und Leuchtenbestand; keine automatische Eignungsprüfung. |
+| lighting-05 | Benennungskandidaten aus Quellstimmungen via lighting_context; Namen belegen keine Szenenrollen. |
+| lighting-06 | Qualifizierte Planungsbewertung; spezielle Lichtprüfung bleibt außerhalb dieser Grundlage. |

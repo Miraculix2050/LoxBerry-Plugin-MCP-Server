@@ -563,3 +563,29 @@ def test_v2_published_guide_resources_share_byte_and_call_accounting():
     row["calls"][0]["guide_section"] = "../../unpublished"
     with pytest.raises(ValueError, match="labels"):
         acceptance.validate_capture(data, CATALOG)
+
+
+def test_current_lighting_matrix_uses_bounded_released_analyzer_beside_historical_baseline() -> (
+    None
+):
+    tools = {tool["name"]: tool for tool in tool_schema_catalog("synthetic")["tools"]}
+    analyzer = tools["loxone_analyze_project"]
+    assert analyzer["annotations"]["readOnlyHint"]
+    assert "lighting" in analyzer["inputSchema"]["properties"]["scope"]["enum"]
+    checks = {
+        "lighting-01": ("inventory", "scene_roles"),
+        "lighting-02": ("naming_consistency",),
+        "lighting-03": ("presence_relationships",),
+        "lighting-04": ("planning_context",),
+        "lighting-05": ("scene_roles", "naming_consistency"),
+        "lighting-06": ("inventory", "planning_context"),
+    }
+    for language in ("de", "en"):
+        matrix = (ROOT / f"docs/user/analysis-support.{language}.md").read_text(encoding="utf-8")
+        for case_id, expected in checks.items():
+            current = next(
+                line for line in matrix.splitlines() if line.startswith(f"| {case_id} |")
+            )
+            assert 'loxone_analyze_project(scope="lighting"' in current
+            assert all(check in current for check in expected)
+        assert "#485" in matrix

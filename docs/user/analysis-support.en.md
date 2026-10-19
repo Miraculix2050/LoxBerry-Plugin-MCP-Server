@@ -81,3 +81,16 @@ from user associations. Multi-plant fixtures prove isolation and calculation,
 not real multi-plant compatibility. Legacy calls remain supported. Positive real
 PVPF/consumer acceptance remains open under #440/#510; fixtures cannot replace
 missing real sources.
+
+## Retained catalog v1 measurement baseline
+
+The descriptions below record the earlier analysis foundation of11 October2026. The versioned measurement catalog and its hashes remain unchanged for existing #485 captures. Use the matrix above for current lighting capabilities; these historical boundaries establish no new measurement or acceptance.
+
+| ID | Historical workflow boundary |
+| --- | --- |
+| lighting-01 | Visible source moods via lighting_context only; preserve freshness and omission limits, never infer complete scene inventory. |
+| lighting-02 | Naming candidates only; no duplicated physical circuit claim. |
+| lighting-03 | Explicit project links required; room membership is not a connection. |
+| lighting-04 | Planning advice needs user intent and fixture inventory; no automatic suitability proof. |
+| lighting-05 | Source mood naming candidates via lighting_context; names do not establish scene roles. |
+| lighting-06 | Qualified design review only; specialist lighting work remains outside this foundation. |
