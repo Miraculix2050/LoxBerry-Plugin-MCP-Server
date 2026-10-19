@@ -1,6 +1,7 @@
 # Native EFM semantic evidence matrix v1
 
-- Evidence version: `efm_semantic_matrix.17_2_8_28.v1`, reviewed source date 2026-10-18.
+- Evidence version: `efm_semantic_matrix.17_2_8_28.v1`, documentation review 2026-10-18;
+  installation-observation follow-up 2026-10-19.
 - Scope: #534; exact EFM firmware `17.2.8.28`, existing native aggregate views only.
 - Decision: **no new runtime semantic rule**. Retain `native_efm_result.v2` and
   `native_efm_actual_semantics_17_2_8_28.v1` unchanged. Documented block behavior,
@@ -13,10 +14,11 @@
 | D1 | [Structure File](https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf) | 17.1, 2026-08-06, physical PDF pp.64–67 | EFM details, node meanings, states and aggregate commands. Local retained official PDF hash reverified on 2026-10-18; online PDF retrieval failed. |
 | K1 | [Energieflussmonitor](https://www.loxone.com/dede/kb/energieflussmonitor/) / [Energy Flow Monitor](https://www.loxone.com/enen/kb/energy-flow-monitor/) | Retrieved 2026-10-18; outputs and application example; no publication date or firmware bound stated | Block outputs and display/configuration explanation; not a version-bound wire mapping. |
 | K2 | [Bidirectional meter](https://www.loxone.com/dede/kb/zaehler-bidirektional/) | Retrieved 2026-10-18; outputs, properties, meter reading/units; undated | Meter input direction is configurable; output Pf describes consumption/delivery. Does not identify aggregate EFM sign encoding. |
-| K3 | [Storage meter](https://www.loxone.com/dede/kb/zaehler-speicher/) | Retrieved 2026-10-18; outputs, properties, meter reading/units; undated | Meter output Pf describes discharge/charge; input direction and units are configurable. Not an aggregate Spwr decoder. |
+| K3 | [Storage meter](https://www.loxone.com/dede/kb/zaehler-speicher/) / [Meter & Storage](https://www.loxone.com/enus/kb/meter-storage/) | Retrieved 2026-10-18; English outputs/properties rechecked 2026-10-19; undated | Output Pf is positive for discharge and negative for charge; the direction property concerns the physical value at input Pf. Input direction and units are configurable. Not an aggregate Spwr decoder. |
 | K4 | [Meter](https://www.loxone.com/dede/kb/zaehler/) | Retrieved 2026-10-18; inputs and meter reading/units; undated | Power/flow and readings depend on configured medium, units and connected inputs. Not proof of an EFM period unit. |
 | E1 | [Original sanitized matrix](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/436#issuecomment-6109313546) | Browser capture 2026-10-11, exact firmware 17.2.8.28 | Owner-authenticated read-only same-origin requests; fresh structure and independent firmware lookup. Browser identity equality with the MCP caller was not established. |
 | E2 | [Delivered semantics and acceptance](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/492) | Recorded acceptance on candidate `12ac66b2ffd99f960b6178dc425ffb6b31bbbc69`; merged as `c5daa493f1061e518c97b68446ee6c79da736bfb` | Separate fresh caller-owned admin session and installed MCP handler, all six views; actual/day also through HTTP-MCP/Explorer. Existing semantics only. |
+| E3 | Caller-authorized linked-storage comparisons, #534 follow-up | Read-only device observations 2026-10-19, exact firmware 17.2.8.28; private provenance retained | Native actual.Spwr compared with the explicitly referenced storage meter and verified participant-state binding on one installation; negative, zero and positive cases observed. No universal sign or input-inversion contract. |
 
 D1 SHA-256:
 `97bbc5ec79c8479c0f2f561a55780a764a518fe420d11fd2fc26979fc41e5f23`.
@@ -31,7 +33,8 @@ caller-owned administrator session. Both concern firmware 17.2.8.28 and remain
 historical evidence, not confirmation of today's configuration or permission.
 Detailed sanitized capture provenance, receipt times, acquisition limitations
 and artifact digests are retained in the private project-data evidence store.
-This review made no new device requests and accepts no new interpretation.
+The original documentation review made no new device requests. The later E3
+follow-up adds installation observations only and accepts no new runtime rule.
 
 ## Actual field decisions
 
@@ -44,7 +47,7 @@ unknown has an insufficient-evidence disposition; no row authorizes a new decode
 | --- | --- | --- | --- | --- |
 | actual.Gpwr | D1 pp.66–67: grid power; block-setting unit. K1: grid-power output. D1 p.65 signs apply to node.actual. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/grid_power, W/kW only through the unchanged exact actualFormat rule. Sign and boundary unknown. | Explicit aggregate sign contract plus independent configuration linking grid direction and physical measurement boundary to this aggregate field. |
 | actual.Ppwr | D1 pp.66–67: production power; block-setting unit. K1: production-power output. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/production_power, same W/kW rule. Sign and boundary unknown. | Explicit aggregate direction contract and configuration proving which production sources, reverse flows and measurement boundary the aggregate includes. |
-| actual.Spwr | D1 pp.66–67: storage power; block-setting unit. K3 signs describe meter.Pf, D1 p.65 describes node.actual. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/storage_power, same W/kW rule. Charge/discharge sign and boundary unknown. | Aggregate Spwr sign contract and independently linked storage configuration/boundary; a node or meter sign is not that link. |
+| actual.Spwr | D1 pp.66–67: storage power; block-setting unit. K3 signs describe meter.Pf, D1 p.65 describes node.actual. | E1 numeric; E2 own EFM format retained; E3 agrees with linked meter-output signs for negative, zero and positive cases on one installation | **Confirmed existing:** power/storage_power, same W/kW rule. E3 supports installation-level correspondence with K3; general charge/discharge sign contract and boundary remain unknown. | Aggregate Spwr sign contract and independent storage configuration/boundary evidence beyond E3's explicit references; input-direction encoding and physical measurement boundary remain unverified. |
 | actual.Cpwr | D1 p.67: load power; K1 calls the block output consumption power. No explicit aggregate unit binding. | E1 numeric; no independent Cpwr format | **Confirmed existing:** power/load_power, unit/sign/boundary unknown. No extension. | Explicit applicability of a unit source to aggregate Cpwr, plus direction and configured load/measurement-boundary evidence. The neighboring fields' actualFormat rule cannot be widened by analogy. |
 | actual.Rest | D1 p.67 lists Rest without defining its quantity. K1 describes the block output as calculated remaining power of the top group; distribution-board residuals represent unmetered downstream devices and may include measurement differences. | Absent in E1; root display flags/names/icons are metadata, not a numeric Rest specimen | **Insufficient evidence:** native quantity/role/unit/sign/boundary remain unknown. Missing is not zero. | Caller-authenticated native Rest specimen and independent top-group/configuration evidence linking it to the documented output; explicit unit/direction applicability. No residual arithmetic or synthetic meter. |
 
@@ -54,6 +57,25 @@ already required structures. Values are never scaled. Missing, invalid,
 unsupported and changed metadata remain distinct; changed metadata drops unit
 enrichment while retaining raw values. Generic control, participant, storage and
 total formats are not fallback evidence.
+
+### Installation-level Spwr follow-up
+
+E3 resolves the missing positive native observation for the tested installation:
+three positive `get/actual.Spwr` responses each matched at least one adjacent
+storage-meter `actual` value. The meter and its explicitly bound EFM participant
+were exactly equal in both reads bracketing each native request. Cached EFM
+`Spwr` was also positive. Earlier E3 rounds observed matching negative and zero
+signs. Selection used fresh control references and the verified firmware-bound
+participant mapping, not display names or matching numbers.
+
+This supports correspondence with K3's normalized **output** convention on that
+installation. It does not identify the incoming physical value or prove an
+inversion: the Config direction setting and source-field encoding remain
+unverified. Sequential software observations also do not establish a physical
+measurement instant, continuous sign transition, multiple-storage behavior or
+a general aggregate boundary. The runtime `sign_convention` remains null.
+Detailed values, identities, acquisition times, traces and preservation hashes
+remain in the private evidence store; they are not public product examples.
 
 ## Period field decisions
 
