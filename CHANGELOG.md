@@ -9,6 +9,11 @@ extracted from the matching version heading.
   retaining exact child/parent references, structure provenance and omissions
   without inferring physical fixtures or project connectors (#441, stage 2).
 
+- Add explicit site/weather selection and disjoint multi-PV coverage to optional
+  history context. Sum only qualified common complete hours, retain native source
+  evidence, legacy comparisons and separate forecast provenance. Keep single-PV
+  export balances and distinct statistic metrics on one control usable (#558).
+
 - Add optional request-local history associations, complete measured-cycle evidence
   and separately declared real/hypothetical scenarios sharing one historical
   export budget. Preserve legacy calls and profile formats; revalidate selected

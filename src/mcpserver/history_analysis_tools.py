@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mcpserver.analysis_context import (
     HistoryAnalysisContext,
+    HistoryDayContext,
     HistoryResolvedAssociation,
     SourceSnapshot,
     read_profile_bindings,
@@ -135,6 +136,10 @@ class AnalysisData(BaseModel):
     comparison: ComparisonResult | None = None
     comparable_days: ClassComparableDaysResult | NumericalComparableDaysResult | None = None
     weather_sources: list[WeatherAnalysisSummary] = Field(default_factory=list, max_length=16)
+    day_context: HistoryDayContext | None = None
+    context_associations: list[HistoryResolvedAssociation] | None = Field(
+        default=None, max_length=16
+    )
 
 
 class ComparisonOptions(BaseModel):
@@ -329,7 +334,7 @@ def register_history_analysis_tool(
             if comparison_options is not None and not is_comparison:
                 raise ValueError("comparison options require a comparison operation")
             if analysis_context is not None and (
-                not is_comparison
+                (not is_comparison and operation != "comparable_days")
                 or len(analysis_context.associations) != len(sources)
                 or {a.source_index for a in analysis_context.associations}
                 != set(range(len(sources)))
@@ -337,6 +342,13 @@ def register_history_analysis_tool(
                 raise ValueError(
                     "history context requires a comparison and exact associations for all sources"
                 )
+            day_context = analysis_context.day_context if analysis_context else None
+            if analysis_context is not None and (operation == "comparable_days") != (
+                day_context is not None
+            ):
+                raise ValueError("day context requires comparable_days and vice versa")
+            if day_context is not None and day_context.site.timezone != timezone_name:
+                raise ValueError("site timezone contradicts the analysis timezone")
             if analysis_context is not None and any(
                 (load.cycle and load.cycle.timezone != timezone_name)
                 or (load.flexibility and load.flexibility.timezone != timezone_name)
@@ -377,7 +389,9 @@ def register_history_analysis_tool(
                     last_day -= timedelta(days=1)
                 if not local_first.date() <= reference <= last_day:
                     raise ValueError("reference must lie inside the selected range")
-                if any(isinstance(s, AnalysisSource) and not s.binding_id for s in sources):
+                if analysis_context is None and any(
+                    isinstance(s, AnalysisSource) and not s.binding_id for s in sources
+                ):
                     raise ValueError("class comparisons require structured weather selectors")
             if cursor is not None and not include_raw:
                 raise ValueError("cursor requires explicitly requested raw data")
@@ -410,8 +424,14 @@ def register_history_analysis_tool(
                         {key: c for key, c in controls.items() if not c.is_hidden},
                         bindings,
                         timezone_name=timezone_name,
+                        structure=structure,
+                        installation=identity,
                     )
-                    selected_ids = {row["control_uuid"] for row in context_bindings.values()}
+                    selected_ids = {
+                        row["control_uuid"]
+                        for row in context_bindings.values()
+                        if row["control_uuid"] is not None
+                    }
                     if analysis_context.scope.monitor_uuid is not None:
                         selected_ids.add(analysis_context.scope.monitor_uuid)
                     referenced = {source.binding_id for source in sources if source.binding_id}
@@ -428,7 +448,25 @@ def register_history_analysis_tool(
                         bindings,
                         profile_revision,
                         referenced,
+                        include_weather=day_context is not None,
                     )
+
+                async def validate_context_publication() -> None:
+                    if context_guard is None:
+                        return
+                    await runtime._require_access(access)
+                    fresh_structure = await runtime._history_visible_structure(session, trace_id)
+                    current_bindings, current_revision = await read_profile_bindings(
+                        profile_path,
+                        identity,
+                        fresh_structure,
+                        required=any(source.binding_id for source in sources),
+                    )
+                    context_guard.validate(
+                        runtime.endpoint.origin, fresh_structure, current_bindings, current_revision
+                    )
+                    await runtime._require_access(access)
+
                 if analysis_context is None and any(source.binding_id for source in sources):
                     if profile_path is None:
                         raise ControlOperationError(
@@ -465,6 +503,12 @@ def register_history_analysis_tool(
                             zone_name=timezone_name,
                             options=comparable_day_options,
                             deadline=deadline,
+                            day_context=day_context,
+                            context_bindings=context_bindings if analysis_context else None,
+                            common_supply_confirmed=bool(
+                                analysis_context
+                                and analysis_context.scope.common_supply_origin == "user_confirmed"
+                            ),
                         )
                         if profile_revision is not None:
                             assert profile_path is not None
@@ -485,18 +529,37 @@ def register_history_analysis_tool(
                                 sources=[],
                                 input_points=count,
                                 comparable_days=numerical,
+                                day_context=day_context,
+                                context_associations=association_results if day_context else None,
                             ),
                             trace_id=trace_id,
                         )
+                        if day_context is not None:
+                            numerical.limitations.append(
+                                "site_and_coverage_are_owner_confirmed_not_independently_verified"
+                            )
                         if len(numerical_envelope.model_dump_json().encode()) > 64 * 1024:
                             raise ValueError("analysis output byte limit exceeded")
+                        await validate_context_publication()
                         return numerical_envelope
+                    class_selectors = [source.model_dump() for source in sources]
+                    if day_context is not None:
+                        radiation = [
+                            choice
+                            for choice in day_context.weather
+                            if choice.quantity == "radiation"
+                        ]
+                        if len(radiation) != 1:
+                            raise ValueError(
+                                "class comparison requires an explicitly selected radiation source"
+                            )
+                        class_selectors = [class_selectors[radiation[0].source_index]]
                     days, weather = await class_day_analysis(
                         runtime,
                         event_runtime,
                         access,
                         structure,
-                        [source.model_dump() for source in sources],
+                        class_selectors,
                         bindings,
                         begin=begin,
                         finish=finish,
@@ -515,6 +578,8 @@ def register_history_analysis_tool(
                             "input_points": weather.input_versions,
                             "comparable_days": days,
                             "weather_sources": [weather],
+                            "day_context": day_context,
+                            "context_associations": association_results if day_context else None,
                         },
                         trace_id=trace_id,
                         warnings=[
@@ -525,6 +590,10 @@ def register_history_analysis_tool(
                         if days.invalid_source_point_count
                         else [],
                     )
+                    if day_context is not None:
+                        days.limitations.append(
+                            "site_and_coverage_are_owner_confirmed_not_independently_verified"
+                        )
                     if len(envelope.model_dump_json().encode()) > 64 * 1024:
                         raise ValueError("analysis output byte limit exceeded")
                     if days.invalid_source_point_count:
@@ -538,6 +607,7 @@ def register_history_analysis_tool(
                             days.invalid_source_point_count,
                             days.invalid_points_truncated,
                         )
+                    await validate_context_publication()
                     return envelope
                 seen = set()
                 for source_index, source in enumerate(sources):
@@ -776,19 +846,7 @@ def register_history_analysis_tool(
                     if comparison.context_analysis is not None:
                         comparison.context_analysis.associations = association_results
                         comparison.context_analysis.profile_revision = profile_revision
-                if context_guard is not None:
-                    await runtime._require_access(access)
-                    fresh_structure = await runtime._history_visible_structure(session, trace_id)
-                    current_bindings, current_revision = await read_profile_bindings(
-                        profile_path,
-                        identity,
-                        fresh_structure,
-                        required=any(source.binding_id for source in sources),
-                    )
-                    context_guard.validate(
-                        runtime.endpoint.origin, fresh_structure, current_bindings, current_revision
-                    )
-                    await runtime._require_access(access)
+                await validate_context_publication()
                 scope = await run_admitted_worker(
                     _raw_scope,
                     cursors,

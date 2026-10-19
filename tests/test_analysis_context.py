@@ -156,6 +156,36 @@ def test_hypothetical_load_cannot_claim_real_source_or_native_membership():
         EnergyAnalysisContext.model_validate(doc)
 
 
+@pytest.mark.parametrize("overlap", ["same_path", "parent"])
+def test_distinct_day_metrics_do_not_bypass_native_topology_overlap(overlap):
+    from mcpserver.analysis_context import resolve_selected_membership
+
+    visible = controls()
+    monitor = visible[MONITOR]
+    visible[MONITOR] = replace(
+        monitor,
+        efm=Projection(
+            (
+                Participant((0,), control_uuid=METER),
+                Participant((0,) if overlap == "same_path" else (0, 0), control_uuid=LOAD),
+            )
+        ),
+    )
+    with pytest.raises(ValueError, match="overlapping|duplicate"):
+        resolve_selected_membership(
+            efm_context().scope,
+            visible,
+            [("pv", METER, "user_confirmed"), ("self", LOAD, "user_confirmed")],
+            contribution_roles={"pv": "production", "self": "self_consumption"},
+        )
+    with pytest.raises(ValueError, match="duplicate"):
+        resolve_selected_membership(
+            efm_context().scope,
+            visible,
+            [("pv", METER, "user_confirmed"), ("self", METER, "user_confirmed")],
+        )
+
+
 def test_real_source_is_derived_and_contradictory_mapping_is_rejected():
     value = EnergyAnalysisContext.model_validate(context_document())
     assert resolve_membership(value, controls(), {})[-1].control_uuid == LOAD
@@ -382,7 +412,8 @@ def test_inherited_profile_cycle_timezone_is_checked_before_source_reads():
         )
 
 
-def test_history_membership_keeps_same_named_independent_efms_separate():
+@pytest.mark.parametrize("role", ["consumer", "self_consumption", "grid_export", "production"])
+def test_history_membership_keeps_same_named_independent_efms_separate(role):
     from mcpserver.analysis_context import HistoryAnalysisContext, resolve_history_associations
     from mcpserver.loxone.models import StatisticSeries
 
@@ -413,7 +444,7 @@ def test_history_membership_keeps_same_named_independent_efms_separate():
                     {
                         "association_id": "load",
                         "source_index": 0,
-                        "role": "consumer",
+                        "role": role,
                         "origin": "user_confirmed",
                     }
                 ],

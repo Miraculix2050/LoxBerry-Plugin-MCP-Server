@@ -1,5 +1,48 @@
 # Comparable days
 
+## One explicit site and multiple sources
+
+Optional `analysis_context.day_context` assigns the existing `sources` by
+`source_index`; it never selects additional sources. Provide one owner-confirmed
+`site` with `site_id`, `timezone` and `association_origin="user_confirmed"`.
+Its timezone must equal the tool's explicit `timezone`. Latitude and longitude
+are optional together and cannot contradict confirmed PV parameters. Evaluate
+independent sites in separate calls.
+
+`weather` selects exactly one source per `quantity` (`radiation`, `temperature`,
+or `forecast`). Associations use `role="weather_context"` and confirmed origin.
+Other supplied weather sources are not averaged or chosen by their names. The
+qualitative method uses the selected actual structured radiation source; the
+numerical method retains registered solar observations and native decoders.
+Forecasts remain separate forecasts. Radiation evaluated alongside production
+requires `radiation_independence_origin="user_confirmed"`; the same PV control
+cannot supply its own independent radiation evidence.
+
+Declare `assets` and `production` coverage with `source_index`, `asset_ids` and
+`coverage_origin="user_confirmed"`. Coverage must partition the declared assets:
+an aggregate covering roof and garage cannot contribute alongside either included
+meter. Multiple production sources require confirmed common supply scope. Only
+qualified, complete hours present in **every** contributing source are summed.
+Missing data never becomes zero or a partial plant total. `production_sources`
+reports each source's qualification and complete-hour count.
+
+Distinct statistic series on one control can supply production and direct
+self-consumption or export as separate metrics. Reusing the exact same source
+or adding the same energy role twice on that control is rejected. Native topology
+overlap checks still apply across controls. For one production source the existing
+confirmed PV-minus-export balance suffices; the additional common-supply
+confirmation applies when combining multiple production sources.
+
+Exact hourly statistic selectors can be used without a profile. Production,
+direct self-consumption and export associations require explicit confirmation;
+roles do not establish units, quantities or measurement boundaries. Derived
+PV-minus-export also retains the existing explicit balance confirmation, export
+direction and matching boundaries for every production source. Native EFM
+membership applies to all energy contributions. Results echo the site and
+associations and label owner-confirmed coverage as not independently verified.
+Visibility, installation, source metadata and referenced profile revisions are
+checked again before publication. Existing #439/#509 acceptance gates remain open.
+
 ## Numerical weather peers
 
 Select `comparable_day_options.method="numerical"` explicitly, with `reference_day`.

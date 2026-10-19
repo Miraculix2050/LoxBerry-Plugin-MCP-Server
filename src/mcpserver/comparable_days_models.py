@@ -200,6 +200,16 @@ class SolarSourceSummary(Contract):
     maximum_sample_offset_seconds: Nonnegative | None = None
 
 
+class ProductionSourceSummary(Contract):
+    source_index: int = Field(ge=0, le=15)
+    control_uuid: str
+    series_id: str
+    binding_id: str | None = None
+    semantics_qualified: bool
+    unit: str | None = None
+    complete_hours: int = Field(ge=0, le=768)
+
+
 class NumericalComparableDaysResult(ComparableDaysResult):
     weather_adjustment: Literal["peer_selection_only"] = "peer_selection_only"
     radiation_origin: Literal["observed_interval_energy", "estimated_from_source_samples"]
@@ -211,6 +221,7 @@ class NumericalComparableDaysResult(ComparableDaysResult):
     forecast_limitations: list[Reason] = Field(max_length=8)
     solar_sources: list[SolarSourceSummary] = Field(max_length=16)
     configuration_guidance: list[Reason] = Field(max_length=8)
+    production_sources: list[ProductionSourceSummary] | None = Field(default=None, max_length=16)
 
 
 RadiationClass = Annotated[int, Field(ge=0, le=3)]
