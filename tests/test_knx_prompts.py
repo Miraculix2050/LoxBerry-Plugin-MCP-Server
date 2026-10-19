@@ -41,11 +41,13 @@ async def test_prompt_list_matches_reference_without_expansion(server, monkeypat
     assert (
         sorted(advertised, key=lambda item: item["name"]) == tool_schema_catalog("test")["prompts"]
     )
-    assert {item["name"] for item in advertised} == {
+    knx = [item for item in advertised if item["name"].startswith("knx_")]
+    assert {item["name"] for item in knx} == {
         "knx_ets_inventory_review",
         "knx_address_explanation",
     }
-    assert len(json.dumps(advertised).encode()) < 2048
+    assert len(json.dumps(knx).encode()) < 2048
+    assert len(json.dumps(advertised).encode()) < 16384
     assert next(item for item in advertised if item["name"] == "knx_address_explanation")[
         "arguments"
     ][0]["required"]
@@ -164,7 +166,7 @@ async def test_installed_server_registers_prompts_and_sanitizes_unknown_names(ca
             allowed_origins=("https://client.example",),
         )
     )
-    assert len(await native.list_prompts()) == 2
+    assert len(await native.list_prompts()) == 10
     with pytest.raises(ValueError, match="^prompt_unavailable$"):
         await native.get_prompt("PRIVATE_PROMPT_CONTENT", {"address": "PRIVATE_ARGUMENT"})
     assert "PRIVATE" not in caplog.text
@@ -207,7 +209,25 @@ def test_smoke_script_lists_and_expands_exact_registered_prompt_inventory() -> N
     assert "method = 'prompts/list'" in script and "method = 'prompts/get'" in script
 
 
-def test_wire_prompts_need_fresh_oauth_but_expand_without_local_data_grant(tmp_path, caplog):
+@pytest.mark.parametrize(
+    "prompt_name,arguments,invalid_arguments",
+    [
+        (
+            "knx_address_explanation",
+            {"address": "1/2/3:1"},
+            {"address": "PRIVATE_INVALID_INSTRUCTION"},
+        ),
+        ("current_state_summary", {}, {"focus": "PRIVATE_INVALID_INSTRUCTION"}),
+        (
+            "solar_daily_report",
+            {"date": "2026-10-01", "timezone": "Europe/Berlin"},
+            {"date": "2026-10-01", "timezone": "PRIVATE_INVALID_INSTRUCTION"},
+        ),
+    ],
+)
+def test_wire_prompts_need_fresh_oauth_but_expand_without_local_data_grant(
+    tmp_path, caplog, prompt_name, arguments, invalid_arguments
+):
     from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
     from mcpserver.loxone.endpoint import MiniserverEndpoint
     from mcpserver.server import create_server
@@ -258,14 +278,14 @@ def test_wire_prompts_need_fresh_oauth_but_expand_without_local_data_grant(tmp_p
         assert client.post("/mcp", json=request, headers=headers).status_code == 401
         headers["Authorization"] = "Bearer synthetic-prompt-token"
         listing = client.post("/mcp", json=request, headers=headers)
-        assert len(listing.json()["result"]["prompts"]) == 2
+        assert len(listing.json()["result"]["prompts"]) == 10
         request.update(
             method="prompts/get",
-            params={"name": "knx_address_explanation", "arguments": {"address": "1/2/3:1"}},
+            params={"name": prompt_name, "arguments": arguments},
         )
         expanded = client.post("/mcp", json=request, headers=headers)
         assert expanded.json()["result"]["messages"][0]["role"] == "user"
-        request["params"]["arguments"]["address"] = "PRIVATE_INVALID_INSTRUCTION"
+        request["params"]["arguments"] = invalid_arguments
         invalid = client.post("/mcp", json=request, headers=headers)
         assert "error" in invalid.json()
         assert "PRIVATE" not in invalid.text and "PRIVATE" not in caplog.text

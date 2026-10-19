@@ -1,5 +1,9 @@
 # Analysis questions: support and boundaries
 
+The [read-only MCP prompt recipes](mcp-prompts.en.md) make available workflows
+selectable with parameters. Retrieval runs no analysis and extends no domain
+coverage (#444).
+
 Current addition: [native PVPF forecasts and conditional future planning](pv-planning.en.md) use a separate PV source and confirmed load profiles. The retained solar-25 case below describes the original weather-only acceptance; it does not establish source, device or AI acceptance of the new planner.
 
 Renewed #485 acceptance uses bytes, complete call counts, cold/warm durations and

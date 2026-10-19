@@ -54,8 +54,9 @@ _TEST_GROUPS: Final = (
         ("tests/test_solar_history.py", "tests/test_comparable_days.py"),
     ),
     (
-        ("src/mcpserver/prompts.py",),
+        ("src/mcpserver/prompts.py", "src/mcpserver/analysis_prompts.py"),
         (
+            "tests/test_analysis_prompts.py",
             "tests/test_knx_prompts.py",
             "tests/test_mcp_discovery.py",
             "tests/test_schema_reference.py",
