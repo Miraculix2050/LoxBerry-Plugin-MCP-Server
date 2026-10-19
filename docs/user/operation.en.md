@@ -81,6 +81,12 @@ PV/load parameters are needed, especially before confirming a replacement or
 deletion. Both views freshly check visibility on every page and share pagination
 and size limits; omitted summary fields are not absent stored declarations.
 
+Set `include_outputs=true` with `view="lighting_context"` when exact visible
+runtime lighting outputs are needed. The bounded projection retains explicit
+parent identity, structure version and state references, with omissions. Runtime
+containment does not identify a project connector or physical luminaire; color
+picker support does not prove installed tunable-white lighting. No actions occur.
+
 Use `loxone_describe_control(view="lighting_context")` for bounded source mood
 IDs/names of one visible LightControllerV2. Check status, source state, timestamp,
 freshness and omissions; missing or invalid data is not an empty scene inventory.

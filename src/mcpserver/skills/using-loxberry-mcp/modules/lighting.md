@@ -6,6 +6,16 @@ to read source-proven mood IDs and names from its cached `moodList`. This is a
 bounded read of the existing state, not an active device probe. Retain its exact
 source-state reference, observation time and freshness in the answer.
 
+Set `include_outputs=true` on that view only when exact runtime output references
+are needed. `outputs` projects bounded, visible direct Switch/Dimmer/ColorPicker
+children from normalized `subControls`, with parent identity and structure version.
+The default leaves `outputs=null`. Runtime child keys remain exact, including any
+suffix; never derive a connector from that suffix. State references have no values.
+Respect output omissions, unsupported types, name and state limits. A valid empty
+projection does not prove no configured lighting. Connector identity is unresolved
+and physical configuration completeness is not assessable. A color picker and
+default Kelvin bounds do not prove installed tunable-white fixtures.
+
 Distinguish `unsupported`, `missing_reference`, `missing_value`, `invalid` and
 `source_limit` from a valid empty list. `total` counts validated source entries;
 it does not establish complete configured inventory. Respect `truncated`,

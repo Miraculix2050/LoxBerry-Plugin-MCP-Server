@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add opt-in bounded runtime lighting outputs to the existing lighting context,
+  retaining exact child/parent references, structure provenance and omissions
+  without inferring physical fixtures or project connectors (#441, stage 2).
+
 - Add explicit site/weather selection and disjoint multi-PV coverage to optional
   history context. Sum only qualified common complete hours, retain native source
   evidence, legacy comparisons and separate forecast provenance. Keep single-PV

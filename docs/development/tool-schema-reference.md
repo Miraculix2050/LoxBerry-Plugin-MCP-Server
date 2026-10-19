@@ -887,6 +887,19 @@ routing revision changes no tool names, defaults, bounds or authorization.
 
 ## Bounded lighting source context (#442/#443)
 
+The additive `include_outputs=false` option is valid only with `lighting_context`.
+When selected it includes `outputs`, projection version 1, from visible direct
+normalized LightControllerV2 `subControls` of type Switch/Dimmer/ColorPicker(V2).
+Unsupported parent types have null counts; valid empty child sets have zero.
+At most 100 rows, 200 name characters, 16 state references per row and 16 KiB of
+serialized output-entry/state objects are retained. Counts exclude hidden children;
+unsupported visible types are counted separately. Parent UUID and structure
+version/generation prove containment only, never connector identity, physical
+coverage or luminaire capabilities. Default mood calls leave `outputs=null`.
+The complete 64-KiB envelope bound still applies; remaining output rows are removed
+with explicit `omitted` counts if mood/control metadata needs more of that budget.
+Oversized metadata that cannot fit even without outputs retains `response_too_large`.
+
 `loxone_describe_control(view="lighting_context")` adds a fresh-visibility read of
 one visible LightControllerV2's cached `moodList`; full remains the default.
 Only validated source IDs and names are returned. Status distinguishes available,

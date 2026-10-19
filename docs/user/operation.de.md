@@ -84,6 +84,13 @@ Beide Ansichten prüfen die Sichtbarkeit je Seite frisch und verwenden dieselbe
 Pagination und Größenbegrenzung; ausgelassene Summary-Felder sind keine fehlenden
 gespeicherten Angaben.
 
+Mit `include_outputs=true` bei `view="lighting_context"` lassen sich genaue
+sichtbare Runtime-Lichtausgänge lesen. Die begrenzte Projektion erhält die explizite
+Elternkennung, Strukturversion und Zustandsreferenzen sowie Auslassungen. Eine
+Runtime-Unterordnung identifiziert keinen Projektanschluss und keine physische
+Leuchte; ColorPicker-Unterstützung beweist keine installierte Tunable-White-Leuchte.
+Es werden keine Aktionen ausgeführt.
+
 Mit `loxone_describe_control(view="lighting_context")` lassen sich begrenzt
 Quell-IDs und Namen der Lichtstimmungen eines sichtbaren LightControllerV2 lesen.
 Status, Quellzustand, Zeitstempel, Aktualität und Auslassungen beachten; fehlende

@@ -117,9 +117,13 @@ No Miniserver, profile, configuration or recorder writes and no induced events.
   and controller capabilities versus physical fixture claims.
 - Architecture/contract review precedes analyzer implementation. Independently
   review final diffs and security boundaries; fix relevant findings, rerun affected
-  checks/acceptance, at most three review iterations per PR. Unresolved findings
+  checks/acceptance, at most five review iterations per PR. Unresolved findings
   or failed checks block merge. Recheck gates after master integration.
 - Use normal linear reviewed PR merges. Never push directly to master.
+
+Owner extension (2026-10-19): PR #568 may receive up to five further independent
+reviews after the `85679bd3` checkpoint. This replaces the exhausted original
+three-round limit for that PR; tests, live acceptance and merge gates still apply.
 
 ## Gen.-1 acceptance and completion
 

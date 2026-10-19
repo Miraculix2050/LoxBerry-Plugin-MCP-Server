@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from mcpserver.loxone.models import Control
+
 MOOD_ID_PATTERN = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 
 
@@ -103,4 +105,87 @@ def project_moods(value: object) -> MoodProjection:
         len(rows) - len(moods),
         len(rows) > len(moods),
         names_complete,
+    )
+
+
+MAX_LIGHTING_OUTPUTS = 100
+MAX_OUTPUT_STATES = 16
+MAX_OUTPUT_BYTES = 16_384
+LIGHTING_OUTPUT_TYPES = frozenset({"Switch", "Dimmer", "ColorPicker", "ColorPickerV2"})
+
+
+@dataclass(frozen=True, slots=True)
+class LightingOutput:
+    uuid: str
+    name: str | None
+    type: str
+    name_truncated: bool
+    states: tuple[tuple[str, str], ...]
+    states_omitted: int
+
+    def wire_value(self) -> dict[str, object]:
+        """Share the actual entry/state object shape with the MCP adapter budget."""
+        return {
+            "uuid": self.uuid,
+            "name": self.name,
+            "type": self.type,
+            "name_truncated": self.name_truncated,
+            "states": [{"name": name, "uuid": uuid} for name, uuid in self.states],
+            "states_omitted": self.states_omitted,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LightingOutputProjection:
+    status: Literal["available", "unsupported"]
+    entries: tuple[LightingOutput, ...]
+    total: int | None
+    omitted: int | None
+    unsupported_types: int | None
+
+
+def project_lighting_outputs(control: Control) -> LightingOutputProjection:
+    """Project explicit visible children; containment proves no physical connector."""
+    if control.control_type != "LightControllerV2":
+        return LightingOutputProjection("unsupported", (), None, None, None)
+    entries: list[LightingOutput] = []
+    total = unsupported = 0
+    used = 2  # JSON list brackets.
+    for child in control.subcontrols:
+        if child.is_hidden:
+            continue
+        if child.control_type not in LIGHTING_OUTPUT_TYPES:
+            unsupported += 1
+            continue
+        total += 1
+        if len(entries) >= MAX_LIGHTING_OUTPUTS or not 1 <= len(child.uuid) <= 128:
+            continue
+        name = child.name[:200]
+        states = tuple(
+            (key[:100], uuid)
+            for key, uuid in child.state_uuids[:MAX_OUTPUT_STATES]
+            if 1 <= len(uuid) <= 128 and len(key) <= 100
+        )
+        entry = LightingOutput(
+            child.uuid,
+            name,
+            child.control_type,
+            len(child.name) > 200,
+            states,
+            len(child.state_uuids) - len(states),
+        )
+        try:
+            size = len(
+                json.dumps(entry.wire_value(), ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8"
+                )
+            ) + bool(entries)
+        except UnicodeEncodeError:
+            continue
+        if used + size > MAX_OUTPUT_BYTES:
+            continue
+        used += size
+        entries.append(entry)
+    return LightingOutputProjection(
+        "available", tuple(entries), total, total - len(entries), unsupported
     )
