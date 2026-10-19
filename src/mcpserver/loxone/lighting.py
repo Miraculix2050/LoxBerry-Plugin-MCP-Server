@@ -123,6 +123,17 @@ class LightingOutput:
     states: tuple[tuple[str, str], ...]
     states_omitted: int
 
+    def wire_value(self) -> dict[str, object]:
+        """Share the actual entry/state object shape with the MCP adapter budget."""
+        return {
+            "uuid": self.uuid,
+            "name": self.name,
+            "type": self.type,
+            "name_truncated": self.name_truncated,
+            "states": [{"name": name, "uuid": uuid} for name, uuid in self.states],
+            "states_omitted": self.states_omitted,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class LightingOutputProjection:
@@ -138,7 +149,8 @@ def project_lighting_outputs(control: Control) -> LightingOutputProjection:
     if control.control_type != "LightControllerV2":
         return LightingOutputProjection("unsupported", (), None, None, 0)
     entries: list[LightingOutput] = []
-    total = unsupported = used = 0
+    total = unsupported = 0
+    used = 2  # JSON list brackets.
     for child in control.subcontrols:
         if child.is_hidden:
             continue
@@ -154,23 +166,26 @@ def project_lighting_outputs(control: Control) -> LightingOutputProjection:
             for key, uuid in child.state_uuids[:MAX_OUTPUT_STATES]
             if 1 <= len(uuid) <= 128 and len(key) <= 100
         )
+        entry = LightingOutput(
+            child.uuid,
+            name,
+            child.control_type,
+            len(child.name) > 200,
+            states,
+            len(child.state_uuids) - len(states),
+        )
         try:
-            size = len(json.dumps([child.uuid, name, states], ensure_ascii=False).encode("utf-8"))
+            size = len(
+                json.dumps(entry.wire_value(), ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8"
+                )
+            ) + bool(entries)
         except UnicodeEncodeError:
             continue
         if used + size > MAX_OUTPUT_BYTES:
             continue
         used += size
-        entries.append(
-            LightingOutput(
-                child.uuid,
-                name,
-                child.control_type,
-                len(child.name) > 200,
-                states,
-                len(child.state_uuids) - len(states),
-            )
-        )
+        entries.append(entry)
     return LightingOutputProjection(
         "available", tuple(entries), total, total - len(entries), unsupported
     )

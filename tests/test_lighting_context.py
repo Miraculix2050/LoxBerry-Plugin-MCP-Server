@@ -261,6 +261,45 @@ def test_output_byte_bound_reports_omitted_rows_without_using_hidden_data(monkey
     assert result.total == 1 and result.omitted == 1 and result.entries == ()
 
 
+def test_output_projection_budgets_real_entry_and_state_objects():
+    child = Control(
+        "child",
+        "x" * 200,
+        "Dimmer",
+        None,
+        None,
+        None,
+        tuple((f"s{i}", "u" * 128) for i in range(16)),
+    )
+    result = project_lighting_outputs(
+        output_controller(tuple(replace(child, uuid=str(i)) for i in range(100)))
+    )
+    wire = [entry.wire_value() for entry in result.entries]
+    assert len(json.dumps(wire, ensure_ascii=False, separators=(",", ":")).encode()) <= 16384
+    assert result.omitted > 0
+
+
+@pytest.mark.asyncio
+async def test_combined_moods_outputs_and_metadata_trim_outputs_instead_of_failing(monkeypatch):
+    children = tuple(Control(str(i), "x" * 200, "Dimmer", None, None, None, ()) for i in range(100))
+    initial = project_lighting_outputs(output_controller(children))
+    server, _ = setup_tool(
+        monkeypatch,
+        [{"id": i, "name": "🟡" * 200} for i in range(100)],
+        control_name="x" * 20000,
+        subcontrols=children,
+    )
+    result = await server._tool_manager.get_tool("loxone_describe_control").fn(
+        "light", view="lighting_context", include_outputs=True
+    )
+    assert result.ok and len(result.model_dump_json().encode()) <= 65536
+    assert result.data.outputs.omitted > initial.omitted
+    assert (
+        result.data.outputs.total == len(result.data.outputs.entries) + result.data.outputs.omitted
+    )
+    assert result.data.moods and result.data.truncated
+
+
 def test_outputs_exclude_hidden_and_unknown_types_and_bound_states_names_and_rows():
     child = Control(
         "child",

@@ -5412,19 +5412,7 @@ def register_read_tools(
                             "parent_runtime_control_uuid": control.uuid,
                             "structure_last_modified": snapshot.structure.last_modified,
                             "structure_generation": snapshot.structure_generation,
-                            "entries": [
-                                {
-                                    "uuid": item.uuid,
-                                    "name": item.name,
-                                    "type": item.type,
-                                    "name_truncated": item.name_truncated,
-                                    "states": [
-                                        {"name": key, "uuid": uuid} for key, uuid in item.states
-                                    ],
-                                    "states_omitted": item.states_omitted,
-                                }
-                                for item in outputs.entries
-                            ],
+                            "entries": [item.wire_value() for item in outputs.entries],
                             "total": outputs.total,
                             "omitted": outputs.omitted,
                             "unsupported_types": outputs.unsupported_types,
@@ -5436,6 +5424,17 @@ def register_read_tools(
                     or record is None
                     or record.freshness is not Freshness.CURRENT,
                 )
+                if isinstance(envelope.data, ControlLightingContextData):
+                    retained_outputs = envelope.data.outputs
+                    # At most 100 bounded rows; account for real mood/control
+                    # metadata and omission-counter growth in the final envelope.
+                    while (
+                        retained_outputs is not None
+                        and retained_outputs.entries
+                        and len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024
+                    ):
+                        retained_outputs.entries.pop()
+                        retained_outputs.omitted = (retained_outputs.omitted or 0) + 1
                 if len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024:
                     return _error(
                         ControlDescriptionEnvelope,
