@@ -189,12 +189,75 @@ class HistorySourceAssociation(ContextContract):
     association_id: Identifier
     source_index: int = Field(ge=0, le=15)
     role: (
-        Literal["consumer", "house_consumption", "production", "grid_export", "operating_state"]
+        Literal[
+            "consumer",
+            "house_consumption",
+            "production",
+            "grid_export",
+            "operating_state",
+            "weather_context",
+            "self_consumption",
+        ]
         | None
     ) = None
     measurement_boundary: str | None = Field(default=None, min_length=1, max_length=128)
     declared_direction: Literal["import", "export", "charge", "discharge"] | None = None
     origin: Declaration
+
+
+class AnalysisSite(ContextContract):
+    site_id: Identifier
+    timezone: str = Field(min_length=1, max_length=128)
+    association_origin: Literal["user_confirmed"]
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def coordinates(self) -> AnalysisSite:
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("site coordinates require latitude and longitude")
+        return self
+
+
+class DayWeatherSelection(ContextContract):
+    quantity: Literal["radiation", "temperature", "forecast"]
+    source_index: int = Field(ge=0, le=15)
+
+
+class DayProductionCoverage(ContextContract):
+    source_index: int = Field(ge=0, le=15)
+    asset_ids: list[Identifier] = Field(min_length=1, max_length=16)
+    coverage_origin: Literal["user_confirmed"]
+
+
+class HistoryDayContext(ContextContract):
+    site: AnalysisSite
+    weather: list[DayWeatherSelection] = Field(min_length=1, max_length=3)
+    assets: list[Identifier] = Field(default_factory=list, max_length=16)
+    production: list[DayProductionCoverage] = Field(default_factory=list, max_length=16)
+    radiation_independence_origin: Declaration | None = None
+
+    @model_validator(mode="after")
+    def coverage(self) -> HistoryDayContext:
+        if len({w.quantity for w in self.weather}) != len(self.weather):
+            raise ValueError("select one weather source per quantity")
+        if (
+            self.production
+            and any(w.quantity == "radiation" for w in self.weather)
+            and self.radiation_independence_origin != "user_confirmed"
+        ):
+            raise ValueError("radiation independence from evaluated PV requires confirmation")
+        indices = [w.source_index for w in self.weather] + [p.source_index for p in self.production]
+        if len(set(indices)) != len(indices):
+            raise ValueError("weather and production require distinct selected sources")
+        coverage = Counter(asset for p in self.production for asset in p.asset_ids)
+        if (
+            len(set(self.assets)) != len(self.assets)
+            or set(coverage) != set(self.assets)
+            or any(n != 1 for n in coverage.values())
+        ):
+            raise ValueError("production coverage must partition declared assets without overlap")
+        return self
 
 
 class HistoryLoadModel(ContextContract):
@@ -234,6 +297,7 @@ class HistoryAnalysisContext(ContextContract):
     scope: EnergyScope
     associations: list[HistorySourceAssociation] = Field(min_length=1, max_length=16)
     loads: list[HistoryLoadModel] = Field(default_factory=list, max_length=16)
+    day_context: HistoryDayContext | None = None
 
     @model_validator(mode="after")
     def references(self) -> HistoryAnalysisContext:
@@ -250,6 +314,20 @@ class HistoryAnalysisContext(ContextContract):
             raise ValueError("duplicate load contribution or operating association")
         if any(ref not in ids for ref in consumers + operating):
             raise ValueError("unknown history load association")
+        if self.day_context is not None:
+            indices = {a.source_index for a in self.associations}
+            selected = {w.source_index for w in self.day_context.weather} | {
+                p.source_index for p in self.day_context.production
+            }
+            if not selected <= indices or self.loads:
+                raise ValueError(
+                    "day comparison requires selected existing sources and no load models"
+                )
+            if (
+                len(self.day_context.production) > 1
+                and self.scope.common_supply_origin != "user_confirmed"
+            ):
+                raise ValueError("combined production requires confirmed common supply scope")
         if self.scope.kind == "efm" and any(load.kind == "hypothetical" for load in self.loads):
             raise ValueError("hypothetical loads require an explicit scenario")
         return self
@@ -276,6 +354,7 @@ class SourceSnapshot:
     signature: tuple[Control, ...]
     bindings: dict[str, Any]
     revision: int | None
+    weather_metadata: tuple[object, ...] | None = None
 
     @classmethod
     def capture(
@@ -286,6 +365,8 @@ class SourceSnapshot:
         bindings: dict[str, Any],
         revision: int | None,
         binding_ids: set[str],
+        *,
+        include_weather: bool = False,
     ) -> SourceSnapshot:
         from mcpserver.installation_profile import installation_identity
 
@@ -294,6 +375,16 @@ class SourceSnapshot:
             selected_source_signature(structure, source_ids),
             deepcopy({key: bindings.get(key) for key in binding_ids}),
             revision,
+            deepcopy(
+                (
+                    structure.weather,
+                    tuple(
+                        item for item in structure.global_metadata if item.kind == "weather_state"
+                    ),
+                )
+            )
+            if include_weather
+            else None,
         )
 
     def validate(
@@ -317,6 +408,16 @@ class SourceSnapshot:
             or signature != self.signature
             or revision != self.revision
             or any(bindings.get(key) != value for key, value in self.bindings.items())
+            or (
+                self.weather_metadata is not None
+                and self.weather_metadata
+                != (
+                    structure.weather,
+                    tuple(
+                        item for item in structure.global_metadata if item.kind == "weather_state"
+                    ),
+                )
+            )
         ):
             raise ControlOperationError("temporarily_unavailable", "Analysis context changed")
 
@@ -389,6 +490,8 @@ def resolve_history_associations(
     bindings: dict[str, Any],
     *,
     timezone_name: str,
+    structure: LoxoneStructure | None = None,
+    installation: str | None = None,
 ) -> tuple[dict[int, dict[str, Any]], list[HistoryResolvedAssociation]]:
     """Apply domain declarations to exact selections, never to stored confirmations."""
     effective = {}
@@ -423,6 +526,38 @@ def resolve_history_associations(
             else:
                 row.setdefault(key, None)
         uuid = source.association.control_uuid
+        if selector.get("source_kind") == "structured_weather" or (
+            binding and binding.get("source_kind") == "weather"
+        ):
+            from mcpserver.installation_profile import ProfileSources
+
+            if context.day_context is None or structure is None or installation is None:
+                raise ValueError("weather context requires fresh source structure")
+            weather_state = (
+                binding.get("weather_state_uuid") if binding else selector.get("state_uuid")
+            )
+            mode = binding.get("mode") if binding else selector.get("stored_mode")
+            if (
+                mode != "actual"
+                or (mode, weather_state)
+                not in ProfileSources.from_structure(installation, structure).weather
+            ):
+                raise ValueError("selected actual weather source is not accessible")
+            if binding and binding.get("field") != "solar_radiation":
+                raise ValueError("class comparisons require the selected radiation field")
+            weather_key = ("structured_weather", weather_state, mode)
+            if weather_key in physical:
+                raise ValueError("duplicate physical weather source")
+            physical.add(weather_key)
+            row.update(
+                control_uuid=None,
+                weather_state_uuid=weather_state,
+                mode=mode,
+                source_kind="weather",
+            )
+            effective[association.source_index] = row
+            resolved[association.association_id] = source.association
+            continue
         if uuid is None or uuid not in visible:
             raise ValueError("history requires a visible exact source")
         control = visible[uuid]
@@ -498,9 +633,64 @@ def resolve_history_associations(
         (a.association_id, resolved[a.association_id].control_uuid, a.origin)
         for a in context.associations
         if effective[a.source_index]["role"]
-        in {"production", "consumer", "house_consumption", "grid_export"}
+        in {"production", "consumer", "house_consumption", "grid_export", "self_consumption"}
     ]
-    native = {r.identifier: r for r in resolve_selected_membership(context.scope, visible, energy)}
+    native = {
+        r.identifier: r
+        for r in resolve_selected_membership(
+            context.scope,
+            visible,
+            energy,
+            contribution_roles=(
+                {a.association_id: effective[a.source_index]["role"] for a in context.associations}
+                if context.day_context is not None
+                else None
+            ),
+        )
+    }
+    if context.day_context is not None:
+        day = context.day_context
+        if day.site.timezone != timezone_name:
+            raise ValueError("site timezone contradicts analysis timezone")
+        if any(
+            a.origin != "user_confirmed"
+            and effective[a.source_index]["role"] in {"self_consumption", "grid_export"}
+            for a in context.associations
+        ):
+            raise ValueError("measured energy balance associations require explicit confirmation")
+        for selection in day.production:
+            association = next(
+                a for a in context.associations if a.source_index == selection.source_index
+            )
+            row = effective[selection.source_index]
+            if association.origin != "user_confirmed" or row["role"] != "production":
+                raise ValueError("production coverage requires confirmed production associations")
+            parameters = row.get("pv_parameters") or {}
+            if (
+                day.site.latitude is not None
+                and parameters.get("latitude") is not None
+                and (
+                    day.site.latitude != parameters["latitude"]
+                    or day.site.longitude != parameters.get("longitude")
+                )
+            ):
+                raise ValueError("site location contradicts confirmed PV parameters")
+        for weather_selection in day.weather:
+            association = next(
+                a for a in context.associations if a.source_index == weather_selection.source_index
+            )
+            if (
+                association.origin != "user_confirmed"
+                or effective[weather_selection.source_index]["role"] != "weather_context"
+            ):
+                raise ValueError("weather site association requires explicit confirmation")
+            row = effective[weather_selection.source_index]
+            if weather_selection.quantity == "radiation" and any(
+                row.get("control_uuid") is not None
+                and row["control_uuid"] == effective[p.source_index].get("control_uuid")
+                for p in day.production
+            ):
+                raise ValueError("radiation source must be independent of evaluated PV production")
     return effective, [
         HistoryResolvedAssociation(
             **native.get(a.association_id, resolved[a.association_id]).model_dump(),
@@ -551,6 +741,8 @@ def resolve_selected_membership(
     scope: EnergyScope,
     visible: dict[str, Control],
     selections: list[tuple[str, str | None, Declaration]],
+    *,
+    contribution_roles: dict[str, str] | None = None,
 ) -> list[ResolvedAssociation]:
     """Prove selected native topology independently of any domain's input shape."""
     members: dict[str, tuple[int, ...]] = {}
@@ -578,17 +770,26 @@ def resolve_selected_membership(
                     raise ValueError("ambiguous or inaccessible EFM participant")
                 members[row.control_uuid] = row.path
     paths = []
-    identities = [uuid for _, uuid, _ in selections if uuid is not None]
+    identities = [
+        (uuid, contribution_roles[identifier] if contribution_roles is not None else None)
+        for identifier, uuid, _ in selections
+        if uuid is not None
+    ]
     if len(identities) != len(set(identities)):
         raise ValueError("duplicate selected energy contribution")
     result = []
+    checked_controls: set[str | None] = set()
     for identifier, uuid, origin in selections:
         if uuid is not None and uuid not in visible:
             raise ValueError("context source is not accessible")
         if scope.kind == "efm":
             if uuid not in members:
                 raise ValueError("source is not a proven selected EFM participant")
-            paths.append(members[uuid])
+            # Distinct day metrics share membership, not a measurement contribution.
+            # Keep topology uniqueness across different controls and all legacy calls.
+            if contribution_roles is None or uuid not in checked_controls:
+                paths.append(members[uuid])
+                checked_controls.add(uuid)
             result.append(
                 ResolvedAssociation(
                     identifier=identifier,

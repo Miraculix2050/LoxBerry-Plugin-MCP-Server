@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from mcpserver.analysis_context import HistoryDayContext
 from mcpserver.bounded_worker import run_admitted_worker
 from mcpserver.comparable_days import (
     DayEvidence,
@@ -26,6 +27,7 @@ from mcpserver.comparable_days_models import (
     DayMetricComparison,
     NumericalComparableDayOptions,
     NumericalComparableDaysResult,
+    ProductionSourceSummary,
     SolarSourceSummary,
 )
 from mcpserver.history_analysis import statistic_summary
@@ -398,6 +400,9 @@ async def numerical_day_analysis(
     zone_name: str,
     options: NumericalComparableDayOptions,
     deadline: float,
+    day_context: HistoryDayContext | None = None,
+    context_bindings: dict[int, dict[str, Any]] | None = None,
+    common_supply_confirmed: bool = False,
 ) -> tuple[NumericalComparableDaysResult, int]:
     if event_runtime is None:
         raise ControlOperationError(
@@ -428,9 +433,41 @@ async def numerical_day_analysis(
     local_kinds: set[str] = set()
     resolver = StateSemanticsResolver()
     energies = {}
+    production_rows: list[dict[str, Any]] = []
+    production_maps: list[dict[float, float]] = []
+    production_summaries: list[ProductionSourceSummary] = []
+    weather_selection = (
+        {
+            w.source_index: {
+                "radiation": "irradiance",
+                "temperature": "temperature",
+                "forecast": "pv_forecast",
+            }[w.quantity]
+            for w in day_context.weather
+        }
+        if day_context
+        else {}
+    )
+    production_selection = (
+        {p.source_index for p in day_context.production} if day_context else set()
+    )
+    if day_context is not None and context_bindings is None:
+        raise ValueError("day context requires resolved source associations")
+    if day_context is not None and any(
+        selectors[index].get("source_kind") != "solar_observation" for index in weather_selection
+    ):
+        raise ValueError("numerical weather selection requires registered observed solar sources")
     now = datetime.now(UTC)
-    for selector in selectors:
+    for source_index, selector in enumerate(selectors):
         _check(deadline)
+        if (
+            day_context is not None
+            and source_index not in weather_selection
+            and source_index not in production_selection
+            and (context_bindings or {}).get(source_index, {}).get("role")
+            not in {"self_consumption", "grid_export"}
+        ):
+            continue
         if selector.get("source_kind") == "solar_observation":
             source = next(
                 (
@@ -445,6 +482,8 @@ async def numerical_day_analysis(
                 raise ControlOperationError(
                     "not_found", "Registered visible solar source is not available"
                 )
+            if day_context is not None and weather_selection.get(source_index) != source.kind:
+                raise ValueError("selected weather quantity contradicts registered source contract")
             key: tuple[str, ...] = (source.key,)
             if key in seen:
                 continue
@@ -474,12 +513,22 @@ async def numerical_day_analysis(
             count += consumed
             local.append((source, fingerprint, rows))
             continue
-        if not selector.get("binding_id") or selector.get("source_kind") is not None:
+        if day_context is None and (
+            not selector.get("binding_id") or selector.get("source_kind") is not None
+        ):
             raise ValueError("numerical energy sources require confirmed hourly statistic bindings")
-        binding = bindings.get(selector["binding_id"])
+        binding = (
+            context_bindings.get(source_index)
+            if context_bindings is not None
+            else bindings.get(selector["binding_id"])
+        )
         if binding is None:
             raise ControlOperationError("not_found", "Confirmed energy binding is not available")
-        if binding.get("source_kind") != "statistic" or selector.get("granularity") != "hour":
+        if (
+            not binding.get("series_id")
+            or (day_context is None and binding.get("source_kind") != "statistic")
+            or selector.get("granularity") != "hour"
+        ):
             raise ValueError("numerical energy sources require confirmed hourly statistic bindings")
         role = binding["role"]
         if role not in {"production", "self_consumption", "grid_export"}:
@@ -489,10 +538,12 @@ async def numerical_day_analysis(
             raise ControlOperationError("not_found", "Statistic source is not visible")
         key = (control.uuid, binding["series_id"])
         if key in seen:
+            if day_context is not None:
+                raise ValueError("duplicate physical numerical contribution")
             if role not in roles or roles[role][1]["series_id"] != binding["series_id"]:
                 raise ValueError("one physical source cannot establish multiple energy roles")
             continue
-        if role in roles:
+        if role in roles and not (day_context is not None and role == "production"):
             raise ValueError("one distinct statistic per numerical energy role required")
         seen.add(key)
         _, series, points = await runtime.authorized_statistics(
@@ -517,15 +568,51 @@ async def numerical_day_analysis(
             control_uuid=control.uuid,
             source_id=series.series_id,
         )
-        if hourly_energy_semantics_qualified(semantics):
-            energies[role] = await run_admitted_worker(
+        qualified = hourly_energy_semantics_qualified(semantics)
+        hours = {}
+        if qualified:
+            hours = await run_admitted_worker(
                 qualified_hourly_energy,
                 ComparisonInput(summary, semantics, points),
                 begin,
                 finish,
                 deadline,
             )
-        roles[role] = (control, binding)
+        if day_context is not None and role == "production":
+            if source_index not in production_selection:
+                raise ValueError("production source needs explicit asset coverage")
+            production_rows.append(binding)
+            production_maps.append(hours)
+            production_summaries.append(
+                ProductionSourceSummary(
+                    source_index=source_index,
+                    control_uuid=control.uuid,
+                    series_id=binding["series_id"],
+                    binding_id=selector.get("binding_id"),
+                    semantics_qualified=qualified,
+                    unit=semantics.unit,
+                    complete_hours=len(hours),
+                )
+            )
+        elif qualified:
+            energies[role] = hours
+        roles.setdefault(role, (control, binding))
+    if day_context is not None and production_selection:
+        if len(production_rows) != len(production_selection):
+            raise ValueError("every covered production source must be selected")
+        common = set(production_maps[0]).intersection(
+            *(set(values) for values in production_maps[1:])
+        )
+        try:
+            combined = {at: fsum(values[at] for values in production_maps) for at in sorted(common)}
+        except OverflowError:
+            raise ValueError("combined production energy overflow") from None
+        if any(not isfinite(value) for value in combined.values()):
+            raise ValueError("combined production energy overflow")
+        if all(summary.semantics_qualified for summary in production_summaries):
+            energies["production"] = combined
+        else:
+            energies.pop("production", None)
     production = roles.get("production", (None, {}))[1]
     exported = roles.get("grid_export", (None, {}))[1]
     balance_matches = bool(
@@ -533,6 +620,17 @@ async def numerical_day_analysis(
         and production.get("measurement_boundary") == exported.get("measurement_boundary")
         and exported.get("declared_direction") == "export"
     )
+    if day_context is not None:
+        balance_matches = bool(
+            (len(production_rows) == 1 or common_supply_confirmed)
+            and production_rows
+            and exported.get("measurement_boundary")
+            and exported.get("declared_direction") == "export"
+            and all(
+                row.get("measurement_boundary") == exported["measurement_boundary"]
+                for row in production_rows
+            )
+        )
     result = await run_admitted_worker(
         _calculate,
         local,
@@ -546,6 +644,20 @@ async def numerical_day_analysis(
         deadline=deadline,
         now=now,
     )
+    if day_context is not None:
+        result.production_sources = production_summaries
+        if production_selection and not energies.get("production"):
+            result.configuration_guidance = [
+                reason
+                for reason in result.configuration_guidance
+                if reason
+                != (
+                    "confirm_visible_production_profile_binding_to_documented_hourly_energy_statistic"
+                )
+            ]
+            result.configuration_guidance.append(
+                "selected_production_requires_complete_qualified_common_hourly_coverage"
+            )
     await runtime._require_access(access)
     current = await run_admitted_worker(event_runtime._config_store.load)
     if (

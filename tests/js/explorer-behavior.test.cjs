@@ -4,6 +4,27 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const {createHarness, readTool, writeTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
 
+test('comparable days keeps declared site context and shows evidence notice', async (t) => {
+  const tool = {...readTool, name: 'loxone_analyze_history', inputSchema: {
+    type: 'object', properties: {analysis_context: {type: 'object'}},
+  }};
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    day_context: {site: {site_id: '<img src=x>', timezone: 'Europe/Berlin'}},
+    comparable_days: {production_sources: [{source_index: 2, complete_hours: 0}]},
+  }}});
+  t.after(h.close);
+  await h.ready();
+  const args = {analysis_context: {day_context: {site: {site_id: 'roof', timezone: 'Europe/Berlin'}}}};
+  await h.click(h.byId('json-tab'));
+  h.byId('json').value = JSON.stringify(args);
+  h.byId('json').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('HISTORY_CONTEXT'));
+  assert.equal(h.byId('result-tree').querySelector('img'), null);
+  assert.deepEqual(h.requests.filter((r) => r.body?.method === 'tools/call').at(-1).body.params.arguments, args);
+});
+
 test('history context preserves JSON/form input and labels conditional absorption', async (t) => {
   const tool = {...readTool, name: 'loxone_analyze_history', inputSchema: {
     type: 'object', properties: {analysis_context: {anyOf: [{type: 'object'}, {type: 'null'}]}},

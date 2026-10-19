@@ -609,11 +609,11 @@
         collapseResult: label('collapseResult'),
         moreResults: label('moreResults'),
       }, actions.openTransfer));
-      if (context?.tool === 'loxone_analyze_history' && displayed?.ok && displayed.data?.comparison?.context_analysis) {
+      if (context?.tool === 'loxone_analyze_history' && displayed?.ok && (displayed.data?.comparison?.context_analysis || displayed.data?.day_context)) {
         const summary = element('div', {className: 'mcp-explorer-stack'});
         summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('historyContext')}));
-        const evidence = displayed.data.comparison.context_analysis;
-        if (evidence.allocations?.length && Number.isFinite(evidence.conditional_export_absorption_upper_bound_wh)) {
+        const evidence = displayed.data.comparison?.context_analysis;
+        if (evidence?.allocations?.length && Number.isFinite(evidence.conditional_export_absorption_upper_bound_wh)) {
           summary.append(element('p', {text: `${label('historyAbsorption')}: ${evidence.conditional_export_absorption_upper_bound_wh} Wh`}));
         }
         elements.resultTree.prepend(summary);
