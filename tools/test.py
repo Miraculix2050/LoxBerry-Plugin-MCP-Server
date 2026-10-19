@@ -141,7 +141,11 @@ _TEST_GROUPS: Final = (
         ),
     ),
     (
-        ("tools/analysis_acceptance.py", "tests/fixtures/analysis/**"),
+        (
+            "tools/analysis_acceptance.py",
+            "tests/fixtures/analysis/**",
+            "docs/user/analysis-support.*.md",
+        ),
         ("tests/test_analysis_acceptance.py",),
     ),
     (
@@ -427,7 +431,9 @@ def create_plan(profile: str, files: tuple[str, ...] = ()) -> TestPlan:
             else:
                 fallback_reasons.append(path)
             continue
-        if _matches(path, _DOCUMENTATION_PATTERNS):
+        if _matches(path, _DOCUMENTATION_PATTERNS) and not any(
+            _matches(path, patterns) for patterns, _ in _TEST_GROUPS
+        ):
             continue
         if _matches(path, _FULL_PATTERNS):
             fallback_reasons.append(path)

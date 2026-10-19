@@ -260,8 +260,7 @@
     const scopeChanged = state.selectedTool?.name === 'loxone_analyze_project' && name === 'scope' &&
       previousScope !== (included ? value : 'knx');
     if (scopeChanged) {
-      explorerState.setField('analyses', false);
-      explorerState.setField('cursor', false);
+      explorerState.setArguments(adapters.changeAnalysisScope(state.arguments));
     }
     elements.json.value = JSON.stringify(state.arguments, null, 2);
     saveCurrentDraft();
@@ -293,11 +292,19 @@
       if (show) { elements.validation.textContent = label('invalidArguments'); elements.validation.hidden = false; }
       return false;
     }
-    const errors = core.validateArguments(parsed, state.selectedTool.inputSchema || {type: 'object'});
+    const schema = state.selectedTool.inputSchema || {type: 'object'};
+    const scopeChanged = state.selectedTool.name === 'loxone_analyze_project' &&
+      (state.arguments.scope ?? 'knx') !== (parsed.scope ?? 'knx');
+    const structuralErrors = scopeChanged ? core.validateValue(parsed, schema, schema) : [];
+    if (scopeChanged && !structuralErrors.length) {
+      parsed = adapters.changeAnalysisScope(parsed, adapters.analysisOptions(state.selectedTool, parsed));
+    }
+    const errors = structuralErrors.length ? structuralErrors : core.validateArguments(parsed, schema);
     if (errors.length) {
       if (show) { elements.validation.textContent = `${label('invalidArguments')} ${errors.join('; ')}`; elements.validation.hidden = false; }
       return false;
     }
+    if (scopeChanged) elements.json.value = JSON.stringify(parsed, null, 2);
     explorerState.setArguments(parsed);
     saveCurrentDraft();
     elements.validation.hidden = true;
@@ -423,7 +430,11 @@
       const tool = state.tools.find((item) => item.name === state.transferRecipe.tool);
       if (!tool) return;
       const existing = draftFor(tool).arguments;
-      const draft = {...core.clone(existing), ...state.transferRecipe.arguments};
+      let draft = {...core.clone(existing), ...state.transferRecipe.arguments};
+      if (tool.name === 'loxone_analyze_project' && state.transferRecipe.arguments.scope === 'lighting') {
+        draft = adapters.changeAnalysisScope(draft);
+        delete draft.lighting_context;
+      }
       delete draft.cursor;
       selectTool(tool.name, draft);
       revealRequest(true, true);

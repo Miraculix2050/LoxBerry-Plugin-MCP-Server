@@ -20,6 +20,10 @@
   data-collapse-result="<TMPL_VAR EXPLORER.COLLAPSE_RESULT ESCAPE=HTML>"
   data-more-results="<TMPL_VAR EXPLORER.MORE_RESULTS ESCAPE=HTML>"
   data-analysis-page="<TMPL_VAR EXPLORER.ANALYSIS_PAGE ESCAPE=HTML>"
+  data-lighting-notice="<TMPL_VAR EXPLORER.LIGHTING_NOTICE ESCAPE=HTML>"
+  data-lighting-conditional="<TMPL_VAR EXPLORER.LIGHTING_CONDITIONAL ESCAPE=HTML>"
+  data-lighting-naming-incomplete="<TMPL_VAR EXPLORER.LIGHTING_NAMING_INCOMPLETE ESCAPE=HTML>"
+  data-lighting-transfer-context="<TMPL_VAR EXPLORER.LIGHTING_TRANSFER_CONTEXT ESCAPE=HTML>"
   data-planning-notice="<TMPL_VAR EXPLORER.PLANNING_NOTICE ESCAPE=HTML>"
   data-planning-unavailable="<TMPL_VAR EXPLORER.PLANNING_UNAVAILABLE ESCAPE=HTML>"
   data-planning-pv="<TMPL_VAR EXPLORER.PLANNING_PV ESCAPE=HTML>"
@@ -262,10 +266,10 @@
   </form>
 </dialog>
 
-<script defer src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-pv-planning-v1"></script>
+<script defer src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-pv-planning-v1-lighting-v2"></script>
 <script defer src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1-solar-numerical-v1"></script>
 <script defer src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
 <script defer src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
 <script defer src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
-<script defer src="explorer-views.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-pv-planning-v1-solar-numerical-v1-energy-context-v1-history-day-context-v1"></script>
-<script defer src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1-solar-numerical-v1"></script>
+<script defer src="explorer-views.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-pv-planning-v1-solar-numerical-v1-energy-context-v1-history-day-context-v1-lighting-v1"></script>
+<script defer src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1-solar-numerical-v1-lighting-v1"></script>

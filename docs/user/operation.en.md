@@ -94,6 +94,8 @@ controls and reports exclusions. Default checks cover inventory, naming candidat
 configured presence relationships, scene roles and missing planning context.
 Follow `next_cursor` with unchanged inputs, at most 50 findings per page.
 
+In the Explorer, select `scope=lighting` to show `lighting_selection` and optional `lighting_context`; ETS-only fields are visible only for KNX and are removed when switching to Modbus or lighting. The form scope selector clears incompatible fields, selected checks and cursors, while preserving the ordinary page limit. Scope edits in JSON also remove incompatible fields/checks and cursors, retaining explicit checks that match the new scope; malformed JSON or argument types remain validation errors. Select the complete visible LightControllerV2 result row from `loxone_find_controls` to transfer its exact ID into an analyzer draft; this never runs a tool automatically. Review and run the draft explicitly. The result summary counts observations, review candidates, context gaps and conditional guidance on the current page. Read naming completeness independently from selection coverage; expand the evidence tree or JSON for exact references, origins and limits. See the [six lighting scenarios](analysis-support.en.md).
+
 Optional `lighting_context` uses `schema_version="lighting_analysis_context.v1"`.
 Declare exact controller+mood identities, presence-source IDs, literal naming
 prefixes and room use/intent/fixtures/zones with explicit `origin` and `rationale`.

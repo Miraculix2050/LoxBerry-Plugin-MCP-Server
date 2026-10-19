@@ -1144,6 +1144,16 @@ retain room/controller/scene references and distinguish technical observations,
 review candidates, missing context and conditional advice. Never label naming
 candidates as faults or use controller Kelvin defaults as installed fixture proof.
 
+The Explorer can transfer a complete visible LightControllerV2 find-result row
+into an exact-controller lighting draft, without running it. Its lighting form
+shows only matching arguments; changing scope removes incompatible fields,
+checks and cursors. JSON scope changes retain explicit compatible checks after
+structural validation; malformed types remain errors. Page summaries distinguish observations, review candidates,
+context gaps and conditional guidance. Read naming completeness independently
+from selected-controller coverage and retain the generic evidence/JSON details.
+Use the six lighting scenarios in the DE/EN support matrix as bounded workflows;
+unknown source/role/fixture evidence remains partial, never a fabricated pass.
+
 Load core rules first.
 
 ### Confirmed installation profile

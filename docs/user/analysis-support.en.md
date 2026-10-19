@@ -45,14 +45,16 @@ The original 25 questions remain in the versioned acceptance catalog. Two later 
 
 Supported: a bounded existing read workflow. Conditional: required sources, semantics, bindings and coverage must exist. Unavailable: the required feature belongs to open external workstreams. Experimental: advice requires additional user evidence and specialist review. Gen. 2/Compact remain experimental without matching device acceptance.
 
+The six lighting questions use the bounded existing analyzer (#441). Each selection requires `lighting_selection` with exact controller IDs or one exact room ID; optional context remains request-local. Profiles provide reuse, not a prerequisite. Labels describe the workflow; individual answers remain partial when evidence is missing. The [Explorer guide](operation.en.md#tool-explorer) describes selection and result boundaries.
+
 | ID | Question / operation | Status | Workflow and allowed boundaries |
 | --- | --- | --- | --- |
-| lighting-01 | scene inventory | conditional | `loxone_get_structure_overview` → `loxone_describe_control`; Visible source moods via lighting_context only; preserve freshness and omission limits, never infer complete scene inventory. |
-| lighting-02 | naming review | supported | `loxone_find_controls` → `loxone_describe_control`; Naming candidates only; no duplicated physical circuit claim. |
-| lighting-03 | presence links | conditional | `loxone_find_project_objects` → `loxone_trace_project_logic`; Explicit project links required; room membership is not a connection. |
-| lighting-04 | lighting advice | experimental | `loxone_get_installation_profile` → `loxone_describe_control`; Planning advice needs user intent and fixture inventory; no automatic suitability proof. |
-| lighting-05 | scene roles | conditional | `loxone_get_installation_profile` → `loxone_describe_control`; Source mood naming candidates via lighting_context; names do not establish scene roles. |
-| lighting-06 | context review | experimental | `loxone_find_project_objects` → `loxone_get_installation_profile`; Qualified design review only; specialist lighting work remains outside this foundation. |
+| lighting-01 | scene inventory | conditional | `loxone_list_rooms` → `loxone_find_controls` → `loxone_analyze_project(scope="lighting", analyses=["inventory","scene_roles"])`; Select exact visible controllers/room. Visible moods and missing declared roles are separate; no complete configured-scene or absence claim. |
+| lighting-02 | naming review | supported | `loxone_find_controls` → `loxone_analyze_project(scope="lighting", analyses=["naming_consistency"])`; Current complete names and optional literal prefixes yield review candidates. Repeated names across independent rooms/controllers never establish duplicated physical circuits. |
+| lighting-03 | presence links | conditional | `loxone_analyze_project(scope="lighting", analyses=["presence_relationships"])` → bounded project describe/trace if needed; Explicit visible presence-source declarations plus existing configured paths only. Preserve parent anchors, unknown flow and truncation; no exhaustive household inventory or observed causation. |
+| lighting-04 | lighting advice | experimental | `loxone_analyze_project(scope="lighting", analyses=["planning_context"])`; Independently declare room usage, intent, installed fixtures and zones in optional request-local context. Missing evidence stays a gap; ColorPicker/Kelvin defaults establish neither installed tunable white nor design suitability. |
+| lighting-05 | scene roles | conditional | `loxone_analyze_project(scope="lighting", analyses=["scene_roles","naming_consistency"])`; Declare exact controller+mood roles and provenance; optional existing lighting_intent bindings reuse source confirmation only. Names never assign night/orientation/away roles; missing roles remain gaps. |
+| lighting-06 | context review | experimental | `loxone_analyze_project(scope="lighting", analyses=["inventory","planning_context"])`; Exact selection and roomwise declarations support a conditional configuration review. Undeclared room use, fixtures and zones remain unknown; no professional physical audit or whole-house completeness claim. |
 | basic-07 | temperature summary | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; temperature_summary: actual-temperature unit and UTC samples; sample mean is not time weighted. |
 | basic-08 | consumer energy | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; energy: optional consumer, confirmed boundary; counter endpoint differences remain partial with unknown resets. |
 | basic-09 | active controls | conditional | `loxone_find_controls` → `loxone_get_state_semantics`; Known operational states only; unknown controls prevent a complete installation-wide answer. |
@@ -91,3 +93,16 @@ missing real sources.
 Direct self-consumption can use the exactly qualified native EFM
 `totalSelfConsumption` series. It remains labelled as an EFM calculation; plant
 association and complete hourly coverage require their own evidence.
+
+## Retained catalog v1 measurement baseline
+
+The descriptions below record the earlier analysis foundation of11 October2026. The versioned measurement catalog and its hashes remain unchanged for existing #485 captures. Use the matrix above for current lighting capabilities; these historical boundaries establish no new measurement or acceptance.
+
+| ID | Historical workflow boundary |
+| --- | --- |
+| lighting-01 | Visible source moods via lighting_context only; preserve freshness and omission limits, never infer complete scene inventory. |
+| lighting-02 | Naming candidates only; no duplicated physical circuit claim. |
+| lighting-03 | Explicit project links required; room membership is not a connection. |
+| lighting-04 | Planning advice needs user intent and fixture inventory; no automatic suitability proof. |
+| lighting-05 | Source mood naming candidates via lighting_context; names do not establish scene roles. |
+| lighting-06 | Qualified design review only; specialist lighting work remains outside this foundation. |

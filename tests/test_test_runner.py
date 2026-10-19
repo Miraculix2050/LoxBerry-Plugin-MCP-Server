@@ -284,3 +284,10 @@ def test_documented_test_cli_starts_without_pythonpath() -> None:
     )
 
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "path", ["docs/user/analysis-support.de.md", "docs/user/analysis-support.en.md"]
+)
+def test_support_matrix_changes_select_versioned_acceptance_contract(path: str) -> None:
+    assert "tests/test_analysis_acceptance.py" in _pytest_targets(create_plan("changed", (path,)))

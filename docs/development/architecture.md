@@ -72,6 +72,13 @@ event wiring, mutation confirmation and session cleanup. New script assets are
 listed in the Explorer template, the package manifest and the changed-test map;
 their load order is part of the frontend integration contract.
 
+Lighting presentation reuses those adapters, drafts and bounded generic result
+inspection. An exact visible LightControllerV2 result row can prepare a lighting
+analyzer draft only when the current tool schema advertises that scope; it never
+autoruns a request. Scope changes remove incompatible ETS/lighting arguments,
+checks and cursors. Text-only page summaries preserve selection/naming coverage
+and conditional evidence boundaries. No browser profile store or resolver is added.
+
 ## Authorization and data flow
 
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.

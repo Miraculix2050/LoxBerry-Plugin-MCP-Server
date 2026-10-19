@@ -957,6 +957,11 @@ checked on every page and again before publication. Stale/mixed inputs are rejec
 Naming candidates are not faults, presence role declarations are not associations,
 and configured reachability is not measured causation or a physical lighting audit.
 
+The Explorer lighting form consumes this existing scope/analyses metadata, hides
+ETS-only arguments for lighting and retains the same input/output contracts.
+A visible controller-row transfer prepares a draft only; the server still
+validates exact selection, source authorization and every subsequent page.
+
 `loxone_trace_project_logic` adds `include_internal_flow_gaps=false`. Opting in
 reports `internal_flow_not_modeled` and `internal_flow_parent_ambiguous` through
 existing `semantic_gaps`, with retained-node references and existing trace/byte

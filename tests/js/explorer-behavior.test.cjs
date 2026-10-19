@@ -705,3 +705,144 @@ test('KNX apply without write scope directs to KNX consent without calling MCP',
   assert.equal(h.byId('confirm').open,false);
   assert.equal(h.byId('call-feedback').textContent,'KNX write consent required');
 });
+
+
+const analyzer={name:'loxone_analyze_project',description:'Bounded analyzer',annotations:{readOnlyHint:true,destructiveHint:false},inputSchema:{type:'object',properties:{
+ scope:{type:'string',enum:['knx','modbus','lighting'],default:'knx'},
+ analyses:{anyOf:[{type:'array',items:{type:'string'}},{type:'null'}],default:null,'x-analyses-by-scope':{knx:['address_patterns'],modbus:['inventory'],lighting:['inventory','naming_consistency','presence_relationships','scene_roles','planning_context']}},
+ cursor:{type:'string'},limit:{type:'integer',default:20},view:{type:'string',enum:['full','summary'],default:'full'},source_details:{type:'boolean',default:false},
+ lighting_selection:{anyOf:[{type:'object'},{type:'null'}],default:null},lighting_context:{anyOf:[{type:'object'},{type:'null'}],default:null}
+}}};
+const field=(h,name)=>[...h.document.querySelectorAll('.mcp-explorer-field')].find(x=>[...x.querySelectorAll('label')].some(l=>l.textContent===name));
+async function json(h,args){await h.click(h.byId('json-tab'));h.byId('json').value=JSON.stringify(args);h.byId('json').dispatchEvent(new h.window.Event('input',{bubbles:true}));await h.click(h.byId('form-tab'));}
+test('lighting scope prunes incompatible drafts both ways and preserves focus/limit',async t=>{
+ const h=createHarness({tools:[analyzer]});t.after(h.close);await h.ready();assert.equal(field(h,'lighting_selection'),undefined);
+ await json(h,{scope:'knx',view:'summary',source_details:true,limit:2,analyses:['address_patterns'],cursor:'old'});
+ let scope=field(h,'scope').querySelector('select');scope.focus();scope.value=JSON.stringify('lighting');scope.dispatchEvent(new h.window.Event('change',{bubbles:true}));
+ assert.equal(h.document.activeElement.id,scope.id);assert.deepEqual(JSON.parse(h.byId('json').value),{scope:'lighting',limit:2});
+ assert.equal(field(h,'view'),undefined);assert.equal(field(h,'source_details'),undefined);assert.ok(field(h,'lighting_selection'));assert.match(h.byId('tool-summary').textContent,/LIGHTING_NOTICE/);
+ assert.deepEqual([...field(h,'analyses').querySelectorAll('option')].map(x=>x.value),analyzer.inputSchema.properties.analyses['x-analyses-by-scope'].lighting);
+ await json(h,{scope:'lighting',limit:2,lighting_selection:{controller_uuids:['exact/AI1']},lighting_context:{schema_version:'lighting_analysis_context.v1'}});
+ scope=field(h,'scope').querySelector('select');scope.value=JSON.stringify('modbus');scope.dispatchEvent(new h.window.Event('change',{bubbles:true}));assert.deepEqual(JSON.parse(h.byId('json').value),{scope:'modbus',limit:2});assert.equal(field(h,'lighting_selection'),undefined);assert.equal(field(h,'view'),undefined);assert.equal(h.calls().length,0);
+});
+test('lighting transfer retains exact child and rejects unsupported/hidden/failed source evidence',async t=>{
+ const h=createHarness({tools:[analyzer]});t.after(h.close);await h.ready();const api=h.window.McpExplorerAdapters;
+ const row={uuid:'exact/AI1',type:'LightControllerV2',visibility:'linked',name:'Do not use as identity'},displayed={ok:true,data:{items:[row]}};
+ const transfer=()=>api.transferRecipe('loxone_find_controls',displayed,['data','items',0],row,[analyzer]);
+ assert.deepEqual(JSON.parse(JSON.stringify(transfer().arguments)),{scope:'lighting',lighting_selection:{controller_uuids:['exact/AI1']}});assert.equal(h.calls().length,0);
+ displayed.ok=false;assert.equal(transfer(),null);displayed.ok=true;row.visibility='hidden';assert.equal(transfer(),null);row.visibility='direct';row.type='Dimmer';assert.equal(transfer(),null);row.type='LightControllerV2';
+ assert.equal(api.transferRecipe('loxone_find_controls',displayed,['data','items',0],{...row},[analyzer]),null);
+ assert.equal(api.transferRecipe('loxone_describe_control',displayed,['data','items',0],row,[analyzer]),null);
+ const old={...analyzer,inputSchema:{properties:{scope:{enum:['knx','modbus']}}}};assert.equal(api.transferRecipe('loxone_find_controls',displayed,['data','items',0],row,[old]),null);
+});
+test('lighting result counts this page and retains conditional gaps without HTML injection',async t=>{
+ const findings=['technical_observation','review_candidate','context_gap','conditional'].map(classification=>({classification,code:'<img src=x onerror=alert(1)>',references:[{controller_uuid:'exact/AI1'}]}));
+ const h=createHarness({tools:[analyzer],callResult:{ok:true,data:{scope:'lighting',findings,analyses:['naming_consistency'],coverage:{selected:2,supported:1,selection_complete:false,naming_comparison_complete:false},analysis_truncated:true}}});t.after(h.close);await h.ready();await json(h,{scope:'lighting',lighting_selection:{controller_uuids:['exact/AI1']}});await h.click(h.byId('run'));
+ await h.waitFor(()=>h.byId('result-tree').firstChild?.className==='mcp-explorer-stack');const summary=h.byId('result-tree').firstChild;assert.match(summary.textContent,/LIGHTING_NOTICE/);assert.match(summary.textContent,/LIGHTING_CONDITIONAL.*1/);assert.match(summary.textContent,/LIGHTING_NAMING_INCOMPLETE/);assert.match(summary.textContent,/ANALYSIS_LIMITED/);assert.equal(h.byId('result-tree').querySelector('img'),null);
+});
+test('lighting context roundtrips JSON/form through existing read-only call',async t=>{
+ const args={scope:'lighting',lighting_selection:{controller_uuids:['exact/AI1']},lighting_context:{schema_version:'lighting_analysis_context.v1',rooms:[{room_uuid:'room',usage:{value:'Kitchen',origin:'scenario_assumption',rationale:'Explicit hypothetical use'}}]}};
+ const h=createHarness({tools:[analyzer],callResult:{ok:true,data:{scope:'lighting',findings:[],analyses:['inventory'],coverage:{selected:1,supported:1,selection_complete:true,naming_comparison_complete:true},analysis_truncated:false}}});t.after(h.close);await h.ready();await json(h,args);await h.click(h.byId('run'));await h.waitFor(()=>h.calls().length===1);assert.deepEqual(h.requests.filter(x=>x.body?.method==='tools/call').at(-1).body.params.arguments,args);
+});
+
+
+test('lighting row transfer through dialog discards stale analyzer context without auto-run', async (t) => {
+  const find = {...readTool, name: 'loxone_find_controls', inputSchema: {type: 'object', properties: {}}};
+  const row = {uuid: 'exact/AI1', name: 'Independent', type: 'LightControllerV2', visibility: 'direct'};
+  const h = createHarness({tools: [find, analyzer], callResult: {ok: true, data: {items: [row]}}});
+  t.after(h.close);
+  await h.ready();
+  const chooseTool = async (name) => h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.querySelector('strong')?.textContent === name));
+  await chooseTool(analyzer.name);
+  await json(h, {scope: 'knx', view: 'summary', source_details: true, analyses: ['address_patterns'],
+    cursor: 'old', limit: 2, lighting_context: {schema_version: 'lighting_analysis_context.v1'}});
+  await chooseTool(find.name);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1 && h.byId('result-tree').querySelector('.mcp-explorer-tree-toggle'));
+  const items = [...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((button) => button.textContent.includes('items ['));
+  assert.ok(items);
+  await h.click(items);
+  const entry = [...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((button) => button.textContent.includes('0 {'));
+  assert.ok(entry);
+  await h.click(entry.parentElement.querySelector('.mcp-explorer-tree-select'));
+  assert.match(h.byId('transfer-context').textContent, /LIGHTING_TRANSFER_CONTEXT/);
+  h.byId('transfer').close('apply');
+  await h.waitFor(() => h.byId('tool-summary').textContent.includes('LIGHTING_NOTICE'));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(h.calls().length, 1);
+});
+
+
+test('JSON scope changes discard hidden old parameters and preserve compatible explicit checks', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await json(h, {scope: 'knx', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2});
+  await json(h, {scope: 'lighting', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(field(h, 'view'), undefined);
+  assert.ok(field(h, 'lighting_selection'));
+  await json(h, {scope: 'knx', analyses: ['address_patterns'], cursor: 'old', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']},
+    lighting_context: {schema_version: 'lighting_analysis_context.v1'}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'knx', analyses: ['address_patterns'], limit: 2});
+  assert.equal(field(h, 'lighting_selection'), undefined);
+  assert.ok(field(h, 'view'));
+  await json(h, {scope: 'lighting', analyses: ['inventory'], limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', analyses: ['inventory'], limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(h.calls().length, 0);
+});
+
+test('JSON scope cleanup never repairs malformed check types before request validation', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('json-tab'));
+  const malformed = {scope: 'lighting', analyses: 'inventory',
+    lighting_selection: {controller_uuids: ['exact/AI1']}};
+  h.byId('json').value = JSON.stringify(malformed);
+  await h.click(h.byId('run'));
+  assert.deepEqual(JSON.parse(h.byId('json').value), malformed);
+  assert.equal(h.calls().length, 0);
+  assert.equal(h.byId('validation').hidden, false);
+});
+
+
+test('Modbus scope removes ETS parameters in form and JSON without running a request', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await json(h, {scope: 'knx', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2});
+  const scope = field(h, 'scope').querySelector('select');
+  scope.value = JSON.stringify('modbus');
+  scope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'modbus', limit: 2});
+  assert.equal(field(h, 'view'), undefined);
+  assert.equal(field(h, 'source_details'), undefined);
+  await json(h, {scope: 'knx', view: 'summary', source_details: true, limit: 2});
+  await json(h, {scope: 'modbus', view: 'summary', source_details: true,
+    analyses: ['inventory'], cursor: 'old', limit: 2});
+  assert.deepEqual(JSON.parse(h.byId('json').value),
+    {scope: 'modbus', analyses: ['inventory'], limit: 2});
+  const api = h.window.McpExplorerAdapters;
+  const ets = {view: 'summary', relation: 'linked', names_differ: true,
+    ambiguous_names: true, address: '1/2/3', source_details: true};
+  assert.deepEqual(JSON.parse(JSON.stringify(api.changeAnalysisScope({scope: 'modbus', ...ets}))),
+    {scope: 'modbus'});
+  for (const name of Object.keys(ets)) {
+    assert.equal(api.fieldVisible(analyzer, name, {scope: 'modbus'}), false);
+    assert.equal(api.fieldVisible(analyzer, name, {scope: 'knx'}), true);
+  }
+  assert.equal(h.calls().length, 0);
+});

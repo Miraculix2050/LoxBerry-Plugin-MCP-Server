@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add Explorer lighting drafts from exact visible controller results, scope-specific
+  fields and bounded page summaries with independent naming/selection limits.
+  Synchronize the six lighting scenarios and evidence boundaries in DE/EN (#441, stage 5).
+
 - Record the owner-approved #439/#509 technical closeout: reuse real source-read
   evidence and deterministic reference-model tests without requiring real comparison
   days or claiming empirical plant validation; preserve runtime qualification.
