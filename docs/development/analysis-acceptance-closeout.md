@@ -1,7 +1,14 @@
 # Bounded native acceptance for issue #485
 
-Status: native comparison complete; answer-cohort continuation awaits a new
-reserved device phase. Overall acceptance remains incomplete.
+Status: bounded execution stopped on a confirmed semantic-quality failure.
+The native comparison is complete, but overall acceptance failed and #485 remains
+open. This report completes the evidence delivery, not the acceptance.
+
+The shared counter is **21/50**. There are 16 technically complete final captures
+from nine questions (nine initial, seven repeat), plus five retained earlier or
+technically incomplete attempts. Eight case gates passed with the explicit subset
+adjudication below; basic-09 did not. Sixteen original questions and their planned
+repeats were not run. No failed answer is relabeled or regenerated to force closure.
 
 ## Fixed scope and budget
 
@@ -267,9 +274,12 @@ when discussing complete verification effort. They corroborate later inventory,
 not an atomic or retroactive snapshot at answer time. Initial Legacy absence is
 historical conversation context; no fresh model Legacy read is claimed.
 
-Some names differ through reproducible character-encoding transformations;
-UUID/group/room assignments and counts match, but full name/text identity is not
-asserted. This does not establish inconsistent Loxone configuration.
+An earlier local comparison reported name differences. Re-reading both unchanged
+saved JSON files explicitly as UTF-8 produces identical room/group and V2/room
+objects; locale-dependent CP1252 decoding reproduces the earlier mismatch. An
+independent code/capture review confirmed the local decoding error. The native
+captures, model and Loxone data were not corrupted. The original finding and
+separate offline encoding correction are retained; no new source read was needed.
 
 The first semantic review lacked the actual intervening failed warm turn and
 incorrectly treated references to its unavailable reads as invented history.
@@ -310,30 +320,18 @@ baseline/final AI-effort experiment.
 
 The original Capture v2 outcomes retain the incomplete review. The separate
 immutable adjudication records the accepted subset and the untested profile path.
-Continuation has at most 35 more primary answers: 19 initial and 16 repeats.
-Further generation requires a new queue slot and fresh target/source/environment
-checks. No polling automation is used.
+At that handoff, the prepared continuation allowed at most 35 more primary
+answers: 19 initial and 16 repeats. It required a new queue slot and fresh
+target/source/environment checks. No polling automation was used.
 
-The [per-answer metric table](evidence/analysis-acceptance-quality-20261018.csv)
-retains all ten observed answers, their current retained semantic-review verdicts
-and the separate lighting-06 scope. The earlier lighting-01 review is preserved
-separately as described above. They made 239 source/guide attempts plus ten catalog reads,
-with zero observed errors/timeouts, no continuation pages/retries and 14
-independently classified fallback calls. The catalog costs 500165 bytes per
-retrieval in this adapter-complete quality server; it differs from the Loxone-only
-native byte workload above. Description/schema projections are 11601/482016 bytes.
-
-Observed answers transferred 2859005 response bytes plus 5001650 catalog bytes;
-loaded guide text was 214702 bytes within guide responses, not an extra total.
-Twenty protocol requests added 8540 response bytes. The separate inventory
-validator added six requests, 521902 bytes and 3695.972 ms. Complete observed
-answer/protocol/validator effort is therefore 275 requests and 8391097 bytes;
-it excludes earlier failed/historical attempts and setup probes, so it is not a
-complete 15-generation campaign cost. Unknown old HTTP-error bytes stay unknown.
-Measured answer/catalog time sums to 469771.335 ms, protocol to 2461.237 ms;
-parallel overlap, model/user time and authorization-maintenance waits prevent
-interpreting these sums as task wall time. One earlier initial capture lacks
-separate authorization-maintenance telemetry; its CSV fields remain empty.
+The first phase's ten complete captures made 239 source/guide attempts plus ten
+catalog reads, without errors/timeouts, continuation pages or retries, and with
+14 independently classified fallback calls. The
+[per-answer metric table](evidence/analysis-acceptance-quality-20261018.csv) now
+contains both phases, including the later negative answers. Its semantic-review
+verdict is the current retained result, not a claim that every original review
+passed; context corrections and the separate lighting-06 scope are marked.
+Final counters are reported below.
 
 Postflight confirmed active service, health HTTP 200, unchanged 14 common read
 settings, and no changes to the 171 package files or configuration since the later
@@ -350,6 +348,7 @@ No initial configuration copy was retained, so an exact field-level before/after
 comparison is unavailable. Normal installed Explorer authorization maintenance
 can persist approval metadata, but that does not establish the cause of this
 particular change. Do not restore or overwrite the file to manufacture equality.
+The sanitized investigation is tracked separately in [#569](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/569).
 
 The comparison's 14 common read settings, caller, selected sources and fixed
 statistics fingerprints matched. No harness configuration write was issued.
@@ -363,3 +362,127 @@ The matched setting projection covers connection timeout, ordinary/history rate
 limits, history enablement, parallel calls, structure refresh, runtime session
 count/idle bounds, state/control/reference/depth bounds, and initial/maximum
 Miniserver authorization-probe intervals.
+
+### Second device phase and fixed-date review context
+
+The next queue offer was claimed by this chat. Frozen source files, the 14 common
+settings, target Python 3.13.5/MCP 1.28.1, the 45-tool catalog fingerprint and the
+configured CLI/model/login matched the prepared conditions. A new installed-file
+and configuration preservation checkpoint separates this phase from intervening
+authorized target work. The isolated server was started without changing the
+installed service. Initial readiness was checked too early; bounded readiness
+verification then succeeded without starting another server or a primary answer.
+
+Basic-07's initial/repeat answers made 12/9 source/guide calls. Their first separate
+review was incomplete because the grader had not received the actual frozen
+question-date instruction and instead judged the period against the execution
+date. Both real primary prompts explicitly contain 2026-10-18 Europe/Berlin.
+Their query boundaries map exactly to 17 October 00:00 through 18 October 00:00 in
+that timezone. An independent offline review confirmed both prompt and period.
+
+The original incomplete review and its date-evidence hash are preserved. A new
+separate review received the verified date context and accepted both existing
+qualified insufficient-evidence answers. No primary answer or native measurement
+was regenerated. Remaining reviews receive the same actual fixed task date,
+separate from actual execution time and source freshness. Generation then resumed
+with at most 33 slots remaining in the unchanged shared 50-answer budget.
+
+
+## Confirmed negative result and final disposition
+
+Basic-09 asks which controls are currently active. Its initial/repeat workflows
+made 30/14 source/guide attempts. The initial response requested operational
+semantics: 36 returned descriptors were `unknown` / `no_supported_evidence`, with
+no supporting sources. The repeat did not request corresponding semantics.
+Nevertheless the answers asserted activity and interpreted lighting readings as
+showing no switched-on output. A caveat about unverified physical operation does
+not establish the claimed operative meaning of raw values.
+
+The separate semantic review returned **fail** for the initial answer and
+**incomplete** for the repeat. An independent code/capture review confirmed that
+these are interpretations, not merely quotations of source labels. Unlike the
+fixed-date review issue, no missing context justifies changing these verdicts.
+The frozen [states guide at revision 103](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/blob/124fb581b02b1119666e314c94943235a2fa1639/src/mcpserver/skills/using-loxberry-mcp/modules/states.md)
+separates fresh values from known meaning. The
+[frozen state-semantics rules](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/blob/124fb581b02b1119666e314c94943235a2fa1639/src/mcpserver/loxone/state_semantics.py) support
+specific documented cases; they do not establish a general Switch/Dimmer rule.
+
+This is a demonstrated model-workflow error: the model crossed an explicit
+unknown-semantics boundary. It does not establish incorrect native values, an
+implementation bug or inconsistent Loxone configuration. No generic binary
+meaning is added, and these answers are not adjudicated to pass. Generation
+stopped immediately; the originals and independent findings are retained.
+
+### Final observed quality/workflow counters
+
+| Measure | Observed result |
+| --- | ---: |
+| Shared primary generations / hard cap | 21 / 50 |
+| Complete final technical captures | 16 |
+| Independent initial sessions / repeats | 9 / 7 |
+| Current separate semantic verdicts: pass / incomplete / fail | 13 / 2 / 1 |
+| Separately adjudicated qualified lighting-06 subset | 1, with original incomplete retained |
+| Accepted case gates | 8 of 9 observed; 16 original questions unrun |
+| Source/guide attempts / catalog retrievals | 317 / 16 |
+| Guide fetches / continuation-page calls / retries | 35 / 4 / 0 |
+| Independently classified fallback calls | 18 |
+| Observed source/guide/catalog errors / timeouts | 1 / 0 |
+| Source/guide response bytes | 4400242 |
+| Catalog response bytes | 8002640 |
+| Combined answer/catalog response bytes | 12402882 |
+| Loaded guide text bytes, already within guide responses | 336217 |
+| Protocol requests / response bytes | 32 / 13664 |
+| Separate inventory-validator requests / response bytes | 6 / 521902 |
+
+The one measured native tool error was an input-batch-limit refusal; split reads
+were retained as tool-error fallbacks. The semantic failure is a separate answer
+quality result, not an MCP transport failure. The quality server's catalog costs
+500165 bytes per retrieval, with description/schema-list projections of
+11601/482016 bytes. It includes adapters excluded from the matched Loxone-only
+byte workload; these catalogs are not silently equated.
+The observed source/guide/catalog error rate was 1/333 (0.30%); timeout rate was
+0/333. These are not the separate unchanged-read performance samples.
+
+Answer/catalog time sums to 564859.995 ms; protocol to 3944.099 ms; the separate
+validator adds 3695.972 ms. Parallel overlap, model/user waiting and authorization
+maintenance prevent interpreting sums as task wall time. Observed complete
+answer/protocol/validator effort is 371 requests and 12938448 response bytes.
+These totals exclude earlier failed/historical attempts and setup probes; they
+are not a total 21-generation campaign cost. Unknown old HTTP-error bytes remain
+unknown. One earlier initial capture lacks separate authorization-maintenance
+telemetry; its CSV fields remain empty, not zero.
+
+Capture v2 reports **fail**, with all mandatory metrics available for the 16
+observed final captures and 34 original-matrix cells unmeasured. Five of those
+were already omitted in the bounded plan; 29 planned slots remain unspent after
+the quality stop. The independent source adjudication does not overwrite the
+original incomplete lighting-06 outcome. No three-run replication, complete
+25-question acceptance, positive conditional hardware certification, or token/
+context/cost saving is claimed. Primary transcript audit found only read-only
+MCP dispatch and catalog inspection, with no unparsed dynamic dispatch, shell or
+other connector calls. Review sessions were separate and used no tools.
+
+Second-phase postflight confirmed active service, health HTTP 200, unchanged
+14 read settings and all 171 installed package files/configuration unchanged
+since its fresh checkpoint. The own isolated server was stopped. The reservation
+was released before longer offline work, and the next registered queue offer was
+delivered once under the verified owner authorization, with a success receipt.
+The earlier configuration-byte uncertainty remains separately tracked in #569.
+
+### Bounded next step; closure gate remains unsatisfied
+
+Keep #485 open for the failed semantic-quality gate and unrun questions. The
+native five-workflow regression gate and matched byte findings stand within their
+reported scope; neither overrides the negative answer-quality result. Merging
+this documentation/evidence PR does not close or complete #485.
+
+Before any further paid collection, address the specific response rule: unknown
+or absent operative semantics must yield uninterpreted values or a qualified
+insufficient-evidence answer, never an active/off classification. A prospective
+model-side instruction or answer check needs focused offline review against the
+retained failure, without inventing a binary decoder. Record any changed prompt/
+source contract, retain these failed attempts and explicitly re-plan within the
+remaining **29** slots before a deliberate bounded requalification. Do not
+silently rerun the pair, waive the semantic requirement, reset the counter, or
+start a new broad measurement campaign. No further target reservation or polling
+loop is held for this offline disposition.
