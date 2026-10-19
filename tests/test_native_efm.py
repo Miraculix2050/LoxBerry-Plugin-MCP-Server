@@ -130,6 +130,8 @@ def test_display_units_do_not_compute_a_balance_or_clamp_signed_residuals():
     assert [field.value for field in result.fields] == [10, 1, -3, 2, -0.5]
     assert result.fields[3].unit == "kW"
     assert result.fields[3].unit_origin == "configured_display_format"
+    assert result.fields[4].status == "present"
+    assert result.fields[4].value == -0.5
     assert result.fields[4].unit is result.fields[4].unit_origin is None
     assert all(field.scale is field.sign_convention is None for field in result.fields)
 

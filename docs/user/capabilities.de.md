@@ -666,6 +666,12 @@ keine allgemeine Einschlussformel oder physisch gleichzeitige Messung. Gecachte
 Produktionsaggregate können von einem einzelnen Produktionsteilnehmer abweichen.
 Für diesen Vergleich wurde kein neuer Code auf das Zielgerät übertragen.
 
+Verfügbare Restwerte werden unverändert **ohne Einheit** ausgegeben. Ein natives
+`Rest` behält seinen Rohwert; ein fehlendes natives Feld bleibt fehlend. Der exakt
+zugeordnete Rest-Zähler kann separat über den bestehenden State-Lesepfad
+(`actual`, ohne `native_result_view`) gelesen werden. Sein Wert wird als eigener
+Zählerwert mit Quelle ausgewiesen und ersetzt kein fehlendes natives EFM-Feld.
+
 Für datierte Energieberichte verwende bestätigte Historienbindungen und
 `loxone_analyze_history(operation="energy")` mit deren Semantik und Abdeckung.
 Aktuelle native Leistungswerte bleiben getrennte Momentaufnahmen; `get/day`

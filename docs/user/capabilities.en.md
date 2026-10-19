@@ -608,6 +608,12 @@ the tested installation, not a universal inclusion formula or simultaneous
 physical measurements. Cached production aggregates can differ from a single
 production participant. No new code was deployed to the target for this comparison.
 
+Return available Rest values unchanged **without a unit**. A native `Rest`
+retains its raw number; a missing native field stays missing. Read the exactly
+bound Rest meter separately through the existing state workflow (`actual`,
+without `native_result_view`). Identify its value and source as a separate meter
+reading; it does not replace a missing native EFM field.
+
 For dated energy reports use confirmed history bindings and the existing
 `loxone_analyze_history(operation="energy")`, respecting its semantics and coverage.
 Current native power values stay separate snapshots; `get/day` cannot provide

@@ -85,7 +85,8 @@ native Rest and period fields retain null origin.
 Fresh native Rest/Cpwr comparisons and format-to-field applicability remain a
 separate read-only device phase; E4 now records its bounded outcome. The
 [observation report](efm-rest-display-observations.md) supplies the source chain,
-source distinction, acquisition limits and explicit remaining prerequisites.
+source distinction and explicit remaining prerequisites; detailed acquisition
+records remain private.
 
 ### Installation-level Spwr follow-up
 
