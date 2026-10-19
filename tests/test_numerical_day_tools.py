@@ -406,16 +406,24 @@ def test_hand_calculated_yield_self_consumption_and_ranking_share_the_window(run
         )
     }
     reference = first + timedelta(days=3)
-    result = calculate(
-        local=local,
-        energies=energies,
+    result = _calculate(
+        local,
+        energies,
+        begin=first.timestamp(),
+        finish=(first + timedelta(days=4)).timestamp(),
+        zone_name="UTC",
         options=NumericalComparableDayOptions(
             method="numerical",
             reference_day=reference.date().isoformat(),
             start_hour=10,
             end_hour=14,
         ),
-        now=reference + timedelta(hours=12, minutes=30) if running else datetime.now(UTC),
+        installation="plant",
+        balance_matches=False,
+        deadline=time.monotonic() + 5,
+        now=reference + timedelta(hours=12, minutes=30)
+        if running
+        else reference + timedelta(days=1),
     )
     days = [(first + timedelta(days=day)).date().isoformat() for day in range(4)]
     assert result.common_hour_positions == list(range(10, 10 + hours))
@@ -430,10 +438,22 @@ def test_hand_calculated_yield_self_consumption_and_ranking_share_the_window(run
     assert metric.group.count == 3 and metric.group.median_wh == 600 * hours
     assert metric.group.absolute_difference_wh == -500 * hours
     assert metric.group.relative_difference == pytest.approx(-5 / 6, abs=1e-12, rel=0)
-    assert result.ranked_deviations[0].day == days[2]
-    assert result.ranked_deviations[0].metric == "pv_yield"
-    assert result.ranked_deviations[0].absolute_difference_wh == -800 * hours
-    assert len(result.ranked_deviations) == 6
+    expected = [
+        (days[2], "pv_yield", -800 * hours, -2 / 3),
+        (days[2], "self_consumption", -700 * hours, -7 / 8),
+        (days[0], "pv_yield", -600 * hours, -3 / 5),
+        (days[0], "self_consumption", -500 * hours, -5 / 6),
+        (days[1], "pv_yield", -400 * hours, -1 / 2),
+        (days[1], "self_consumption", -300 * hours, -3 / 4),
+    ]
+    assert [(row.day, row.metric) for row in result.ranked_deviations] == [
+        (day, metric) for day, metric, _, _ in expected
+    ]
+    for actual, (_, _, difference, relative) in zip(
+        result.ranked_deviations, expected, strict=True
+    ):
+        assert actual.absolute_difference_wh == difference
+        assert actual.relative_difference == pytest.approx(relative, abs=1e-12, rel=0)
     assert "no_storage_balance_or_causal_diagnosis" in metric.limitations
 
 
