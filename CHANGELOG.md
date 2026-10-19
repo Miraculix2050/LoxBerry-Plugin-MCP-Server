@@ -14,6 +14,10 @@ extracted from the matching version heading.
   traces and document evidence-backed presence/light relationship review without
   inferring links from names, rooms or runtime-child suffixes (#441, stage 3).
 
+- Clarify current-state activity evidence, surface omitted/unsupported semantic
+  interpretations in compact reads, and document finite Dimmer positions without
+  inferring binary activity, percent units or physical operation (#485).
+
 - Add opt-in bounded runtime lighting outputs to the existing lighting context,
   retaining exact child/parent references, structure provenance and omissions
   without inferring physical fixtures or project connectors (#441, stage 2).

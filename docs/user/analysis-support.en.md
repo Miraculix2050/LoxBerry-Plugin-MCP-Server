@@ -8,9 +8,19 @@ Current addition: [native PVPF forecasts and conditional future planning](pv-pla
 
 Renewed #485 acceptance uses bytes, complete call counts, cold/warm durations and
 domain answer quality. Token metrics are optional; bytes do not establish token
-or cost savings. The confirmed limit remains 50 answer records. Changing the
-criteria does not constitute passed acceptance; earlier measurements retain their
+or cost savings. The original campaign retains its consumed 21 of 50 records.
+The owner's 19 October follow-up permits at most 20 additional records, with
+1–3 targeted answers per change (initially two for the combined activity fix).
+Failures remain counted; this is no counter reset or full 25-question campaign.
+Changing the criteria does not constitute passed acceptance; earlier measurements retain their
 evidenced limitations.
+
+For “what is switched on?”, distinguish documented logical control activity,
+documented inactivity and not determinable. Current values and complete delivery
+are not semantic or physical proof. Read semantic evidence before interpreting
+activity; unknown/omitted meaning is never off. Dimmer position now has documented
+numeric meaning, but no inferred percent scale or on/off predicate. Switch activity
+encoding remains unverified. Names, moods and lock states do not close those gaps.
 
 PR 6 adds [qualitative radiation-class peers](comparable-days.en.md) under an
 explicitly owner-assumed native mapping. Unexpected values remain in the archive

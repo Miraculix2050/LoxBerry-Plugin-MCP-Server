@@ -1197,3 +1197,112 @@ def test_status_monitor_reserved_255_never_matches_a_configured_definition(norma
     assert decoded["inputs"][0]["mapping_status"] == "unmatched"
     assert decoded["inputs"][0]["configured_status"] is None
     assert not decoded["mapping_complete"] and descriptor.interpretation_status != "known"
+
+
+@pytest.mark.parametrize("value", [0, 1, 25.5, -1, 150])
+def test_dimmer_position_is_not_an_activity_or_percent_decoder(value):
+    descriptor, decoded = resolve(
+        control("Dimmer", states=(("position", "state"),)), "position", value
+    )
+    assert descriptor.interpretation_status == "known"
+    assert descriptor.measurement_role == "dimmer_position"
+    assert descriptor.unit is None and descriptor.range is None
+    assert descriptor.measurement_quantity is None and not descriptor.encoding
+    assert decoded == {"kind": "dimmer_position", "value": value}
+    assert descriptor.sources[0].rule_id == "Dimmer.position.v1"
+    assert descriptor.sources[0].document_version == "17.1"
+    assert descriptor.sources[0].reference.endswith("#page=60")
+    assert all(s.firmware_version is None for s in descriptor.sources)
+
+
+@pytest.mark.parametrize(
+    "value,status",
+    [
+        (None, "partial"),
+        (True, "invalid"),
+        ("0", "invalid"),
+        (float("nan"), "invalid"),
+        (float("inf"), "invalid"),
+        (10**1000, "invalid"),
+    ],
+)
+def test_dimmer_invalid_or_missing_position_never_becomes_off(value, status):
+    descriptor, decoded = resolve(
+        control("Dimmer", states=(("position", "state"),)), "position", value
+    )
+    assert descriptor.interpretation_status == status and decoded is None
+    assert descriptor.unit is None
+
+
+@pytest.mark.parametrize(
+    "kind,name",
+    [
+        ("Switch", "active"),
+        ("Switch", "lockedOn"),
+        ("Dimmer", "active"),
+        ("LightControllerV2", "activeMoods"),
+        ("Ventilation", "speed"),
+        ("IRoomControllerV2", "active"),
+    ],
+)
+@pytest.mark.parametrize("value", [0, 1])
+def test_unreviewed_activity_states_remain_unknown_despite_zero_or_one(kind, name, value):
+    descriptor, decoded = resolve(control(kind, states=((name, "state"),)), name, value)
+    assert descriptor.interpretation_status == "unknown"
+    assert descriptor.reason == "no_supported_evidence"
+    assert descriptor.sources_total == 0 and descriptor.sources_complete
+    assert decoded is None
+
+
+@pytest.mark.asyncio
+async def test_activity_capture_regression_complete_delivery_is_not_semantic_coverage(monkeypatch):
+    switch = control("Switch", states=(("active", "state"),))
+    dimmer = replace(control("Dimmer", states=(("position", "position"),)), uuid="dimmer")
+    digital = replace(control("InfoOnlyDigital", states=(("active", "digital"),)), uuid="digital")
+    runtime = Runtime(switch)
+    runtime.structure = replace(runtime.structure, controls=(switch, dimmer, digital))
+    runtime.records.update(
+        position=StateRecord("position", 0, Freshness.CURRENT, 1_700_000_000),
+        digital=StateRecord("digital", 1, Freshness.CURRENT, 1_700_000_000),
+    )
+    _, reader = read_tool(monkeypatch, runtime)
+    targets = [ControlReadTarget(control_uuid=c.uuid) for c in (switch, dimmer, digital)]
+    plain = await reader.fn(targets)
+    assert plain.ok and plain.data.complete and not plain.stale
+    assert "semantics" in plain.data.omitted_sections
+    assert any("Semantics not requested" in w for w in plain.warnings)
+    assert all(i.semantics is None for i in plain.data.items)
+    runtime.reads.clear()
+    enriched = await reader.fn(targets, True)
+    assert enriched.ok and enriched.data.complete and not enriched.stale
+    assert any("unsupported states" in w for w in enriched.warnings)
+    unknown, position, indication = [i.semantics[0] for i in enriched.data.items]
+    assert unknown.semantics.interpretation_status == "unknown" and unknown.semantic_value is None
+    assert position.semantics.interpretation_status == "known"
+    assert position.semantic_value == {"kind": "dimmer_position", "value": 0}
+    assert indication.semantic_value == {
+        "kind": "binary_state",
+        "active": True,
+        "role": "on_off_indication",
+    }
+    assert runtime.reads == ["state", "position", "digital"]
+    assert runtime.snapshots == [True, True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("freshness", [Freshness.STALE, Freshness.UNAVAILABLE])
+async def test_known_binary_rule_keeps_stale_or_missing_quality(monkeypatch, freshness):
+    runtime = Runtime(control("InfoOnlyDigital", states=(("active", "state"),)))
+    value = 0 if freshness is Freshness.STALE else None
+    runtime.records["state"] = StateRecord("state", value, freshness, None)
+    _, reader = read_tool(monkeypatch, runtime)
+    result = await reader.fn([ControlReadTarget(control_uuid="control")], True)
+    item = result.data.items[0].semantics[0]
+    assert result.ok and result.stale and result.data.complete
+    assert item.quality.freshness == freshness.value
+    if value is None:
+        assert item.semantic_value is None and item.semantics.interpretation_status == "partial"
+    else:
+        assert item.semantic_value["active"] is False
+        assert item.semantics.interpretation_status == "known"
+    assert any("physical operation" in w for w in result.warnings)

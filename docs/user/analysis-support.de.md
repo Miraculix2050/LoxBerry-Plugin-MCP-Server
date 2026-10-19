@@ -8,9 +8,21 @@ Aktuelle Ergänzung: [Native PVPF-Prognosen und bedingte Zukunftsplanung](pv-pla
 
 Für die erneute Abnahme in #485 gelten Bytes, vollständige Aufrufzahlen,
 Kalt-/Warm-Laufzeiten und fachliche Antwortqualität. Tokenwerte sind optional;
-aus Bytes werden keine Token- oder Kosteneinsparungen abgeleitet. Die bestätigte
-Obergrenze bleibt bei 50 Antwortdatensätzen. Diese Änderung der Kriterien ist
+aus Bytes werden keine Token- oder Kosteneinsparungen abgeleitet. Die ursprüngliche
+Kampagne behält ihre verbrauchten 21 von 50 Datensätzen. Für den Folgeauftrag vom
+19. Oktober gelten maximal 20 zusätzliche Datensätze und 1–3 gezielte Antworten
+je Änderung (zunächst zwei für die gebündelte Aktivitätskorrektur). Fehlversuche
+bleiben gezählt; dies ist kein Zählerneustart und keine vollständige Kampagne mit
+25 Fragen. Diese Änderung der Kriterien ist
 keine bestandene Abnahme; frühere Messungen behalten ihre belegten Grenzen.
+
+Bei „Was ist eingeschaltet?“ werden belegte logische Aktivität, belegte
+Inaktivität und nicht bestimmbare Zustände getrennt. Aktuelle Werte und vollständige
+Übertragung belegen weder Bedeutung noch physischen Betrieb. Vor der Interpretation
+ist Semantikevidenz zu lesen; unbekannte oder ausgelassene Bedeutung ist niemals
+„aus“. Die Dimmerposition hat nun eine dokumentierte numerische Bedeutung, aber
+keine abgeleitete Prozentskala oder An/Aus-Regel. Die numerische Switch-Kodierung
+bleibt ungeprüft. Namen, Stimmungen und Sperrzustände schließen diese Lücken nicht.
 
 PR 6 ergänzt [qualitative Strahlungsklassen-Peers](comparable-days.de.md) mit
 einer ausdrücklich angenommenen nativen Zuordnung. Unerwartete Werte bleiben

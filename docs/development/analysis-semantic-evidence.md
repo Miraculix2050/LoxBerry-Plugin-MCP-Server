@@ -23,6 +23,7 @@ rule versions; absent firmware evidence remains absent.
 | `IRoomControllerV2.tempTarget` | Finite numeric target temperature | pp.73,76; same gate | Target temperature does not establish heating activity. |
 | `InfoOnlyDigital.active` | Numeric zero/one indication | p.72; Structure File 17.1 | No physical appliance, contact or power role is inferred. |
 | `Hourcounter.active` | Numeric zero/one counter activity | pp.70–71; Structure File 17.1 | Counter activity does not establish measured energy. |
+| `Dimmer.position` | Finite numeric current position | p.60; Structure File 17.1 | No percent scale, fixed 0–100 range, binary activity predicate or physical output proof. |
 
 Authorized read-only type evidence on Loxberry-Test confirmed the exact V2 type
 and both temperature states, plus `InfoOnlyDigital.active`. Its V2 format is
@@ -36,6 +37,26 @@ Unknown units remain unknown. Generic analog format strings and arbitrary
 `Switch.active` states receive no new technical inference. Current observation
 quality remains separate from semantic evidence, and historical coverage is not
 inferred from current state readability.
+
+### Activity interpretation follow-up (#485)
+
+The pinned PDF above was rechecked, including visual page inspection. Page 60
+defines Dimmer position and says the off command sets it to zero. This establishes
+position meaning, not the converse predicate that every zero proves off, nor a
+positive-value threshold for activity. Only the position decoder is added.
+Pages 136–137 identify `Switch.active` as the switch state and describe on/off
+commands; they do not explicitly establish its numeric response encoding. The
+review therefore retains `Switch.active` as unknown rather than copying the
+InfoOnlyDigital rule. Similar observed values or commands are not extra evidence.
+
+Compact reads retain their default `include_semantics=false`, original raw values,
+authorization and byte/count limits. Warnings and field descriptions distinguish
+delivery coverage from semantic evidence. Unknown/partial/invalid interpretations
+remain explicit; known position/temperature evidence grants no generic activity
+predicate. Guides and the existing state-summary prompt require current values
+and an exact appropriate rule, separating logical activity/inactivity from unknown
+and from physical appliance operation. Offline protocol/decoder tests cannot prove
+that a model will follow the guidance; bounded new answer checks remain separate.
 
 ## Energy Manager generation contracts (#436)
 
