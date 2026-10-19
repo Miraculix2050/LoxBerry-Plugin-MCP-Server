@@ -7352,6 +7352,15 @@ def register_project_tools(
         direction: Annotated[Literal["upstream", "downstream"], Field()],
         max_depth: Annotated[int, Field(ge=1, le=16)] = 6,
         max_nodes: Annotated[int, Field(ge=1, le=200)] = 100,
+        include_internal_flow_gaps: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Report unmodeled block-internal flow and ambiguous connector parents "
+                    "in semantic_gaps; diagnostics do not add signal paths or infer function."
+                )
+            ),
+        ] = False,
     ) -> ProjectTraceEnvelope:
         try:
             project, snapshot = await _project_query(runtime)
@@ -7360,7 +7369,11 @@ def register_project_tools(
                 ProjectTraceEnvelope,
                 {
                     **project.trace(
-                        node, direction=direction, max_depth=max_depth, max_nodes=max_nodes
+                        node,
+                        direction=direction,
+                        max_depth=max_depth,
+                        max_nodes=max_nodes,
+                        include_internal_flow_gaps=include_internal_flow_gaps,
                     ),
                     "runtime_target_mapping": project.derived_target(start_identifier, start_type),
                 },

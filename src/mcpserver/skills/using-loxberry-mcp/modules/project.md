@@ -37,6 +37,12 @@ current states, statistics, or history only when those sources independently
 provide the required observation. Do not infer meanings for unknown block types
 or request raw project XML.
 
+Set `include_internal_flow_gaps=true` on `loxone_trace_project_logic` when a
+relationship review needs explicit unmodeled internal flow. The default remains
+false. These bounded `semantic_gaps` reference retained nodes, distinguish an
+unmodeled block from ambiguous connector containment, and never create edges or
+claim that raw wiring establishes a functional or historical effect.
+
 For SysVar, DigitalIn, Actor, Online, Mode and VoltageOut, model version 15 can
 resolve an exact normalized UUID across model sources after whole-group attribute
 and topology checks. Mapping remains exact only when occurrences are equivalent

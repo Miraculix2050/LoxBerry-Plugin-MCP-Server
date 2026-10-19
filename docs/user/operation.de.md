@@ -91,6 +91,15 @@ Runtime-Unterordnung identifiziert keinen Projektanschluss und keine physische
 Leuchte; ColorPicker-Unterstützung beweist keine installierte Tunable-White-Leuchte.
 Es werden keine Aktionen ausgeführt.
 
+Für eine Präsenz-Licht-Beziehung genaue Quell- und Controller-IDs belegen;
+Namen oder ein gemeinsamer Raum beweisen keine Zuordnung. Projekt-Mapping und
+Quellabdeckung prüfen, genaue Objekte suchen/beschreiben und dann die passende
+Richtung mit `include_internal_flow_gaps=true` verfolgen. Rohverdrahtung, geprüfte
+interne Kanten, nicht modellierte interne Logik und mehrdeutige Eltern getrennt
+halten. Child-Identität getrennt von Elterntopologie und alle Grenzen erhalten;
+ein fehlender begrenzter Pfad beweist keine physische Abwesenheit. Konfigurations-
+oder Steuerungsschreibzugriffe sind dafür nicht erforderlich.
+
 Mit `loxone_describe_control(view="lighting_context")` lassen sich begrenzt
 Quell-IDs und Namen der Lichtstimmungen eines sichtbaren LightControllerV2 lesen.
 Status, Quellzustand, Zeitstempel, Aktualität und Auslassungen beachten; fehlende

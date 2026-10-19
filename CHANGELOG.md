@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add opt-in unmodeled internal-flow diagnostics to existing bounded project
+  traces and document evidence-backed presence/light relationship review without
+  inferring links from names, rooms or runtime-child suffixes (#441, stage 3).
+
 - Add opt-in bounded runtime lighting outputs to the existing lighting context,
   retaining exact child/parent references, structure provenance and omissions
   without inferring physical fixtures or project connectors (#441, stage 2).
