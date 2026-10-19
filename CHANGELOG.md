@@ -10,6 +10,10 @@ extracted from the matching version heading.
   shared profile-source resolution and fresh publication/cursor guards. Keep
   naming candidates, configured reachability and physical claims separate (#441, stage 4).
 
+- Identify native EFM W/kW enrichment as configured display-unit metadata,
+  preserving numeric values and unknown field bindings; clarify documented
+  residual power versus native Rest mapping and avoid forced zero balances (#534).
+
 - Add documented Meter output sign conventions by normalized runtime subtype to
   state and StatisticV2 semantics, with raw values preserved and unknown/legacy
   types kept unqualified. Distinguish configurable physical-input polarity from

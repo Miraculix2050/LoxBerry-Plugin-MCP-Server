@@ -70,6 +70,18 @@ def test_actual_power_semantics_bind_only_documented_format(source_format, unit)
     assert result.schema_version == "native_efm_result.v2"
     assert result.source_metadata_status == "stable" and not result.semantic_complete
     assert [field.unit for field in result.fields] == [unit, unit, unit, None, None]
+    assert [field.unit_origin for field in result.fields] == [
+        "configured_display_format",
+        "configured_display_format",
+        "configured_display_format",
+        None,
+        None,
+    ]
+    assert all(field.unit_origin is None for field in raw.fields)
+    for name in ("Gpwr", "Ppwr", "Spwr"):
+        assert any(
+            f"fields.{name}.unit_origin" in source.fields for source in result.semantic_sources
+        )
     assert [field.measurement_quantity for field in result.fields] == ["power"] * 4 + [None]
     assert [field.measurement_role for field in result.fields] == [
         "grid_power",
@@ -124,6 +136,7 @@ def test_missing_or_unsupported_formats_never_supply_units(source_format):
     )
     assert result.source_metadata_status == ("invalid" if rejected else "unsupported")
     assert all(field.unit is None for field in result.fields)
+    assert all(field.unit_origin is None for field in result.fields)
     assert "power_units_unverified" in result.report_limitations
     assert not any(source.kind == "structure_file" for source in result.semantic_sources)
 
@@ -141,6 +154,7 @@ def test_absent_root_format_does_not_inherit_participant_or_total_format():
     )
     assert result.source_metadata_status == "missing"
     assert all(field.unit is None for field in result.fields)
+    assert all(field.unit_origin is None for field in result.fields)
 
 
 def test_changed_format_discards_unit_enrichment_and_preserves_values():
@@ -152,6 +166,7 @@ def test_changed_format_discards_unit_enrichment_and_preserves_values():
     assert result.source_metadata_status == "changed"
     assert "source_metadata_changed" in result.report_limitations
     assert all(field.unit is None for field in result.fields)
+    assert all(field.unit_origin is None for field in result.fields)
     assert [field.value for field in result.fields] == [1, 2, 3, 4, None]
     assert result.fields[0].measurement_quantity == "power"
 
@@ -165,6 +180,7 @@ def test_native_period_report_does_not_gain_units_or_historical_dates(view):
         control,
     )
     assert result.source_metadata_status == "not_applicable" and not result.semantic_sources
+    assert all(field.unit_origin is None for field in result.fields)
     assert all(
         field.unit is field.measurement_quantity is field.measurement_role is None
         for field in result.fields

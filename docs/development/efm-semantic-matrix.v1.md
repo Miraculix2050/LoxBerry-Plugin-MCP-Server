@@ -58,6 +58,30 @@ unsupported and changed metadata remain distinct; changed metadata drops unit
 enrichment while retaining raw values. Generic control, participant, storage and
 total formats are not fallback evidence.
 
+### Rest function and declared display units: clarified 2026-10-19
+
+K1 explicitly defines the **block output** Rest as remaining top-group power.
+This documented quantity/function is known; the unqualified row above concerns
+its exact native field binding. Distribution-board residuals can include
+unmetered downstream devices and measurement differences. Tolerances, different
+update/sample times and rounded displays do not imply an exact zero balance.
+Do not clamp residuals, diagnose an unmetered consumer from a nonzero residual
+alone or replace native Rest by arithmetic on rounded displayed numbers.
+
+Owner-supplied visualization and display-settings screenshots establish
+presentation evidence only and remain private. Power/flow, energy/quantity and
+storage-level formats are separately configurable. A known display label is
+declared metadata, not proof of source calibration or automatic numerical unit
+conversion. Whether EFM arithmetic ignores units is not established by those
+screenshots. The existing Gpwr/Ppwr/Spwr unit rule now explicitly reports
+`unit_origin=configured_display_format`, with per-field source paths; no native
+field gains a broader meaning or a new unit binding. Missing, rejected and
+changed formats, Cpwr, native Rest and period fields retain null origin.
+
+Fresh native Rest/Cpwr comparisons and format-to-field applicability remain a
+separate read-only device phase. No new target observation or acceptance is
+claimed by this documentation/provenance clarification.
+
 ### Installation-level Spwr follow-up
 
 E3 resolves the missing positive native observation for the tested installation:

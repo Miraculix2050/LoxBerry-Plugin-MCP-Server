@@ -40,7 +40,13 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
    `native_result` is separate from cached states: `values=[]`, zero state counts,
    state semantics omitted. In `native_efm_result.v2`, only Gpwr/Ppwr/Spwr gain
    metadata-bound W/kW units and documented power roles; Cpwr is load power with
-   unknown unit and Rest stays unknown. Check rule/provenance and metadata status:
+   unknown unit and native Rest stays unqualified. `unit_origin` identifies
+   `configured_display_format` for that existing W/kW rule, not calibrated
+   measurement units or an automatic conversion. Rest's documented block meaning
+   is remaining top-group power; only native-field mapping remains unverified.
+   Residuals can include unmetered loads and measurement/timing differences.
+   Never force zero balance, clamp residuals or infer a fault/unmetered load from
+   a nonzero residual alone. Check rule/provenance and metadata status:
    changed/missing/invalid/unsupported metadata never supplies units. Check field delivery
    separately from unknown scale, signs, currency, observation freshness and
    period boundaries. `semantic_complete` remains false. Calendar views
