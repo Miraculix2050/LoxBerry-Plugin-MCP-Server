@@ -1,10 +1,11 @@
-# Native EFM semantic evidence matrix v1
+# Native EFM semantic evidence matrix v2
 
-- Evidence version: `efm_semantic_matrix.17_2_8_28.v1`, documentation review 2026-10-18;
+- Evidence version: `efm_semantic_matrix.17_2_8_28.v2`, baseline review 2026-10-18;
   installation-observation follow-up 2026-10-19.
 - Scope: #534; exact EFM firmware `17.2.8.28`, existing native aggregate views only.
-- Decision: **no new runtime semantic rule**. Retain `native_efm_result.v2` and
-  `native_efm_actual_semantics_17_2_8_28.v1` unchanged. Documented block behavior,
+- Decision: baseline review retained unknowns; the 2026-10-19 follow-up accepts
+  only Cpwr's declared display-unit binding in semantic rule v2. Retain
+  `native_efm_result.v2` and transport unchanged. Documented block behavior,
   observed wire shape and an accepted aggregate decoder are separate evidence.
 
 ## Sources and applicability
@@ -19,6 +20,7 @@
 | E1 | [Original sanitized matrix](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/436#issuecomment-6109313546) | Browser capture 2026-10-11, exact firmware 17.2.8.28 | Owner-authenticated read-only same-origin requests; fresh structure and independent firmware lookup. Browser identity equality with the MCP caller was not established. |
 | E2 | [Delivered semantics and acceptance](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/492) | Recorded acceptance on candidate `12ac66b2ffd99f960b6178dc425ffb6b31bbbc69`; merged as `c5daa493f1061e518c97b68446ee6c79da736bfb` | Separate fresh caller-owned admin session and installed MCP handler, all six views; actual/day also through HTTP-MCP/Explorer. Existing semantics only. |
 | E3 | Caller-authorized linked-storage comparisons, #534 follow-up | Read-only device observations 2026-10-19, exact firmware 17.2.8.28; private provenance retained | Native actual.Spwr compared with the explicitly referenced storage meter and verified participant-state binding on one installation; negative, zero and positive cases observed. No universal sign or input-inversion contract. |
+| E4 | Caller-authorized Rest/display comparisons | Read-only observations 2026-10-19, exact firmware 17.2.8.28; private provenance retained | Three native actual reads, 30 exact adjacent meter/participant comparisons, stable same-EFM actualFormat. Cpwr matched an adjacent consumption value in each round; native Rest missing three times despite signed values at the separately referenced meter/state. No universal inclusion formula or physical simultaneity. |
 
 D1 SHA-256:
 `97bbc5ec79c8479c0f2f561a55780a764a518fe420d11fd2fc26979fc41e5f23`.
@@ -39,7 +41,8 @@ follow-up adds installation observations only and accepts no new runtime rule.
 ## Actual field decisions
 
 “Confirmed existing” applies only to the stated released subset. Every remaining
-unknown has an insufficient-evidence disposition; no row authorizes a new decoder.
+unknown has an insufficient-evidence disposition. Only the Cpwr display-unit
+extension below is newly authorized by the follow-up evidence.
 `unit=null`, `sign_convention=null`, `scale=null`, `currency=null` and
 `semantic_complete=false` retain their released meanings.
 
@@ -48,8 +51,8 @@ unknown has an insufficient-evidence disposition; no row authorizes a new decode
 | actual.Gpwr | D1 pp.66–67: grid power; block-setting unit. K1: grid-power output. D1 p.65 signs apply to node.actual. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/grid_power, W/kW only through the unchanged exact actualFormat rule. Sign and boundary unknown. | Explicit aggregate sign contract plus independent configuration linking grid direction and physical measurement boundary to this aggregate field. |
 | actual.Ppwr | D1 pp.66–67: production power; block-setting unit. K1: production-power output. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/production_power, same W/kW rule. Sign and boundary unknown. | Explicit aggregate direction contract and configuration proving which production sources, reverse flows and measurement boundary the aggregate includes. |
 | actual.Spwr | D1 pp.66–67: storage power; block-setting unit. K3 signs describe meter.Pf, D1 p.65 describes node.actual. | E1 numeric; E2 own EFM format retained; E3 agrees with linked meter-output signs for negative, zero and positive cases on one installation | **Confirmed existing:** power/storage_power, same W/kW rule. E3 supports installation-level correspondence with K3; general charge/discharge sign contract and boundary remain unknown. | Aggregate Spwr sign contract and independent storage configuration/boundary evidence beyond E3's explicit references. Input-direction encoding remains unknown but is not required to interpret the meter's normalized output. |
-| actual.Cpwr | D1 p.67: load power; K1 calls the block output consumption power. No explicit aggregate unit binding. | E1 numeric; no independent Cpwr format | **Confirmed existing:** power/load_power, unit/sign/boundary unknown. No extension. | Explicit applicability of a unit source to aggregate Cpwr, plus direction and configured load/measurement-boundary evidence. The neighboring fields' actualFormat rule cannot be widened by analogy. |
-| actual.Rest | D1 p.67 lists Rest without defining its quantity. K1 describes the block output as calculated remaining power of the top group; distribution-board residuals represent unmetered downstream devices and may include measurement differences. | Absent in E1; root display flags/names/icons are metadata, not a numeric Rest specimen | **Insufficient evidence:** native quantity/role/unit/sign/boundary remain unknown. Missing is not zero. | Caller-authenticated native Rest specimen and independent top-group/configuration evidence linking it to the documented output; explicit unit/direction applicability. No residual arithmetic or synthetic meter. |
+| actual.Cpwr | D1 p.64 explicitly illustrates actualFormat using currently consumed power; p.67 identifies native Cpwr as load power; K1 calls the block output consumption power. | E1 numeric; E4 independently corroborates the consumption-specific applicability with exact references and unchanged root format. | **Proven extension:** power/load_power with declared W/kW and configured_display_format origin through the same strict stable-format guard, semantic rule v2. No numerical conversion. | Physical calibration, exact inclusion/boundary, sign and observation-time contracts remain unverified. This is a consumption-specific source chain, not a neighboring-field analogy or a unit inferred from equal values. |
+| actual.Rest | D1 p.67 lists Rest; K1 defines the block output as calculated remaining top-group power. Residuals can include unmetered loads and measurement differences. | Absent in E1 and all three E4 native responses; separately referenced meter/participant values include both signs and zero. | **Insufficient native binding:** block function is known; missing native Rest remains missing with no unit/role promotion. | A native Rest specimen and exact top-group/configuration/unit linkage remain needed. The available participant state must not be copied into this missing aggregate field. No residual reconstruction or forced zero balance. |
 
 The released actualFormat rule accepts only the same EFM's complete bounded
 single numeric `%…f` format followed by literal W/kW, unchanged across the two
@@ -73,14 +76,17 @@ presentation evidence only and remain private. Power/flow, energy/quantity and
 storage-level formats are separately configurable. A known display label is
 declared metadata, not proof of source calibration or automatic numerical unit
 conversion. Whether EFM arithmetic ignores units is not established by those
-screenshots. The existing Gpwr/Ppwr/Spwr unit rule now explicitly reports
+screenshots. The Gpwr/Ppwr/Spwr/Cpwr unit rule explicitly reports
 `unit_origin=configured_display_format`, with per-field source paths; no native
-field gains a broader meaning or a new unit binding. Missing, rejected and
-changed formats, Cpwr, native Rest and period fields retain null origin.
+field gains a physical calibration claim. Cpwr's newly accepted declared unit
+binding is justified separately below. Missing, rejected and changed formats,
+native Rest and period fields retain null origin.
 
 Fresh native Rest/Cpwr comparisons and format-to-field applicability remain a
-separate read-only device phase. No new target observation or acceptance is
-claimed by this documentation/provenance clarification.
+separate read-only device phase; E4 now records its bounded outcome. The
+[observation report](efm-rest-display-observations.md) supplies the source chain,
+source distinction and explicit remaining prerequisites; detailed acquisition
+records remain private.
 
 ### Installation-level Spwr follow-up
 
@@ -170,18 +176,20 @@ contract and caller-authenticated evidence tying it to these exact aggregates.
 
 ## Result and verification boundary
 
-The fixed matrix is complete with confirmed-existing and insufficient-evidence
-decisions. There is no proven additive extension. Raw values, missing-field
-handling, schemas, Explorer, bundled skill, authorization, source request counts,
-timeouts and transport budgets remain unchanged. Node signs, meter KB meanings
+The fixed matrix is complete with proven-extension, confirmed-existing and
+insufficient-evidence decisions. The follow-up adds only the Cpwr declared-display
+unit binding under semantic rule v2; retained semantic rule v1 remains readable.
+Raw values, missing-field handling, authorization, source request counts,
+timeouts and transport budgets remain unchanged. Schema guidance, bundled skill
+and DE/EN docs follow the narrow extension. Node signs, meter KB meanings
 and residual display configuration are recorded as research context, not decoded
 into aggregate fields. No new target, firmware or compatibility claim is made.
 
-This documentation-only result needs consistency review and CI, not deployment,
-browser acceptance or new device acceptance under the change-driven test
-strategy. E1/E2 remain historical source evidence. If later evidence permits a
-behavioral extension, it requires its own narrow reviewed change, regression and
-negative tests, synchronized contract/documentation and matching device acceptance.
+The baseline was documentation-only. The Cpwr follow-up requires normal review,
+regression/negative tests, synchronized contracts/docs and Full CI. E4 supplies
+scoped read-only source observations; local replay is separate from acceptance
+of newly installed code. No deployment, browser acceptance or broader hardware
+compatibility is claimed. E1/E2 remain historical source evidence.
 Broader topology/transformations remain #357; manager acceptance #533, optional
 non-admin disclosure #535, weather/PV planning #509/#510 and performance #501
 remain separate.

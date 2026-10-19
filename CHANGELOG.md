@@ -9,6 +9,10 @@ extracted from the matching version heading.
   fields and bounded page summaries with independent naming/selection limits.
   Synchronize the six lighting scenarios and evidence boundaries in DE/EN (#441, stage 5).
 
+- Bind native EFM Cpwr to the unchanged declared W/kW display format through
+  semantic rule v2, with documented consumed-power applicability and bounded
+  read-only comparisons; retain missing native Rest separately from meter states (#534).
+
 - Add a bounded lighting scope to the existing project analyzer with exact
   controller/room selection, request-local scene/presence/room declarations,
   shared profile-source resolution and fresh publication/cursor guards. Keep

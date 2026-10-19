@@ -58,7 +58,7 @@ reference project's `PwrN` strings are power/flow labels, not polarity evidence.
 These rules close the meter-output prerequisite only. They do not modify
 `native_efm_result.v2`, its sign convention, units, periods or transport. The
 [EFM matrix](efm-semantic-matrix.v1.md) still independently qualifies aggregate
-Gpwr/Ppwr/Spwr direction/boundary, Cpwr unit/boundary, native Rest applicability,
+Gpwr/Ppwr/Spwr direction/boundary, Cpwr physical boundary, native Rest applicability,
 period quantity/currency/clock/reset and physical observation time. Existing
 positive/negative/zero comparisons support the tested installation only.
 

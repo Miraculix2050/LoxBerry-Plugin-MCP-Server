@@ -43,7 +43,13 @@ class NativeEfmResult(BaseModel):
     source_kind: Literal["native_efm_result"] = "native_efm_result"
     rule_version: Literal["native_efm_17_2_8_28.v1"] = "native_efm_17_2_8_28.v1"
     schema_version: Literal["native_efm_result.v1", "native_efm_result.v2"] = "native_efm_result.v1"
-    semantic_rule_version: Literal["native_efm_actual_semantics_17_2_8_28.v1"] | None = None
+    semantic_rule_version: (
+        Literal[
+            "native_efm_actual_semantics_17_2_8_28.v1",
+            "native_efm_actual_semantics_17_2_8_28.v2",
+        ]
+        | None
+    ) = None
     source_metadata_status: Literal[
         "not_requested", "not_applicable", "missing", "invalid", "unsupported", "stable", "changed"
     ] = "not_requested"
