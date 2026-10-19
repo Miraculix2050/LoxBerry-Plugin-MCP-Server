@@ -135,7 +135,8 @@
 
   function changeAnalysisScope(argumentsValue, allowedAnalyses = null) {
     const next = {...argumentsValue};
-    const hidden = next.scope === 'lighting' ? ETS_FIELDS : LIGHTING_FIELDS;
+    const hidden = [...(next.scope === 'lighting' ? [] : LIGHTING_FIELDS),
+      ...(next.scope === 'knx' ? [] : ETS_FIELDS)];
     [...hidden, 'cursor'].forEach((field) => { delete next[field]; });
     const explicitCompatibleChecks = Array.isArray(allowedAnalyses) &&
       (next.analyses === null || (Array.isArray(next.analyses) &&
@@ -148,7 +149,7 @@
     if (tool?.name === 'loxone_analyze_project') {
       const scope = argumentsValue?.scope ?? tool.inputSchema?.properties?.scope?.default ?? 'knx';
       if (LIGHTING_FIELDS.includes(field)) return scope === 'lighting';
-      if (ETS_FIELDS.includes(field)) return scope !== 'lighting';
+      if (ETS_FIELDS.includes(field)) return scope === 'knx';
     }
     if (!hasActionFields(tool)) return true;
     return field === 'control_uuid' || field === 'action' ||

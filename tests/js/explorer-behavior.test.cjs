@@ -723,7 +723,7 @@ test('lighting scope prunes incompatible drafts both ways and preserves focus/li
  assert.equal(field(h,'view'),undefined);assert.equal(field(h,'source_details'),undefined);assert.ok(field(h,'lighting_selection'));assert.match(h.byId('tool-summary').textContent,/LIGHTING_NOTICE/);
  assert.deepEqual([...field(h,'analyses').querySelectorAll('option')].map(x=>x.value),analyzer.inputSchema.properties.analyses['x-analyses-by-scope'].lighting);
  await json(h,{scope:'lighting',limit:2,lighting_selection:{controller_uuids:['exact/AI1']},lighting_context:{schema_version:'lighting_analysis_context.v1'}});
- scope=field(h,'scope').querySelector('select');scope.value=JSON.stringify('modbus');scope.dispatchEvent(new h.window.Event('change',{bubbles:true}));assert.deepEqual(JSON.parse(h.byId('json').value),{scope:'modbus',limit:2});assert.equal(field(h,'lighting_selection'),undefined);assert.ok(field(h,'view'));assert.equal(h.calls().length,0);
+ scope=field(h,'scope').querySelector('select');scope.value=JSON.stringify('modbus');scope.dispatchEvent(new h.window.Event('change',{bubbles:true}));assert.deepEqual(JSON.parse(h.byId('json').value),{scope:'modbus',limit:2});assert.equal(field(h,'lighting_selection'),undefined);assert.equal(field(h,'view'),undefined);assert.equal(h.calls().length,0);
 });
 test('lighting transfer retains exact child and rejects unsupported/hidden/failed source evidence',async t=>{
  const h=createHarness({tools:[analyzer]});t.after(h.close);await h.ready();const api=h.window.McpExplorerAdapters;
@@ -815,4 +815,34 @@ test('JSON scope cleanup never repairs malformed check types before request vali
   assert.deepEqual(JSON.parse(h.byId('json').value), malformed);
   assert.equal(h.calls().length, 0);
   assert.equal(h.byId('validation').hidden, false);
+});
+
+
+test('Modbus scope removes ETS parameters in form and JSON without running a request', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await json(h, {scope: 'knx', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2});
+  const scope = field(h, 'scope').querySelector('select');
+  scope.value = JSON.stringify('modbus');
+  scope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'modbus', limit: 2});
+  assert.equal(field(h, 'view'), undefined);
+  assert.equal(field(h, 'source_details'), undefined);
+  await json(h, {scope: 'knx', view: 'summary', source_details: true, limit: 2});
+  await json(h, {scope: 'modbus', view: 'summary', source_details: true,
+    analyses: ['inventory'], cursor: 'old', limit: 2});
+  assert.deepEqual(JSON.parse(h.byId('json').value),
+    {scope: 'modbus', analyses: ['inventory'], limit: 2});
+  const api = h.window.McpExplorerAdapters;
+  const ets = {view: 'summary', relation: 'linked', names_differ: true,
+    ambiguous_names: true, address: '1/2/3', source_details: true};
+  assert.deepEqual(JSON.parse(JSON.stringify(api.changeAnalysisScope({scope: 'modbus', ...ets}))),
+    {scope: 'modbus'});
+  for (const name of Object.keys(ets)) {
+    assert.equal(api.fieldVisible(analyzer, name, {scope: 'modbus'}), false);
+    assert.equal(api.fieldVisible(analyzer, name, {scope: 'knx'}), true);
+  }
+  assert.equal(h.calls().length, 0);
 });
