@@ -1152,9 +1152,9 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
    administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
    Period views also require `loxone:history` and administrator-enabled history.
    `native_result` is separate from cached states: `values=[]`, zero state counts,
-   state semantics omitted. In `native_efm_result.v2`, only Gpwr/Ppwr/Spwr gain
-   metadata-bound W/kW units and documented power roles; Cpwr is load power with
-   unknown unit and native Rest stays unqualified. `unit_origin` identifies
+   state semantics omitted. In `native_efm_result.v2`, Gpwr/Ppwr/Spwr/Cpwr gain
+   metadata-bound W/kW units and documented power roles; Cpwr is load power and
+   native Rest stays unqualified. `unit_origin` identifies
    `configured_display_format` for that existing W/kW rule, not calibrated
    measurement units or an automatic conversion. Rest's documented block meaning
    is remaining top-group power; only native-field mapping remains unverified.
@@ -1165,6 +1165,9 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
    separately from unknown scale, signs, currency, observation freshness and
    period boundaries. `semantic_complete` remains false. Calendar views
    describe current running periods, not yesterday or arbitrary historic dates.
+   Return an available Rest raw value unchanged without a unit. A separately
+   identified Rest meter can be read through the cached-state workflow (`actual`,
+   no `native_result_view`); name its source and keep it separate from native Rest.
    Missing `Rest` is not zero. Do not calculate a balance, infer self-consumption,
    self-sufficiency or aliases, or retry native reads automatically. Omit/null
    `native_result_view` retains the existing cached-state workflow without probes.

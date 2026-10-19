@@ -498,7 +498,7 @@ class StateSemanticsResolver:
         self, result: NativeEfmResult, before: Control, after: Control
     ) -> NativeEfmResult:
         """Bind only documented aggregate power fields to unchanged EFM metadata."""
-        rule = "native_efm_actual_semantics_17_2_8_28.v1"
+        rule = "native_efm_actual_semantics_17_2_8_28.v2"
         limitations = [
             "sign_convention_unverified",
             "measurement_boundary_unverified",
@@ -621,7 +621,7 @@ class StateSemanticsResolver:
         )
         enriched.fields = [
             field.model_copy(update={"unit": match[1], "unit_origin": "configured_display_format"})
-            if field.name in {"Gpwr", "Ppwr", "Spwr"}
+            if field.name in {"Gpwr", "Ppwr", "Spwr", "Cpwr"}
             else field
             for field in enriched.fields
         ]
@@ -631,7 +631,7 @@ class StateSemanticsResolver:
                 "controls[target].details.actualFormat",
                 tuple(
                     f"fields.{name}.{attribute}"
-                    for name in ("Gpwr", "Ppwr", "Spwr")
+                    for name in ("Gpwr", "Ppwr", "Spwr", "Cpwr")
                     for attribute in ("unit", "unit_origin")
                 ),
                 rule_id=rule,
@@ -645,7 +645,7 @@ class StateSemanticsResolver:
                 _STATUS_DOCUMENT + "#page=64",
                 tuple(
                     f"fields.{name}.{attribute}"
-                    for name in ("Gpwr", "Ppwr", "Spwr")
+                    for name in ("Gpwr", "Ppwr", "Spwr", "Cpwr")
                     for attribute in ("unit", "unit_origin")
                 ),
                 rule_id=rule,

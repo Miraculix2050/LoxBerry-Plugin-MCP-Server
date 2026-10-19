@@ -4,11 +4,16 @@
 
 `native_result.fields[].unit_origin` adds nullable
 `configured_display_format`. Only the existing exact, stable same-EFM W/kW rule
-for Gpwr/Ppwr/Spwr populates it, with per-field source paths for unit and origin.
+for Gpwr/Ppwr/Spwr/Cpwr populates it, with per-field source paths for unit and origin.
 Other fields, periods and rejected/changed metadata keep it null. The additive
 field distinguishes declared display metadata from physical calibration; it
 changes no raw value, scale, format allowlist, source request, authorization or
 native result version. See [native-energy results](native-energy-results.md).
+
+Semantic rule `native_efm_actual_semantics_17_2_8_28.v2` extends the admitted field
+set to Cpwr using consumption-specific documentation and scoped read-only
+corroboration. Retained v1 results remain readable. Transport and result schema
+versions stay unchanged; native Rest and period units remain unqualified.
 
 ## Normalized meter outputs (#534 follow-up)
 
@@ -523,7 +528,7 @@ Optional `native_result_view` adds one native EFM read. Its fixed view allowlist
 admin-first authorization, empty state rows, independent source quality and
 budgets are documented in [Native energy results](native-energy-results.md).
 `native_efm_result.v2` adds versioned partial semantics, provenance and report
-applicability; actual Gpwr/Ppwr/Spwr allow metadata-bound `W`/`kW` units. Other
+applicability; actual Gpwr/Ppwr/Spwr/Cpwr allow metadata-bound `W`/`kW` units. Other
 units, signs and physical boundaries remain unknown. Historical components keep
 the existing independently evidenced history contract.
 Omission/null keeps the contract below unchanged and does not fetch native data.
