@@ -620,7 +620,7 @@ class StateSemanticsResolver:
             ),
         )
         enriched.fields = [
-            field.model_copy(update={"unit": match[1]})
+            field.model_copy(update={"unit": match[1], "unit_origin": "configured_display_format"})
             if field.name in {"Gpwr", "Ppwr", "Spwr"}
             else field
             for field in enriched.fields
@@ -629,7 +629,11 @@ class StateSemanticsResolver:
             SemanticsSource(
                 "structure_file",
                 "controls[target].details.actualFormat",
-                ("fields.Gpwr.unit", "fields.Ppwr.unit", "fields.Spwr.unit"),
+                tuple(
+                    f"fields.{name}.{attribute}"
+                    for name in ("Gpwr", "Ppwr", "Spwr")
+                    for attribute in ("unit", "unit_origin")
+                ),
                 rule_id=rule,
                 document_version="17.1",
                 firmware_version=result.firmware,
@@ -639,7 +643,11 @@ class StateSemanticsResolver:
             SemanticsSource(
                 "decoder_rule",
                 _STATUS_DOCUMENT + "#page=64",
-                ("fields.Gpwr.unit", "fields.Ppwr.unit", "fields.Spwr.unit"),
+                tuple(
+                    f"fields.{name}.{attribute}"
+                    for name in ("Gpwr", "Ppwr", "Spwr")
+                    for attribute in ("unit", "unit_origin")
+                ),
                 rule_id=rule,
                 document_version="17.1",
                 firmware_version=result.firmware,

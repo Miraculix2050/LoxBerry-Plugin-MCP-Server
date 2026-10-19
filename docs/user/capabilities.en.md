@@ -566,11 +566,21 @@ and enabled history. A LoxBerry Admin login does not establish this permission.
 Native results use a separate `native_result` section with empty `values` and
 zero state counts. Gpwr/Ppwr/Spwr gain documented power quantity and W/kW only from
 unchanged, evidenced EFM format metadata. Cpwr is documented load power with an
-unknown unit; Rest remains unknown.
+unknown unit; native Rest remains unqualified.
+For the existing W/kW enrichment, `unit_origin="configured_display_format"`
+identifies a declared display unit, not a verified sensor scale or physical
+calibration. Values are never converted because of a display label. Unsupported,
+missing or changed formats leave both unit and origin null; the same applies to
+Cpwr, Rest and period fields until their individual binding is established.
 The [semantic review for firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
 confirms this boundary: the Loxone KB describes the block output Rest as calculated
 remaining power of the top group, but its mapping to the native result remains
-unproven. Meter/node signs and units are not transferred to native aggregates.
+unproven. Rest's documented block function is therefore known; the native mapping
+is the remaining question. Residuals may include unmetered loads and measurement
+differences. Different sampling times, tolerances and rounded displays do not
+justify an exact zero balance, clamping a residual, or diagnosing an unmetered
+consumer from a nonzero residual alone. Meter/node signs and units are not
+transferred to native aggregates.
 In the result, signs, scaling, currency, physical observation
 freshness and period boundaries remain unknown. The `native_efm_result.v2` result
 records the source rule and provenance; changed metadata leaves units unknown.

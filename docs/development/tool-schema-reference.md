@@ -1,5 +1,15 @@
 # Tool schema reference
 
+## Native EFM display-unit provenance (#534 follow-up)
+
+`native_result.fields[].unit_origin` adds nullable
+`configured_display_format`. Only the existing exact, stable same-EFM W/kW rule
+for Gpwr/Ppwr/Spwr populates it, with per-field source paths for unit and origin.
+Other fields, periods and rejected/changed metadata keep it null. The additive
+field distinguishes declared display metadata from physical calibration; it
+changes no raw value, scale, format allowlist, source request, authorization or
+native result version. See [native-energy results](native-energy-results.md).
+
 ## Normalized meter outputs (#534 follow-up)
 
 The full `loxone_describe_control` response adds nullable

@@ -28,6 +28,7 @@ class NativeEfmField(BaseModel):
     status: Literal["present", "missing", "invalid"]
     value: float | None = None
     unit: Literal["W", "kW"] | None = None
+    unit_origin: Literal["configured_display_format"] | None = None
     measurement_quantity: Literal["power"] | None = None
     measurement_role: (
         Literal["grid_power", "production_power", "storage_power", "load_power"] | None
