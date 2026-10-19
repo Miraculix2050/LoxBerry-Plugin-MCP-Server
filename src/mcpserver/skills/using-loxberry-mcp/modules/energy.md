@@ -29,6 +29,14 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
 
 ### Native energy reads
 
+For a base-load/solar comparison (solar-23), load history guidance even when only
+explaining the calculation. Convert the estimated 24-hour Wh to kWh, then use
+`energy_percent = 100 * estimated_daily_energy_kwh / mean_daily_solar_energy_kwh`.
+Use matching periods and evidenced units; an unavailable or non-positive solar
+denominator leaves the result unavailable. An energy ratio is not measured solar
+supply or self-consumption, and a quotient without multiplication by 100 is not
+a percentage. Do not invent values when profile roles or boundaries need review.
+
    Resolve one exact currently visible EFM with `loxone_find_controls` and current
    description references; never infer a target from its name. Call
    `loxone_read_controls` with `targets=[{control_uuid: ...}]` and

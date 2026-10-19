@@ -24,6 +24,16 @@ ist Semantikevidenz zu lesen; unbekannte oder ausgelassene Bedeutung ist niemals
 keine abgeleitete Prozentskala oder An/Aus-Regel. Die numerische Switch-Kodierung
 bleibt ungeprüft. Namen, Stimmungen und Sperrzustände schließen diese Lücken nicht.
 
+Für solar-23 beträgt die geschätzte Tagesenergie `estimated_24_hour_energy_Wh / 1000` in
+kWh. Die Division durch den mittleren täglichen Solarertrag in kWh desselben gewählten
+Zeitraums ergibt einen Anteil; für die Prozentzahl mit **100** multiplizieren. Synthetisches
+Beispiel: 100 W ergeben 2,4 kWh/Tag; gegenüber 12 kWh/Tag sind das 0,2 beziehungsweise 20 %.
+Bei fehlendem, null, negativem oder nicht endlichem Solarertrag bleibt das Ergebnis nicht
+verfügbar. Rollen, Messgrenzen, Einheiten und nutzbare Abdeckung müssen belegt sein;
+andernfalls nur die allgemeine Formel nennen. Das Verhältnis von Schätzung zu Ertrag kann
+über 100 % liegen und belegt weder tatsächliche Solarversorgung noch Eigenverbrauch,
+Autarkie oder Einsparungen.
+
 PR 6 ergänzt [qualitative Strahlungsklassen-Peers](comparable-days.de.md) mit
 einer ausdrücklich angenommenen nativen Zuordnung. Unerwartete Werte bleiben
 in der Historie und erscheinen als begrenzte Diagnostik mit KI-Warnung und

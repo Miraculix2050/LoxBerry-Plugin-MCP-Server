@@ -136,6 +136,23 @@ def test_generated_full_guide_and_routine_read_budget() -> None:
         assert read_skill_markdown(section).strip() in read_skill_markdown()
 
 
+def test_solar23_percentage_guidance_preserves_missing_evidence_boundaries() -> None:
+    history = read_skill_markdown("history")
+    energy = read_skill_markdown("energy")
+    assert "100 * estimated_daily_energy_kwh / mean_daily_solar_energy_kwh" in energy
+    for required in (
+        "Zero, negative, non-finite or unknown",
+        "ratio and percentage unavailable",
+        "same explicitly selected period",
+        "qualified source roles/boundaries",
+        "may exceed 100%; do not clamp",
+        "clearly labelled general formula, not an installation result",
+    ):
+        assert required in history
+    assert "load history guidance even when only" in energy
+    assert "Do not invent values" in energy
+
+
 def test_core_retains_stop_failure_and_fallback_boundaries() -> None:
     core = read_skill_markdown("core")
     for rule in (

@@ -22,6 +22,14 @@ activity; unknown/omitted meaning is never off. Dimmer position now has document
 numeric meaning, but no inferred percent scale or on/off predicate. Switch activity
 encoding remains unverified. Names, moods and lock states do not close those gaps.
 
+For solar-23, estimated daily energy is `estimated_24_hour_energy_Wh / 1000` in kWh. Divide
+by mean daily solar energy in kWh for the same selected period to obtain a ratio, then
+multiply by **100** for a percentage. A synthetic 100 W baseline gives 2.4 kWh/day: against
+12 kWh/day this is 0.2, or 20%. Missing, zero, negative or non-finite solar energy leaves
+the result unavailable. Require qualified roles, measurement boundaries, units and usable
+coverage; otherwise state only the general formula. This estimate-to-yield ratio can exceed
+100% and is not measured solar supply, self-consumption, independence or savings.
+
 PR 6 adds [qualitative radiation-class peers](comparable-days.en.md) under an
 explicitly owner-assumed native mapping. Unexpected values remain in the archive
 and appear as bounded diagnostics with an AI warning and correlated sanitized
