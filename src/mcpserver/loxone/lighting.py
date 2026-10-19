@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from mcpserver.loxone.models import Control
+
 MOOD_ID_PATTERN = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 
 
@@ -103,4 +105,72 @@ def project_moods(value: object) -> MoodProjection:
         len(rows) - len(moods),
         len(rows) > len(moods),
         names_complete,
+    )
+
+
+MAX_LIGHTING_OUTPUTS = 100
+MAX_OUTPUT_STATES = 16
+MAX_OUTPUT_BYTES = 16_384
+LIGHTING_OUTPUT_TYPES = frozenset({"Switch", "Dimmer", "ColorPicker", "ColorPickerV2"})
+
+
+@dataclass(frozen=True, slots=True)
+class LightingOutput:
+    uuid: str
+    name: str | None
+    type: str
+    name_truncated: bool
+    states: tuple[tuple[str, str], ...]
+    states_omitted: int
+
+
+@dataclass(frozen=True, slots=True)
+class LightingOutputProjection:
+    status: Literal["available", "unsupported"]
+    entries: tuple[LightingOutput, ...]
+    total: int | None
+    omitted: int | None
+    unsupported_types: int
+
+
+def project_lighting_outputs(control: Control) -> LightingOutputProjection:
+    """Project explicit visible children; containment proves no physical connector."""
+    if control.control_type != "LightControllerV2":
+        return LightingOutputProjection("unsupported", (), None, None, 0)
+    entries: list[LightingOutput] = []
+    total = unsupported = used = 0
+    for child in control.subcontrols:
+        if child.is_hidden:
+            continue
+        if child.control_type not in LIGHTING_OUTPUT_TYPES:
+            unsupported += 1
+            continue
+        total += 1
+        if len(entries) >= MAX_LIGHTING_OUTPUTS or not 1 <= len(child.uuid) <= 128:
+            continue
+        name = child.name[:200]
+        states = tuple(
+            (key[:100], uuid)
+            for key, uuid in child.state_uuids[:MAX_OUTPUT_STATES]
+            if 1 <= len(uuid) <= 128 and len(key) <= 100
+        )
+        try:
+            size = len(json.dumps([child.uuid, name, states], ensure_ascii=False).encode("utf-8"))
+        except UnicodeEncodeError:
+            continue
+        if used + size > MAX_OUTPUT_BYTES:
+            continue
+        used += size
+        entries.append(
+            LightingOutput(
+                child.uuid,
+                name,
+                child.control_type,
+                len(child.name) > 200,
+                states,
+                len(child.state_uuids) - len(states),
+            )
+        )
+    return LightingOutputProjection(
+        "available", tuple(entries), total, total - len(entries), unsupported
     )

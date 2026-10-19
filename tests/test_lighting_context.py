@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools
 from mcpserver.loxone.control import visible_mood_ids
-from mcpserver.loxone.lighting import project_moods
+from mcpserver.loxone.lighting import project_lighting_outputs, project_moods
 from mcpserver.loxone.models import Control, Freshness, LoxoneIdentity, LoxoneStructure, StateRecord
 from mcpserver.loxone.runtime import RuntimeSnapshot
 
@@ -48,6 +49,7 @@ def setup_tool(
     connected=True,
     controls=True,
     hidden=False,
+    subcontrols=(),
 ):
     control = Control(
         "light",
@@ -58,6 +60,7 @@ def setup_tool(
         "action",
         (("moodList", "moods"),) if references else (),
         is_hidden=hidden,
+        subcontrols=subcontrols,
     )
     structure = LoxoneStructure(
         LoxoneIdentity("synthetic", "serial"),
@@ -226,3 +229,85 @@ async def test_lighting_envelope_bound_includes_untrusted_control_metadata(monke
     assert len(compact.model_dump_json().encode("utf-8")) < 1024
     full = await tool.fn("light")
     assert full.ok and full.data.name == name
+
+
+def output_controller(children):
+    return Control(
+        "controller", "Light", "LightControllerV2", None, None, None, (), subcontrols=children
+    )
+
+
+def test_output_projection_uses_explicit_parent_not_suffix_or_names():
+    output = Control(
+        "opaque-child", "Same name", "Dimmer", None, None, None, (("position", "state"),)
+    )
+    unrelated = replace(output, uuid="controller/AI99")
+    controller = output_controller((output,))
+    result = project_lighting_outputs(controller)
+    assert [entry.uuid for entry in result.entries] == ["opaque-child"]
+    assert unrelated.uuid not in {entry.uuid for entry in result.entries}
+    assert result.total == 1 and result.omitted == 0
+    assert (
+        project_lighting_outputs(replace(controller, control_type="Switch")).status == "unsupported"
+    )
+    assert project_lighting_outputs(output_controller(())).total == 0
+
+
+def test_outputs_exclude_hidden_and_unknown_types_and_bound_states_names_and_rows():
+    child = Control(
+        "child",
+        "x" * 201,
+        "Dimmer",
+        None,
+        None,
+        None,
+        tuple((f"s{i}", f"state{i}") for i in range(20)),
+    )
+    hidden = replace(child, uuid="secret-child", name="secret", is_hidden=True)
+    unknown = replace(child, uuid="unknown", control_type="FutureLightType")
+    result = project_lighting_outputs(output_controller((child, hidden, unknown)))
+    assert result.total == 1 and result.unsupported_types == 1
+    assert len(result.entries[0].name) == 200 and result.entries[0].name_truncated
+    assert len(result.entries[0].states) == 16 and result.entries[0].states_omitted == 4
+    assert "secret" not in repr(result)
+    result = project_lighting_outputs(
+        output_controller(tuple(replace(child, uuid=str(i)) for i in range(105)))
+    )
+    assert result.total == 105 and result.omitted > 0
+    assert len(result.entries) <= 100
+
+
+@pytest.mark.asyncio
+async def test_output_view_preserves_exact_child_source_and_does_not_infer_fixture_capability(
+    monkeypatch,
+):
+    child = Control("light/AI1", "Mood", "ColorPickerV2", None, None, None, (("color", "state"),))
+    server, requested = setup_tool(monkeypatch, [], subcontrols=(child,))
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    original = await describe.fn("light", view="lighting_context")
+    assert original.ok and original.data.outputs is None
+    result = await describe.fn("light", view="lighting_context", include_outputs=True)
+    assert result.ok and requested == [True, True]
+    outputs = result.data.outputs
+    assert outputs.parent_runtime_control_uuid == "light"
+    assert outputs.structure_last_modified == "v1" and outputs.structure_generation == 1
+    assert outputs.entries[0].uuid == child.uuid
+    assert outputs.entries[0].states[0].uuid == "state"
+    assert outputs.connector_identity == "unresolved"
+    assert outputs.configuration_completeness == "not_assessable"
+    serialized = outputs.model_dump_json()
+    assert "kelvin" not in serialized and "allowed_actions" not in serialized
+    rejected = await describe.fn("light", include_outputs=True)
+    assert not rejected.ok and rejected.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
+async def test_output_metadata_is_available_without_inventing_missing_mood_data(monkeypatch):
+    child = Control("child", "Light", "Switch", None, None, None, ())
+    server, _ = setup_tool(monkeypatch, None, subcontrols=(child,))
+    result = await server._tool_manager.get_tool("loxone_describe_control").fn(
+        "light", view="lighting_context", include_outputs=True
+    )
+    assert result.ok and result.data.status == "missing_value"
+    assert result.data.total is None and result.data.outputs.total == 1
+    assert result.data.outputs.status == "available"

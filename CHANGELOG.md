@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add opt-in bounded runtime lighting outputs to the existing lighting context,
+  retaining exact child/parent references, structure provenance and omissions
+  without inferring physical fixtures or project connectors (#441, stage 2).
+
 - Reuse one request-local source resolver for optional confirmed energy profiles;
   reject stale or hidden references and recheck operating companions before
   publishing results, without changing profile documents or legacy contracts (#559).

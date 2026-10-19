@@ -75,7 +75,7 @@ from mcpserver.loxone.history_evidence import (
     capture_evidence,
     statistic_evidence,
 )
-from mcpserver.loxone.lighting import project_moods
+from mcpserver.loxone.lighting import project_lighting_outputs, project_moods
 from mcpserver.loxone.models import Control, Freshness, StateRecord
 from mcpserver.loxone.native_efm import NativeEfmResult, NativeResultView
 from mcpserver.loxone.opening_contacts import OpeningScopeError, analyze_opening_contacts
@@ -676,6 +676,30 @@ class LightingMoodData(BaseModel):
     name: str | None
 
 
+class LightingOutputData(BaseModel):
+    uuid: str
+    name: str | None
+    type: Literal["Switch", "Dimmer", "ColorPicker", "ColorPickerV2"]
+    name_truncated: bool
+    states: Annotated[list[StateReferenceData], Field(max_length=16)]
+    states_omitted: int
+
+
+class LightingOutputsData(BaseModel):
+    source: Literal["normalized_subControls"] = "normalized_subControls"
+    projection_version: Literal[1] = 1
+    status: Literal["available", "unsupported"]
+    parent_runtime_control_uuid: str
+    structure_last_modified: str
+    structure_generation: int
+    entries: Annotated[list[LightingOutputData], Field(max_length=100)]
+    total: int | None
+    omitted: int | None
+    unsupported_types: int
+    configuration_completeness: Literal["not_assessable"] = "not_assessable"
+    connector_identity: Literal["unresolved"] = "unresolved"
+
+
 class ControlLightingContextData(BaseModel):
     uuid: str
     name: str
@@ -699,6 +723,7 @@ class ControlLightingContextData(BaseModel):
     )
     name_truncated_indices: list[int]
     limitations: list[str]
+    outputs: LightingOutputsData | None = None
 
 
 class ControlStateRefsData(BaseModel):
@@ -5266,8 +5291,18 @@ def register_read_tools(
                 },
             ),
         ] = "full",
+        include_outputs: Annotated[
+            bool,
+            Field(description="Opt in to bounded explicit runtime outputs; lighting_context only."),
+        ] = False,
     ) -> ControlDescriptionEnvelope:
         try:
+            if include_outputs and view != "lighting_context":
+                return _error(
+                    ControlDescriptionEnvelope,
+                    "invalid_input",
+                    "include_outputs requires lighting_context",
+                )
             if view == "energy_context" and include_hidden:
                 return _error(
                     ControlDescriptionEnvelope,
@@ -5308,6 +5343,7 @@ def register_read_tools(
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
             if view == "lighting_context":
+                outputs = project_lighting_outputs(control) if include_outputs else None
                 source_uuid = next(
                     (uuid for name, uuid in control.state_uuids if name == "moodList"), None
                 )
@@ -5371,6 +5407,30 @@ def register_read_tools(
                             "Visible source entries do not establish complete configuration, "
                             "physical luminaires, scene intent or operation permission."
                         ],
+                        "outputs": {
+                            "status": outputs.status,
+                            "parent_runtime_control_uuid": control.uuid,
+                            "structure_last_modified": snapshot.structure.last_modified,
+                            "structure_generation": snapshot.structure_generation,
+                            "entries": [
+                                {
+                                    "uuid": item.uuid,
+                                    "name": item.name,
+                                    "type": item.type,
+                                    "name_truncated": item.name_truncated,
+                                    "states": [
+                                        {"name": key, "uuid": uuid} for key, uuid in item.states
+                                    ],
+                                    "states_omitted": item.states_omitted,
+                                }
+                                for item in outputs.entries
+                            ],
+                            "total": outputs.total,
+                            "omitted": outputs.omitted,
+                            "unsupported_types": outputs.unsupported_types,
+                        }
+                        if outputs is not None
+                        else None,
                     },
                     stale=not snapshot.connected
                     or record is None

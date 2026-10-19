@@ -421,6 +421,11 @@ draft/apply and event-source management. Read modules are loaded only for needed
 source evidence; they add no independent universal pre-write loading requirement.
 
 
+The opt-in `include_outputs` lighting view projects explicit normalized direct
+runtime children without deriving connector semantics from keys or names. Bounds
+and unknown physical completeness are separate from the mood-source status.
+This projection reuses the existing parser and introduces no independent graph.
+
 The existing mood operation validator and the compact lighting read share one
 source-row/ID validator in `loxone/lighting.py`. Its pure, bounded projection
 retains only source IDs/names and explicit omission evidence; it has no runtime,
