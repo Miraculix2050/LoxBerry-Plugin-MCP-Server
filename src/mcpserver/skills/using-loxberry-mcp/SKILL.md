@@ -279,7 +279,15 @@ Preserve `reason`, per-field `sources`, missing versions, and collection complet
 companions yield partial interpretations. Generic analog format strings do not prove units or
 precision. Configured StatusMonitor labels and positions do not establish
 severity, household roles or physical danger. Unsupported energy, meter and
-controller states can remain unknown. For exact `IRoomControllerV2.tempActual`
+controller states can remain unknown. For normalized `Meter`, inspect the full
+description's `model.meter_type`: documented unidirectional outputs are
+nonnegative, bidirectional `actual` is positive consumption/negative delivery,
+and storage `actual` is positive discharge/negative charge. The input direction
+setting does not change this output convention. Zero is not proof of physical
+inactivity; a positive unidirectional output does not identify a consumer.
+Reading channels remain separately nonnegative. Preserve partial unit/boundary
+evidence and invalid values; never transfer these rules to native EFM aggregates.
+Malformed, future and legacy subtypes have no new decoder. For exact `IRoomControllerV2.tempActual`
 and `tempTarget`, use `measurement_role` to distinguish actual/target temperature;
 only a complete explicit Celsius/Fahrenheit format establishes its unit. A bare
 degree format keeps the unit unknown. `InfoOnlyDigital.active` and
@@ -495,7 +503,11 @@ statistic response. `cumulative_counter` requires an explicit accumulated flag;
 aggregated accumulated reads use `interval_difference_sum`. Raw values otherwise
 remain samples, not time averages or energy intervals. Exact Meter channel units
 are source-declared, not physical calibration proof. Preserve unknown direction,
-measurement boundary/method, rollover and unexplained counter decreases. Legacy
+measurement boundary/method, rollover and unexplained counter decreases.
+Meter subtype `sign_convention` describes the normalized output, independently
+of physical direction/boundary. It requires a compatible StatisticV2 accumulated
+flag: instantaneous `actual` is not an accumulated reading. Never use a subtype
+rule as evidence of historical input configuration or native EFM semantics. Legacy
 local-clock conversion and aggregated timestamp positions may remain unverified.
 Use profile `semantic_reference` only as a versioned resolver reference; review
 affected bindings when evidence changes. No extra discovery per metric is needed.

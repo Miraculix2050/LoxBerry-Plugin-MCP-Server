@@ -14,6 +14,8 @@ from pydantic import Field
 
 from .energy_manager import DOCUMENT as MANAGER_DOCUMENT
 from .energy_manager import PERCENT_ROLES, POWER_ROLES, decode_loads
+from .meter import DOCUMENTS as METER_DOCUMENTS
+from .meter import output_convention, output_direction
 from .models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from .pv_forecast import DOCUMENT as PVPF_DOCUMENT
 from .pv_forecast import ENERGY_STATES as PVPF_ENERGY_STATES
@@ -134,6 +136,7 @@ class SeriesSemantics:
     measurement_quantity: Literal["temperature", "power", "energy"] | None = None
     measurement_role: str | None = None
     direction: str | None = None
+    sign_convention: str | None = None
     measurement_boundary: str | None = None
     measurement_method: str | None = None
     reset_semantics: Literal["control_reset_to_zero_supported"] | None = None
@@ -315,6 +318,60 @@ def _resolve_measurement(
             }
     result.sources_returned = result.sources_total = len(result.sources)
     return result, semantic_value
+
+
+def _meter_sources(control: Control, channel: str) -> list[SemanticsSource]:
+    assert control.meter_type is not None and control.meter_type in METER_DOCUMENTS
+    return [
+        SemanticsSource(
+            "structure_file",
+            _STATUS_DOCUMENT + "#page=105",
+            ("meter_type",),
+            document_version="17.1",
+            rule_id=("Meter.type.default.v1" if control.meter_type_defaulted else "Meter.type.v1"),
+        ),
+        SemanticsSource(
+            "decoder_rule",
+            METER_DOCUMENTS[control.meter_type],
+            ("sign_convention",),
+            rule_id=f"Meter.output.{control.meter_type}.{channel}.v1",
+        ),
+    ]
+
+
+def _resolve_meter(
+    control: Control, name: str, value: object
+) -> tuple[StateSemantics, object | None] | None:
+    convention = output_convention(control, name)
+    if convention is None or name not in dict(control.state_uuids):
+        return None
+    result = StateSemantics(
+        interpretation_status="partial",
+        reason="value_unavailable",
+        value_type="number",
+        sign_convention=convention,
+        sources=_meter_sources(control, name),
+    )
+    result.sources_returned = result.sources_total = len(result.sources)
+    if value is None:
+        return result, None
+    if not _valid_measurement_number(value, binary=False) or (
+        convention == "non_negative" and isinstance(value, int | float) and value < 0
+    ):
+        result.interpretation_status, result.reason = "invalid", "invalid_documented_value"
+        return result, None
+    assert isinstance(value, int | float)
+    result.reason = "documented_decoder"
+    decoded = {
+        "kind": "meter_output",
+        "meter_type": control.meter_type,
+        "channel": name,
+        "value": value,
+    }
+    if name == "actual":
+        decoded["output_direction"] = output_direction(control.meter_type or "", value)
+    # Quantity, unit, physical boundary and input inversion are separate evidence.
+    return result, decoded
 
 
 def _resolve_dimmer_position(
@@ -734,6 +791,15 @@ class StateSemanticsResolver:
                     document_version="17.1",
                 )
             )
+        convention = output_convention(control, series.output)
+        if (
+            raw
+            and convention is not None
+            and ((series.output == "actual") == (not series.accumulated))
+        ):
+            sources.extend(_meter_sources(control, series.output))
+        else:
+            convention = None
         return SeriesSemantics(
             "partial",
             meaning,
@@ -741,6 +807,7 @@ class StateSemanticsResolver:
             unit_origin="structure_declared" if unit else None,
             measurement_quantity=quantity,
             measurement_role=role,
+            sign_convention=convention,
             reset_semantics=reset,
             aggregation="sum_of_differences" if difference else "recorded_values" if raw else None,
             timestamp_basis="unix_utc",
@@ -762,6 +829,9 @@ class StateSemanticsResolver:
         value: object,
         companion_values: Mapping[str, object],
     ) -> tuple[StateSemantics, object | None]:
+        meter = _resolve_meter(control, state_name, value)
+        if meter is not None:
+            return meter
         if control.control_type == "PvProductionForecast" and state_name in PVPF_STATES:
             result = StateSemantics()
             result.value_type = "number"

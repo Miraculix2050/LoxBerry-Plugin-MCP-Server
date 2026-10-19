@@ -280,6 +280,36 @@ def read_tool(monkeypatch, runtime):
 
 
 @pytest.mark.asyncio
+async def test_meter_semantics_shared_with_compact_reads_without_extra_discovery(monkeypatch):
+    c = control("Meter", states=(("actual", "state"),), meter_type="storage")
+    runtime = Runtime(c)
+    runtime.records["state"] = StateRecord("state", -2.5, Freshness.CURRENT, 1_700_000_000)
+    server, compact = read_tool(monkeypatch, runtime)
+    enriched = await compact.fn([ControlReadTarget(control_uuid="control")], True)
+    semantic = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        "control", ["actual"]
+    )
+    assert enriched.ok and semantic.ok
+    assert enriched.data.items[0].values[0].value == -2.5
+    assert enriched.data.items[0].semantics == semantic.data.items
+    assert semantic.data.items[0].semantic_value["output_direction"] == "charge"
+    assert semantic.data.items[0].semantics.sign_convention == "positive_discharge_negative_charge"
+    assert runtime.snapshots == [True, True]
+    legacy = await compact.fn([ControlReadTarget(control_uuid="control")], False)
+    assert legacy.data.items[0].values[0].value == -2.5
+    assert legacy.data.items[0].semantics is None
+
+
+@pytest.mark.asyncio
+async def test_full_meter_description_exposes_normalized_subtype(monkeypatch):
+    c = control("Meter", states=(("actual", "state"),), meter_type="storage")
+    runtime = Runtime(c)
+    server, _ = read_tool(monkeypatch, runtime)
+    described = await server._tool_manager.get_tool("loxone_describe_control").fn("control")
+    assert described.ok and described.data.capabilities.model.meter_type == "storage"
+
+
+@pytest.mark.asyncio
 async def test_compact_order_aliases_and_optional_shared_semantics(monkeypatch):
     runtime = Runtime(control(states=(("rainActive", "state"), ("alias", "state"))))
     second = replace(control("InfoOnlyAnalog", states=()), uuid="second")
