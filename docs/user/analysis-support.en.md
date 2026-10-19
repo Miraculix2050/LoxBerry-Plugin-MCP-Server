@@ -82,6 +82,10 @@ not real multi-plant compatibility. Legacy calls remain supported. Positive real
 PVPF/consumer acceptance remains open under #440/#510; fixtures cannot replace
 missing real sources.
 
+Direct self-consumption can use the exactly qualified native EFM
+`totalSelfConsumption` series. It remains labelled as an EFM calculation; plant
+association and complete hourly coverage require their own evidence.
+
 ## Retained catalog v1 measurement baseline
 
 The descriptions below record the earlier analysis foundation of11 October2026. The versioned measurement catalog and its hashes remain unchanged for existing #485 captures. Use the matrix above for current lighting capabilities; these historical boundaries establish no new measurement or acceptance.

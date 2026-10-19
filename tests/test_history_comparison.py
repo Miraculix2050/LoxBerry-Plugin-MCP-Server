@@ -47,6 +47,19 @@ def compare(operation, inputs, *, start=0, end=10_800, confirmed=False, night_st
     )
 
 
+@pytest.mark.parametrize(
+    "role", [None, "production", "consumer", "house_consumption", "grid_export", "self_consumption"]
+)
+def test_native_self_consumption_role_is_enforced_at_shared_input(role):
+    source = energy([(0, 100)], role=role)
+    semantics = replace(source.semantics, measurement_role="native_self_consumption_channel")
+    if role == "self_consumption":
+        assert replace(source, semantics=semantics).profile_role == role
+    else:
+        with pytest.raises(ValueError, match="requires the self_consumption role"):
+            replace(source, semantics=semantics)
+
+
 def history_context(*, observed=False, loads=1):
     from mcpserver.analysis_context import HistoryAnalysisContext
 

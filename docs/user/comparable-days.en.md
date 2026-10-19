@@ -1,5 +1,20 @@
 # Comparable days
 
+The native EFM `totalSelfConsumption` statistic is also supported as a direct
+self-consumption channel when an accumulated StatisticV2 output declares exactly
+Wh or kWh. Hourly values are native difference sums, not a plugin PV/storage
+balance. Confirm the installation association explicitly. This is an EFM
+calculation, not an independent physical meter. Other EFM outputs, currencies,
+power units and unknown formats do not inherit this interpretation.
+All historical comparisons require the `self_consumption` role for this channel;
+it cannot be relabelled as production, consumer demand or export.
+
+When debug diagnostics are enabled, correlated phase records report solar-history
+reads, statistic reads, energy preparation and calculation durations, point counts
+and response size. Read durations include the respective call's authorization and
+queue wait; they are not pure SQL timings. No extra source reads or observed values
+are added by this instrumentation.
+
 ## One explicit site and multiple sources
 
 Optional `analysis_context.day_context` assigns the existing `sources` by

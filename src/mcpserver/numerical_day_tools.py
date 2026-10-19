@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import time
 from datetime import UTC, date, datetime, timedelta
 from math import ceil, fsum, isfinite
 from statistics import median
@@ -52,6 +54,21 @@ if TYPE_CHECKING:
     from mcpserver.loxone.models import LoxoneStructure
     from mcpserver.loxone.runtime import LoxoneRuntime
     from mcpserver.tools import EventHistoryRuntime
+
+
+_LOGGER = logging.getLogger("mcpserver.history_analysis")
+
+
+def _timing(trace_id: str | None, phase: str, started: float, points: int = 0) -> None:
+    """Correlate bounded phase costs without source identities or observed values."""
+    if trace_id is not None:
+        _LOGGER.debug(
+            "component=history_analysis trace_id=%s phase=%s duration_ms=%.1f input_points=%d",
+            trace_id,
+            phase,
+            (time.perf_counter() - started) * 1000,
+            points,
+        )
 
 
 class SolarAnalysisSource(BaseModel):
@@ -403,6 +420,7 @@ async def numerical_day_analysis(
     day_context: HistoryDayContext | None = None,
     context_bindings: dict[int, dict[str, Any]] | None = None,
     common_supply_confirmed: bool = False,
+    trace_id: str | None = None,
 ) -> tuple[NumericalComparableDaysResult, int]:
     if event_runtime is None:
         raise ControlOperationError(
@@ -500,6 +518,7 @@ async def numerical_day_analysis(
             margin = (
                 0 if source.kind == "pv_forecast" else min(3600, 2 * source.sampling_period_seconds)
             )
+            read_started = time.perf_counter()
             await runtime._require_access(access)
             rows, consumed = await run_admitted_worker(
                 store.read,
@@ -510,6 +529,7 @@ async def numerical_day_analysis(
                 maximum_points=100_000 - count,
                 deadline=deadline,
             )
+            _timing(trace_id, "numerical_solar_read", read_started, consumed)
             count += consumed
             local.append((source, fingerprint, rows))
             continue
@@ -546,6 +566,7 @@ async def numerical_day_analysis(
         if role in roles and not (day_context is not None and role == "production"):
             raise ValueError("one distinct statistic per numerical energy role required")
         seen.add(key)
+        read_started = time.perf_counter()
         _, series, points = await runtime.authorized_statistics(
             access,
             control,
@@ -556,7 +577,9 @@ async def numerical_day_analysis(
             "hour",
             maximum_points=100_000 - count,
         )
+        _timing(trace_id, "numerical_statistic_read", read_started, len(points))
         count += len(points)
+        preparation_started = time.perf_counter()
         semantics = resolver.resolve_series(control, series, granularity="hour")
         summary = await run_admitted_worker(
             statistic_summary,
@@ -573,7 +596,7 @@ async def numerical_day_analysis(
         if qualified:
             hours = await run_admitted_worker(
                 qualified_hourly_energy,
-                ComparisonInput(summary, semantics, points),
+                ComparisonInput(summary, semantics, points, profile_role=role),
                 begin,
                 finish,
                 deadline,
@@ -597,6 +620,7 @@ async def numerical_day_analysis(
         elif qualified:
             energies[role] = hours
         roles.setdefault(role, (control, binding))
+        _timing(trace_id, "numerical_energy_preparation", preparation_started, len(points))
     if day_context is not None and production_selection:
         if len(production_rows) != len(production_selection):
             raise ValueError("every covered production source must be selected")
@@ -631,6 +655,7 @@ async def numerical_day_analysis(
                 for row in production_rows
             )
         )
+    calculation_started = time.perf_counter()
     result = await run_admitted_worker(
         _calculate,
         local,
@@ -644,6 +669,7 @@ async def numerical_day_analysis(
         deadline=deadline,
         now=now,
     )
+    _timing(trace_id, "numerical_calculation", calculation_started, count)
     if day_context is not None:
         result.production_sources = production_summaries
         if production_selection and not energies.get("production"):
@@ -658,6 +684,13 @@ async def numerical_day_analysis(
             result.configuration_guidance.append(
                 "selected_production_requires_complete_qualified_common_hourly_coverage"
             )
+    direct_control = roles.get("self_consumption", (None, {}))[0]
+    if (
+        result.self_consumption.method == "direct_observed"
+        and direct_control is not None
+        and direct_control.control_type == "EFM"
+    ):
+        result.self_consumption.limitations.append("native_efm_calculation_not_independent_meter")
     await runtime._require_access(access)
     current = await run_admitted_worker(event_runtime._config_store.load)
     if (

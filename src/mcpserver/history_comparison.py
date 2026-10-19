@@ -48,6 +48,14 @@ class ComparisonInput:
     declared_direction: str | None = None
     association_id: str | None = None
 
+    def __post_init__(self) -> None:
+        if (
+            self.semantics is not None
+            and self.semantics.measurement_role == "native_self_consumption_channel"
+            and self.profile_role != "self_consumption"
+        ):
+            raise ValueError("native self-consumption channel requires the self_consumption role")
+
     @property
     def identity(self) -> str | None:
         return self.association_id or self.summary.binding_id

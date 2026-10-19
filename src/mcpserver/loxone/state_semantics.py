@@ -765,6 +765,23 @@ class StateSemanticsResolver:
                 else:
                     limits.append("channel_unit_conflict")
             reset = "control_reset_to_zero_supported"
+        # Exact native EFM statistic channel, not a role inferred from its label.
+        # The EFM computes this counter; plant coverage still needs confirmation.
+        efm_self_consumption = (
+            control.control_type == "EFM"
+            and series.output == "totalSelfConsumption"
+            and series.accumulated
+        )
+        if efm_self_consumption:
+            match = re.fullmatch(
+                r"(?:%[0-9]*(?:\.[0-9]+)?f\s*|0(?:[.,]0{1,6})?\s*)(kWh|Wh)",
+                series.format,
+            )
+            if match:
+                quantity, unit, role = "energy", match[1], "native_self_consumption_channel"
+            else:
+                limits.append("channel_unit_conflict")
+            limits.append("native_efm_calculation_not_independent_meter")
         if unit is None:
             limits.append("unit_unverified")
         if not raw and not difference:
@@ -814,6 +831,23 @@ class StateSemanticsResolver:
                     "statisticV2.groups.dataPoints.format",
                     ("unit", "unit_origin"),
                     document_version="17.1",
+                )
+            )
+        if role == "native_self_consumption_channel":
+            sources.extend(
+                (
+                    SemanticsSource(
+                        "decoder_rule",
+                        "https://www.loxone.com/dede/kb/energieflussmonitor/",
+                        ("measurement_quantity", "measurement_role"),
+                        rule_id="EFM.series.totalSelfConsumption.v1",
+                    ),
+                    SemanticsSource(
+                        "structure_file",
+                        "statisticV2.groups.dataPoints.format",
+                        ("unit", "unit_origin"),
+                        document_version="17.1",
+                    ),
                 )
             )
         convention = output_convention(control, series.output)

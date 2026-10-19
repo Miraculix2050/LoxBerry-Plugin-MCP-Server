@@ -86,6 +86,10 @@ Fixtures belegen Isolation und Berechnung, keine reale Mehranlagenkompatibilitä
 Alte Aufrufe bleiben unterstützt. Positive reale PVPF-/Verbraucherabnahme bleibt
 unter #440/#510 offen; fehlende Quellen werden nicht durch Fixtures ersetzt.
 
+Für direkten Eigenverbrauch kann die exakt qualifizierte native EFM-Reihe
+`totalSelfConsumption` genutzt werden. Sie bleibt als EFM-Berechnung kenntlich;
+Anlagenzuordnung und vollständige Stundenabdeckung benötigen eigene Evidenz.
+
 ## Erhaltene Messbasis des Katalogs v1
 
 Die folgenden Beschreibungen dokumentieren die frühere Analysegrundlage vom 11. Oktober 2026. Der versionierte Messkatalog und seine Hashes bleiben für bestehende #485-Aufzeichnungen unverändert. Für die aktuellen Lichtfunktionen gilt die Matrix oben; diese historischen Grenzen sind keine neue Messung oder Abnahme.
