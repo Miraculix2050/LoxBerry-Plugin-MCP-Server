@@ -509,6 +509,7 @@ def register_history_analysis_tool(
                                 analysis_context
                                 and analysis_context.scope.common_supply_origin == "user_confirmed"
                             ),
+                            trace_id=trace_id,
                         )
                         if profile_revision is not None:
                             assert profile_path is not None
@@ -538,9 +539,17 @@ def register_history_analysis_tool(
                             numerical.limitations.append(
                                 "site_and_coverage_are_owner_confirmed_not_independently_verified"
                             )
-                        if len(numerical_envelope.model_dump_json().encode()) > 64 * 1024:
+                        response_bytes = len(numerical_envelope.model_dump_json().encode())
+                        if response_bytes > 64 * 1024:
                             raise ValueError("analysis output byte limit exceeded")
                         await validate_context_publication()
+                        _LOGGER.debug(
+                            "component=history_analysis trace_id=%s phase=numerical_response "
+                            "input_points=%d response_bytes=%d",
+                            trace_id,
+                            count,
+                            response_bytes,
+                        )
                         return numerical_envelope
                     class_selectors = [source.model_dump() for source in sources]
                     if day_context is not None:

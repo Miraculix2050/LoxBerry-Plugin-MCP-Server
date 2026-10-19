@@ -24,6 +24,43 @@ def resolve(item=None, kind="Meter", granularity="raw"):
     )
 
 
+@pytest.mark.parametrize("fmt,unit", [("0,000kWh", "kWh"), ("%.3f Wh", "Wh")])
+def test_efm_self_consumption_counter_has_narrow_hourly_contract(fmt, unit):
+    item = series(output="totalSelfConsumption", format=fmt)
+    result = resolve(item, kind="EFM", granularity="hour")
+    assert result.measurement_quantity == "energy" and result.unit == unit
+    assert result.measurement_role == "native_self_consumption_channel"
+    assert result.value_meaning == "interval_difference_sum"
+    assert result.timestamp_basis == "unix_utc" and result.timestamp_position == "interval_start"
+    assert result.reset_semantics is None
+    assert "native_efm_calculation_not_independent_meter" in result.limitations
+    assert "measurement_boundary_unverified" in result.limitations
+    assert StateSemanticsResolver().source_reference(control("EFM"), series=item) == (
+        "StatisticV2.series.v1+EFM.series.totalSelfConsumption.v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "changes,kind",
+    [
+        ({"format": "0,000kW"}, "EFM"),
+        ({"format": "0,00€"}, "EFM"),
+        ({"format": "0%"}, "EFM"),
+        ({"format": "1,000kWh"}, "EFM"),
+        ({"accumulated": False}, "EFM"),
+        ({"source": "legacy"}, "EFM"),
+        ({"output": "selfConsumption"}, "EFM"),
+        ({}, "InfoOnlyAnalog"),
+        ({}, "Meter"),
+    ],
+)
+def test_other_channels_cannot_borrow_efm_self_consumption_contract(changes, kind):
+    item = series(output="totalSelfConsumption", format="0,000kWh")
+    result = resolve(replace(item, **changes), kind=kind, granularity="hour")
+    assert result.unit is None and result.measurement_quantity is None
+    assert all(source.rule_id != "EFM.series.totalSelfConsumption.v1" for source in result.sources)
+
+
 @pytest.mark.parametrize("granularity", ["raw", "hour", "day", "month", "year"])
 def test_counter_and_adapter_difference_meaning(granularity):
     result = resolve(granularity=granularity)

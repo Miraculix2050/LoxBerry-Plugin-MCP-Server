@@ -2,6 +2,15 @@ Load core rules first.
 
 ## Read history and statistics
 
+For direct self-consumption, an accumulated native EFM `totalSelfConsumption`
+StatisticV2 channel with exact Wh/kWh format can supply hourly difference sums.
+Confirm plant association separately; the EFM computes this value, it is not an
+independent physical meter. Do not infer the role from a control name, substitute
+another EFM output, or add a storage balance. Missing weather still prevents
+weather-peer acceptance even when this energy source is usable.
+Every historical comparison requires role `self_consumption` for this channel;
+production, consumer demand and export associations are contradictory and rejected.
+
 For `comparable_days`, optional `analysis_context.day_context` declares one
 confirmed `site` whose timezone equals the tool timezone. Map existing `sources`
 by `source_index`; choose one `weather` source per quantity, never by name or

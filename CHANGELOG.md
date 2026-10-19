@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Qualify the exact accumulated native EFM `totalSelfConsumption` Wh/kWh statistic
+  for hourly self-consumption analysis, preserving explicit plant association and
+  native-calculation limitations. Add correlated numerical source-read, preparation,
+  calculation and response-size debug diagnostics without additional data requests
+  (#439, #509).
 - Bind native EFM Cpwr to the unchanged declared W/kW display format through
   semantic rule v2, with documented consumed-power applicability and bounded
   read-only comparisons; retain missing native Rest separately from meter states (#534).

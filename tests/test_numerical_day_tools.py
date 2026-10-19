@@ -657,6 +657,78 @@ async def test_one_authorized_context_and_one_read_per_source_and_range(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_numerical_timings_correlate_unique_reads_without_source_data(
+    monkeypatch, tmp_path, caplog
+):
+    import logging
+
+    _, tool, args, _ = setup(monkeypatch, tmp_path)
+    with caplog.at_level(logging.DEBUG, logger="mcpserver.history_analysis"):
+        result = await tool.fn(**(args | {"sources": args["sources"] * 2}))
+    assert result.ok, result
+    messages = [r.message for r in caplog.records if "phase=numerical_" in r.message]
+    assert sum("phase=numerical_solar_read " in m for m in messages) == 2
+    assert sum("phase=numerical_statistic_read " in m for m in messages) == 1
+    assert sum("phase=numerical_calculation " in m for m in messages) == 1
+    assert all(f"trace_id={result.trace_id}" in m for m in messages)
+    assert all(C not in m and T not in m and P not in m for m in messages)
+    assert any("input_points=996" in m and "response_bytes=" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_solar_read_diagnostic_includes_authorization(monkeypatch, tmp_path, caplog):
+    import logging
+    import re
+
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+
+    async def authorize(_access):
+        await asyncio.sleep(0.02)
+
+    runtime._require_access.side_effect = authorize
+    with caplog.at_level(logging.DEBUG, logger="mcpserver.history_analysis"):
+        result = await tool.fn(**args)
+    assert result.ok, result
+    messages = [r.message for r in caplog.records if "phase=numerical_solar_read " in r.message]
+    assert len(messages) == 2
+    assert all(float(re.search(r"duration_ms=([\d.]+)", message)[1]) >= 20 for message in messages)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["self_consumption", "production", "grid_export"])
+async def test_native_efm_self_consumption_uses_same_history_context(monkeypatch, tmp_path, role):
+    from unittest.mock import AsyncMock
+
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path, role="self_consumption")
+    meter, series, points = runtime.authorized_statistics.return_value
+    series = replace(series, output="totalSelfConsumption", title="Counter")
+    meter = replace(meter, control_type="EFM", statistic_series=(series,))
+    runtime.structure = replace(
+        runtime.structure, controls=(*runtime.structure.controls[:2], meter)
+    )
+    runtime._history_visible_structure = AsyncMock(return_value=runtime.structure)
+    runtime.authorized_statistics.return_value = meter, series, points
+    args["sources"][2] = AnalysisSource(control_uuid=P, series_id="pv", granularity="hour")
+    doc = day_context_document()
+    doc["associations"][2]["role"] = role
+    if role != "production":
+        doc["day_context"].update(assets=[], production=[])
+    args["analysis_context"] = HistoryAnalysisContext.model_validate(doc)
+    result = await tool.fn(**args)
+    if role != "self_consumption":
+        assert not result.ok and result.data.error == "invalid_input"
+        return
+    assert result.ok, result
+    metric = result.data.comparable_days.self_consumption
+    assert metric.method == "direct_observed" and metric.reference_wh == 2800
+    assert metric.group.count == 3
+    assert "native_efm_calculation_not_independent_meter" in metric.limitations
+    assert runtime.contexts == 1 and runtime.authorized_statistics.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_revocation_and_configuration_change_prevent_output(monkeypatch, tmp_path):
     runtime, tool, args, current = setup(monkeypatch, tmp_path)
 

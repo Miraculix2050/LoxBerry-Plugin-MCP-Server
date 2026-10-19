@@ -81,6 +81,58 @@ ARGS = dict(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operation", ["pv_load_overlap", "consumer_ranking", "retrospective_shift"]
+)
+@pytest.mark.parametrize("role", ["production", "consumer", "grid_export"])
+async def test_native_self_consumption_cannot_be_relabelled_in_general_comparisons(
+    monkeypatch, operation, role
+):
+    from unittest.mock import Mock
+
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool = configured(monkeypatch)
+    _, series, points = runtime.authorized_statistics.return_value
+    series = replace(series, output="totalSelfConsumption", format="0,000kWh", accumulated=True)
+    control = replace(runtime.control, control_type="EFM", statistic_series=(series,))
+    runtime.structure = replace(runtime.structure, controls=(control,))
+    runtime.authorized_statistics.return_value = control, series, points
+    comparison = Mock(side_effect=AssertionError("incompatible input must not reach calculation"))
+    monkeypatch.setattr("mcpserver.history_analysis_tools.compare_history", comparison)
+    context = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "Confirmed source with a contradictory role",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": [
+                {
+                    "association_id": "selected",
+                    "source_index": 0,
+                    "role": role,
+                    "origin": "user_confirmed",
+                }
+            ],
+        }
+    )
+    result = await tool.fn(
+        **{
+            **ARGS,
+            "operation": operation,
+            "sources": [
+                AnalysisSource(control_uuid="control", series_id="series", granularity="hour")
+            ],
+            "analysis_context": context,
+        }
+    )
+    assert not result.ok and result.data.error == "invalid_input"
+    assert runtime.contexts == 1 and runtime.authorized_statistics.await_count == 1
+    comparison.assert_not_called()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["none", "source", "revoked"])
 async def test_profileless_context_keeps_semantics_and_checks_publication(monkeypatch, change):
     from unittest.mock import Mock

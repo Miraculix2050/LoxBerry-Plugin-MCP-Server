@@ -83,3 +83,7 @@ Native EFM-Mitgliedschaft und Nutzerzuordnungen bleiben getrennt. Mehranlagen-
 Fixtures belegen Isolation und Berechnung, keine reale Mehranlagenkompatibilität.
 Alte Aufrufe bleiben unterstützt. Positive reale PVPF-/Verbraucherabnahme bleibt
 unter #440/#510 offen; fehlende Quellen werden nicht durch Fixtures ersetzt.
+
+Für direkten Eigenverbrauch kann die exakt qualifizierte native EFM-Reihe
+`totalSelfConsumption` genutzt werden. Sie bleibt als EFM-Berechnung kenntlich;
+Anlagenzuordnung und vollständige Stundenabdeckung benötigen eigene Evidenz.
