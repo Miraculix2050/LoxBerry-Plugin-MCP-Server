@@ -50,10 +50,30 @@ explicitly distinguish known W/kW from null. The pure rule
 | --- | --- | --- |
 | Actual Gpwr/Ppwr/Spwr | Grid/production/storage power; W or kW only from the same EFM's complete `details.actualFormat` | Sign direction, boundary, observation time |
 | Actual Cpwr | Load power | Unit, sign direction, boundary, observation time |
-| Actual Rest | No supported interpretation | Quantity, unit and boundary |
+| Actual Rest | KB block output means calculated remaining power of the top group; no native-field enrichment yet | Native field/output binding, unit, direction and boundary |
 | Native calendar/lifetime fields | Source names and current native view | Units, currency, boundaries/reset and historical date selection |
 | Historical report components | Existing independently evidenced StatisticV2/Event History path | Coverage and component-specific semantics must pass that path's gates |
 | EnergyManager / EnergyManager2 | Separate documented generation context below | No positive target-device evidence; no shared EFM algorithm |
+
+An enriched native field adds nullable `unit_origin`, currently only
+`configured_display_format` for the existing exact Gpwr/Ppwr/Spwr W/kW rule.
+The originating source is the same EFM's stable, bounded `details.actualFormat`;
+provenance lists both unit and origin. This is declared presentation metadata,
+not a measurement calibration, scale factor or proof of source-unit consistency.
+No unit conversion, new admitted format or extra request is introduced. Missing,
+invalid, unsupported or changed metadata leaves unit and origin null. Cpwr,
+native Rest and period fields receive no unit-origin inference.
+
+The [EFM KB](https://www.loxone.com/dede/kb/energieflussmonitor/) defines Rest's
+block function and explains unmetered downstream loads and measurement
+differences. The general residual meaning is known even while native mapping
+is pending. Tolerances, asynchronous updates and display rounding prevent an
+exact zero-balance requirement; never clamp residuals, reconstruct native Rest
+from displayed rounded values, double count metered parents and their children,
+or infer an unmetered consumer from a residual alone. The owner's screenshots
+establish presentation examples only; they do not prove native-field binding or
+that EFM arithmetic ignores unit configuration. No fresh device acceptance is
+claimed by this clarification.
 
 Only a bounded, fully retained format with one numeric `%…f` followed by literal
 `W` or `kW` is accepted. Formats are never executed and values are never scaled.

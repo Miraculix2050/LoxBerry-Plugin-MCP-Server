@@ -620,11 +620,22 @@ Administrator** auf Firmware **17.2.8.28**. Verwende genau ein Ziel ohne
 Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
 leeren `values` und null gelesenen States. Für `Gpwr`, `Ppwr` und `Spwr` werden
 Leistungsgröße und W/kW aus dem unveränderten, belegten EFM-Format ergänzt.
-`Cpwr` ist belegte Lastleistung mit unbekannter Einheit; `Rest` bleibt unbekannt.
+`Cpwr` ist belegte Lastleistung mit unbekannter Einheit; natives `Rest` bleibt
+unqualifiziert. Bei der bestehenden W/kW-Ergänzung kennzeichnet
+`unit_origin="configured_display_format"` eine deklarierte Anzeigeeinheit,
+keine geprüfte Sensorskalierung oder physikalische Kalibrierung. Ein Anzeigetext
+löst keine Zahlenumrechnung aus. Fehlende, ungeeignete oder geänderte Formate
+lassen Einheit und Herkunft null; dasselbe gilt für Cpwr, Rest und Periodenfelder,
+solange deren einzelne Zuordnung nicht belegt ist.
 Die [Semantikprüfung für Firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
 bestätigt diese Grenze: Die Loxone-KB beschreibt den Bausteinausgang `Rest` als
 berechnete Restleistung der Spitzengruppe. Eine belegte Zuordnung zum nativen
-Ergebnis fehlt weiterhin. Vorzeichen von Zähler- oder Knotenwerten und deren
+Ergebnis fehlt weiterhin. Die dokumentierte Bausteinfunktion von Rest ist damit
+bekannt; offen ist die native Zuordnung. Restanteile können ungemessene Verbraucher
+und Messabweichungen enthalten. Unterschiedliche Messzeitpunkte, Toleranzen und
+gerundete Anzeigen rechtfertigen weder eine erzwungene Nullbilanz noch das
+Abschneiden eines Restwerts oder den Schluss auf einen ungemessenen Verbraucher
+allein aus einem Restwert ungleich null. Vorzeichen von Zähler- oder Knotenwerten und deren
 Einheiten werden nicht auf native Gesamtergebnisse übertragen.
 Im Ergebnis bleiben Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische
 und Periodengrenzen unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
