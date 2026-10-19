@@ -63,6 +63,24 @@ affected bindings when evidence changes. No extra discovery per metric is needed
 Use `loxone_describe_control` first. Call `loxone_get_control_history` only when
 `has_history` is true, and call `loxone_get_statistics` only with a `series_id`
 advertised under `capabilities.statistics`.
+
+For comparisons, operating phases and retrospective shifts, optional
+`analysis_context` uses `history_analysis_context.v1`: each association references
+one existing `sources` entry by zero-based `source_index`. Keep independent
+supplies in separate requests; native EFM membership remains server-verified.
+Profiles are optional. References retain confirmed roles, boundaries and cycle
+constraints; direct sources require explicit associations and fresh visibility.
+`observed` loads need complete measured cycles and exact operating associations.
+Declared real cycles are confirmed models; hypothetical cycles have no native
+identity. Keep all cycle timezones equal to the explicit analysis timezone.
+The export association must itself be user-confirmed before it establishes a
+measured budget. Any operating feedback supplied by a profile-backed declared
+real model must match its saved companion; do not substitute an unrelated state.
+Inspect `comparison.context_analysis` for associations, measured episodes and
+conditional allocations against one shared measured export budget. A declared
+allocation has no observed original cycle and proves no historical improvement,
+measured saving, PV attribution or operating permission. Never backfill missing
+phases, source semantics or energy measurements, or auto-save a declaration.
 For history-target selection, use `view="history_targets"` to receive only the
 control identity, state UUIDs, native control-history flag, and advertised
 statistic series. The default `view="full"` remains available when control

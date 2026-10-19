@@ -1,5 +1,12 @@
 # Analysis scenario acceptance
 
+For the owner-requested bounded #485 execution, see the
+[controlled native comparison and closeout record](analysis-acceptance-closeout.md).
+It separates AI conversation repeats from runtime-cache measurements and retains
+consumed failed attempts, omitted repeats and conditional hardware evidence.
+The generic Capture v2 summary keeps unmeasured planned cells incomplete; an
+independent scoped review must not relabel them as passed.
+
 The versioned catalog in `tests/fixtures/analysis/scenarios.json` preserves the
 six lighting, seven basic/history and twelve solar questions collected in the
 research chat (#433, #445). Each row names source requirements, a baseline read
@@ -291,8 +298,10 @@ The final DE Explorer full-guide request displayed revision 76; the EN profile
 read completed against fresh caller visibility. Both languages were inspected
 at CSS 1280x800 and 390x844, without horizontal overflow or console warnings/errors.
 These final smoke checks complement the per-feature PR 2–8 evidence. They do not
-represent 25 independent model answers or token acceptance. #445 therefore remains
-open for the missing independent AI/token and matched-performance gates.
+represent 25 independent model answers or token acceptance. At that checkpoint,
+#445 retained the independent AI/token and matched-performance gates. These were
+subsequently transferred to #485; its revised criteria make tokens optional. See
+the bounded closeout record linked above for the later execution and disposition.
 
 
 ## Modular-guidance and compact-read accounting (#442/#443)

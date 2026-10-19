@@ -84,6 +84,78 @@ class _Alternative:
     demand: tuple[tuple[float, Decimal], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class BudgetCandidate:
+    load_id: str
+    cycle_id: str
+    start: float
+    end: float
+    minimum_off_seconds: int
+    demand: tuple[tuple[float, Decimal], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetSelection:
+    candidate: BudgetCandidate
+    allocations: tuple[tuple[float, Decimal], ...]
+    absorbed_wh: Decimal
+
+
+def allocate_candidates(
+    candidates: list[BudgetCandidate], budget: dict[float, Decimal], deadline: float
+) -> tuple[list[BudgetSelection], bool]:
+    """Allocate one measured budget; candidates carry no fabricated source provenance."""
+    budget = dict(budget)
+    selections: list[BudgetSelection] = []
+    remaining = 128
+    for candidate in candidates:
+        _check(deadline)
+        if (
+            not isfinite(candidate.start)
+            or not isfinite(candidate.end)
+            or candidate.start >= candidate.end
+            or len({at for at, _ in candidate.demand}) != len(candidate.demand)
+            or any(
+                at not in budget or not value.is_finite() or value < 0
+                for at, value in candidate.demand
+            )
+        ):
+            raise ValueError("invalid shared-budget candidate")
+    while candidates:
+        _check(deadline)
+        score, chosen = min(
+            (
+                (sum((min(value, budget[at]) for at, value in c.demand), Decimal(0)), c)
+                for c in candidates
+            ),
+            key=lambda pair: (-pair[0], pair[1].start, pair[1].load_id, pair[1].cycle_id),
+        )
+        if score == 0:
+            break
+        if len(selections) == 16 or len(chosen.demand) > remaining:
+            return selections, True
+        allocations = tuple((at, min(value, budget[at])) for at, value in chosen.demand)
+        for at, value in allocations:
+            budget[at] -= value
+        remaining -= len(allocations)
+        selections.append(BudgetSelection(chosen, allocations, score))
+        candidates = [
+            c
+            for c in candidates
+            if not (
+                c.load_id == chosen.load_id
+                and (
+                    c.cycle_id == chosen.cycle_id
+                    or (
+                        c.start - chosen.minimum_off_seconds < chosen.end
+                        and chosen.start < c.end + chosen.minimum_off_seconds
+                    )
+                )
+            )
+        ]
+    return selections, False
+
+
 def _check(deadline: float) -> None:
     if time.monotonic() >= deadline:
         raise HistoryAnalysisDeadline()
@@ -144,15 +216,16 @@ def conditional_retrospective_shift(
         return _conditional_retrospective_shift(loads, export_hours, start, end, deadline)
 
 
-def _conditional_retrospective_shift(
+def observed_candidates(
     loads: tuple[ShiftLoad, ...],
     export_hours: dict[float, float],
     start: float,
     end: float,
     deadline: float,
-) -> RetrospectiveShiftResult:
+) -> tuple[RetrospectiveShiftResult, list[_Alternative]]:
     _check(deadline)
     result = RetrospectiveShiftResult()
+    alternatives: list[_Alternative] = []
     if (
         not loads
         or len(loads) > 7
@@ -175,7 +248,6 @@ def _conditional_retrospective_shift(
     ) or any(b < a + 3600 for a, b in pairwise(ordered_hours)):
         raise ValueError("export interval energy invalid")
     budget = {at: Decimal(str(value)) for at, value in export_hours.items()}
-    alternatives: list[_Alternative] = []
     for load in loads:
         _check(deadline)
         flex = load.flexibility
@@ -185,7 +257,7 @@ def _conditional_retrospective_shift(
             raise ValueError("cycle association mismatch")
         if load.cycles.truncated or load.cycles.energy_intervals_truncated:
             result.limitations.append("complete_cycle_inventory_output_budget_missing")
-            return result
+            return result, []
         for episode in load.cycles.episodes:
             _check(deadline)
             original = datetime.fromisoformat(episode.start)
@@ -243,7 +315,7 @@ def _conditional_retrospective_shift(
                     result.limitations.append(
                         "alternative_search_budget_exceeded_no_partial_allocation"
                     )
-                    return result
+                    return result, []
                 result.evaluated_alternatives += 1
                 if not _inactive(
                     load.segments,
@@ -257,35 +329,39 @@ def _conditional_retrospective_shift(
                 )
                 if any(min(value, budget[position]) > 0 for position, value in demand):
                     alternatives.append(_Alternative(load, episode, at, finish, demand))
-    remaining = 128
-    total = Decimal(0)
-    while alternatives:
-        _check(deadline)
-        scored = [
-            (sum((min(value, budget[position]) for position, value in alt.demand), Decimal(0)), alt)
-            for alt in alternatives
-        ]
-        score, chosen = min(
-            scored,
-            key=lambda pair: (
-                -pair[0],
-                pair[1].start,
-                pair[1].load.binding_id,
-                pair[1].episode.start,
-            ),
-        )
-        if score == 0:
-            break
-        if len(result.examples) == 16 or len(chosen.demand) > remaining:
-            result.examples_truncated = True
-            break
-        allocations = [(at, min(value, budget[at])) for at, value in chosen.demand]
-        for at, value in allocations:
-            budget[at] -= value
-        remaining -= len(allocations)
-        total += score
-        if not isfinite(float(total)):
-            return RetrospectiveShiftResult(limitations=["derived_numeric_overflow"])
+    return result, alternatives
+
+
+def _conditional_retrospective_shift(
+    loads: tuple[ShiftLoad, ...],
+    export_hours: dict[float, float],
+    start: float,
+    end: float,
+    deadline: float,
+) -> RetrospectiveShiftResult:
+    result, alternatives = observed_candidates(loads, export_hours, start, end, deadline)
+    if not alternatives:
+        if not any("budget" in item for item in result.limitations):
+            result.limitations.append("no_complete_positive_conditional_alternative")
+        return result
+    budget = {at: Decimal(str(value)) for at, value in export_hours.items()}
+    candidates = {
+        BudgetCandidate(
+            alt.load.binding_id,
+            alt.episode.start,
+            alt.start,
+            alt.end,
+            alt.load.flexibility.minimum_off_seconds,
+            alt.demand,
+        ): alt
+        for alt in alternatives
+    }
+    selections, result.examples_truncated = allocate_candidates(list(candidates), budget, deadline)
+    total = sum((s.absorbed_wh for s in selections), Decimal(0))
+    if not isfinite(float(total)):
+        return RetrospectiveShiftResult(limitations=["derived_numeric_overflow"])
+    for selection in selections:
+        chosen = candidates[selection.candidate]
         result.examples.append(
             ConditionalShift(
                 binding_id=chosen.load.binding_id,
@@ -293,27 +369,13 @@ def _conditional_retrospective_shift(
                 original_end=chosen.episode.end,
                 alternative_start=utc_timestamp(chosen.start),
                 alternative_end=utc_timestamp(chosen.end),
-                conditional_export_absorption_upper_bound_wh=float(score),
+                conditional_export_absorption_upper_bound_wh=float(selection.absorbed_wh),
                 hourly_absorption=[
                     ConditionalHour(start=utc_timestamp(at), energy_wh=float(value))
-                    for at, value in allocations
+                    for at, value in selection.allocations
                 ],
             )
         )
-        alternatives = [
-            alt
-            for alt in alternatives
-            if not (
-                alt.load.binding_id == chosen.load.binding_id
-                and (
-                    alt.episode.start == chosen.episode.start
-                    or (
-                        alt.start - chosen.load.flexibility.minimum_off_seconds < chosen.end
-                        and chosen.start < alt.end + chosen.load.flexibility.minimum_off_seconds
-                    )
-                )
-            )
-        ]
     result.conditional_export_absorption_upper_bound_wh = float(total)
     if result.examples:
         result.status = "partial"

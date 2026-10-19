@@ -55,7 +55,7 @@ Unterstützt: begrenzter vorhandener Leseworkflow. Bedingt: benötigte Quelle, B
 
 Numerische Referenzen: Stichprobenmittel 21 °C; Zählerdifferenz 3 kWh; Rangfolge 3/2 kWh; gemischtes Stundenfenster 3600 s; Nachtmedian 100 W und geschätzte 2,4 kWh/Tag. Die Transformation belegter synthetischer Leistungsintervalle in ganze Stundenenergien ist ein Fixture-Vertrag, kein neuer Decoder. Details und Messgrenzen: [Abnahmebericht](../development/analysis-acceptance.md).
 
-Korrekt begründete Teilantworten gelten bei fehlenden Quellen als zulässig. Keine Rollen aus Namen, nachträgliche Anfangswerte, verborgene Identitäten, Steuerbefehle oder kausale Solarzuordnung. Tokenbedarf und 20-Prozent-Tokenziel bleiben mangels verfügbarer Tokenmesswerte unvollständig; Antwortbytes sind keine Tokens.
+Korrekt begründete Teilantworten gelten bei fehlenden Quellen als zulässig. Keine Rollen aus Namen, nachträgliche Anfangswerte, verborgene Identitäten, Steuerbefehle oder kausale Solarzuordnung. Das frühere verpflichtende Tokenziel wurde für #485 ersetzt; fehlende optionale Tokenwerte bleiben unbekannt und blockieren den Abschluss nicht. Antwortbytes belegen keine Token- oder Kosteneinsparung. Die [begrenzte native Abnahme](../development/analysis-acceptance-closeout.md) trennt gemessene Ergebnisse und offene Grenzen.
 
 
 ## Anfragebezogene Energieplanung (#556)

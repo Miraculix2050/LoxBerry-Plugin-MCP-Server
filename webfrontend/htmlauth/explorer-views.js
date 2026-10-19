@@ -513,6 +513,9 @@
         elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('planningNotice')}));
         elements.summary.append(element('p', {className: 'mcp-explorer-muted', text: label('planningContext')}));
       }
+      if (state.selectedTool.name === 'loxone_analyze_history' && state.selectedTool.inputSchema?.properties?.analysis_context) {
+        elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('historyContext')}));
+      }
       const description = state.selectedTool.description || '';
       if (description.length > 180) {
         const excerpt = description.slice(0, 100).replace(/\s+\S*$/, '').trimEnd();
@@ -606,6 +609,15 @@
         collapseResult: label('collapseResult'),
         moreResults: label('moreResults'),
       }, actions.openTransfer));
+      if (context?.tool === 'loxone_analyze_history' && displayed?.ok && displayed.data?.comparison?.context_analysis) {
+        const summary = element('div', {className: 'mcp-explorer-stack'});
+        summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('historyContext')}));
+        const evidence = displayed.data.comparison.context_analysis;
+        if (evidence.allocations?.length && Number.isFinite(evidence.conditional_export_absorption_upper_bound_wh)) {
+          summary.append(element('p', {text: `${label('historyAbsorption')}: ${evidence.conditional_export_absorption_upper_bound_wh} Wh`}));
+        }
+        elements.resultTree.prepend(summary);
+      }
       if (context?.tool === 'loxone_plan_loads' && displayed?.ok &&
           ['conditional_load_planning.v1', 'conditional_context_planning.v1'].includes(displayed.data?.method_version)) {
         const summary = element('div', {className: 'mcp-explorer-stack'});
