@@ -22,6 +22,12 @@ from mcpserver.loxone.models import Control, Freshness, LoxoneIdentity, LoxoneSt
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
 
 
+@pytest.fixture(autouse=True)
+def planning_wall_clock(monkeypatch):
+    """Keep fixture forecasts in the future without changing real deadline clocks."""
+    monkeypatch.setattr(module, "time", SimpleNamespace(time=lambda: START - 3600))
+
+
 @pytest.mark.parametrize("freshness", list(Freshness))
 @pytest.mark.parametrize("value", [0, 1, None, True, -1])
 def test_current_lock_retains_unknown_freshness(freshness, value):
