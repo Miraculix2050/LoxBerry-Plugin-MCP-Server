@@ -77,9 +77,7 @@ a general aggregate boundary. The runtime `sign_convention` remains null.
 Detailed values, identities, acquisition times, traces and preservation hashes
 remain in the private evidence store; they are not public product examples.
 
-## Period field decisions
-
-### Meter-output prerequisite resolved separately
+## Meter-output prerequisite resolved separately
 
 The 2026-10-19 analytical follow-up combines D1 physical pp.105–106
 (`Meter.details.type`, its explicit missing-field default, and advertised state
@@ -93,6 +91,8 @@ This closes the meter-output question, not the native aggregate questions below.
 The runtime subtype also does not prove the historical configuration, physical
 medium, source wiring or measurement time. Native EFM and meter output rules
 retain separate source references. No new aggregate decoder is authorized.
+
+## Period field decisions
 
 The following seven rows apply **independently to each** of day, week, month,
 year and lifetime: 35 aggregate field/view combinations. All were numeric in E1.
