@@ -214,7 +214,11 @@ def analysis_prompts() -> tuple[Prompt, ...]:
         "loxone_get_state_semantics and read only the required states with loxone_read_controls. "
         "focus defaults to temperature. Distinguish actual temperature from setpoint, retain "
         "unit and per-source freshness; do not invent a whole-house average. For operating_state "
-        "use only proven state meanings; unknown controls prevent an exhaustive on/off claim.",
+        "read with include_semantics=true and require current values plus an exact rule supporting "
+        "each activity claim. Known temperatures, positions or scenes are not on/off predicates. "
+        "Separate evidenced logical activity/inactivity from not determinable; unknown or omitted "
+        "meaning is not off. Unknown controls prevent an exhaustive on/off claim. Logical state "
+        "does not prove physical operation.",
         {
             "focus": "temperature (default) or operating_state",
             "room_uuid": _TARGETS["room_uuid"],

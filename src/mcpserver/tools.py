@@ -857,7 +857,9 @@ class ControlsReadData(BaseModel):
     returned_controls: int
     requested_states: int
     returned_states: int
-    complete: bool
+    complete: bool = Field(
+        description="Delivery coverage only; not semantic knowledge or physical activity proof."
+    )
     truncated: bool
     omitted_sections: list[
         Literal[
@@ -5963,7 +5965,9 @@ def register_read_tools(
         name="loxone_read_controls",
         description=(
             "Read cached values for exact currently visible controls with fresh caller "
-            "authorization. Optional semantic evidence is independent of freshness. Native EFM "
+            "authorization. For on/off or activity claims request include_semantics=true and use "
+            "only evidence supporting that exact claim. Unknown or omitted semantics never mean "
+            "off. Current/complete values do not prove physical operation. Native EFM "
             "views require verified firmware 17.2.8.28 and a fresh Loxone administrator; periods "
             "require activated history. Native values are not a verified balance. See states or "
             "energy guidance."
@@ -5986,7 +5990,11 @@ def register_read_tools(
         include_semantics: Annotated[
             bool,
             Field(
-                description="Include the existing semantic evidence and observation-quality model."
+                description=(
+                    "Include semantic evidence and observation quality. Required before "
+                    "interpreting on/off activity; unknown/invalid/omitted meaning is not off. "
+                    "Known meaning applies only to the documented role, not every activity claim."
+                )
             ),
         ] = False,
         native_result_view: Annotated[
@@ -6098,11 +6106,15 @@ def register_read_tools(
             if runtime is None:  # pragma: no cover - _snapshot rejects this
                 raise RuntimeUnavailable("the service is not configured")
             items: list[dict[str, Any]] = []
+            semantic_statuses: set[str] = set()
             stale = not snapshot.connected
             for control, refs in selected:
                 semantics = None
                 if include_semantics:
                     semantics, item_stale = _semantic_state_items(runtime, snapshot, control, refs)
+                    semantic_statuses.update(
+                        item["semantics"].interpretation_status for item in semantics
+                    )
                     values = [
                         {
                             "name": item["name"],
@@ -6139,6 +6151,22 @@ def register_read_tools(
             omitted = ["relationships", "notes", "history", "statistics", "actions", "project"]
             if not include_semantics:
                 omitted.append("semantics")
+            semantic_warnings = []
+            if count:
+                semantic_warnings.append(
+                    "Current/complete values do not prove on/off activity or physical operation; "
+                    "use only interpretations supporting the exact claimed role."
+                )
+                if not include_semantics:
+                    semantic_warnings.append(
+                        "Semantics not requested. Read with include_semantics=true before "
+                        "interpreting activity; omitted meaning is not off."
+                    )
+                elif semantic_statuses - {"known"}:
+                    semantic_warnings.append(
+                        "Some interpretations are unknown, partial or invalid. Retain qualified "
+                        "known results; do not classify unsupported states as on or off."
+                    )
             envelope = _result(
                 ControlsReadEnvelope,
                 {
@@ -6152,6 +6180,7 @@ def register_read_tools(
                     "omitted_sections": omitted,
                 },
                 stale=stale,
+                warnings=semantic_warnings,
             )
             if len(envelope.model_dump_json().encode("utf-8")) > 65_536:
                 return _error(

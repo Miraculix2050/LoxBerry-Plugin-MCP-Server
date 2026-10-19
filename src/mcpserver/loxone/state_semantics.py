@@ -88,6 +88,7 @@ class StateSemantics:
             "target_temperature",
             "on_off_indication",
             "counter_activity",
+            "dimmer_position",
             "grid_power",
             "storage_power",
             "production_power",
@@ -314,6 +315,39 @@ def _resolve_measurement(
             }
     result.sources_returned = result.sources_total = len(result.sources)
     return result, semantic_value
+
+
+def _resolve_dimmer_position(
+    control: Control, state_name: str, value: object
+) -> tuple[StateSemantics, object | None] | None:
+    """Expose documented position, without inventing a scale or activity predicate."""
+    if control.control_type != "Dimmer" or state_name != "position":
+        return None
+    state_uuid = dict(control.state_uuids).get(state_name)
+    if state_uuid is None:
+        return None
+    result = StateSemantics(value_type="number", measurement_role="dimmer_position")
+    result.sources = [
+        SemanticsSource(
+            "decoder_rule",
+            _STATUS_DOCUMENT + "#page=60",
+            ("measurement_role", "semantic_value"),
+            rule_id="Dimmer.position.v1",
+            document_version="17.1",
+        ),
+        SemanticsSource(
+            "runtime_state", "states.position", ("semantic_value",), state_uuid=state_uuid
+        ),
+    ]
+    result.sources_returned = result.sources_total = len(result.sources)
+    if value is None:
+        result.interpretation_status, result.reason = "partial", "value_unavailable"
+        return result, None
+    if not _valid_measurement_number(value, binary=False):
+        result.interpretation_status, result.reason = "invalid", "invalid_documented_value"
+        return result, None
+    result.interpretation_status, result.reason = "known", "documented_decoder"
+    return result, {"kind": "dimmer_position", "value": value}
 
 
 def _resolve_energy_manager(
@@ -770,6 +804,9 @@ class StateSemanticsResolver:
         measurement = _resolve_measurement(control, state_name, value)
         if measurement is not None:
             return measurement
+        position = _resolve_dimmer_position(control, state_name, value)
+        if position is not None:
+            return position
         result = StateSemantics()
         semantic_value: object | None = None
         family = ALERT_FAMILIES.get(control.control_type)
