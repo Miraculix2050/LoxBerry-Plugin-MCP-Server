@@ -47,7 +47,7 @@ unknown has an insufficient-evidence disposition; no row authorizes a new decode
 | --- | --- | --- | --- | --- |
 | actual.Gpwr | D1 pp.66–67: grid power; block-setting unit. K1: grid-power output. D1 p.65 signs apply to node.actual. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/grid_power, W/kW only through the unchanged exact actualFormat rule. Sign and boundary unknown. | Explicit aggregate sign contract plus independent configuration linking grid direction and physical measurement boundary to this aggregate field. |
 | actual.Ppwr | D1 pp.66–67: production power; block-setting unit. K1: production-power output. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/production_power, same W/kW rule. Sign and boundary unknown. | Explicit aggregate direction contract and configuration proving which production sources, reverse flows and measurement boundary the aggregate includes. |
-| actual.Spwr | D1 pp.66–67: storage power; block-setting unit. K3 signs describe meter.Pf, D1 p.65 describes node.actual. | E1 numeric; E2 own EFM format retained; E3 agrees with linked meter-output signs for negative, zero and positive cases on one installation | **Confirmed existing:** power/storage_power, same W/kW rule. E3 supports installation-level correspondence with K3; general charge/discharge sign contract and boundary remain unknown. | Aggregate Spwr sign contract and independent storage configuration/boundary evidence beyond E3's explicit references; input-direction encoding and physical measurement boundary remain unverified. |
+| actual.Spwr | D1 pp.66–67: storage power; block-setting unit. K3 signs describe meter.Pf, D1 p.65 describes node.actual. | E1 numeric; E2 own EFM format retained; E3 agrees with linked meter-output signs for negative, zero and positive cases on one installation | **Confirmed existing:** power/storage_power, same W/kW rule. E3 supports installation-level correspondence with K3; general charge/discharge sign contract and boundary remain unknown. | Aggregate Spwr sign contract and independent storage configuration/boundary evidence beyond E3's explicit references. Input-direction encoding remains unknown but is not required to interpret the meter's normalized output. |
 | actual.Cpwr | D1 p.67: load power; K1 calls the block output consumption power. No explicit aggregate unit binding. | E1 numeric; no independent Cpwr format | **Confirmed existing:** power/load_power, unit/sign/boundary unknown. No extension. | Explicit applicability of a unit source to aggregate Cpwr, plus direction and configured load/measurement-boundary evidence. The neighboring fields' actualFormat rule cannot be widened by analogy. |
 | actual.Rest | D1 p.67 lists Rest without defining its quantity. K1 describes the block output as calculated remaining power of the top group; distribution-board residuals represent unmetered downstream devices and may include measurement differences. | Absent in E1; root display flags/names/icons are metadata, not a numeric Rest specimen | **Insufficient evidence:** native quantity/role/unit/sign/boundary remain unknown. Missing is not zero. | Caller-authenticated native Rest specimen and independent top-group/configuration evidence linking it to the documented output; explicit unit/direction applicability. No residual arithmetic or synthetic meter. |
 
@@ -76,6 +76,21 @@ measurement instant, continuous sign transition, multiple-storage behavior or
 a general aggregate boundary. The runtime `sign_convention` remains null.
 Detailed values, identities, acquisition times, traces and preservation hashes
 remain in the private evidence store; they are not public product examples.
+
+## Meter-output prerequisite resolved separately
+
+The 2026-10-19 analytical follow-up combines D1 physical pp.105–106
+(`Meter.details.type`, its explicit missing-field default, and advertised state
+channels) with the meter KB output tables. The implementation now exposes the
+[documented meter output rules](meter-output-semantics.md) for unidirectional,
+bidirectional and storage subtypes. `PwrN`/`powerName` is a power/flow display
+label. The configurable direction on absolute Bi/storage meters concerns input
+Pf; its unknown XML encoding does not block the fixed output convention.
+
+This closes the meter-output question, not the native aggregate questions below.
+The runtime subtype also does not prove the historical configuration, physical
+medium, source wiring or measurement time. Native EFM and meter output rules
+retain separate source references. No new aggregate decoder is authorized.
 
 ## Period field decisions
 

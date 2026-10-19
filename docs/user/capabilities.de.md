@@ -95,6 +95,28 @@ alle normalisierten Zustände mit `offset` und `limit` (Standard/Maximum 100).
 Folgen Sie `next_offset` mit derselben Auswahl. Unbekannte ausgewählte Zustände
 führen gemeinsam zum Fehler; versteckte Controls sind ausgeschlossen.
 
+Bei Runtime-Controls vom Typ `Meter` nennt die vollständige Beschreibung
+`model.meter_type` aus dem dokumentierten `details.type`: `unidirectional`
+(auch dokumentierter Standard bei fehlendem Feld), `bidirectional`, `storage`
+oder `legacy`. Unbekannte, ungültige oder widersprüchliche Typmetadaten erhalten
+keine Ausgangssemantik. `powerName`, Projektfeld `PwrN`, Symbole, Einheiten und
+Anlagenbezeichnungen bestimmen den Typ nicht. Für das ausgewiesene `actual`
+liefern Zustandssemantik und passende rohe StatisticV2-Semantik `sign_convention`:
+`non_negative` für Uni (einschließlich null),
+`positive_consumption_negative_delivery` für Bi und
+`positive_discharge_negative_charge` für Speicher. Gültige Zustandswerte erhalten
+`semantic_value.kind=meter_output` mit `output_direction`; null bedeutet nur
+`zero`, keinen belegten physischen Stillstand. Zählerkanäle `total`, `totalNeg`
+und deren dokumentierte Tages-/Wochen-/Monats-/Jahresvarianten sind nichtnegativ;
+`totalNeg` ist ein eigener Zähler, kein negativer Nettowert. Unbelegte
+Zähler-Aliase werden nicht zugeordnet. Einheiten und physische Messgrenzen bleiben
+getrennt qualifiziert, die Zustandsdeskriptoren deshalb partiell. Alte `legacy`-
+Zähler behalten ihr bisheriges Verhalten. Ungültige Zahlen oder negative Werte
+auf nichtnegativen Kanälen ergeben keinen Semantikwert; Rohwerte bleiben erhalten.
+Die Eingangspolarität muss für diese dokumentierten Ausgänge nicht bekannt sein.
+Native EFM-Aggregate übernehmen diese Regeln nicht. Siehe
+[Zählerevidenz](../development/meter-output-semantics.md).
+
 Jeder Eintrag trennt den ursprünglichen `value`, optionalen `semantic_value`,
 Beobachtungsqualität `quality` und `semantics`. `known` bedeutet, dass die
 Interpretation durch die angegebene bestehende Decoderregel belegt ist;

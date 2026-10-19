@@ -505,6 +505,7 @@ class ControlModelData(BaseModel):
     """Bounded documented type metadata; state values remain in loxone_get_states."""
 
     format: str | None = None
+    meter_type: Literal["unidirectional", "bidirectional", "storage", "legacy"] | None = None
     timer_modes: list[NamedOptionData] = Field(default_factory=list)
     ventilation_modes: list[NamedOptionData] = Field(default_factory=list)
     ventilation_timer_profiles: list[VentilationTimerProfileData] = Field(default_factory=list)
@@ -5782,6 +5783,7 @@ def register_read_tools(
                 "model": (
                     {
                         "format": control.format,
+                        "meter_type": control.meter_type,
                         "pv_forecast": (
                             {
                                 "source_reference": PVPF_DOCUMENT,
@@ -5873,6 +5875,7 @@ def register_read_tools(
                         "Irrigation",
                         "AlarmClock",
                         "PvProductionForecast",
+                        "Meter",
                     }
                     else None
                 ),

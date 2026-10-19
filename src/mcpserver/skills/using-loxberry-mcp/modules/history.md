@@ -74,7 +74,11 @@ statistic response. `cumulative_counter` requires an explicit accumulated flag;
 aggregated accumulated reads use `interval_difference_sum`. Raw values otherwise
 remain samples, not time averages or energy intervals. Exact Meter channel units
 are source-declared, not physical calibration proof. Preserve unknown direction,
-measurement boundary/method, rollover and unexplained counter decreases. Legacy
+measurement boundary/method, rollover and unexplained counter decreases.
+Meter subtype `sign_convention` describes the normalized output, independently
+of physical direction/boundary. It requires a compatible StatisticV2 accumulated
+flag: instantaneous `actual` is not an accumulated reading. Never use a subtype
+rule as evidence of historical input configuration or native EFM semantics. Legacy
 local-clock conversion and aggregated timestamp positions may remain unverified.
 Use profile `semantic_reference` only as a versioned resolver reference; review
 affected bindings when evidence changes. No extra discovery per metric is needed.
