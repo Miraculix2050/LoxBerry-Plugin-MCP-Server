@@ -28,7 +28,10 @@ export require confirmed associations, while units, quantities, native EFM
 membership and balance boundaries still need technical evidence. A profile is
 optional for exact statistic selectors. Report echoed site/coverage as owner
 confirmations, not independently verified physical facts. Separate independent
-sites into separate calls. Preserve #439/#509 positive acceptance requirements.
+sites into separate calls. The owner-approved #439/#509 closeout uses real source
+reads and deterministic
+model tests; real comparison days are not a closure gate. This does not waive
+runtime evidence requirements or establish empirical plant validation.
 
 For compact historical calculations prefer `loxone_analyze_history` with exact
 advertised series/state IDs or currently confirmed visible profile bindings.

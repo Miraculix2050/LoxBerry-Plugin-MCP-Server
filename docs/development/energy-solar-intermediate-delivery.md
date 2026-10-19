@@ -18,19 +18,21 @@ acceptance before merge. Source fixtures establish adapter behavior; genuine
 source availability, installed software behavior and physical plant validation
 are separate evidence. No general compatibility claim follows from one source.
 
-## Open follow-ups
+## Follow-ups and later delivery
 
 - [#509: qualified historical irradiation energy and numerical comparable days](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/509)
   tracks the original 15% irradiation-energy method and resulting yield/deviation
-  assessment. Until qualified history is integrated, the qualitative comparison
-  remains the available method. Lux and forecast samples cannot replace history.
+  assessment. The explicit numerical runtime is delivered; usable results
+  still require qualified historical inputs. Lux and forecasts cannot replace
+  observations.
 - [#510: qualified local PV-yield forecasts and full future load planning](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/510)
   tracks PV-output/plant-model evidence, baseload, storage, competing loads and
   current native constraints. Until then, future outputs remain sampled weather
   guidance with explicit missing evidence and configuration suggestions.
 
-Parents #436, #439 and #440 remain open pending their broader acceptance.
-Completing this intermediate delivery does not close those goals. Future Config
-MCP imports require a separately authorized integration; no device scheduling or
+This is the historical intermediate boundary, not current tracker status.
+The later #439/#509 technical closeout follows the owner-revised
+[acceptance criteria](solar-history-acceptance.en.md); other issues retain their own
+gates. Future Config MCP imports require a separately authorized integration; no device scheduling or
 operation is introduced. Independent performance/resource measurements remain
 outside this delivery and are not claimed as passing or used as its merge gate.

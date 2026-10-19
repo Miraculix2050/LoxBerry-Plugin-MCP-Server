@@ -40,5 +40,7 @@ circular comparison baseline and must not be used to assess that production.
 Lux, radiation classes, forecast energy and arbitrary display formats cannot
 establish independent observed irradiance.
 
-This normalization foundation is independently tested. It does not complete
-#509/#439, establish an installed source or prove real historical coverage.
+This normalization foundation is independently tested. It does not by itself establish an installed source
+or real historical coverage. #509/#439 technical closeout combines real source
+reads and deterministic model evidence, as defined in
+[the acceptance criteria](solar-history-acceptance.en.md).

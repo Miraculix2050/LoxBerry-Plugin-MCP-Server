@@ -162,7 +162,8 @@ coarse radiation-class branch, with native solarRadiation interpreted as classes
 0-3 only under a labelled owner assumption. `comparable_days.radiation_classes.v1`
 compares the same completed hour-start source-point positions and identical class
 sequences; no radiation energy, temperature selection or normalized yield is
-reported. Numerical source/method gates remain open in #439.
+reported. Numerical source-read/model closeout follows the revised
+[technical criteria](solar-history-acceptance.en.md); no empirical plant validation is claimed.
 
 A dedicated structured-weather input and separate weather summary preserve the
 released exact scalar source contract. Confirmed weather bindings are projected

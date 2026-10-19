@@ -115,4 +115,6 @@ bounded hourly decoder and regression coverage. Plant association remains an
 explicit owner declaration; output is a native EFM calculation, not independent
 physical metering. Unknown EFM channels, units and legacy clocks remain unqualified.
 A representative native hourly source read does not establish positive real
-weather-peer, all-firmware or multi-installation acceptance (#439/#509).
+weather-peer, all-firmware or multi-installation acceptance. The owner-approved
+#439/#509 technical closeout combines source-read evidence and model tests; it
+does not claim empirical plant validation (see [criteria](solar-history-acceptance.en.md)).

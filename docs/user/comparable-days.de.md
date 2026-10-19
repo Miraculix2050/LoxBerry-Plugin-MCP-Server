@@ -45,7 +45,8 @@ passende Grenzen aller Produktionsquellen bei. Native EFM-Mitgliedschaft gilt
 für alle Energiebeiträge. Ergebnisse geben Standort und Zuordnungen wieder und
 kennzeichnen bestätigte Abdeckung als nicht unabhängig geprüft. Vor der Ausgabe
 werden Sichtbarkeit, Installation, Quellenmerkmale und verwendete Profilrevisionen
-erneut geprüft. Die bestehenden Abnahmegates #439/#509 bleiben offen.
+erneut geprüft. Die technischen Abschlusskriterien stehen in der
+[Abnahmeübersicht](../development/solar-history-acceptance.de.md).
 
 ## Numerische Wettervergleiche
 
@@ -119,8 +120,9 @@ Berechtigungsprüfung des jeweiligen Aufrufs; sie sind keine reinen SQL-Zeiten.
 Die Diagnostik erzeugt keine zusätzlichen Datenabrufe und gibt keine Quellwerte aus.
 
 Grenzen: 16 Quellen, 100.000 Punkte, 31 lokale Tage, 30 Sekunden, zwei Analysen,
-64 KiB. Aufzeichnung erzeugt keine frühere Historie. Echte mehrtägige Abnahme bleibt
-Voraussetzung für den Abschluss von #509 und #439.
+64 KiB. Aufzeichnung erzeugt keine frühere Historie. Die technische Abnahme verbindet reale Quellenlesezugriffe mit deterministischen
+Modelltests; reale Vergleichstage sind keine Abschlussbedingung für #509/#439.
+Das belegt keine empirische Anlagenvalidierung und lockert keine Laufzeitqualifikation.
 
 ## Qualitative Strahlungsklassen
 

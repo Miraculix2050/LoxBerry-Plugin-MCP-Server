@@ -242,7 +242,10 @@ complete period-energy bounds (Structure File 17.1 p.115); actual comparison sta
 match previously captured forecasts to exact complete actual intervals. Do not
 allocate daily forecasts to partial days or assume the native calendar timezone.
 A functioning method or synthetic
-fixture does not close #509/#439: require genuine history and a positive comparison.
+fixture alone does not establish source readability. The owner-approved #509/#439
+technical acceptance combines real source reads with deterministic model tests;
+real comparison days are not required for closure. Do not claim empirical plant
+validation or relax runtime source qualification.
 
 ### Qualitative weather peers
 
@@ -257,7 +260,8 @@ positions qualifies a peer; never shrink missing positions, use forecasts as
 observations, or infer continuous coverage. No raw pages, 15-percent radiation
 tolerance, temperature selection, radiation energy, normalized yield, PV anomaly
 diagnosis or self-consumption result is provided by this class branch. Lux cannot
-be converted universally to irradiance. Numerical source/method gates remain open. Unexpected values stay in the archive
+be converted universally to irradiance. Numerical inputs still need their separate
+source/method qualification. Unexpected values stay in the archive
 and in bounded point-time/raw-value/reason diagnostics with a trace-correlated
 sanitized log. Tell the user when the tool warns about mapping/data incompatibility;
 do not call it a proven device fault or silently treat those values as valid classes.

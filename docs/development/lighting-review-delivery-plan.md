@@ -12,9 +12,12 @@ PR4 [#575](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/575)
 are merged after their scoped review, tests and Gen.-1 acceptance. PR4's final
 [gate record](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/575#issuecomment-6274992150)
 binds review, CI and read-only target/browser evidence to its delivered stand.
-PR5 starts from merged PR4, master `b816081e`; its Explorer and integrated
-six-scenario delivery still require their own final gates. #441 stays open until
-those gates pass. Do not publish a competing #559 resolver or another profile
+PR5 [#579](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/579)
+starts from merged PR4, master `b816081e`. Its integrated six-scenario Gen.-1 and
+DE/EN functional browser acceptance are documented in the
+[device gate record](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/579#issuecomment-6279288915).
+Final integration preserves the accepted lighting code; #441 closes after the
+remaining final PR checks and merge. Do not publish a competing #559 resolver or another profile
 abstraction. The original plan-recording PR changed no runtime behavior.
 
 Coordination with the #559 owner confirmed these shared interfaces:

@@ -901,8 +901,8 @@
         "workflow": [
           "loxone_analyze_history"
         ],
-        "scope_en": "Explicit numerical comparable_days use confirmed local radiation/temperature and hourly PV; self-consumption requires a direct or confirmed compatible balance. Real multi-day acceptance remains #509/#439.",
-        "scope_de": "Explizites numerisches comparable_days nutzt bestätigte lokale Strahlung/Temperatur und stündliche PV; Eigenverbrauch benötigt einen direkten oder bestätigt passenden Bilanzkanal. Echte mehrtägige Abnahme bleibt #509/#439.",
+        "scope_en": "Explicit numerical comparable_days use confirmed local radiation/temperature and hourly PV; self-consumption requires a direct or confirmed compatible balance. Technical source-read/model acceptance; real days are not a #509/#439 closure gate.",
+        "scope_de": "Explizites numerisches comparable_days nutzt bestätigte lokale Strahlung/Temperatur und stündliche PV; Eigenverbrauch benötigt einen direkten oder bestätigt passenden Bilanzkanal. Technische Quellenlese-/Modellabnahme; reale Tage sind kein Abschlussgate für #509/#439.",
         "evidence": "source_contract",
         "native_result": "qualified_insufficient_evidence_or_visible_subset",
         "ai_three_independent_runs": "incomplete"
@@ -989,8 +989,8 @@
         "workflow": [
           "loxone_analyze_history"
         ],
-        "scope_en": "Numerical comparable_days rank weather peers and negative PV differences; groups require three complete peers. Seasonal proximity is not exact solar geometry; real acceptance remains open (#439).",
-        "scope_de": "Numerisches comparable_days ordnet Wetterpeers und negative PV-Abweichungen; Gruppen benötigen drei vollständige Tage. Saisonale Nähe ist keine exakte Sonnengeometrie; echte Abnahme bleibt offen (#439).",
+        "scope_en": "Numerical comparable_days rank weather peers and negative PV differences; groups require three complete peers. Seasonal proximity is not exact solar geometry; technical reference cases verify the model; empirical plant validation is not claimed (#439).",
+        "scope_de": "Numerisches comparable_days ordnet Wetterpeers und negative PV-Abweichungen; Gruppen benötigen drei vollständige Tage. Saisonale Nähe ist keine exakte Sonnengeometrie; technische Referenzfälle prüfen das Modell; keine empirische Anlagenvalidierung (#439).",
         "evidence": "source_contract",
         "native_result": "qualified_insufficient_evidence_or_visible_subset",
         "ai_three_independent_runs": "incomplete"

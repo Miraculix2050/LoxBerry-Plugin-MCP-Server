@@ -18,7 +18,8 @@ Wettermaßstab. Prognosen, Lux und Strahlungsklassen ersetzen ebenfalls keine
 beobachtete Strahlungsenergie. Ohne geeignete lokale Quelle bleibt der numerische
 Vergleich nicht verfügbar. Die vorhandene qualitative Klassenmethode bleibt
 nutzbar. Die interne Stundenaufbereitung allein aktiviert noch keine Quelle oder
-Aufzeichnung; #509 und #439 bleiben bis zur vollständigen Abnahme offen.
+Aufzeichnung; technische Quellenlese-/Modellabnahme belegt keine empirische Anlagenvalidierung
+(siehe [Abschlusskriterien](../development/solar-history-acceptance.de.md)).
 
 Die Solaraufzeichnung benötigt die Historienfreigabe. Vor dem Entzug dieser
 Freigabe in der Hauptkonfiguration muss die Solaraufzeichnung deaktiviert werden.

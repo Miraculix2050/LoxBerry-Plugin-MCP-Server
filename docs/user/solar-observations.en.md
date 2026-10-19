@@ -16,7 +16,8 @@ weather baseline. Forecasts, lux and radiation classes cannot replace observed
 radiation energy either. Without a suitable local source, numerical comparison
 remains unavailable. The existing qualitative class method remains usable. The
 internal hourly normalization alone enables neither a source nor recording;
-#509 and #439 remain open until full acceptance.
+technical source-read/model acceptance does not establish empirical plant validation
+(see [closeout criteria](../development/solar-history-acceptance.en.md)).
 
 Solar recording requires history permission. Disable solar recording before
 revoking that permission in the main configuration. If periodic source metadata

@@ -1,32 +1,46 @@
-# Lokale Solarhistorie: Abnahmebedingungen
+# Lokale Solarhistorie: technische Abnahme
 
-Die Normalisierung ist mit [PR #544](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/544) gemergt.
-Aufzeichnung/PVPF: [PR #549](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/549).
-Numerischer Laufzeitpfad: [PR #550](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/550).
-Integrierter Abschlussstand: [PR #551](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/551).
-Ausführliche datierte Geräte-/Browser-/MCP-/SSH- und Performancenachweise gehören
-ins private Project-Data-Archiv des Owners, außerhalb öffentlicher Produktdokumentation.
+Der Owner hat die Abschlusskriterien am 20. Oktober 2026 geändert. Technische
+Quellenlese- und Rechennachweise ersetzen den positiven Vergleich realer
+historischer Tage als Abschlussgate für #439/#509. Reale Vergleichstage,
+mehrtägige Datensammlung und passende positive Realhistorien-Performancemessungen
+sind keine Abschlussbedingungen mehr. Die Eingangsqualifikation und das Verhalten
+bei fehlenden Daten im Produkt bleiben unverändert.
 
-#509 und #439 bleiben offen, bis ein echter erfolgreicher Zahlenvergleich eine
-Referenz, drei geeignete historische Wetterpeers und belegten PV-Ertrag umfasst.
-Für #439 zusätzlich direkten/kompatiblen Eigenverbrauch, abgeschlossene Stunden
-laufender Tage, Rangfolge und erklärbare Grenzen abnehmen. Fixtures ersetzen
-keine Geräteabnahme. Full-CI auf dem aktuellen Commit und Reviewgates erhalten;
-nach drei erfolglosen Runden bleibt der betroffene PR offen. Spätere Korrekturen
-benötigen vor dem Merge eine Prüfung.
+Gelieferte Stufen: [#544](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/544)
+Normalisierung, [#549](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/549)
+lokale Aufzeichnung/PVPF, [#550](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/550)
+numerische Laufzeit, [#551](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/551)
+Abnahmegrenzen und [#577](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/577)
+nativer EFM-Eigenverbrauch und begrenzte Phasendiagnostik.
 
-Dokumentierter lokaler Quellenvertrag und repräsentative Probe genügen.
-Unabhängige W/m²-Beobachtungen dürfen sichtbar geschätzte Wh/m² ergeben.
-PV-abgeleitete zirkuläre Maßstäbe ausschließen; Temperaturaggregation und
-Anbieterfrische kenntlich machen. Benötigte Testaufzeichnung darf mit privat
-dokumentiertem Start weiterlaufen und erzeugt keine frühere Historie.
-Unbeteiligte Konfiguration und Historie erhalten. Gleiche echte Historie vor/nach
-Änderung sowie unabhängige Datenzugriffs-Phasenmessungen bleiben Abnahmegate;
-Negativfall-Messzeiten allein erfüllen es nicht.
+## Erforderliche Abschlussnachweise
 
-PVPF-Verfügbarkeit ist vom historischen Vergleich getrennt. Native Zykluszeiten
-beschreiben die aktuelle Prognosestunde, keine vollständigen Periodenenergiegrenzen.
-Istvergleich erst mit separat belegten Intervallen; keine Aufteilung von Tagesprognosen
-auf unvollständige Isttage. Der getrennte Stundenadapter #542 ist ein möglicher
-Integrationspunkt. #510 bleibt zukünftige Lastplanung; #501 wird hierdurch nicht
-abgeschlossen. Siehe [Nutzervertrag](../user/comparable-days.de.md).
+| Kriterium | Nachweis |
+| --- | --- |
+| Reale Quellenlesezugriffe | Reservierte lesende Zugriffe auf natives Wetter/Strahlung/Temperatur und stündliche PV-/EFM-Werte, deklarierte Einheiten, Erfassungs-/Zeitverträge und bestätigte Anlagenzuordnung. Bestehende Browser-/MCP-/SSH-Evidenz darf wiederverwendet werden. |
+| Normalisierung | `test_solar_history.py`: bekannte Integrations-/Umrechnungsergebnisse, keine Extrapolation, begrenzte Lücken, Dubletten-/Quellenregeln und sichtbare Schätzungen. |
+| Auswahl und Abweichungen | `test_comparable_days.py`: inklusive Toleranzen, Dreiergruppen, strikte Auffälligkeitsschwelle, Nullnenner, feste abgeschlossene Stunden und Zeitumstellungsausschlüsse. |
+| Integrierte Berechnung | `test_numerical_day_tools.py`: handgerechnete PV-/Eigenverbrauchsmediane und Rangfolge bei vollständigen/laufenden Tagen, passende/unpassende Einspeisebilanz, fehlende Evidenz, Quellenisolation und ein Zugriff je Quelle/Zeitraum. |
+| Rechte und Ressourcen | Bestehende Vertragsregressionen für Rechteentzug, Quellenwechsel, Grenzen, Fristen/Abbruch, kompakte Ausgabe und unveränderte Klassenaufrufe; vorhandene begrenzte Zeit-/Größenmessungen und korrelierte Phasentests. |
+| Lieferung | Full-CI auf aktuellem Commit, aufgelöste relevante Review-Findings, DE/EN-Anleitung und technische Browser-/MCP-/SSH-Abnahme im geprüften Umfang. |
+
+Synthetische Referenzfälle belegen Rechenlogik und Softwareverträge, keine
+empirisch validierte Anlage, kalibrierte Wettermessung oder Fehlerdiagnose.
+Eine repräsentative native Probe belegt Lesbarkeit, keine physische
+Beobachtungsherkunft. Wetterservicewerte behalten ihre Herkunftskennzeichnung;
+unbekannte Anbieterzeit-/Messdetails bleiben unbekannt. Prognosen und aus PV
+abgeleitete Strahlung werden nicht zu unabhängigen Beobachtungen umgedeutet.
+Unqualifizierte oder fehlende Laufzeiteingänge liefern weiterhin eine erklärte
+Nichtverfügbarkeit. Aufzeichnung erzeugt keine frühere Historie, schreibt keine
+Ausfallnullen um und macht Empfangsabdeckung nicht zu Messabdeckung.
+
+Detaillierte datierte Evidenz bleibt im privaten Project-Data-Archiv des Owners.
+Erfolgreiche unveränderte Zielprüfungen werden wiederverwendet; dieser
+Dokumentations-/Testabschluss verlangt keine erneute Installation,
+Aufzeichnungsänderung oder mehrtägige Kampagne.
+
+PVPF-Prognose-/Istabgleich und positive zukünftige Planung bleiben separat in
+#510. Aggregierte Zykluszeiten belegen keine vollständigen Periodenenergiegrenzen;
+Tagesprognosen werden nie auf unvollständige Isttage verteilt. #501 wird weder
+abgeschlossen noch erlassen. Siehe [Nutzervertrag](../user/comparable-days.de.md).
