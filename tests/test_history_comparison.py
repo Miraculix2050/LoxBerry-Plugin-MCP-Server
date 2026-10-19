@@ -227,7 +227,8 @@ def test_declared_search_exhaustion_does_not_publish_partial_allocations():
     assert "alternative_search_budget_exceeded_no_partial_allocation" in result.limitations
 
 
-def test_declared_real_model_does_not_promote_available_activity_to_a_baseline():
+@pytest.mark.parametrize("feedback", [False, True])
+def test_declared_real_model_does_not_promote_available_activity_to_a_baseline(feedback):
     from mcpserver.analysis_context import HistoryAnalysisContext
 
     doc = history_context(observed=True, loads=0).model_dump()
@@ -241,12 +242,35 @@ def test_declared_real_model_does_not_promote_available_activity_to_a_baseline()
             "cycle": cycle,
         }
     ]
+    if feedback:
+        doc["loads"][0]["operating_id"] = "active"
     result = contextual_compare(HistoryAnalysisContext.model_validate(doc), observed=True)
     evidence = result.context_analysis
     assert evidence.allocations and not evidence.cycles
     assert evidence.allocations[0].kind == "declared_real"
     assert evidence.allocations[0].observed_start is None
     assert evidence.allocations[0].energy_origin == "user_declared_uniform"
+    assert (
+        any("declared_cycles_without_feedback" in reason for reason in evidence.limitations)
+        is not feedback
+    )
+
+
+def test_context_export_assumption_cannot_establish_measured_budget():
+    ctx = history_context(loads=2)
+    ctx.associations[0].origin = "scenario_assumption"
+    result = contextual_compare(ctx)
+    assert not result.context_analysis.allocations
+    assert result.limitations == ["one_confirmed_export_boundary_and_explicit_load_models_required"]
+
+
+def test_observed_only_analysis_does_not_claim_declared_feedback_missing():
+    result = contextual_compare(history_context(observed=True, loads=0), observed=True)
+    assert result.context_analysis.allocations
+    assert not any(
+        "declared_cycles_without_feedback" in reason
+        for reason in result.context_analysis.limitations
+    )
 
 
 def test_pv_overlap_is_upper_bound_and_not_attribution():

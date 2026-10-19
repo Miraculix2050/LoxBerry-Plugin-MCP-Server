@@ -20,6 +20,12 @@ Verbraucher- oder Betriebszustandsbezug und verwendet `scenario_assumption`.
 Deklarierte Energie ist ein gleichmäßiges Bedarfsmodell und ergänzt keine
 fehlenden Messungen.
 
+Die Exportzuordnung selbst muss `user_confirmed` sein; Szenarioannahmen zu Rolle
+oder Richtung begründen kein gemessenes Budget. Gibt ein profilgestütztes reales
+Modell eine Betriebsrückmeldung an, muss diese dem gespeicherten Begleiter
+entsprechen. Hinweise auf fehlende Rückmeldung gelten nur für tatsächlich
+ausgewertete deklarierte Modelle ohne diese Rückmeldung.
+
 `comparison.context_analysis` trennt Zuordnungs-IDs, echte Profilreferenzen,
 gemessene Episoden und bedingte Modellzuweisungen. Alle modellierten Lasten
 teilen ein gemessenes historisches Exportbudget. Deklarierte Zuweisungen haben

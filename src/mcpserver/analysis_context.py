@@ -475,7 +475,7 @@ def resolve_history_associations(
                 and load.cycle.flexibility(saved.operating_binding_id) != saved
             ):
                 raise ValueError("declared model contradicts confirmed profile constraints")
-            if load.kind == "observed":
+            if load.operating_id is not None:
                 companion = bindings.get(saved.operating_binding_id)
                 if (
                     not consumer.get("load_constraints_usable")

@@ -244,6 +244,78 @@ def test_history_associations_use_exact_members_without_profile_writes(change):
             resolve_history_associations(ctx, selectors, visible, bindings, timezone_name="UTC")
 
 
+@pytest.mark.parametrize("foreign", [False, True])
+def test_declared_real_feedback_retains_saved_operating_companion(foreign):
+    from mcpserver.analysis_context import (
+        DeclaredCycle,
+        HistoryAnalysisContext,
+        resolve_history_associations,
+    )
+    from mcpserver.loxone.models import StatisticSeries
+
+    state, other_state = "active-state", "other-state"
+    visible = {
+        LOAD: replace(
+            controls()[LOAD],
+            statistic_series=(
+                StatisticSeries("energy", "statistic_v2", "1", "totalNeg", "Energy", "Wh"),
+            ),
+            state_uuids=(("active", state), ("other", other_state)),
+        )
+    }
+    cycle = DeclaredCycle.model_validate(context_document()["loads"][0]["cycle"])
+    consumer = {
+        "control_uuid": LOAD,
+        "series_id": "energy",
+        "state_uuid": None,
+        "status": "confirmed",
+        "role": "consumer",
+        "load_constraints_usable": True,
+        "load_flexibility": cycle.flexibility("saved-active").model_dump(),
+    }
+    active = {
+        "control_uuid": LOAD,
+        "series_id": None,
+        "state_uuid": state,
+        "status": "confirmed",
+        "role": "operating_state",
+    }
+    other = {**active, "state_uuid": other_state}
+    ctx = HistoryAnalysisContext.model_validate(
+        {
+            "scope": context_document()["scope"],
+            "associations": [
+                {"association_id": "load", "source_index": 0, "origin": "user_confirmed"},
+                {"association_id": "active", "source_index": 1, "origin": "user_confirmed"},
+            ],
+            "loads": [
+                {
+                    "load_id": "model",
+                    "kind": "declared_real",
+                    "consumer_id": "load",
+                    "operating_id": "active",
+                    "cycle": cycle.model_dump(),
+                }
+            ],
+        }
+    )
+    selectors = [
+        {"binding_id": "saved"},
+        {"binding_id": "other-active" if foreign else "saved-active"},
+    ]
+    bindings = {"saved": consumer, "saved-active": active, "other-active": other}
+    if foreign:
+        with pytest.raises(ValueError, match="confirmed companion"):
+            resolve_history_associations(
+                ctx, selectors, visible, bindings, timezone_name="Europe/Berlin"
+            )
+    else:
+        effective, _ = resolve_history_associations(
+            ctx, selectors, visible, bindings, timezone_name="Europe/Berlin"
+        )
+        assert effective[1]["state_uuid"] == state
+
+
 def test_inherited_profile_cycle_timezone_is_checked_before_source_reads():
     from test_load_flexibility import flexibility
 

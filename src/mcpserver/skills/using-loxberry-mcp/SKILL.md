@@ -462,6 +462,9 @@ constraints; direct sources require explicit associations and fresh visibility.
 `observed` loads need complete measured cycles and exact operating associations.
 Declared real cycles are confirmed models; hypothetical cycles have no native
 identity. Keep all cycle timezones equal to the explicit analysis timezone.
+The export association must itself be user-confirmed before it establishes a
+measured budget. Any operating feedback supplied by a profile-backed declared
+real model must match its saved companion; do not substitute an unrelated state.
 Inspect `comparison.context_analysis` for associations, measured episodes and
 conditional allocations against one shared measured export budget. A declared
 allocation has no observed original cycle and proves no historical improvement,

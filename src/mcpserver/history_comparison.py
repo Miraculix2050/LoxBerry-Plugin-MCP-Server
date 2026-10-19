@@ -222,9 +222,19 @@ def _compare_context_history(
         evidence.limitations = list(dict.fromkeys(evidence.limitations))
         return result
     exports = [s for s in inputs if s.profile_role == "grid_export"]
+    export_association = next(
+        (
+            a
+            for a in context.associations
+            if len(exports) == 1 and a.association_id == exports[0].association_id
+        ),
+        None,
+    )
     if (
         not boundaries
         or len(exports) != 1
+        or export_association is None
+        or export_association.origin != "user_confirmed"
         or exports[0].declared_direction != "export"
         or not exports[0].declared_boundary
         or not context.loads
@@ -260,6 +270,7 @@ def _compare_context_history(
             )
             candidates.append(candidate)
             originals[candidate] = alt.episode
+    declared_feedback_missing = False
     for load in context.loads:
         if load.kind == "observed":
             continue
@@ -295,6 +306,8 @@ def _compare_context_history(
             if any(position not in export_hours for position in positions):
                 continue
             state = by_id.get(load.operating_id)
+            if state is None:
+                declared_feedback_missing = True
             if state is not None and not _inactive(
                 state.segments,
                 at - cycle.minimum_off_seconds,
@@ -357,7 +370,13 @@ def _compare_context_history(
                 *evidence.limitations,
                 "one_shared_measured_export_budget_not_proven_pv_production",
                 "conditional_upper_bound_not_measured_self_consumption_savings_or_operation_permission",
-                "declared_cycles_without_feedback_have_unverified_activity_and_minimum_off_clearance",
+                *(
+                    [
+                        "declared_cycles_without_feedback_have_unverified_activity_and_minimum_off_clearance"
+                    ]
+                    if declared_feedback_missing
+                    else []
+                ),
             ]
         )
     )
