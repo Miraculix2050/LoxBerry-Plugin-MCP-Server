@@ -1,0 +1,594 @@
+window.McpAdmin.createConfiguration = (
+  core, certificate, service,
+) => {
+  const {label, postAjax, setAjaxStatus, setSummaryBadge, status} = core;
+  const updateEmergencyStopRuntimeMismatch = service.updateMismatch;
+  const configurationFallbackLink = document.getElementById('configuration-fallback-link');
+  const miniserverSelect = document.getElementById('miniserver-select');
+  const manualEndpointFields = document.getElementById('manual-endpoint-fields');
+  const miniserverEndpoint = document.getElementById('miniserver-endpoint');
+  const mcpConfigForm = document.getElementById('mcp-config-form');
+  const mqttConfigForm = document.querySelector('form[data-ajax="save_mqtt_config"]');
+  const configurationFieldsets = [
+    document.getElementById('mcp-config-fields'),
+    document.getElementById('mqtt-config-fields'),
+    document.getElementById('logging-config-fields'),
+  ];
+  const historyEnabled = document.getElementById('loxone-history-enabled');
+  const eventHistoryEnabled = document.getElementById('event-history-enabled');
+  const weatherHistoryEnabled = document.getElementById('weather-history-enabled');
+  const operateEnabled = document.getElementById('loxberry-operate-enabled');
+  const explorerLink = document.getElementById('explorer-link');
+  const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
+  explorerLink.href = `${window.location.origin}${explorerPath}`;
+  const configurationSummaryBadge = document.getElementById('configuration-summary-badge');
+  const mqttSummaryBadge = document.getElementById('mqtt-summary-badge');
+  const emergencyStopSelect = document.getElementById('emergency-stop-select');
+  const emergencyStopValue = document.getElementById('emergency-stop-value');
+  const emergencyStopStatus = document.getElementById('emergency-stop-status');
+  const emergencyStopRetry = document.getElementById('emergency-stop-retry');
+  const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
+  const mqttHost = document.getElementById('mqtt-host');
+  const mqttPort = document.getElementById('mqtt-port');
+  const mqttUsername = document.getElementById('mqtt-username');
+  const mqttPassword = document.getElementById('mqtt-password');
+  const mqttClearPassword = document.getElementById('mqtt-clear-password');
+  let mqttGateway = null;
+  let mqttCustomBroker = {
+    host: mqttHost.value,
+    port: mqttPort.value,
+    username: mqttUsername.value,
+  };
+  const mqttPasswordStatus = document.getElementById('mqtt-password-status');
+  const mqttPageStateStatus = document.getElementById('mqtt-page-state-status');
+  const loggingControls = document.getElementById('logging-controls');
+  const loggingCurrent = document.getElementById('logging-current');
+  const loggingLevel = document.getElementById('logging-level');
+  let emergencyStopDiscoveryGeneration = 0;
+  let emergencyStopListVerified = false;
+  let emergencyStopRefreshTimer = null;
+  let emergencyStopRefreshSeconds = 300;
+  let configurationLoaded = false;
+  let configurationLoadInFlight = false;
+  let savedPublicOrigin = null;
+  const renderLogging = (configuration) => {
+    const configured = configuration && configuration.logging ? configuration.logging : {};
+    const level = ['off', 'error', 'warning', 'info', 'debug'].includes(configured.level)
+      ? configured.level : 'warning';
+    loggingLevel.value = level;
+    loggingCurrent.textContent = loggingControls.dataset[
+      `level${level[0].toUpperCase()}${level.slice(1)}`
+    ];
+  };
+  const setConfigurationFieldsDisabled = (disabled) => {
+    for (const fieldset of configurationFieldsets) fieldset.disabled = disabled;
+    mcpConfigForm.setAttribute('aria-busy', String(disabled));
+    mqttConfigForm.setAttribute('aria-busy', String(disabled));
+  };
+  const setFormValue = (form, name, value) => {
+    const field = form.elements.namedItem(name);
+    if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) {
+      field.value = String(value ?? '');
+    }
+  };
+  const setFormChecked = (form, name, checked) => {
+    const field = form.elements.namedItem(name);
+    if (field instanceof HTMLInputElement) field.checked = Boolean(checked);
+  };
+  const renderConfigurationBadges = (configuration) => {
+    const enabled = (value) => value === true
+      ? [label('SUMMARY.ENABLED'), 'success']
+      : value === false
+        ? [label('SUMMARY.DISABLED'), 'inactive']
+        : [label('SUMMARY.UNKNOWN'), ''];
+    setSummaryBadge(configurationSummaryBadge, ...enabled(configuration?.server?.enabled));
+    setSummaryBadge(mqttSummaryBadge, ...enabled(configuration?.mqtt?.enabled));
+  };
+  const renderEventHistoryBrief = (history) => {
+    if (!history) return;
+    const brief = document.getElementById('event-history-brief');
+    const size = Number.isFinite(history.size_bytes)
+      ? `${(history.size_bytes / (1024 * 1024)).toLocaleString(undefined, {maximumFractionDigits: 1})} MiB`
+      : brief.dataset.sizeUnknown;
+    brief.textContent = `${history.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+      + `${history.active_source_count} ${brief.dataset.sources} · ${size}`;
+  };
+  const renderConfiguration = (configuration) => {
+    const server = configuration?.server || {};
+    const loxone = configuration?.loxone || {};
+    const tools = configuration?.tools || {};
+    const limits = configuration?.limits || {};
+    const cache = configuration?.cache || {};
+    const mqtt = configuration?.mqtt || {};
+    const emergencyStop = configuration?.emergency_stop || {};
+    const eventHistory = configuration?.event_history || {};
+    const publicOrigin = String(server.public_origin || '')
+      || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
+    savedPublicOrigin = String(server.public_origin || '');
+    renderConfigurationBadges(configuration);
+    setFormValue(mcpConfigForm, 'public_origin', publicOrigin);
+    setFormChecked(mcpConfigForm, 'enabled', server.enabled);
+    setFormValue(mcpConfigForm, 'connection_timeout', loxone.connection_timeout);
+    const endpoint = String(loxone.endpoint || miniserverEndpoint.value || '');
+    miniserverEndpoint.value = endpoint;
+    miniserverSelect.value = [...miniserverSelect.options].some((option) => option.value === endpoint)
+      ? endpoint : '';
+    setFormChecked(mcpConfigForm, 'loxone_message_confirmation_enabled', tools.loxone_message_confirmation_enabled);
+    setFormChecked(mcpConfigForm, 'loxone_history_enabled', tools.loxone_history_enabled);
+    setFormChecked(mcpConfigForm, 'loxone_control_enabled', tools.loxone_control_enabled);
+    setFormChecked(mcpConfigForm, 'loxberry_read_enabled', tools.loxberry_read_enabled);
+    setFormChecked(mcpConfigForm, 'loxberry_operate_enabled', tools.loxberry_operate_enabled);
+    for (const name of [
+      'requests_per_minute', 'control_requests_per_minute', 'loxberry_requests_per_minute',
+      'history_requests_per_minute', 'loxberry_operate_requests_per_minute',
+      'explorer_binding_retention_hours', 'max_parallel_calls',
+      'structure_refresh_seconds', 'max_active_runtime_sessions', 'runtime_session_idle_seconds',
+      'miniserver_auth_probe_initial_seconds', 'miniserver_auth_probe_max_seconds',
+      'max_structure_controls', 'max_structure_state_references', 'max_structure_depth',
+      'max_states_per_identity',
+    ]) setFormValue(mcpConfigForm, name, limits[name]);
+    setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
+    setFormChecked(mcpConfigForm, 'event_history_enabled', eventHistory.enabled);
+    setFormChecked(mcpConfigForm, 'weather_history_enabled', eventHistory.weather_enabled);
+    setFormChecked(mcpConfigForm, 'solar_forecast_enabled', configuration.solar_forecast?.enabled);
+    setFormValue(mcpConfigForm, 'solar_forecast_maximum_age_minutes', configuration.solar_forecast?.maximum_age_minutes ?? 180);
+    setFormChecked(mcpConfigForm, 'confirm_solar_forecast_source', false);
+    const brief = document.getElementById('event-history-brief');
+    brief.textContent = `${eventHistory.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+      + `${(eventHistory.sources || []).length} ${brief.dataset.sources} · ${brief.dataset.sizeUnknown}`;
+    emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
+    updateEmergencyStopRuntimeMismatch();
+    setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
+    setFormChecked(mqttConfigForm, 'mqtt_use_loxberry_gateway', mqtt.use_loxberry_gateway);
+    setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);
+    setFormValue(mqttConfigForm, 'mqtt_port', mqtt.port);
+    setFormValue(mqttConfigForm, 'mqtt_username', mqtt.username);
+    setFormValue(mqttConfigForm, 'mqtt_root_topic', mqtt.root_topic);
+    setFormValue(mqttConfigForm, 'mqtt_heartbeat_seconds', mqtt.heartbeat_seconds);
+    mqttCustomBroker = {host: mqttHost.value, port: mqttPort.value, username: mqttUsername.value};
+    syncMiniserverSelection();
+    syncOperateDependency();
+    resetEmergencyStopOptions();
+    emergencyStopRefreshSeconds = Math.max(60, Number(limits.structure_refresh_seconds) || 300);
+    void hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+    updateMqttBrokerFields();
+    renderLogging(configuration);
+  };
+  const loadConfiguration = async (suppliedResult, cachedEmergencyStopOptions) => {
+    if (configurationLoaded || configurationLoadInFlight) return;
+    configurationLoadInFlight = true;
+    setAjaxStatus('', label('AJAX.WORKING'));
+    try {
+      const body = new URLSearchParams();
+      body.set('action', 'get_config');
+      body.set('ajax', '1');
+      const result = await postAjax(body, 7000, suppliedResult);
+      renderConfiguration(result.data.configuration);
+      renderEventHistoryBrief(result.data.event_history_brief);
+      configurationLoaded = true;
+      setConfigurationFieldsDisabled(false);
+      configurationFallbackLink.hidden = true;
+      status.hidden = true;
+    } catch {
+      if (core.unloading) return;
+      renderConfigurationBadges(null);
+      setAjaxStatus('error', label('AJAX.ERROR'));
+      configurationFallbackLink.hidden = false;
+    } finally {
+      configurationLoadInFlight = false;
+    }
+  };
+  const updateMqttGateway = (gateway) => {
+    mqttGateway = gateway?.gateway_configured ? gateway : null;
+    updateMqttBrokerFields();
+  };
+  const updateMqttBrokerFields = () => {
+    const useGateway = mqttUseLoxberryGateway.checked;
+    if (useGateway && !mqttHost.disabled) {
+      mqttCustomBroker = {
+        host: mqttHost.value,
+        port: mqttPort.value,
+        username: mqttUsername.value,
+      };
+    }
+    if (useGateway && mqttGateway) {
+      mqttHost.value = String(mqttGateway.host || '');
+      mqttPort.value = String(mqttGateway.port || '');
+      mqttUsername.value = String(mqttGateway.username || '');
+      mqttPassword.value = '';
+    } else if (!useGateway) {
+      mqttHost.value = mqttCustomBroker.host;
+      mqttPort.value = mqttCustomBroker.port;
+      mqttUsername.value = mqttCustomBroker.username;
+    }
+    for (const field of [mqttHost, mqttPort, mqttUsername, mqttPassword, mqttClearPassword]) {
+      field.disabled = useGateway;
+    }
+  };
+  const syncOperateDependency = () => {
+    operateEnabled.disabled = !historyEnabled.checked;
+    if (operateEnabled.disabled) operateEnabled.checked = false;
+    eventHistoryEnabled.disabled = !historyEnabled.checked;
+    if (eventHistoryEnabled.disabled) eventHistoryEnabled.checked = false;
+    if (weatherHistoryEnabled) {
+      weatherHistoryEnabled.disabled = !historyEnabled.checked;
+      if (weatherHistoryEnabled.disabled) weatherHistoryEnabled.checked = false;
+    }
+  };
+  const syncMiniserverSelection = () => {
+    const selectedEndpoint = miniserverSelect.value;
+    if (selectedEndpoint) miniserverEndpoint.value = selectedEndpoint;
+    miniserverEndpoint.readOnly = Boolean(selectedEndpoint);
+    miniserverEndpoint.required = !selectedEndpoint;
+    manualEndpointFields.hidden = Boolean(selectedEndpoint);
+  };
+  miniserverSelect.addEventListener('change', syncMiniserverSelection);
+  historyEnabled.addEventListener('change', syncOperateDependency);
+  const weatherPanel = document.getElementById('weather-recorder-settings');
+  if (weatherPanel) {
+    const sourceSelect = document.getElementById('weather-recorder-source');
+    const fields = document.getElementById('weather-recorder-fields');
+    const list = document.getElementById('weather-recorder-configured');
+    const load = document.getElementById('weather-recorder-load');
+    const add = document.getElementById('weather-recorder-add');
+    const message = document.getElementById('weather-recorder-status');
+    let busy = false;
+    const request = async (action, payload = {}) => {
+      const body = new URLSearchParams({action, ajax: '1', payload: JSON.stringify(payload)});
+      // Source changes may need 30 seconds of discovery plus a 65-second restart.
+      const timeout = action === 'weather_history_options' ? 35000 : 120000;
+      return postAjax(body, timeout);
+    };
+    const render = (sources) => {
+      list.replaceChildren();
+      for (const source of sources) {
+        const row = document.createElement('li');
+        const text = document.createElement('span');
+        const selected = source.fields.map((field) => label(`PROFILE.${field.toUpperCase()}`));
+        text.textContent = `${label(`SETUP.WEATHER_HISTORY_${source.mode.toUpperCase()}`)}: ${selected.join(', ')} `;
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'lb-button';
+        remove.textContent = label('SETUP.WEATHER_HISTORY_REMOVE');
+        remove.addEventListener('click', async () => {
+          if (busy || !window.confirm(label('SETUP.WEATHER_HISTORY_REMOVE_CONFIRM'))) return;
+          busy = true; remove.disabled = true;
+          try {
+            const result = await request('weather_history_remove_source', {source, confirm: true});
+            render(result.data.sources);
+            message.textContent = label('SETUP.WEATHER_HISTORY_SAVED');
+          } catch (error) { message.textContent = error.message; }
+          finally { busy = false; remove.disabled = false; }
+        });
+        row.append(text, remove); list.append(row);
+      }
+    };
+    load.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true; load.disabled = true;
+      try {
+        const result = await request('weather_history_options');
+        sourceSelect.replaceChildren();
+        for (const source of result.data.choices) {
+          const option = document.createElement('option');
+          option.value = JSON.stringify(source);
+          option.textContent = label(`SETUP.WEATHER_HISTORY_${source.mode.toUpperCase()}`);
+          sourceSelect.append(option);
+        }
+        fields.querySelectorAll('label').forEach((item) => item.remove());
+        for (const field of result.data.fields) {
+          const wrapper = document.createElement('label'); wrapper.className = 'mcp-check';
+          const input = document.createElement('input'); input.type = 'checkbox'; input.value = field;
+          const caption = document.createElement('span'); caption.textContent = label(`PROFILE.${field.toUpperCase()}`);
+          wrapper.append(input, caption); fields.append(wrapper);
+        }
+        sourceSelect.disabled = fields.disabled = add.disabled = !result.data.choices.length;
+        render(result.data.sources);
+        message.textContent = label('SETUP.WEATHER_HISTORY_HELP');
+      } catch (error) { message.textContent = error.message; }
+      finally { busy = false; load.disabled = false; }
+    });
+    add.addEventListener('click', async () => {
+      if (busy || !sourceSelect.value) return;
+      const selected = Array.from(fields.querySelectorAll('input:checked'), (input) => input.value);
+      if (!selected.length) { message.textContent = label('SETUP.WEATHER_HISTORY_SELECT_FIELDS'); return; }
+      busy = true; add.disabled = true;
+      try {
+        const source = {...JSON.parse(sourceSelect.value), fields: selected};
+        const result = await request('weather_history_add_source', {source, confirm: true});
+        render(result.data.sources);
+        message.textContent = label('SETUP.WEATHER_HISTORY_SAVED');
+      } catch (error) { message.textContent = error.message; }
+      finally { busy = false; add.disabled = false; }
+    });
+  }
+  const solarPanel = document.getElementById('solar-recorder-settings');
+  if (solarPanel) {
+    const select = document.getElementById('solar-recorder-source');
+    const reference = document.getElementById('solar-recorder-reference');
+    const confirmed = document.getElementById('solar-recorder-confirm');
+    const enabled = document.getElementById('solar-recorder-enabled');
+    const list = document.getElementById('solar-recorder-configured');
+    const message = document.getElementById('solar-recorder-status');
+    const load = document.getElementById('solar-recorder-load');
+    const add = document.getElementById('solar-recorder-add');
+    const save = document.getElementById('solar-recorder-save');
+    let sources = [], choices = [], revision = null, busy = false;
+    const request = (action, payload) => postAjax(new URLSearchParams({
+      action, ajax: '1', payload: JSON.stringify(payload),
+    }), action === 'solar_history_options' ? 35000 : 120000);
+    const dirty = () => { message.textContent = label('SETUP.SOLAR_HISTORY_DIRTY'); };
+    const render = () => {
+      list.replaceChildren();
+      for (const source of sources) {
+        const row = document.createElement('li');
+        const name = choices.find((c) => c.control_uuid === source.control_uuid && c.state_uuid === source.state_uuid)?.name || source.control_uuid;
+        const text = document.createElement('span'); text.textContent = `${name} (${source.unit}) `;
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'lb-button';
+        remove.textContent = label('SETUP.WEATHER_HISTORY_REMOVE');
+        remove.disabled = busy;
+        remove.addEventListener('click', () => { if (!busy) { sources = sources.filter((s) => s !== source); render(); dirty(); } });
+        row.append(text, remove); list.append(row);
+      }
+    };
+    const setBusy = (value) => {
+      busy = value; load.disabled = value;
+      for (const item of [select, reference, confirmed, add]) item.disabled = value || revision === null || !choices.length;
+      for (const item of [enabled, save]) item.disabled = value || revision === null;
+      render();
+    };
+    load.addEventListener('click', async () => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const result = (await request('solar_history_options', {discover: true})).data;
+        sources = result.sources; choices = result.choices; revision = result.revision;
+        enabled.checked = result.enabled; select.replaceChildren();
+        for (const choice of choices) {
+          const option = document.createElement('option'); option.value = JSON.stringify(choice);
+          option.textContent = `${choice.name} (${choice.unit})`; select.append(option);
+        }
+        message.textContent = result.truncated ? label('SETUP.SOLAR_HISTORY_TRUNCATED') : '';
+      } catch (error) { message.textContent = error.message; }
+      finally { setBusy(false); }
+    });
+    add.addEventListener('click', () => {
+      if (busy || !select.value) return;
+      if (!confirmed.checked || !reference.value.trim()) { message.textContent = label('SETUP.SOLAR_HISTORY_CONFIRM'); return; }
+      const choice = JSON.parse(select.value);
+      const source = {control_uuid: choice.control_uuid, state_uuid: choice.state_uuid,
+        kind: choice.kind, unit: choice.unit, sampling_period_seconds: 60,
+        source_reference: reference.value.trim(), confirmed: true};
+      if (sources.length >= 16 || sources.some((s) => s.control_uuid === source.control_uuid && s.state_uuid === source.state_uuid)) return;
+      sources.push(source); confirmed.checked = false; render(); dirty();
+    });
+    enabled.addEventListener('change', dirty);
+    save.addEventListener('click', async () => {
+      if (busy || revision === null) return;
+      setBusy(true);
+      try {
+        const result = (await request('solar_history_save', {sources, enabled: enabled.checked, revision, confirm: true})).data;
+        sources = result.sources; revision = result.revision; enabled.checked = result.enabled;
+        message.textContent = label('SETUP.SOLAR_HISTORY_SAVED');
+      } catch (error) { message.textContent = error.message; }
+      finally { setBusy(false); }
+    });
+    setBusy(true);
+    request('solar_history_options', {}).then((result) => {
+      sources = result.data.sources; revision = result.data.revision;
+      enabled.checked = result.data.enabled;
+    }).catch((error) => { message.textContent = error.message; })
+      .finally(() => { setBusy(false); });
+  }
+  syncMiniserverSelection();
+  syncOperateDependency();
+  const addEmergencyStopOption = (value, label, selected = false) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    option.selected = selected;
+    emergencyStopSelect.append(option);
+  };
+  const resetEmergencyStopOptions = () => {
+    window.clearTimeout(emergencyStopRefreshTimer);
+    emergencyStopListVerified = false;
+    emergencyStopDiscoveryGeneration += 1;
+    const selectedValue = emergencyStopValue.value;
+    emergencyStopSelect.replaceChildren();
+    emergencyStopSelect.disabled = false;
+    emergencyStopSelect.setAttribute('aria-busy', 'false');
+    addEmergencyStopOption('', label('SETUP.EMERGENCY_STOP_NONE'), selectedValue === '');
+    if (selectedValue !== '') {
+      addEmergencyStopOption(
+        selectedValue,
+        label('SETUP.EMERGENCY_STOP_SELECTED') + ' (' + selectedValue + ')',
+        true,
+      );
+    }
+    emergencyStopStatus.hidden = true;
+    emergencyStopRetry.dataset.retry = 'false';
+    emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_LOAD');
+    emergencyStopRetry.hidden = false;
+    emergencyStopRetry.disabled = false;
+  };
+  const renderEmergencyStopOptions = (options, selectedValue) => {
+    emergencyStopSelect.replaceChildren();
+    addEmergencyStopOption('', label('SETUP.EMERGENCY_STOP_NONE'), selectedValue === '');
+    let selectedAvailable = selectedValue === '';
+    for (const option of options) {
+      if (!option || typeof option.uuid !== 'string' || typeof option.name !== 'string') continue;
+      const selected = option.uuid === selectedValue;
+      addEmergencyStopOption(option.uuid, option.name, selected);
+      selectedAvailable = selectedAvailable || selected;
+    }
+    if (!selectedAvailable) {
+      addEmergencyStopOption(
+        selectedValue,
+        label('SETUP.EMERGENCY_STOP_CURRENT') + ' (' + selectedValue + ')',
+        true,
+      );
+    }
+  };
+  const loadEmergencyStopOptions = async (
+    expectedGeneration = emergencyStopDiscoveryGeneration, manualRetry = false, automatic = false,
+  ) => {
+    if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;
+    window.clearTimeout(emergencyStopRefreshTimer);
+    const generation = ++emergencyStopDiscoveryGeneration;
+    const body = new URLSearchParams();
+    body.set('action', automatic ? 'emergency_stop_refresh'
+      : manualRetry ? 'emergency_stop_retry' : 'emergency_stop_options');
+    body.set('ajax', '1');
+    emergencyStopSelect.disabled = true;
+    emergencyStopSelect.setAttribute('aria-busy', 'true');
+    emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_LOADING');
+    emergencyStopStatus.dataset.kind = 'info';
+    emergencyStopStatus.hidden = false;
+    emergencyStopRetry.hidden = true;
+    emergencyStopRetry.disabled = true;
+    try {
+      const result = await postAjax(body, 180000);
+      if (generation !== emergencyStopDiscoveryGeneration) return;
+      const options = Array.isArray(result.data.options) ? result.data.options : [];
+      const status = result.data.status;
+      if (status === 'available') {
+        renderEmergencyStopOptions(options, emergencyStopValue.value);
+        emergencyStopListVerified = true;
+      }
+      if (status === 'available' && options.length === 0) {
+        emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_NO_OPTIONS');
+        emergencyStopStatus.dataset.kind = 'info';
+        emergencyStopStatus.hidden = false;
+      } else if (status !== 'available') {
+        emergencyStopStatus.textContent = status === 'not_configured'
+          ? label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED')
+          : result.data.failure_text || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
+        if (result.data.stale && emergencyStopListVerified) {
+          emergencyStopStatus.textContent += ' ' + label('SETUP.EMERGENCY_STOP_STALE');
+        }
+        emergencyStopStatus.dataset.kind = 'error';
+        emergencyStopStatus.hidden = false;
+        emergencyStopRetry.dataset.retry = 'true';
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
+        emergencyStopRetry.hidden = false;
+        emergencyStopRetry.disabled = false;
+        if (result.data.status === 'unavailable'
+            && Number.isInteger(result.data.retry_not_before)) {
+          const retryAt = result.data.retry_not_before * 1000;
+          emergencyStopStatus.textContent += ' ' + new Date(retryAt).toLocaleString();
+          const enableRetry = () => {
+            if (generation !== emergencyStopDiscoveryGeneration) return;
+            emergencyStopRetry.disabled = Date.now() < retryAt;
+          };
+          enableRetry();
+          window.setTimeout(enableRetry, Math.max(0, retryAt - Date.now()));
+        }
+      } else {
+        emergencyStopStatus.hidden = true;
+      }
+      if (status === 'available') {
+        emergencyStopRetry.dataset.retry = 'false';
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_REFRESH');
+        emergencyStopRetry.hidden = false;
+        emergencyStopRetry.disabled = false;
+        emergencyStopRefreshTimer = window.setTimeout(() => {
+          if (core.unloading || generation !== emergencyStopDiscoveryGeneration) return;
+          if (document.hidden) {
+            // Resume the check when the page is visible without creating background logins.
+            document.addEventListener('visibilitychange', () => {
+              if (!document.hidden) void loadEmergencyStopOptions(generation, false, true);
+            }, {once: true});
+            return;
+          }
+          void loadEmergencyStopOptions(generation, false, true);
+        }, emergencyStopRefreshSeconds * 1000);
+      }
+    } catch {
+      if (core.unloading) return;
+      if (generation !== emergencyStopDiscoveryGeneration) return;
+      emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
+      emergencyStopStatus.dataset.kind = 'error';
+      emergencyStopStatus.hidden = false;
+      emergencyStopRetry.dataset.retry = 'true';
+      emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
+      emergencyStopRetry.hidden = false;
+      emergencyStopRetry.disabled = false;
+    } finally {
+      if (generation !== emergencyStopDiscoveryGeneration) return;
+      emergencyStopSelect.disabled = false;
+      emergencyStopSelect.setAttribute('aria-busy', 'false');
+    }
+  };
+  const hydrateEmergencyStopOptions = async (generation) => {
+    // A local snapshot is not displayed before its current project marker is checked.
+    if (core.unloading || generation !== emergencyStopDiscoveryGeneration) return;
+    await loadEmergencyStopOptions(generation, false, true);
+  };
+  emergencyStopSelect.addEventListener('change', () => {
+    emergencyStopValue.value = emergencyStopSelect.value;
+    updateEmergencyStopRuntimeMismatch();
+  });
+  emergencyStopRetry.addEventListener('click', () => {
+    if (!emergencyStopRetry.disabled) {
+      loadEmergencyStopOptions(
+        emergencyStopDiscoveryGeneration, emergencyStopRetry.dataset.retry === 'true',
+      );
+    }
+  });
+  const loadInitialState = async (suppliedResult) => {
+    const body = new URLSearchParams();
+    body.set('action', 'page_state');
+    body.set('ajax', '1');
+    mqttPageStateStatus.textContent = label('AJAX.WORKING');
+    mqttPageStateStatus.dataset.kind = 'info';
+    mqttPageStateStatus.hidden = false;
+    try {
+      const result = await postAjax(body, 15000, suppliedResult);
+      mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
+      updateMqttGateway(result.data.mqtt_gateway);
+      updateMqttBrokerFields();
+      mqttPageStateStatus.hidden = true;
+    } catch {
+      if (core.unloading) return;
+      mqttPageStateStatus.textContent = label('AJAX.ERROR');
+      mqttPageStateStatus.dataset.kind = 'error';
+    }
+  };
+  for (const field of [mqttHost, mqttPort, mqttUsername]) {
+    field.addEventListener('input', () => {
+      if (!mqttUseLoxberryGateway.checked) {
+        mqttCustomBroker = {
+          host: mqttHost.value,
+          port: mqttPort.value,
+          username: mqttUsername.value,
+        };
+      }
+    });
+  }
+  mqttUseLoxberryGateway.addEventListener('change', updateMqttBrokerFields);
+  updateMqttBrokerFields();
+  const onMcpSaved = (data) => {
+    const nextPublicOrigin = String(data.configuration.server.public_origin || '');
+    if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();
+    savedPublicOrigin = nextPublicOrigin;
+    renderConfigurationBadges(data.configuration);
+    renderEventHistoryBrief(data.event_history_brief);
+    const savedEndpoint = data.configuration.loxone.endpoint;
+    emergencyStopValue.value = data.configuration.emergency_stop.virtual_status_uuid;
+    resetEmergencyStopOptions();
+    emergencyStopRefreshSeconds = Math.max(60,
+      Number(data.configuration.limits.structure_refresh_seconds) || 300);
+    void hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+    service.scheduleServicePoll(0);
+    miniserverEndpoint.value = savedEndpoint;
+    explorerLink.href = `${window.location.origin}${explorerPath}`;
+  };
+  const onMqttSaved = (data) => {
+    mqttPassword.value = '';
+    mqttClearPassword.checked = false;
+    mqttPasswordStatus.hidden = !Boolean(data.mqtt_password_configured);
+    renderConfigurationBadges(data.configuration);
+  };
+  return {mcpConfigForm, loadConfiguration, loadInitialState,
+    onMcpSaved, onMqttSaved, renderLogging, renderConfigurationBadges};
+};

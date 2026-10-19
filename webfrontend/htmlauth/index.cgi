@@ -15,6 +15,8 @@ use LoxBerry::System;
 use LoxBerry::Web;
 use LoxBerry::Log;
 
+require "$lbpbindir/lib/MCPServer/RequestSecurity.pm";
+
 my $cgi = CGI->new;
 my $q = $cgi->Vars;
 # LoxBerry may initialize its process-global language before readlanguage()
@@ -28,6 +30,7 @@ my $version = LoxBerry::System::pluginversion();
 my $admin_log;
 my $render_started = clock_gettime(CLOCK_MONOTONIC);
 my $request_id = sprintf('%x-%x', $$, int($render_started * 1_000_000));
+my %L;
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -42,6 +45,43 @@ sub bounded_admin_message {
     return decode('UTF-8', $prefix, FB_DEFAULT) . ADMIN_LOG_TRUNCATION_SUFFIX;
 }
 
+sub ascii_html_text {
+    my ($value) = @_;
+    return '' if !defined($value) || ref($value);
+    $value =~ s/&/&amp;/g;
+    $value =~ s/</&lt;/g;
+    $value =~ s/>/&gt;/g;
+    $value =~ s/"/&quot;/g;
+    $value =~ s/'/&#39;/g;
+    $value =~ s/([^\x20-\x7E])/sprintf('&#x%X;', ord($1))/ge;
+    return $value;
+}
+
+sub native_loglist_html {
+    my $html = LoxBerry::Web::loglist_html();
+    if (!defined($html)) {
+        # The native LogManager is an independent loopback CGI. A transient
+        # failure during concurrent page hydration is worth one short retry.
+        select(undef, undef, undef, 0.2);
+        $html = LoxBerry::Web::loglist_html();
+        admin_log('warning', sprintf(
+            'component=logmanager request_id=%s outcome=unavailable attempts=2',
+            $request_id,
+        ))
+            if !defined($html);
+    }
+    return $html if defined($html) && $html =~ /logfile\.cgi\?/;
+    my $unavailable = !defined($html);
+    my $label = $L{$unavailable ? 'DIAGNOSTICS.LOGLIST_UNAVAILABLE' : 'DIAGNOSTICS.LOGLIST_EMPTY'};
+    $label = '' if !defined($label);
+    $label = decode('UTF-8', $label, FB_DEFAULT) if !is_utf8($label);
+    return sprintf(
+        '<p class="mcp-status" data-kind="%s" role="status">%s</p>',
+        $unavailable ? 'error' : 'warning',
+        ascii_html_text($label),
+    );
+}
+
 sub admin_log {
     my ($severity, $message) = @_;
     my %threshold = (error => 3, warning => 4, info => 6, debug => 7);
@@ -52,13 +92,24 @@ sub admin_log {
     return if $plugin_level == 0 || $threshold{$severity} > $plugin_level;
 
     $message = bounded_admin_message($message);
-    $admin_log //= LoxBerry::Log->new(
-        name => 'admin-ui',
-        package => $lbpplugindir,
-        addtime => 1,
-    );
+    if (!$admin_log) {
+        $admin_log = LoxBerry::Log->new(
+            name => 'admin-ui',
+            package => $lbpplugindir,
+            addtime => 1,
+        );
+        $admin_log->LOGSTART(sprintf(
+            'component=admin_ui request_id=%s severity=info outcome=started', $request_id,
+        )) if $admin_log;
+    }
     my $log_method = $method{$severity};
     $admin_log->$log_method($message) if $admin_log;
+}
+
+END {
+    $admin_log->LOGEND(sprintf(
+        'component=admin_ui request_id=%s severity=info outcome=finished', $request_id,
+    )) if $admin_log;
 }
 
 $ENV{LBPDATA} = $lbpdatadir;
@@ -67,14 +118,43 @@ $ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";
 $ENV{MCPSERVER_LOXONE_TOKEN_STORE} = "$lbpdatadir/auth/loxone-tokens.json.enc";
 $ENV{MCPSERVER_INSTALL_KEY} = "$lbpdatadir/auth/install.key";
 $ENV{MCPSERVER_MQTT_CREDENTIALS} = "$lbpdatadir/auth/mqtt-credentials.json.enc";
+$ENV{MCPSERVER_EVENT_HISTORY_STORE} = "$lbpdatadir/event-history/state-events.sqlite3";
 $ENV{MCPSERVER_WEB_CERT} = "$lbhomedir/data/system/LoxBerryCA/certs/wwwcert.pem";
 $ENV{MCPSERVER_CA_CERT} = "$lbhomedir/data/system/LoxBerryCA/cacert.pem";
 $ENV{MCPSERVER_CERT_HELPER} = '/usr/local/sbin/loxberry-mcpserver-renew-web-certificate';
 $ENV{MCPSERVER_CERT_STATUS} = "$lbpdatadir/certificate-renewal.json";
 
+sub safe_admin_lifecycle_events {
+    my ($stderr) = @_;
+    my @events;
+    for my $line (split /\n/, $stderr) {
+        next if length($line) > 512;
+        if ($line =~ /\Amcpserver_auth_lifecycle=(DEBUG|INFO|WARNING)\x20
+        (component=auth_lifecycle\x20
+        event=(?:approval_granted|approval_match|approval_removed|batch_summary|client_registered|client_removed|connection_close_requested|connection_closed|connection_opened|family_created|family_expired|family_removed|family_revoked|refresh_rejected|remote_cleanup|runtime_closed|service_started|service_stopped|token_issued|token_rotated)\x20
+        trace_id=(?:-|[0-9a-f]{24})\x20
+        family_ref=(?:-|[0-9a-f]{24})\x20
+        client_ref=(?:-|[0-9a-f]{24})\x20
+        binding_ref=(?:-|[0-9a-f]{24})\x20
+        capability=(?:-|read|operate)\x20
+        reason=(?:admin_all_sessions|admin_session|already_invalid|approval_operate_removed|approval_read_removed|attempt_reserved|authentication_suppressed|authorization_code|capability_disabled|capacity_eviction|command_rejected|confirmed_killed|exact_match|expired_without_confirmation|explorer_logout|family_expired|idle_eviction|initial_state_timeout|local_disconnect|no_exact_match|oauth_revocation|operate|queued|read|refresh_invalid_state|refresh_reuse|refresh_rotation|retention_cleanup|scope_disabled|shutdown|source_ip_blocked|stream_ended|teardown_failed|token_refresh|transport_failed|unconfirmed|unknown)\x20
+        source=(?:admin|configuration|maintenance|oauth|remote_worker|runtime|unknown)\x20
+        outcome=(?:accepted|closed|committed|completed|failed|matched|opened|pending|rejected|removed|suppressed|unknown|unmatched)\x20
+        count=\d{1,5})\z/x) {
+            my ($severity, $message) = (lc($1), $2);
+            next if $message =~ /count=(\d+)\z/ && $1 > 10000;
+            push @events, [$severity, $message];
+            last if @events >= 7;
+        }
+    }
+    return @events;
+}
+
 sub admin_call {
     my ($action, $payload) = @_;
+    local $ENV{MCPSERVER_ADMIN_REQUEST_ID} = $request_id;
     my $started = clock_gettime(CLOCK_MONOTONIC);
+    my $routine_poll = $action eq 'service_status' || $action eq 'list_sessions';
     my ($child_in, $child_out);
     my $child_err = gensym;
     my $pid = open3($child_in, $child_out, $child_err, "$lbpbindir/mcpserver-admin");
@@ -84,6 +164,10 @@ sub admin_call {
     my $stdout = <$child_out> // '';
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
+    my $child_status = $?;
+    for my $event (safe_admin_lifecycle_events($stderr)) {
+        admin_log($event->[0], "$event->[1] request_id=$request_id");
+    }
     if ($stderr =~ /(?:\A|\n)mcpserver_admin_timing=(\{[^\r\n]{1,2048}\})/) {
         my $timing = eval { decode_json($1) };
         if (ref($timing) eq 'HASH') {
@@ -95,16 +179,23 @@ sub admin_call {
             admin_log('debug', sprintf(
                 'component=admin_helper request_id=%s action=%s timing=%s',
                 $request_id, $action, encode_json(\%safe_timing),
-            )) if %safe_timing;
+            )) if %safe_timing && !$routine_poll;
         }
     }
-    admin_log('debug', sprintf(
-        'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
-        $request_id,
-        $action,
-        (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
-    ));
-    if ($? != 0 || $stdout eq '') {
+    my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
+    if ($routine_poll) {
+        my $slow_threshold_ms = $action eq 'service_status' ? 5000 : 10000;
+        admin_log('warning', sprintf(
+            'component=admin_ui request_id=%s action=%s outcome=slow duration_ms=%.1f',
+            $request_id, $action, $duration_ms,
+        )) if $duration_ms >= $slow_threshold_ms;
+    } else {
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
+            $request_id, $action, $duration_ms,
+        ));
+    }
+    if ($child_status != 0 || $stdout eq '') {
         admin_log('error', 'component=admin_helper outcome=failed');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }
@@ -124,9 +215,31 @@ sub admin_call {
             ));
         }
     }
-    if ($action eq 'emergency_stop_options' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+    if ($action eq 'page_snapshot' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+        for my $section (qw(get_config page_state service_status certificate_status list_sessions)) {
+            my $entry = $result->{data}{$section};
+            next if ref($entry) ne 'HASH' || $entry->{ok};
+            my $code = ref($entry->{error}) eq 'HASH' ? ($entry->{error}{code} // '') : '';
+            $code = 'internal_error' if $code !~ /\A[a-z_]{1,128}\z/;
+            admin_log($code eq 'internal_error' ? 'error' : 'warning', sprintf(
+                'component=admin_helper request_id=%s action=page_snapshot section=%s outcome=rejected code=%s',
+                $request_id, $section, $code,
+            ));
+        }
+    }
+    if (($action eq 'emergency_stop_options' || $action eq 'emergency_stop_retry'
+        || $action eq 'emergency_stop_refresh')
+        && $result->{ok} && ref($result->{data}) eq 'HASH') {
         my $failure_code = delete $result->{data}{discovery_failure_code};
         if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
+            my %labels = (
+                authentication_suppressed => 'EMERGENCY_STOP_AUTH_SUPPRESSED',
+                authentication_busy => 'EMERGENCY_STOP_AUTH_BUSY',
+                credentials_unavailable => 'EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE',
+                connection_failed => 'EMERGENCY_STOP_CONNECTION_FAILED',
+                structure_failed => 'EMERGENCY_STOP_STRUCTURE_FAILED',
+            );
+            $result->{data}{failure_text} = $L{'SETUP.' . ($labels{$failure_code} // 'EMERGENCY_STOP_LOAD_ERROR')};
             admin_log('warning', sprintf(
                 'component=emergency_stop outcome=options_unavailable request_id=%s code=%s',
                 $request_id,
@@ -138,11 +251,7 @@ sub admin_call {
 }
 
 sub same_origin_post {
-    return 0 if uc($ENV{REQUEST_METHOD} // '') ne 'POST';
-    my $origin = $ENV{HTTP_ORIGIN} // '';
-    my $host = $ENV{HTTP_HOST} // '';
-    return 0 if $origin eq '' || $host eq '';
-    return $origin =~ m{^https?://\Q$host\E$}i ? 1 : 0;
+    return MCPServer::RequestSecurity::same_origin_post();
 }
 
 sub security_header_args {
@@ -174,8 +283,20 @@ sub redirect_reply {
     exit;
 }
 
+sub json_unicode_text {
+    my ($value) = @_;
+    return $value if !defined($value) || ref($value) || is_utf8($value);
+    return decode('UTF-8', $value, FB_DEFAULT);
+}
+
 sub json_reply {
     my ($result, $status) = @_;
+    if (ref($result->{data}) eq 'HASH' && defined($result->{data}{failure_text})) {
+        $result->{data}{failure_text} = json_unicode_text($result->{data}{failure_text});
+    }
+    if (ref($result->{error}) eq 'HASH' && defined($result->{error}{message})) {
+        $result->{error}{message} = json_unicode_text($result->{error}{message});
+    }
     print $cgi->header(
         -type => 'application/json',
         -charset => 'utf-8',
@@ -358,12 +479,14 @@ my $template = HTML::Template->new_scalar_ref(
     loop_context_vars => 1,
     die_on_bad_params => 0,
 );
-my %L = LoxBerry::System::readlanguage($template, 'language.ini');
+%L = LoxBerry::System::readlanguage($template, 'language.ini');
+my $template_setup_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
 
 sub localize_admin_error {
     my ($result) = @_;
     return if $result->{ok} || ref($result->{error}) ne 'HASH';
     my %messages = (
+        persistence_uncertain => $L{'AJAX.PERSISTENCE_UNCERTAIN'},
         securepin_invalid => $L{'CERTIFICATE.ERROR_PIN_INVALID'},
         securepin_wrong => $L{'CERTIFICATE.ERROR_PIN_WRONG'},
         securepin_locked => $L{'CERTIFICATE.ERROR_PIN_LOCKED'},
@@ -379,6 +502,7 @@ sub localize_admin_error {
 }
 
 my $action = $q->{action} // '';
+my $fallback_retry_result;
 if ($action ne '') {
     if (!same_origin_post()) {
         my $failure = {ok => JSON::PP::false, error => {code => 'forbidden', message => 'Same-origin POST required'}};
@@ -389,7 +513,7 @@ if ($action ne '') {
     my $result;
     if ($action eq 'save_mcp_config') {
         my $document = {
-            schema_version => 5,
+            schema_version => 9,
             server => {
                 enabled => $q->{enabled} ? JSON::PP::true : JSON::PP::false,
                 public_origin => $q->{public_origin} // '',
@@ -404,6 +528,7 @@ if ($action ne '') {
                     ? JSON::PP::true : JSON::PP::false,
                 loxberry_read_enabled => ($q->{loxberry_read_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
+                loxone_message_confirmation_enabled => ($q->{loxone_message_confirmation_enabled} // '') eq '1' ? JSON::PP::true : JSON::PP::false,
                 loxone_history_enabled => ($q->{loxone_history_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
                 loxberry_operate_enabled => ($q->{loxberry_operate_enabled} // '') eq '1'
@@ -415,12 +540,13 @@ if ($action ne '') {
                 loxberry_requests_per_minute => 0 + ($q->{loxberry_requests_per_minute} // 30),
                 history_requests_per_minute => 0 + ($q->{history_requests_per_minute} // 12),
                 loxberry_operate_requests_per_minute => 0 + ($q->{loxberry_operate_requests_per_minute} // 3),
+                explorer_binding_retention_hours => 0 + ($q->{explorer_binding_retention_hours} // 72),
                 max_parallel_calls => 0 + ($q->{max_parallel_calls} // 4),
                 structure_refresh_seconds => 0 + ($q->{structure_refresh_seconds} // 300),
                 max_active_runtime_sessions => 0 + ($q->{max_active_runtime_sessions} // 16),
                 runtime_session_idle_seconds => 0 + ($q->{runtime_session_idle_seconds} // 900),
-                miniserver_auth_probe_initial_seconds => 60 * (0 + ($q->{miniserver_auth_probe_initial_minutes} // 15)),
-                miniserver_auth_probe_max_seconds => 60 * (0 + ($q->{miniserver_auth_probe_max_minutes} // 1440)),
+                miniserver_auth_probe_initial_seconds => 0 + ($q->{miniserver_auth_probe_initial_seconds} // 900),
+                miniserver_auth_probe_max_seconds => 0 + ($q->{miniserver_auth_probe_max_seconds} // 86400),
                 max_structure_controls => 0 + ($q->{max_structure_controls} // 20000),
                 max_structure_state_references => 0 + ($q->{max_structure_state_references} // 100000),
                 max_structure_depth => 0 + ($q->{max_structure_depth} // 32),
@@ -429,6 +555,19 @@ if ($action ne '') {
             cache => {
                 statistics_memory_max_mib => 0 + ($q->{statistics_memory_max_mib} // 128),
             },
+            event_history => {
+                enabled => ($q->{event_history_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
+                weather_enabled => ($q->{weather_history_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
+            },
+            solar_forecast => {
+                enabled => ($q->{solar_forecast_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
+                maximum_age_minutes => 0 + ($q->{solar_forecast_maximum_age_minutes} // 180),
+            },
+            confirm_solar_forecast_source => ($q->{confirm_solar_forecast_source} // '') eq '1'
+                ? JSON::PP::true : JSON::PP::false,
             emergency_stop => {
                 virtual_status_uuid => $q->{emergency_stop_virtual_status_uuid} // '',
             },
@@ -436,6 +575,22 @@ if ($action ne '') {
         $result = admin_call('save_mcp_config', $document);
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=save_mcp_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'save_knx_taxonomy') {
+        my @entries;
+        for my $line (split /\r?\n/, $q->{taxonomy_entries} // '') {
+            next if $line eq '';
+            my ($qualified_prefix, $label) = split /=/, $line, 2;
+            my ($format, $prefix) = split /:/, $qualified_prefix // '', 2;
+            push @entries, {
+                address_format => $format eq '2' ? 'two_level'
+                    : $format eq '3' ? 'three_level' : '',
+                prefix => $prefix // '',
+                label => $label // '',
+            };
+        }
+        $result = admin_call('save_knx_taxonomy', {entries => \@entries});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=save_knx_taxonomy outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'save_mqtt_config') {
         my $document = {
             schema_version => 5,
@@ -461,6 +616,52 @@ if ($action ne '') {
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'get_config') {
         $result = admin_call('get_config', {});
+    } elsif ($action eq 'page_snapshot') {
+        $result = admin_call('page_snapshot', {});
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_snapshot template_setup_ms=%.1f',
+            $request_id, $template_setup_ms,
+        ));
+    } elsif ($action eq 'page_auxiliary') {
+        my $aux_started = clock_gettime(CLOCK_MONOTONIC);
+        my ($notifications, $loglist);
+        my $notifications_ok = eval {
+            $notifications = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
+            1;
+        };
+        my $notification_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $aux_started) * 1000;
+        admin_log('error', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary section=page_notifications outcome=rejected code=internal_error',
+            $request_id,
+        )) if !$notifications_ok;
+        my $loglist_started = clock_gettime(CLOCK_MONOTONIC);
+        my $loglist_ok = eval {
+            $loglist = native_loglist_html();
+            1;
+        };
+        admin_log('error', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary section=page_loglist outcome=rejected code=internal_error',
+            $request_id,
+        )) if !$loglist_ok;
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary duration_ms=%.1f notifications_ms=%.1f loglist_ms=%.1f template_setup_ms=%.1f',
+            $request_id,
+            (clock_gettime(CLOCK_MONOTONIC) - $aux_started) * 1000,
+            $notification_duration_ms,
+            (clock_gettime(CLOCK_MONOTONIC) - $loglist_started) * 1000,
+            $template_setup_ms,
+        ));
+        $result = {
+            ok => JSON::PP::true,
+            data => {
+                page_notifications => $notifications_ok
+                    ? {ok => JSON::PP::true, data => {notifications_html => $notifications}}
+                    : {ok => JSON::PP::false, error => {code => 'internal_error'}},
+                page_loglist => $loglist_ok
+                    ? {ok => JSON::PP::true, data => {loglist_html => $loglist}}
+                    : {ok => JSON::PP::false, error => {code => 'internal_error'}},
+            },
+        };
     } elsif ($action eq 'page_notifications') {
         my $started = clock_gettime(CLOCK_MONOTONIC);
         $result = {
@@ -475,22 +676,27 @@ if ($action ne '') {
             (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
         ));
     } elsif ($action eq 'page_loglist') {
-        my $started = clock_gettime(CLOCK_MONOTONIC);
         $result = {
             ok => JSON::PP::true,
             data => {
-                loglist_html => LoxBerry::Web::loglist_html() // '',
+                loglist_html => native_loglist_html(),
             },
         };
-        admin_log('debug', sprintf(
-            'component=admin_ui request_id=%s action=page_loglist duration_ms=%.1f',
-            $request_id,
-            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
-        ));
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
         $result = admin_call('emergency_stop_options', {});
+    } elsif ($action eq 'emergency_stop_refresh') {
+        $result = admin_call('emergency_stop_refresh', {});
+    } elsif ($action eq 'emergency_stop_cached_options') {
+        $result = admin_call('emergency_stop_cached_options', {});
+    } elsif ($action eq 'emergency_stop_retry') {
+        $result = admin_call('emergency_stop_retry', {});
+    } elsif ($action eq 'list_authentication_events') {
+        my $payload = length($q->{session_id} // '') ? {session_id => $q->{session_id}} : {};
+        $result = admin_call('list_authentication_events', $payload);
+    } elsif ($action eq 'miniserver_auth_probe') {
+        $result = admin_call('miniserver_auth_probe', {});
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
@@ -501,10 +707,11 @@ if ($action ne '') {
         $result = admin_call('confirm_loxone_token', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=confirm_loxone_token outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
-    } elsif ($action eq 'request_miniserver_auth_recovery') {
-        $result = admin_call('request_miniserver_auth_recovery', {session_id => ($q->{session_id} // '')});
-        admin_log($result->{ok} ? 'info' : 'warning',
-            'action=request_miniserver_auth_recovery outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'inspect_message_confirmation' || $action eq 'approve_message_confirmation') {
+        $result = admin_call($action, {
+            preview_id => ($q->{preview_id} // ''),
+            challenge => ($q->{challenge} // ''),
+        });
     } elsif ($action eq 'allow_loxberry_read') {
         $result = admin_call('allow_loxberry_read', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
@@ -521,6 +728,26 @@ if ($action ne '') {
         $result = admin_call('revoke_loxberry_operate', {binding_id => ($q->{binding_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=revoke_loxberry_operate outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'solar_history_options' || $action eq 'solar_history_save') {
+        my $payload = eval { JSON::PP::decode_json($q->{payload} // '{}') };
+        $result = $@ || ref($payload) ne 'HASH'
+            ? {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Invalid solar source'}}
+            : admin_call($action, $payload);
+        admin_log($result->{ok} ? 'info' : 'warning', sprintf(
+            'component=solar_history request_id=%s action=%s outcome=%s',
+            $request_id, $action, $result->{ok} ? 'completed' : 'rejected',
+        ));
+    } elsif ($action eq 'weather_history_options') {
+        $result = admin_call($action, {});
+    } elsif ($action eq 'weather_history_add_source' || $action eq 'weather_history_remove_source') {
+        my $payload = eval { JSON::PP::decode_json($q->{payload} // '') };
+        $result = $@ || ref($payload) ne 'HASH'
+            ? {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Invalid weather source'}}
+            : admin_call($action, $payload);
+        admin_log($result->{ok} ? 'info' : 'warning', sprintf(
+            'component=weather_history request_id=%s action=%s outcome=%s',
+            $request_id, $action, $result->{ok} ? 'completed' : 'rejected',
+        ));
     } elsif ($action eq 'list_sessions') {
         $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
@@ -564,7 +791,7 @@ if ($action ne '') {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported action'}};
     }
     localize_admin_error($result);
-    if ($action eq 'diagnostic' && $result->{ok}) {
+    if ($action eq 'diagnostic' && $result->{ok} && !$q->{ajax}) {
         print $cgi->header(
             -type => 'application/json',
             -charset => 'utf-8',
@@ -577,8 +804,13 @@ if ($action ne '') {
     json_reply($result, $result->{ok} ? 200 : 400) if $q->{ajax};
     my $notice = $result->{ok}
         ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
-        : 'error';
-    redirect_reply("index.cgi?notice=$notice");
+        : (($result->{error}{code} // '') eq 'persistence_uncertain' ? 'persistence_uncertain' : 'error');
+    if (($action eq 'emergency_stop_retry' || $action eq 'emergency_stop_options')
+        && ($q->{fallback} // '') eq '1') {
+        $fallback_retry_result = $result;
+    } else {
+        redirect_reply("index.cgi?notice=$notice");
+    }
 }
 
 use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
@@ -598,11 +830,21 @@ sub format_expiry {
 my $server_rendered_fallback = ($q->{fallback} // '') eq '1';
 my $config = {};
 my $sessions = [];
+my $remote_cleanup = {available => 0};
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
 my $emergency_stop_options = [];
 my $selected_emergency_stop_unavailable = 0;
+my $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOADING'};
+my $emergency_stop_status_kind = 'info';
+my $emergency_stop_status_visible = 1;
+my $emergency_stop_retry_visible = 0;
+my $emergency_stop_retry_enabled = 0;
+my $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_LOAD'};
+my $emergency_stop_button_action = 'emergency_stop_options';
 my $fallback_configuration_loaded = 0;
+my $fallback_summary_configuration_loaded = 0;
+my $fallback_summary_sessions_loaded = 0;
 my $notifications_html = '';
 my $loglist_html = '';
 my $service_enabled_setting_known = 0;
@@ -614,6 +856,8 @@ if ($server_rendered_fallback) {
     $config = $config_result->{data}{configuration}
         if $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH';
     $fallback_configuration_loaded = $config_result->{ok} ? 1 : 0;
+    $fallback_summary_configuration_loaded =
+        $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH' ? 1 : 0;
     my $service_result = admin_call('service_status', {});
     if ($service_result->{ok} && ref($service_result->{data}{service}) eq 'HASH') {
         $service = $service_result->{data}{service};
@@ -624,10 +868,14 @@ if ($server_rendered_fallback) {
         $emergency_stop_runtime = $service_result->{data}{emergency_stop_runtime};
     }
     $notifications_html = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
-    $loglist_html = LoxBerry::Web::loglist_html() // '';
+    $loglist_html = native_loglist_html();
     my $sessions_result = admin_call('list_sessions', {});
     if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
+        $remote_cleanup = $sessions_result->{data}{remote_cleanup}
+            if ref($sessions_result->{data}{remote_cleanup}) eq 'HASH';
         $sessions = $sessions_result->{data}{sessions}
+            if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
+        $fallback_summary_sessions_loaded = 1
             if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
         $loxberry_bindings = $sessions_result->{data}{loxberry_bindings}
             if ref($sessions_result->{data}{loxberry_bindings}) eq 'ARRAY';
@@ -645,9 +893,12 @@ $config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 if ($server_rendered_fallback) {
-    my $options_result = admin_call('emergency_stop_options', {});
-    my $options = ref($options_result->{data}) eq 'HASH'
-        ? $options_result->{data}{options} : undef;
+    my $options_result = $fallback_retry_result
+        // admin_call('emergency_stop_refresh', {});
+    my $options_data = ref($options_result->{data}) eq 'HASH'
+        ? $options_result->{data} : {};
+    my $options = ($options_data->{status} // '') eq 'available'
+        ? $options_data->{options} : [];
     if ($options_result->{ok} && ref($options) eq 'ARRAY') {
         for my $option (@$options) {
             next if ref($option) ne 'HASH';
@@ -656,12 +907,58 @@ if ($server_rendered_fallback) {
             next if !defined($uuid) || !defined($name) || ref($uuid) || ref($name);
             push @$emergency_stop_options, {
                 uuid => $uuid,
-                name => $name,
+                name_html => ascii_html_text($name),
                 selected => $uuid eq $selected_emergency_stop ? 1 : 0,
             };
         }
         $selected_emergency_stop_unavailable = $selected_emergency_stop ne ''
             && !grep { $_->{selected} } @$emergency_stop_options;
+        my $status = $options_data->{status} // '';
+        if ($status eq 'available') {
+            if ($options_data->{stale}) {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_STALE'};
+            } elsif (!@$emergency_stop_options) {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NO_OPTIONS'};
+            } elsif ($options_data->{cached}) {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_CACHED'};
+            } else {
+                $emergency_stop_status_visible = 0;
+            }
+            $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_REFRESH'};
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
+        } elsif ($status eq 'not_loaded') {
+            $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NOT_LOADED'};
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
+        } elsif ($status eq 'not_configured') {
+            $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NOT_CONFIGURED'};
+            $emergency_stop_status_kind = 'error';
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
+        } else {
+            $emergency_stop_status_text = $options_data->{failure_text}
+                // $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+            $emergency_stop_status_text .= ' ' . $L{'SETUP.EMERGENCY_STOP_STALE'}
+                if $options_data->{stale} && @$emergency_stop_options;
+            $emergency_stop_status_kind = 'error';
+            $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_RETRY'};
+            $emergency_stop_button_action = 'emergency_stop_retry';
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
+            my $retry_at = $options_data->{retry_not_before};
+            if ($status eq 'unavailable' && defined($retry_at)
+                && "$retry_at" =~ /\A[0-9]{1,10}\z/
+                && $retry_at <= MAX_EXPIRY_EPOCH) {
+                $emergency_stop_status_text .= ' ' . format_expiry($retry_at);
+                $emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;
+            }
+        }
+    } else {
+        $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+        $emergency_stop_status_kind = 'error';
+        $emergency_stop_retry_visible = 1;
+        $emergency_stop_retry_enabled = 1;
     }
 }
 my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
@@ -670,6 +967,14 @@ my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
 $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
+my $taxonomy_endpoint = $display_endpoint;
+$taxonomy_endpoint =~ s{/$}{};
+my $taxonomy_text = ($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint
+    ? join("\n", map {
+        (($_->{address_format} // '') eq 'two_level' ? '2:' : '3:')
+            . ($_->{prefix} // '') . '=' . ($_->{label} // '')
+    } @{$config->{knx_address_taxonomy}{entries} // []})
+    : '';
 my $public_origin = $config->{server}{public_origin} // '';
 my $certificate = {};
 my $renewal = {};
@@ -691,16 +996,38 @@ my %renewal_labels = (
 my $renewal_state = $renewal->{state} // 'idle';
 my $notice_value = $q->{notice} // '';
 my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
+    : $notice_value eq 'persistence_uncertain' ? $L{'AJAX.PERSISTENCE_UNCERTAIN'}
     : $notice_value eq 'certificate_scheduled' ? $L{'CERTIFICATE.STATE_SCHEDULED'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
 my $fallback_url = 'index.cgi?fallback=1';
 $fallback_url .= '&notice=' . $notice_value
-    if $notice_value =~ /\A(?:success|certificate_scheduled|error|forbidden)\z/;
+    if $notice_value =~ /\A(?:success|certificate_scheduled|error|forbidden|persistence_uncertain)\z/;
 for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});
+}
+my $fallback_approval_count = 0;
+if ($fallback_summary_sessions_loaded) {
+    for my $session (@$sessions) {
+        next if ref($session) ne 'HASH';
+        $fallback_approval_count++ if $session->{loxone_token_confirmation_required};
+        $fallback_approval_count++
+            if $session->{loxberry_read_eligible} && !$session->{loxberry_read_approved};
+        $fallback_approval_count++
+            if $session->{loxberry_operate_eligible} && !$session->{loxberry_operate_approved};
+    }
+}
+for my $bindings ($loxberry_bindings, $loxberry_operate_bindings) {
+    next if ref($bindings) ne 'ARRAY';
+    for my $binding (@$bindings) {
+        next if ref($binding) ne 'HASH' || ref($binding->{rows}) ne 'ARRAY';
+        for my $row (@{$binding->{rows}}) {
+            next if ref($row) ne 'HASH' || !$row->{retention_expires_at};
+            $row->{retention_expires_display} = format_expiry($row->{retention_expires_at});
+        }
+    }
 }
 my @service_logs;
 for my $suffix ('', '.1', '.2') {
@@ -720,6 +1047,41 @@ my $runtime_signal_uuid = $emergency_stop_runtime->{signal_uuid};
 $runtime_signal_uuid = '' if !defined($runtime_signal_uuid) || ref($runtime_signal_uuid);
 my $runtime_signal_name = $emergency_stop_runtime->{signal_name};
 $runtime_signal_name = '' if !defined($runtime_signal_name) || ref($runtime_signal_name);
+my @remote_cleanup_notices;
+if ($server_rendered_fallback) {
+    if (!$remote_cleanup->{available}) {
+        push @remote_cleanup_notices, $L{'SESSIONS.REMOTE_STATUS_UNAVAILABLE'};
+    } else {
+        push @remote_cleanup_notices, $L{'SESSIONS.REMOTE_BREAKER_WARNING'}
+            if ($remote_cleanup->{breaker_state} // '') eq 'open_source_ip_blocked';
+        for my $entry (
+            ['pending', 'SESSIONS.REMOTE_PENDING_WARNING'],
+            ['retryable', 'SESSIONS.REMOTE_RETRYABLE_WARNING'],
+            ['unconfirmed', 'SESSIONS.REMOTE_UNCONFIRMED_WARNING'],
+        ) {
+            my ($field, $label) = @$entry;
+            my $count = $remote_cleanup->{$field};
+            push @remote_cleanup_notices, "$L{$label} $count"
+                if defined($count) && !ref($count) && $count =~ /\A[0-9]+\z/ && $count > 0;
+        }
+        my %failure_labels = (
+            authentication_rejected => 'SESSIONS.REMOTE_REJECTED',
+            source_ip_blocked => 'SESSIONS.REMOTE_BLOCKED',
+            transport_failed => 'SESSIONS.REMOTE_TRANSPORT',
+            command_rejected => 'SESSIONS.REMOTE_COMMAND',
+        );
+        my $category = $remote_cleanup->{last_failure_category} // '';
+        my $at = $remote_cleanup->{last_failure_at};
+        if (@remote_cleanup_notices && exists $failure_labels{$category}
+            && defined($at) && !ref($at) && $at =~ /\A[0-9]+\z/) {
+            my $failure_label = $failure_labels{$category};
+            push @remote_cleanup_notices,
+                $L{'SESSIONS.REMOTE_LAST_FAILURE'} . ' '
+                . $L{$failure_label} . ', ' . format_expiry($at);
+        }
+    }
+}
+my $remote_cleanup_warning = join(' ', @remote_cleanup_notices);
 my $runtime_signal = $server_rendered_fallback && $runtime_availability eq 'available'
     ? ($runtime_signal_name ne '' ? $runtime_signal_name
         : $runtime_signal_uuid ne '' ? $runtime_signal_uuid
@@ -730,8 +1092,14 @@ my $runtime_signal = $server_rendered_fallback && $runtime_availability eq 'avai
         : $L{'SETUP.EMERGENCY_STOP_LOADING'};
 $template->param(
     VERSION => $version,
+    MESSAGE_APPROVAL_HELP_URL => 'message-approval.cgi?lang=' . (($LoxBerry::System::lang // '') eq 'en' ? 'en' : 'de'),
     SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
     FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded,
+    FALLBACK_SUMMARY_CONFIGURATION_LOADED => $fallback_summary_configuration_loaded,
+    FALLBACK_SUMMARY_SESSIONS_LOADED => $fallback_summary_sessions_loaded,
+    FALLBACK_SESSION_COUNT => scalar(@$sessions),
+    FALLBACK_APPROVAL_COUNT => $fallback_approval_count,
+    FALLBACK_HAS_APPROVALS => $fallback_approval_count > 0 ? 1 : 0,
     FALLBACK_URL => $fallback_url,
     NOTIFICATIONS_HTML => $notifications_html,
     LOGLIST_HTML => $loglist_html,
@@ -751,25 +1119,33 @@ $template->param(
     EXPLORER_URL => 'explorer.cgi',
     SCHEMA_REFERENCE_URL => 'tool-schema-reference.html',
     ENDPOINT => $display_endpoint,
+    KNX_TAXONOMY_TEXT => $taxonomy_text,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
     LOXONE_CONTROL_ENABLED => $config->{tools}{loxone_control_enabled} ? 1 : 0,
     LOXBERRY_READ_ENABLED => $config->{tools}{loxberry_read_enabled} ? 1 : 0,
+    LOXONE_MESSAGE_CONFIRMATION_ENABLED => $config->{tools}{loxone_message_confirmation_enabled} ? 1 : 0,
     LOXONE_HISTORY_ENABLED => $config->{tools}{loxone_history_enabled} ? 1 : 0,
     LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
+    EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0,
+    WEATHER_HISTORY_ENABLED => $config->{event_history}{weather_enabled} ? 1 : 0,
+    SOLAR_FORECAST_ENABLED => $config->{solar_forecast}{enabled} ? 1 : 0,
+    SOLAR_FORECAST_MAXIMUM_AGE => $config->{solar_forecast}{maximum_age_minutes} // 180,
+    EVENT_HISTORY_SOURCE_COUNT => scalar(@{$config->{event_history}{sources} // []}),
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
     HISTORY_REQUESTS_PER_MINUTE => $config->{limits}{history_requests_per_minute} // 12,
     LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
+    EXPLORER_BINDING_RETENTION_HOURS => $config->{limits}{explorer_binding_retention_hours} // 72,
     STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // 128,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     STRUCTURE_REFRESH_SECONDS => $config->{limits}{structure_refresh_seconds} // 300,
     MAX_ACTIVE_RUNTIME_SESSIONS => $config->{limits}{max_active_runtime_sessions} // 16,
     RUNTIME_SESSION_IDLE_SECONDS => $config->{limits}{runtime_session_idle_seconds} // 900,
-    MINISERVER_AUTH_PROBE_INITIAL_MINUTES => int(($config->{limits}{miniserver_auth_probe_initial_seconds} // 900) / 60),
-    MINISERVER_AUTH_PROBE_MAX_MINUTES => int(($config->{limits}{miniserver_auth_probe_max_seconds} // 86400) / 60),
+    MINISERVER_AUTH_PROBE_INITIAL_SECONDS => $config->{limits}{miniserver_auth_probe_initial_seconds} // 900,
+    MINISERVER_AUTH_PROBE_MAX_SECONDS => $config->{limits}{miniserver_auth_probe_max_seconds} // 86400,
     MAX_STRUCTURE_CONTROLS => $config->{limits}{max_structure_controls} // 20000,
     MAX_STRUCTURE_STATE_REFERENCES => $config->{limits}{max_structure_state_references} // 100000,
     MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,
@@ -777,6 +1153,13 @@ $template->param(
     SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
     EMERGENCY_STOP_OPTIONS => $emergency_stop_options,
     EMERGENCY_STOP_SELECTED_UNAVAILABLE => $selected_emergency_stop_unavailable,
+    EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text,
+    EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind,
+    EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible,
+    EMERGENCY_STOP_RETRY_VISIBLE => $emergency_stop_retry_visible,
+    EMERGENCY_STOP_RETRY_ENABLED => $emergency_stop_retry_enabled,
+    EMERGENCY_STOP_BUTTON_LABEL => $emergency_stop_button_label,
+    EMERGENCY_STOP_BUTTON_ACTION => $emergency_stop_button_action,
     EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE => $runtime_signal,
     EMERGENCY_STOP_RUNTIME_UUID => $runtime_signal_uuid,
     EMERGENCY_STOP_RUNTIME_UUID_VISIBLE => $server_rendered_fallback
@@ -815,26 +1198,14 @@ $template->param(
     CERTIFICATE_RENEWAL_STATE => $renewal_labels{$renewal_state}
         // $L{'CERTIFICATE.STATE_ERROR'},
     SESSIONS => $sessions,
+    REMOTE_CLEANUP_WARNING_VISIBLE => length($remote_cleanup_warning) ? 1 : 0,
+    REMOTE_CLEANUP_WARNING => $remote_cleanup_warning,
     LOXBERRY_BINDINGS => $loxberry_bindings,
     LOXBERRY_OPERATE_BINDINGS => $loxberry_operate_bindings,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
     NOTICE => $notice_text,
     NOTICE_KIND => $notice_kind,
 );
-
-our %navbar;
-$navbar{10}{Name} = $L{'NAV.STATUS'};
-$navbar{10}{URL} = '#status';
-$navbar{20}{Name} = $L{'NAV.SETUP'};
-$navbar{20}{URL} = '#setup';
-$navbar{30}{Name} = $L{'NAV.SESSIONS'};
-$navbar{30}{URL} = '#sessions';
-$navbar{40}{Name} = $L{'NAV.DIAGNOSTICS'};
-$navbar{40}{URL} = '#diagnostics';
-$navbar{45}{Name} = $L{'NAV.CERTIFICATE'};
-$navbar{45}{URL} = '#certificate';
-$navbar{50}{Name} = $L{'NAV.HELP'};
-$navbar{50}{URL} = '#help';
 
 my $page = $template->output();
 my $template_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;

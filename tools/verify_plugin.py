@@ -39,6 +39,7 @@ _REQUIRED: Final = {
     "postupgrade.sh",
     "uninstall/uninstall.sh",
     "bin/emergency-stop-miniserver.php",
+    "bin/event-history-upgrade.py",
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
@@ -50,10 +51,34 @@ _REQUIRED: Final = {
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/event_history.cgi",
+    "webfrontend/htmlauth/event-history/api.js",
+    "webfrontend/htmlauth/event-history/page.js",
+    "webfrontend/htmlauth/event-history/chart-cache.js",
+    "webfrontend/htmlauth/event-history/charts.js",
+    "webfrontend/htmlauth/event-history/charts.css",
+    "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
+    "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",
+    "webfrontend/htmlauth/event-history/vendor/uplot/LICENSE",
+    "webfrontend/htmlauth/event-history/vendor/uplot/SHA256SUMS",
     "webfrontend/htmlauth/explorer.js",
+    "webfrontend/htmlauth/explorer-adapters.js",
+    "webfrontend/htmlauth/explorer-core.js",
+    "webfrontend/htmlauth/explorer-state.js",
+    "webfrontend/htmlauth/explorer-auth.js",
+    "webfrontend/htmlauth/explorer-client.js",
+    "webfrontend/htmlauth/explorer-views.js",
+    "webfrontend/htmlauth/admin/core.js",
+    "webfrontend/htmlauth/admin/configuration.js",
+    "webfrontend/htmlauth/admin/service.js",
+    "webfrontend/htmlauth/admin/certificate.js",
+    "webfrontend/htmlauth/admin/sessions.js",
+    "webfrontend/htmlauth/admin/page.js",
     "webfrontend/htmlauth/mcp-ui.css",
     "templates/index.html",
     "templates/explorer.html",
+    "templates/event-history.html",
+    "templates/event-history-charts.html",
     "templates/lang/language_de.ini",
     "templates/lang/language_en.ini",
 }
@@ -69,8 +94,11 @@ _EXECUTABLES: Final = {
     "bin/renew-web-certificate",
     "bin/root-lifecycle-paths.py",
     "webfrontend/htmlauth/index.cgi",
+    "webfrontend/htmlauth/knx.cgi",
+    "webfrontend/htmlauth/message-approval.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/event_history.cgi",
 }
 _TEXT_SUFFIXES: Final = {
     ".cfg",
@@ -90,9 +118,28 @@ _TEXT_NAMES: Final = {
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
     "bin/root-lifecycle-paths.py",
+    "bin/event-history-upgrade.py",
 }
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
+    "mcpserver/prompts.py",
+    "mcpserver/analysis_prompts.py",
+    "mcpserver/knx/prompts.py",
+    "mcpserver/auth/scopes.py",
+    "mcpserver/emergency_options_cache.py",
+    "mcpserver/event_history_selector_cache.py",
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",
+    "mcpserver/skills/using-loxberry-mcp/frontmatter.txt",
+    "mcpserver/skills/using-loxberry-mcp/modules/core.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/states.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/history.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/project.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/knx.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/modbus.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/lighting.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/energy.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/operations.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/diagnostics.md",
+    "mcpserver/skills/using-loxberry-mcp/modules/alerts.md",
     "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
 }
 
@@ -144,10 +191,24 @@ def _verify_project_wheel(content: bytes, source_root: Path) -> None:
             source.relative_to(source_root).as_posix(): source
             for source in (source_root / "mcpserver").rglob("*.py")
         }
+        sources.update(
+            {
+                source.relative_to(source_root).as_posix(): source
+                for source in (source_root / "mcpserver/skills/using-loxberry-mcp").rglob("*")
+                if source.is_file() and source.suffix in {".md", ".txt"}
+            }
+        )
         members = [
             name
             for name in wheel.namelist()
-            if name.startswith("mcpserver/") and name.endswith(".py")
+            if name.startswith("mcpserver/")
+            and (
+                name.endswith(".py")
+                or (
+                    name.startswith("mcpserver/skills/using-loxberry-mcp/")
+                    and name.endswith((".md", ".txt"))
+                )
+            )
         ]
         if len(members) != len(set(members)) or set(members) != set(sources):
             raise PackageVerificationError(
@@ -214,6 +275,24 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         missing = _REQUIRED - set(names)
         if missing:
             raise PackageVerificationError(f"required package entry is missing: {min(missing)}")
+
+        vendor = "webfrontend/htmlauth/event-history/vendor/uplot/"
+        checksums = package.read(vendor + "SHA256SUMS").decode("ascii").splitlines()
+        checked: set[str] = set()
+        for line in checksums:
+            asset_digest, separator, filename = line.partition("  ")
+            if (
+                separator != "  "
+                or filename not in {"LICENSE", "uPlot.iife.min.js", "uPlot.min.css"}
+                or filename in checked
+                or len(asset_digest) != 64
+            ):
+                raise PackageVerificationError("bundled uPlot checksum list is invalid")
+            checked.add(filename)
+            if hashlib.sha256(package.read(vendor + filename)).hexdigest() != asset_digest:
+                raise PackageVerificationError(f"bundled uPlot file has changed: {filename}")
+        if checked != {"LICENSE", "uPlot.iife.min.js", "uPlot.min.css"}:
+            raise PackageVerificationError("bundled uPlot checksum list is incomplete")
 
         parser = configparser.ConfigParser()
         parser.read_file(io.StringIO(package.read("plugin.cfg").decode("utf-8")))

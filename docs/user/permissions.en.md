@@ -11,16 +11,46 @@ Use a separate Loxone account for each assistant. The server only exposes elemen
 | `loxone:read` | always | Read structure, current states, and bounded Project Intelligence through the same Loxone identity |
 | `loxone:history` | optional | Read history and statistics |
 | `loxone:control` | optional | Operate documented visible controls |
-| `loxberry:read` | optional, local approval | Read masked plugin and system diagnostics |
-| `loxberry:operate` | optional, with `loxone:history` and local approval | Only clear the plugin-owned statistics cache |
+| `loxberry:read` | optional, local approval | Read masked plugin and system diagnostics; with `loxone:read` and `loxone:history`, list all local event-history sources |
+| `loxberry:operate` | optional, with `loxone:history` and local approval | Clear the plugin-owned statistics cache, list and manage local event-history sources, and explicitly purge one inactive source's retained history |
 
-Control is disabled by default. Local LoxBerry approvals are bound exactly to client, Loxone identity and Miniserver; they never replace Loxone rights or OAuth consent.
+Control is disabled by default. Local LoxBerry approvals are bound to the client application, Loxone identity, Miniserver, and exact capability; they never replace Loxone rights or OAuth consent. For the strictly validated local Tool Explorer, a new OAuth login can reuse its application approval until the displayed inactive-retention deadline. Other dynamically registered clients remain bound to their exact OAuth client identifier.
 
-Project Intelligence does not add a scope. Every invocation downloads the project again with the
-bound Loxone identity to verify access; cached processing results never grant access. It exposes
+Both approval tables show the stored original application name for inactive bindings. The name is display information only and does not transfer permissions to a new client identifier. Older approvals without name metadata can be named through an exactly matching retained OAuth session; without that evidence, the application remains unnamed. New approvals persist the name and also enrich exactly matched older entries. Revoking an approval removes its stored name.
+
+Project Intelligence does not add a scope. Every invocation checks the bound identity and reads
+the currently visible Loxone structure through an authenticated session. Its project change marker
+and the fresh visibility result determine cache validity. An unchanged marker
+allows reuse of a bounded in-memory graph; a changed or unavailable marker invalidates it.
+The project is downloaded again only when the graph must be rebuilt. Cached results never grant
+OAuth access. It exposes
 bounded graph status, search, object descriptions, and upstream/downstream signal or reference
 traces, never raw project files or project modification.
+Project search and analysis continuation pages reuse bounded ordered results for up to five minutes. A cursor
+expires when that result is evicted or the project, visible structure, identity, or analysis
+selection changes; restart from the first page in that case.
 KNX/EIB metadata is an allowlisted, bounded projection of that same authorized project; it does
 not expose arbitrary project attributes, ETS data, bus monitoring, or configuration writes.
+Native Loxone History and statistics reads load the current user-filtered structure
+afresh before returning data, including a statistics cache hit. An unchanged project
+marker alone does not prove current visibility. Local Event History also checks
+visibility with a fresh structure download.
+
+## Own authentication events
+
+`loxone_list_authentication_events(cursor=None, limit=20)` needs a currently valid
+`loxone:read` authorization. It reads only attributable events for the exact
+registered app (`client_id`), Loxone identity and Miniserver, including retained
+events from earlier logins of that combination. Application names never grant
+access. A revoked or expired authorization cannot read another page. No separate
+LoxBerry approval is needed; global events remain local Admin information.
+
+`limit` is 1–50 and the response is limited to 64 KiB. Events are newest first;
+follow `next_cursor` unchanged. A changed history, restart, different OAuth family
+or invalid cursor requires starting again. The separately labelled shared
+protection status does not identify another client or establish who caused a
+block. Reads open no Miniserver connection and start no recovery attempt.
+Retention is bounded: missing or unavailable events never establish that no
+failure occurred. Old events without proven provenance remain unattributed.
 
 Next: [Capabilities](capabilities.en.md).

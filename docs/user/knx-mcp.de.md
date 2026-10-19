@@ -1,0 +1,514 @@
+# KNX-Informationen über MCP
+
+## Laden und Aktualisieren der Adressverwaltung
+
+Beim Öffnen lädt die Seite Katalog, Freigaben und Entwurfsübersicht gemeinsam.
+Eine geöffnete Haupt-/Mittelgruppenansicht wird dabei mitgeladen. Die gespeicherte
+Auswahl eines Korrekturentwurfs wird ebenfalls anhand der aktuellen Übersicht
+mitgeladen; Ziel, Entwurfsrevision, Sortierung und Seite müssen übereinstimmen.
+Die gespeicherte Anmeldung und ein gemerkter Projektabgleich werden parallel wiederhergestellt;
+Abgleichsergebnisse erscheinen erst nach Prüfung des aktuellen Katalogstands.
+Ladehinweise bleiben sichtbar, solange der jeweilige Bereich noch nicht bereit ist.
+
+Im sichtbaren Tab werden gespeicherte MCP-Freigaben alle zehn Sekunden gemeinsam
+geprüft. Diese Hintergrundprüfung überschreibt keine ungespeicherten Eingaben.
+Projektabgleiche laden weiterhin mit der eigenen Loxone-Berechtigung frische
+Projektdaten. Innerhalb eines zugelassenen Projektaufrufs wird nur das normalisierte
+öffentliche Zertifikat wiederverwendet; der nächste Aufruf lädt es erneut.
+Anmeldung und abschließende Projektstandsprüfung nutzen weiterhin neue Verbindungen.
+Die geprüfte HTTP-Vertrauenskonfiguration wird je Client wiederverwendet.
+Besonders nach einem Dienstneustart kann die erneute Modellbildung
+länger dauern; eine vollständige Gesamtladezeit unter fünf Sekunden ist noch
+nicht nachgewiesen.
+
+Der KNX-Helper lädt Solar-Analysemodelle erst bei tatsächlicher Verwendung.
+Gespeicherte Quellen werden weiterhin vollständig geprüft, selbst bei
+deaktivierter Aufzeichnung. Für eindeutig einzelne Projektvorkommen werden
+unbenötigte Topologie-Indizes vermieden; lokale UUID-Konflikte und Berechtigungen
+werden unverändert geprüft. Es entsteht kein zusätzlicher Ergebnis-Cache.
+
+## Lokale Config-Datei: EIBType-Zuordnung
+
+Entwickler können eine lokale `.Loxone`-XML-Projektdatei nur lesend auswerten:
+`python -m mcpserver.loxone.project.config_knx "Pfad/zum/Projekt.Loxone"`.
+Der Aufruf erfolgt in der eingerichteten Python-Entwicklungsumgebung. Die Datei
+wird weder hochgeladen noch geändert; die Ausgabe enthält Objekttyp, XML-Index,
+rohen EIBType, Zuordnungsstatus und EIS/DPT-Haupttypen, keine Projektnamen oder IDs.
+
+Die Zuordnung ist für das geprüfte Format `274` mit ConfigVersion `17020828`
+belegt, beispielsweise `EIBType=4` → EIS5/DPT9. Bei `EIBsensor` und `EIBactor`
+ohne `EIBType` gilt der vereinbarte implizite Config-Standard DPT1, ohne EIS-Typ
+oder erfundenen Rohcode (`mapped_implicit_config_default`). Ein Aktor mit
+`EIBType=6` bleibt separat EIS7/DPT1 (`mapped_explicit_code`). Leere, unbekannte
+oder widersprüchliche Attributwerte bleiben ungeklärt. Textsensoren/-aktoren
+werden getrennt über ihren Objekttyp erkannt. Die Zuordnung heißt `config-knx-v2`.
+Mehrere mögliche DPT-Haupttypen bleiben erhalten, ein Untertyp wird nicht
+abgeleitet. Andere Versionen werden als ungeprüft ausgegeben. Diese Auswertung
+gilt für Config-Projektdateien. Die separat verifizierte Live-MCP-Zuordnung
+ist im [Typnachweis](../development/knx-datatype-evidence.md) dokumentiert.
+
+## Live-MCP: Loxone-Haupttyp und ETS-Untertyp
+
+Für abgeglichene Typ-/Code-Paare im Miniserverformat `274` mit ConfigVersion
+`17020828` liefert Describe `normalized_dpt_evidence`: Quellformat, Mappingversion,
+EIS und mögliche DPT-Haupttypen. `EIBType=4` bei Sensor/Aktor ergibt Haupttyp 9;
+`datatype.source_value` bleibt `4`, `system=dpt_main_type`, `normalized_code=9`.
+ETS `DPST-9-4` bleibt separat `9.004` in `metadata.dpt_details`. Der Untertyp wird
+nicht aus EIBType abgeleitet. Mehrere Haupttypen bleiben Kandidaten ohne Auswahl.
+Sensor/Aktor ohne Attribut erhält separat DPT1 ohne EIS und ohne erfundenen Rohcode;
+Aktorcode 6 bleibt EIS7/DPT1. Nur im Paarvergleich bestätigte Kombinationen sind
+aktiv; leere/widersprüchliche Codes, ungeprüfte Versionen und erweiterte Familien
+bleiben ungeklärt. Gleiche Haupttypen bestätigen keine Geräte-/Telegrammkompatibilität.
+
+## Adressverwaltung: Suchen, Bearbeiten und JSON-Austausch
+
+Unter **Gruppenadressen** stehen ETS-Import und direkt darunter der zunächst
+eingeklappte **JSON-Austausch**. Der Öffnungszustand bleibt wie bei den übrigen
+Abschnitten im Browser erhalten. **Suchen und filtern** verändert nur die
+Anzeige. Darunter folgen die gespeicherten Gruppenadressen mit importierter
+Haupt-/Mittelgruppe und ein eigener Bereich zum Hinzufügen oder Bearbeiten.
+Beim Bearbeiten nennt dessen Überschrift die ausgewählte Adresse.
+
+JSON dient zum Austausch lokaler Adressmetadaten einschließlich importierter
+Werte und manueller Ergänzungen. Exportiert wird nur die angezeigte, gefilterte
+Tabellenseite, kein vollständiger Bestand. Der Import zeigt zuerst eine Vorschau;
+erst die ausdrückliche Übernahme ergänzt enthaltene Adressen oder überschreibt
+deren Metadaten. Nicht enthaltene Adressen bleiben erhalten. Adresslabels,
+importierte Gruppenhierarchie und rekonstruierbare ETS-XML-Quelldaten gehören
+nicht dazu. Für betroffene Adressen entfernt der JSON-Import die bisherige
+XML-Rekonstruktionsherkunft; vor einem späteren XML-Korrekturexport die
+ursprüngliche ETS-XML-Datei erneut importieren. Der Austausch ersetzt weder
+ETS-Import noch eine vollständige Sicherung.
+
+## Sortieren und im Projektabgleich blättern
+
+Die Überschriften der Datenspalten sind Schaltflächen. Ein Klick sortiert
+aufsteigend, ein weiterer absteigend; die Pfeile zeigen die Richtung. Sie sind
+auch per Tastatur bedienbar. Sortierung und Richtung bleiben im selben Tab bei
+Reload erhalten. Aktionsspalten ohne eigenen Datenwert werden nicht sortiert.
+Die XML-Auswahl lässt sich nach ihrem Auswahlzustand sortieren.
+
+Gruppenadressen, Dateivergleich, Projektabgleich und Korrekturentwürfe werden vor
+der Seitenauswahl sortiert. Damit gilt die Reihenfolge für den gesamten Bestand,
+nicht nur für die sichtbaren Zeilen. Der JSON-Export verwendet weiterhin genau
+die aktuell angezeigte Adressseite mit ihren Filtern und ihrer Sortierung.
+Auswahlfelder und Bearbeitungsaktionen bleiben dem ursprünglichen Datensatz
+zugeordnet. Die Sortierung ändert keine Adressdaten oder Entscheidungen.
+
+Im **ETS/Loxone-Projektabgleich** zeigen **Zurück** und **Weiter** die jeweilige
+Ergebnisseite mit einem Eintragsbereich. Bereits gelesene Seiten können im
+geöffneten Tab für höchstens eine Minute wiederverwendet werden. Der Puffer ist
+auf 20 Seiten und 8 MiB begrenzt. Neue Serverabfragen prüfen Zugriff und Projekt
+erneut; **Abgleich starten** liest auch zuvor gelesene Ergebnisse frisch.
+Vor XML-Vorschau/Download wird die Projektevidenz weiterhin frisch geprüft.
+
+Nach Reload werden nur Zielbindung, Seitenposition und Sortierung
+wiederhergestellt; Ergebnisinhalte und Zugangsdaten werden nicht im
+Browserspeicher abgelegt. Die Ergebnisse werden frisch gelesen. Hat sich der
+Bestand verkleinert, beginnt die Anzeige wieder vorn. Bei einem temporären
+Lesefehler bleibt die letzte Ansicht sichtbar, steht aber bis zur erfolgreichen
+Aktualisierung nicht als aktuelle Exportgrundlage zur Verfügung.
+
+## Korrekturentwürfe im Browser
+
+### Haupt- und Mittelgruppen verwalten
+
+Unter **Gruppenadressen** bleiben ETS-Import und JSON-Austausch vor den beiden
+eigenen Ansichten **Haupt- und Mittelgruppen** und **Einzeladressen**. Die
+Gruppenansicht lädt erst beim Öffnen; ein eingeklappter Bereich verursacht keine
+zusätzliche Gruppenabfrage. Öffnungszustände bleiben beim Neuladen erhalten.
+
+Die Gruppenliste enthält alle importierten Gruppen einschließlich leerer Gruppen
+und lokale Gruppenlabels. Die Standardsortierung ordnet Präfixe hierarchisch
+(Hauptgruppe vor Mittelgruppen); alle Datenspalten sind vor der Pagination
+sortierbar. Gezählt werden gespeicherte zugehörige Einzeladressen, keine Geräte
+oder Busnutzung. Importformat und dokumentierte Importgrenzen bleiben maßgeblich,
+auch wenn die lokale Schreibweise einer Einzeladresse später geändert wurde.
+Zweistufige Adressen haben Hauptgruppen und keine Mittelgruppen.
+
+**Lokale Gruppe anlegen**: Format und Präfix, z. B. `6` oder dreistufig `6/2`,
+sowie eine Bezeichnung eingeben und speichern. **Lokale Bezeichnung bearbeiten**
+ergänzt oder ändert dasselbe gespeicherte Adresslabel. Importname und lokale
+Bezeichnung werden getrennt angezeigt. **Entfernen** löscht nur das lokale
+Label; Importgruppe und Einzeladressen bleiben bestehen. Rein lokale Gruppen
+ohne Label verschwinden aus der Gruppenliste. Änderungen außerhalb der aktuellen
+Ansicht führen beim Speichern zu einer Konfliktmeldung statt Überschreiben.
+
+Die bisherige Texteingabe unter **KNX-Adresslabels → Erweiterte Bearbeitung**
+bleibt für Sammeländerungen und Labels vollständiger Einzeladressen verfügbar.
+Offene Texteingaben zuerst speichern oder verwerfen, bevor die strukturierte
+Gruppenbearbeitung speichert. Beide Ansichten teilen die bestehenden höchstens
+128 aktiven Labels. Neue lokale Gruppen erzeugen keine ETS-Gruppen; Anlegen,
+Verschieben oder Umstrukturieren in ETS ist kein XML-Korrekturexport.
+
+Der ausgewählte Korrekturentwurf und seine angezeigte Seite bleiben beim
+Neuladen desselben Tabs erhalten, sofern der Browserspeicher verfügbar ist.
+Gespeichert wird nur die zielgebundene Auswahl. Die Seite lädt den Entwurf mit
+seiner aktuellen Revision frisch vom Server; entfernte oder abgelaufene Entwürfe
+werden nicht wiederhergestellt. Vollständig angezeigte Zielwerte lassen sich
+sofort bearbeiten; gekürzte Werte werden zuerst vollständig nachgeladen.
+
+**Annehmen** bestätigt einen Vorschlag im Entwurf und übernimmt ihn noch nicht
+in lokale Metadaten oder ETS. Kann nach einer bestätigten Speicherung die Ansicht
+nicht nachgeladen werden, zeigt die Seite dies ausdrücklich. Fehlt schon die
+Bestätigung der Entscheidung, **Entwürfe aktualisieren** wählen und den
+gespeicherten Stand prüfen. Die letzte Ansicht bleibt bei temporären Fehlern
+sichtbar, ihre Aktionen sind bis zum frischen Lesen gesperrt. Eine unsichere
+Schreibaktion wird nicht automatisch wiederholt.
+
+## MCP-Ablauf
+
+### Vom Abgleich zur Korrektur
+
+1. Unter **Gruppenadressen → ETS-Import** die ursprüngliche ETS-XML-Datei
+   importieren. CSV und JSON enthalten keine ausreichende XML-Rekonstruktionsherkunft.
+2. **ETS/Loxone-Projektabgleich** verbinden und starten. Unterschiede sind
+   Prüfkandidaten, keine bewiesenen Fehler. Der Vergleich verändert keine Daten.
+3. Für einen direkten ETS-Export die gewünschte Ergebnisseite anzeigen und im
+   **Experimentellen ETS-XML-Korrekturexport** Adressen sowie konkrete Zielwerte
+   auswählen. Die Auswahl umfasst nur diese Ergebnisseite, nicht alle Seiten.
+4. Alternativ einen **Korrekturentwurf** ansehen: Quellen und Änderungsziel prüfen,
+   Zielwerte bearbeiten und einzelne, ausgewählte oder alle noch vorgeschlagenen
+   Änderungen **bestätigen**. Die Sammelbestätigung zeigt die Auswahl vorher an;
+   sie speichert nur Entscheidungen, keine lokalen Werte und keine ETS-Datei.
+5. Bestätigte lokale Adress-/Labeländerungen separat mit vollständigem Wert
+   speichern. Bestätigte ETS-Zeilen in der eigenen Exportspalte auswählen und
+   ihre Vorschau öffnen. Lokale Änderungen werden nicht automatisch ETS-Vorschläge.
+6. XML-Vorschau prüfen, experimentellen Hinweis bestätigen und herunterladen.
+   Die Herkunftsanzeige unterscheidet Entwurf und direkte Vergleichsauswahl.
+   Zuerst in einer gesicherten ETS-Projektkopie testen; echte ETS-Kompatibilität
+   ist weiterhin unbestätigt (#419). Kein Schritt schreibt Loxone Config.
+
+### Entwürfe wiederfinden und aufbewahren
+
+Neue Korrekturentwürfe bleiben 30 Tage erhalten. Bestehende Entwürfe behalten ihre
+gespeicherte Frist. **Verlängern** erhält einen noch vorhandenen Entwurf mindestens
+weitere 30 Tage; Bearbeiten oder Archivieren verlängert nichts. Abgelaufene
+Entwürfe werden bereinigt und sind nicht wiederherstellbar. **Archivieren** sperrt
+Bestätigung, Übernahme und Export, lässt die Ansicht aber bis zur angezeigten
+Frist zu. **Wieder öffnen** setzt Entscheidungen auf vorgeschlagen zurück.
+Geänderte Quellen benötigen weiterhin einen neuen Vorschlag. Verlängern frischt
+weder Quellenbelege noch Berechtigungen auf. Archivierte Entwürfe teilen die
+vorhandenen acht Speicherplätze/32 MiB; **Löschen** gibt einen Platz frei und
+verändert keine bereits gespeicherten lokalen Werte.
+Löschbestätigungen bleiben ohne Feldwerte sieben Tage in der ursprünglichen
+Admin-Sitzung prüfbar (höchstens 128 globale Belege, keine Verdrängung).
+Eine volle Belegliste sperrt weiteres Löschen bis zum Ablauf; nach einem
+unklaren Ergebnis zuerst die Entwurfsliste aktualisieren, nicht automatisch wiederholen.
+
+Optionales `metadata` im bestehenden Vorbereitungswerkzeug enthält `title`
+(160 Zeichen), `summary` (1024) und `source_chat` (160, lesbarer Chatname).
+Die Admin-Seite kann diese Angaben ergänzen. Es sind ungeprüfte Beschreibungen
+des Autors, keine Identität, Anweisung oder Berechtigung; Chatnamen nicht aus
+OAuth-Anwendungsnamen ableiten. Die Übersicht zeigt Titel und Frist, die
+ausgewählte Ansicht Erstellung, letzte Bearbeitung und Entscheidungszahlen.
+
+Das aktuelle Tool-Schema prüfen und `loxone_get_skill_guide(section="core")`,
+für KNX anschließend `section="knx"` abrufen. Entsprechende Ressourcen sind
+`skill://using-loxberry-mcp/core.md` und `skill://using-loxberry-mcp/knx.md`.
+Der Toolaufruf ohne Argumente und `skill://using-loxberry-mcp/SKILL.md` liefern
+weiterhin die vollständige Anleitung. Kennt der Client das Abschnittsargument
+noch nicht, die vollständige Anleitung verwenden und keine unbekannten Argumente
+erraten. Bei fehlender Anleitung den betroffenen Ablauf stoppen. Andere Abläufe
+und Schreibaktionen benötigen weiterhin die vollständige Anleitung.
+
+Die Projektsuche berücksichtigt auch importierte ETS- und manuelle KNX-Namen/
+Beschreibungen einschließlich von Overrides verdeckter Werte. Sie liefert
+autorisierte Projektobjekte, nicht jede eigenständige lokale Adresse oder jedes
+Präfixlabel. Loxone-Namen bleiben primär. Eine bekannte Adresse gezielt suchen,
+die gefundenen Objekte beschreiben und nur für nötigen Strukturkontext verfolgen.
+
+Für den eigenständigen lokalen Bestand das entdeckte `loxberry_get_knx_catalog`
+verwenden: `kind="addresses"` liest ETS-/manuelle Datensätze;
+`kind="prefix_labels"` aktive darstellungsgebundene Labels auch ohne Adressen.
+`kind="imported_groups"` liefert dagegen alle gespeicherten importierten Haupt-
+und Mittelgruppen, einschließlich leerer Gruppen und ohne Auswahl als aktives
+Adresslabel. Mit `view="summary"` beginnen und für eine vollständige Prüfung
+alle Eintragsseiten abrufen. `query` durchsucht Präfix, Namen und Beschreibung;
+`source="manual"`/`"both"` oder `deviations_only=true` liefern hier keine Gruppen,
+weil dieser Bestand ausschließlich Importquellen enthält. `address` ist nur
+bei `kind="addresses"` zulässig.
+
+Jede Gruppe enthält `group_id`, Adressformat, Präfix, Ebene, importierte Felder,
+numerische Grenzen und den Status `active_label`. `range_source="ets_xml"`
+kennzeichnet die gespeicherten XML-Grenzen; `"address_prefix"` die aus dem
+Präfix abgeleiteten Grenzen, etwa bei CSV. Adressabfragen verknüpfen passende
+Gruppen über `group_ids` mit dem deduplizierten `group_context`. Bestehende
+`prefix_ids`/`prefix_context` bleiben auf aktive Labels beschränkt. Manuelle
+Labels überschreiben die importierten Gruppennamen nicht. Die Adresstabelle
+zeigt Haupt- und Mittelgruppe mit Präfix und Importnamen; unbekannte Gruppen
+bleiben als unbekannt sichtbar, bei zweistufiger Importdarstellung entfällt die
+Mittelgruppe. Eine spätere lokale Änderung der Adressdarstellung erhält die
+Gruppenzuordnung anhand des gespeicherten Importformats.
+Die Vollständigkeit bezieht sich auf den gespeicherten Importbestand, nicht auf
+ein garantiert vollständiges ETS-Projekt. Beim ergänzenden Import können Gruppen
+aus früheren Dateien erhalten bleiben. Bereichsnamen ermöglichen fachliche
+Prüfkandidaten anhand einer bestätigten Adresssystematik, beweisen aber keine
+richtige Funktionszuordnung oder Signalbeziehung.
+
+Erforderlich sind separate OAuth-Zustimmung zu `loxberry:knx:read`, Aktivierung
+auf der KNX-Admin-Seite und ausdrückliche Freigabe für den konkreten Client,
+die Identität, den Miniserver und das lokale Ziel. Standardmäßig ausgeschaltet.
+Loxone-Anmeldung, Diagnose- und Bedienfreigaben gewähren diesen Zugriff nicht.
+Administratoren können Kandidaten aktualisieren und Freigaben entfernen.
+Explorer-Freigaben nutzen die konfigurierte Inaktivitätsfrist. Ein Zielwechsel
+übernimmt keine Freigabe eines anderen Ziels. Deaktivierung erhält Freigaben,
+blockiert aber Abfragen.
+
+Die KNX-Admin-Badges für Lese- und Entwurfszugriff zeigen die gespeicherte
+Aktivierung, keine ungespeicherten Checkbox-Änderungen. Sichtbare Tabs prüfen
+diese Freigaben alle zehn Sekunden und bei Rückkehr zum Tab. Externe Änderungen
+aktualisieren das Badge; offene Eingaben und ihre ursprüngliche Konfliktrevision
+bleiben erhalten. Ein nicht abrufbarer Status wird ausdrücklich angezeigt.
+Das Adresslabel-Badge zählt gespeicherte eindeutige Adressformat-/Präfixpaare
+einschließlich importierter Labels; manuelle/importierte Paare zählen einmal.
+
+Beim Öffnen oder Neuladen lädt die KNX-Seite Katalog, Freigaben und gemeinsame
+Korrekturentwürfe in einer gemeinsamen Anfrage. Die Wiederherstellung der
+OAuth-Sitzung läuft parallel. Ladehinweise bleiben bis zum jeweiligen Abschluss
+sichtbar; Fehler eines Freigabe- oder Entwurfsabschnitts verbergen die anderen
+erfolgreich geladenen Abschnitte nicht. Die getrennten Aktualisierungsschaltflächen
+und die regelmäßige Prüfung der gespeicherten Freigaben bleiben verfügbar.
+
+Der Projektabgleich teilt die OAuth-Browsersitzung mit dem MCP Tool Explorer.
+Die Anmeldung bietet dieselben optionalen Scopes: erforderlicher Loxone-Lesezugriff
+ist ausgewählt, weitere Rechte erfordern eine ausdrückliche Auswahl. Trennen
+meldet alle verbundenen Explorer-/KNX-Tabs ab. Logout-Fehler bleiben sichtbar;
+Refresh stellt eine erfolgreich getrennte Sitzung nicht wieder her.
+Der lokale Dateivergleich benötigt keine OAuth-Anmeldung.
+
+Geöffnete und geschlossene Abschnittsboxen einschließlich ETS-Import bleiben
+beim Neuladen in diesem Browser erhalten, sofern der Browserspeicher verfügbar ist.
+Formulare und Schaltflächen passen sich auch schmalen mobilen Ansichten an;
+breite Tabellen bleiben innerhalb ihres Rahmens horizontal scrollbar.
+Leere Tabellen behalten Spaltenköpfe, eine dezente Leerfläche und einen passenden
+Hinweis außerhalb der Tabelle. Verwerfen benötigt ausgewählte Dateien, Entwürfe
+oder Ergebnisse. Der XML-Korrekturexport benötigt einen aktuellen Projektabgleich
+mit geeigneten Einträgen, eine ausdrückliche Auswahl und eine erfolgreiche
+Vorschau. Die Experimentell-Checkbox bestätigt einen einzelnen Download;
+sie ist keine gespeicherte Aktivierung.
+
+Während einer Statusabfrage angeforderte Freigabeaktionen werden nacheinander ausgeführt; weitere Eingaben sind ab der ersten vorgemerkten Aktion gesperrt. Eine bereits erzeugte XML-Vorschau kann auch nach Abmeldung oder ungültig gewordenem Projektabgleich über **Abbrechen** verworfen werden. Während laufender Anfragen bleibt die Aktion gesperrt. Auch nach einer fehlgeschlagenen Lade- oder Vorschauanfrage werden möglicherweise gespeicherte Vergleichs- und XML-Entwürfe beim Verwerfen serverseitig bereinigt. Ein fehlgeschlagenes Verwerfen erhält den Zustand für einen erneuten Versuch.
+
+Mit `view="summary"` beginnen, dann literale `query`, `source`,
+`deviations_only` oder exakte `address` eingrenzen und Einträge abrufen
+(Standard 50, Maximum 100). Adressen erlauben kein `:0`/`:1`. Summary lädt keine
+Adresszeilen und hat keinen Cursor. Einträge behalten ausgesparte unbekannte
+Import-/manuelle Felder, lokale Auflösung, unbestätigte DPT-Angaben und deduplizierten
+Präfixkontext. Unbekannte Felder, bewusst leere Werte und `false` bleiben verschieden.
+Präfixlabels belegen keine Signalbeziehung; `import_format` keine XML-Exportfähigkeit.
+Kein Projektdownload und keine Loxone-Namen: Für aktuellen Projektabgleich die
+autorisierten Projekttools nutzen.
+
+`total_matching` und `count_scope` beziehen sich auf ausgewählte lokale Datensätze
+oder aktive Präfixe. Auswahl und Seitengröße bei Folgeseiten wiederholen. Cursor
+binden Aufrufer, Ziel und SQLite-/manuelle Labelrevision. Jeder neu ausgegebene
+Cursor gilt fünf Minuten; erfolgreiche, frisch autorisierte Folgeseiten erneuern
+den nächsten Cursor. Sie enden bei Neustart. Änderungen verlangen eine neue
+Abfrage. Ganze Zeilen passen in 64 KiB; `page_truncated` kennzeichnet eine verkürzte
+Seite. Strukturierte Ausgabe einmal verarbeiten, nicht zusätzlich den Textfallback.
+Abfragen teilen die globale Parallelitätsgrenze und haben eine begrenzte Quote von
+30 pro Minute und Familie. Speicherfehler liefern keinen erfolgreich leeren Bestand;
+vor Rückgabe wird die Berechtigung erneut geprüft.
+
+Für den Bestandsabgleich ausdrücklich `ets_project_comparison` mit KNX-Scope
+auswählen. Die Standardanalysen bleiben unverändert. Ziel, Revision, Aktualität,
+Abdeckung, Diagnoseauslassungen und erforderliche Seiten prüfen. Stichprobe und
+vollständige angefragte Prüfung unterscheiden. `deviations` vergleicht manuelle
+mit importierten Werten; `names_differ` vergleicht Loxone- mit ETS-Namen. Unbekannt
+bedeutet nicht übereinstimmend; mehrere Namen erfordern eine Entscheidung.
+
+DPT-Angaben behalten Herkunft und fehlenden/leeren/angegebenen Zustand. Eine
+Syntaxprüfung beweist weder Registerzugehörigkeit noch Kompatibilität oder eine
+`EIBType`-Zuordnung. Importzeit ist keine Exportzeit; die Admin-Zielzuordnung
+beweist nicht das richtige ETS-Projekt. Namen, Adressen und Strukturpfade beweisen
+weder Busaktivität noch physische Rollen oder historische Ursachen. Dateivergleich
+und experimenteller XML-Download bleiben auf der KNX-Seite; dieser Leseablauf
+kann kein Projekt korrigieren oder exportieren.
+
+Die Abschnitte werden aus derselben gebündelten kanonischen Anleitung abgeleitet
+und im laufenden Prozess zwischengespeichert. Ihr Abruf lädt kein Projekt/keinen
+Katalog und erteilt keine Berechtigung. Tokenmessungen nennen Tokenizer/Modell/
+Client und unterscheiden geladene Schemas, Anleitung und tatsächliche Ergebnisse.
+Zeichenanzahlen sind keine Tokenzahlen. Bei Discovery-Abweichungen siehe
+[Fehlerbehebung](troubleshooting.de.md).
+
+## Optionale Aufgaben-Prompts
+
+Clients mit MCP-Prompt-Unterstützung können `knx_ets_inventory_review` oder
+`knx_address_explanation` über `prompts/list` auswählen und das Rezept über
+`prompts/get` abrufen. Der Abruf liest kein Projekt und keinen Katalog und erteilt
+keine Berechtigung. Die KI nutzt dieselben entdeckten read-only Tools mit frischer
+Autorisierung. Prompts sind vom Nutzer gewählte Aufgabenstarts, keine
+Hintergrundprüfungen oder automatische Aufgabenableitung. Ohne Prompt-Unterstützung
+kann dieselbe Frage im normalen Chat gestellt werden.
+
+Bestandsparameter: `focus` ist `all` (Standard), `names`, `coverage` oder `dpt`;
+`detail` ist `summary` (Standard) oder `findings`; `language` ist `en` (Standard)
+oder `de`. Beispielsweise startet `prompts/get` mit
+`name="knx_ets_inventory_review"` und
+`arguments={"focus":"names","detail":"findings","language":"de"}` eine
+Benennungsprüfung. Die Antwort unterscheidet Zusammenfassung, Stichprobe und
+vollständig geprüften angeforderten Umfang. Ein fehlender oder teilweiser Import
+ist eine Einschränkung, kein Nachweis ungenutzter Adressen.
+
+Die Adresserklärung benötigt eine gültige zwei-/dreistufige `address` und erhält
+eine ausdrücklich angegebene Variante `:0`/`:1`; `language` ist wie oben optional.
+Beispielsweise erhält `name="knx_address_explanation"`,
+`arguments={"address":"1/2/3:1","language":"de"}` die Projektvariante und fragt
+freigegebene lokale Metadaten über die Basisadresse `1/2/3` ab. Mehrere Objekte und
+Namen bleiben ausdrücklich sichtbar. Beschreibung, DPT-Angaben und Präfixkontext
+sind Zusatzquellen, kein Nachweis physischer Beziehungen oder Busaktivität.
+
+Weichen Liste oder Argumente von dieser Referenz ab, über den unterstützten
+Discovery-Ablauf des Clients neu verbinden. Fehlende Prompt-/Tool-Aufrufe nicht
+erfinden. Fehlende Anleitung/Tools oder verweigerte Rechte beenden die betroffenen
+Prüfungen; diese Prompts importieren keine Dateien, ändern keine Metadaten und
+exportieren keine ETS-Korrekturen.
+Für geschützte lokale `prompts/list`-Erfassungen unterstützt der Offline-
+Discovery-Vergleich zusätzlich `--kind prompts`. Er vergleicht die angebotenen
+Metadaten, keinen Rezepttext und keine erfolgreiche Aufgabenausführung im Client.
+
+## Kompakter ETS-Abgleich
+
+Der Vergleich liest ETS-Namen gemeinsamer Adressen gesammelt; weitere Metadaten
+werden erst für die ausgegebene Seite geladen. Zählwerte berücksichtigen weiterhin
+den gesamten beobachteten Bestand, auch wenn die Befundliste begrenzt ist.
+Die Optimierung verändert weder Namensvorrang noch Berechtigungs- und Revisionsprüfungen.
+
+Ausdrücklich `analyses=["ets_project_comparison"]`, `scope="knx"` und
+`view="summary"` für Zählwerte ohne einzelne Adressdetailabfragen wählen.
+`view="findings"` liefert paginierte Quellenbefunde; `view="detail"` mit einer
+genauen zwei-/dreistufigen `address` (ohne Variantensuffix) erklärt eine Adresse.
+Die Projektobjekte behalten ihre ursprünglichen `:0`/`:1`-Varianten und Loxone-Namen.
+Der weggelassene/standardmäßige `view="full"` und andere Analysen bleiben unverändert.
+
+Kompakte Ansichten unterstützen `relation`, `names_differ`, `ambiguous_names` und
+`address`. Ein falscher Namensabweichungsfilter berücksichtigt nur verglichene,
+vollständige beobachtete Namen; unbekannte oder unvollständige Namen sind keine
+Übereinstimmung. Filter stehen in der Vollansicht nicht zur Verfügung und lassen
+sich nicht mit anderen Analysen mischen. Zusammenfassungen haben keinen Folgecursor.
+Ansicht, alle Filter und `source_details` auf Folgeseiten unverändert lassen;
+geänderte Ziel-, Projekt- oder KNX-Stände erfordern eine neue Abfrage.
+
+`summaries.ets_project_comparison.counts` zählt die gesamte begrenzte Beobachtung.
+`selection.counts` zählt erhaltene gefilterte Beobachtungen; `selection.complete`
+ist falsch, wenn die Beobachtungsbegrenzung weitere Treffer verbergen kann.
+Quellenvollständigkeit, ausgelassene Gruppen und Diagnosezählwerte bleiben auf
+jeder kompakten Seite separat sichtbar. `source_details=true` nur bei Bedarf für
+vollständige Diagnose-/Quellengruppen verwenden. Das Protokoll liefert weiterhin
+strukturierte und Text-Fallback-Ergebnisse; Clients sollten eine Darstellung
+nutzen und nicht beide in den KI-Kontext aufnehmen.
+
+## Gemeinsame Korrekturvorschläge
+
+Nach Abstimmung konkreter Änderungen kann eine KI über
+`loxberry_prepare_knx_corrections` einen begrenzten Entwurf vorbereiten. Dafür
+sind eine eigene OAuth-Zustimmung zu `loxberry:knx:drafts`, ausdrückliche
+Admin-Aktivierung und eine genaue zielgebundene Freigabe auf der KNX-Seite nötig,
+zusätzlich zur lokalen Katalog-Lesefreigabe. Beide Fähigkeiten sind unabhängig
+standardmäßig deaktiviert. Ein Loxone-Login gewährt keine davon. Deaktivierung
+erhält Freigaben und Vorschläge, blockiert aber den MCP-Zugriff.
+
+Lokale Metadaten oder experimentelle ETS-Exportziele ausdrücklich auswählen.
+Importierte Quellenwerte bleiben unverändert. Ein Vorschlag verändert keine
+Overrides, Exportziele, ETS oder Loxone-Projekte. Die authentifizierte KNX-Seite
+zeigt denselben gespeicherten Vorschlag mit getrennten Quellen; sie übernimmt
+keine Loxone-Projektzugangsdaten des OAuth-Clients. Der aktuelle Projektstand
+ist dort ausdrücklich ungeprüft. Die Admin-Seite kann ausgewählte Zielwerte bearbeiten
+und einzelne Änderungen annehmen, ablehnen oder auf vorgeschlagen zurücksetzen.
+Bearbeiten setzt die betroffene Entscheidung zurück; Identität und unveränderte Quellen
+bleiben erhalten. Der ursprüngliche Projektstand bleibt gebunden; Zustimmung bestätigt
+weder Projektzugriff noch eine Übernahme. MCP zeichnet konkret abgestimmte
+Entscheidungen mit `loxberry_prepare_knx_corrections(mode="review",
+decisions=[{"change_id": "...", "decision": "accepted"}])` auf: `changes` weglassen,
+aktuelle Ziel-/Katalog-/Präfix-/Entwurfsrevisionen und eine stabile Request-ID angeben.
+Nicht ausgewählte Entscheidungen bleiben erhalten. Präfixlabels getrennt von
+Adressen übernehmen; die bestätigte Exportübergabe folgt separat.
+
+Neue Entwürfe bleiben 30 Tage erhalten (bestehende Fristen bleiben unverändert), enthalten höchstens 50 Änderungen und teilen
+die globale Grenze von acht Entwürfen/32 MiB mit Importen, Vergleichen und
+XML-Vorschauen. Bearbeitung verlängert die Laufzeit nicht. MCP sieht nur eigene
+zielgebundene Entwürfe; Admin-Ansicht überträgt anderen Clients kein Eigentum.
+Veraltete Entwürfe bleiben einsehbar; ein geänderter Quellenstand benötigt einen
+neuen Vorschlag.
+
+Zuerst kompakte Übersichten lesen, anschließend ausgewählte Seiten (Standard
+zehn, höchstens zwanzig); Folgeseiten mit der zurückgegebenen Entwurfsrevision
+abrufen. Werte über 128 Zeichen werden als gekürzt markiert; vollständige
+Details wählen eine Zeile. Nach ungewissem Anlegen über die feste Anfrage-ID
+nachsehen; nach ungewissem Bearbeiten über die bekannte Entwurfs-ID. Ein fehlendes
+Ergebnis bei möglicherweise noch laufendem Worker beweist keinen Fehlschlag.
+Nie automatisch wiederholen. Identische Vorbereitung ist idempotent; abweichende
+Wiederverwendung einer Anfrage-ID wird abgewiesen. Lesen und Vorbereitung teilen
+begrenzte Worker-Plätze und lokale Leseraten. Normale Entwurfsabfragen verarbeiten
+keine Dateien und laden keine vollständigen Kataloge.
+
+Jeder Entwurf hält höchstens 128 gehashte Bearbeitungs-/Entscheidungsbelege ohne Verdrängung; weitere Bearbeitung wird an dieser Grenze abgewiesen. So bleiben Einzelprüfungen und Bearbeitung im 50er-Änderungspaket innerhalb der globalen Bytegrenze möglich.
+
+## Bestätigte lokale Änderungen übernehmen
+
+Zusätzlich zu Lesen und Entwürfen sind OAuth-Zustimmung zu `loxberry:knx:write`,
+separate Aktivierung und genaue Client-Freigabe auf der KNX-Seite erforderlich.
+Standardmäßig ist Schreiben deaktiviert. Die Zustimmung zu einer Analyse oder
+einem Entwurf ersetzt weder diese Freigabe noch die konkrete Anwenderentscheidung.
+
+Nach ausdrücklicher Abstimmung `loxberry_apply_knx_corrections(action="apply")`
+mit den angenommenen `approved_change_ids`, Ziel-, Katalog-, Präfix- und
+Entwurfsrevision sowie einer neuen stabilen `request_id` aufrufen. Werte nicht
+erneut senden. Höchstens 50 Änderungen, ausschließlich Namen/Beschreibungen
+vorhandener Einzeladressen mit `storage="addresses"` (Standard).
+`storage="prefix_labels"` übernimmt darstellungsgebundene Präfixlabels nach
+zusätzlicher Admin-Präfixaktivierung für freigegebene Schreibclients. Pro Aufruf
+einen Speicher wählen; gemischte Auswahlen werden abgewiesen. Keine DPT-, Flag-,
+Import-, ETS- oder Loxone-Änderungen. Nicht ausgewählte Overrides und die Originaladresse bleiben
+erhalten. Entfernen eines Overrides und eine bewusst leere Beschreibung bleiben
+unterschiedliche Vorgänge. Projektgebundene Entwürfe benötigen ausdrücklich
+`use_project_evidence=true` mit frisch autorisiertem unverändertem Projektstand.
+
+Feldeffekte und ein begrenzter, sieben Tage verfügbarer Vorgangsnachweis werden
+gemeinsam gespeichert. Nach unklarem Ausgang nur `action="reconcile"` mit
+denselben IDs, Revisionen und derselben Vorgangskennung verwenden. Auch ein
+fehlender Nachweis erlaubt keinen automatischen Wiederholungsversuch. Ein
+Nachweis beschreibt das ursprüngliche Ergebnis; danach den aktuellen lokalen
+Katalog erneut lesen und die betroffenen Felder prüfen. Loxone-Namen bleiben
+unverändert primär. Präfixeffekte und ihr Nachweis teilen einen atomaren
+Konfigurationsspeichervorgang; Adresseffekte und ihr Nachweis eine SQLite-Transaktion.
+Es gibt keine gemeinsame speicherübergreifende Übernahme. Präfixnachweise sind
+auf 32 unabgelaufene Vorgänge und 16 KiB begrenzt, ohne gültige Nachweise zu
+verdrängen. Ein voller Bestand sperrt weitere Präfixübernahmen bis zum Ablauf.
+Das Ergebnis enthält die neue manuelle Labelrevision; die Importrevision bleibt
+unverändert. Akzeptierte ETS-Vorschläge lassen sich für die bestehende experimentelle XML-Vorschau auswählen.
+
+Konfigurationsschema 12 migriert Schema 11 mit deaktiviertem Präfixzugriff. Das
+native Upgrade erhält Labels und Nachweise. Vor dem Upgrade die passende
+Konfiguration sichern; ältere Software kann Schema 12 nicht lesen.
+
+Allgemeine Einstellungen erhalten die aktuellen KNX-Labels und ihre Nachweise,
+auch wenn ein vollständiges Konfigurationsdokument veraltete Kopien enthält.
+Labels über den revisionsgebundenen KNX-Speichervorgang ändern.
+
+Die authentifizierte Admin-Seite kann eine einzeln ausgewählte, akzeptierte rein lokale
+Änderung nach HTML-Bestätigung mit vollständigem Wert speichern. Dafür gilt die
+Admin-Anmeldung, nicht die MCP-Clientfreigabe. Projektgebundene Vorschläge benötigen zusätzlich die aktuelle Loxone-Verbindung.
+Eine feste Loopback-Brücke prüft Admin-Anmeldung und frischen Projektzugriff separat;
+ein Projektstand aus dem Browser autorisiert keinen Vorgang. Nach ungewissem Ergebnis **Ergebnis des genauen Vorgangs
+prüfen**, ohne erneut zu schreiben. Adress- und Präfixziele bleiben getrennt;
+Importquellen, ETS und Loxone bleiben unverändert.
+
+Offene Vorgangskennungen und Revisionen bleiben höchstens sieben Tage im Sitzungsspeicher dieses Tabs erhalten, ohne Feldwerte oder Zugangsdaten. Dadurch bleibt die genaue Ergebnisprüfung nach Neuladen verfügbar. Eine eindeutige Ablehnung vor der Übernahme entfernt sie. Eine ungeklärte Prüfung lässt sich nach Kontrolle des aktuellen Katalogs ausdrücklich verwerfen; dabei wird nicht erneut geschrieben.
+
+## Akzeptierte ETS-Exportvorschläge
+
+Akzeptierte `ets_export`-Zeilen für Namen/Beschreibungen auswählen und die
+bestehende XML-Vorschau öffnen. Lokale Overrides und Importfelder bleiben
+unverändert. Zulässig sind ausschließlich bestehende XML-belegte Adressen mit
+rekonstruierbaren Metadaten; Präfixe, neue Adressen und bewusst leere
+Beschreibungen werden abgewiesen. Die Vorschau hält die genaue Auswahl und
+Revisionen in derselben Admin-Sitzung. Der Download prüft Ablauf, Entscheidungen,
+Ziel, Katalog-/Präfixrevisionen und gegebenenfalls den autorisierten Projektstand
+erneut. Änderungen erfordern eine neue Vorschau. Den experimentellen Download
+nur für eine gesicherte ETS-Projektkopie bestätigen. Echte ETS-Kompatibilität
+bleibt unbestätigt (#419); MCP lädt keine ETS-Dateien herunter und schreibt sie
+nicht. Das Ziel Loxone Config bleibt ein Vorschlag für einen künftig verfügbaren
+Writer, kein umgesetzter Projektschreibzugriff.

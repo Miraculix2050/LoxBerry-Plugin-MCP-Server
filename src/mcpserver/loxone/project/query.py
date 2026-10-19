@@ -4,19 +4,137 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from sys import getsizeof
+from types import MappingProxyType
+from typing import cast
 
-from .graph import GraphEdge, GraphNode, SemanticEdge
+from mcpserver.knx.model import address_number
+
+from .coverage import coverage_by_source_type
+from .graph import (
+    API_CONNECTOR_RULE_ID,
+    GraphEdge,
+    GraphNode,
+    ProjectGraph,
+    SemanticEdge,
+    is_api_connector,
+)
 from .mapping import ControlMapping, ProjectView
-from .semantics import signal_use_rules
+from .modbus import sensor_projection
+from .semantics import (
+    STATE_RULE_ID,
+    expects_raw_datatype,
+    is_valid_group_address_filter,
+    signal_use_rules,
+    state_connector_reason,
+)
 
-_KNOWN_KNX_ATTRIBUTES = frozenset({"Type", "U", "Title", "Desc", "IName", "EibAddr", "EIBType"})
-_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EIBType"})
+_KNOWN_KNX_ATTRIBUTES = frozenset(
+    {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
+)
+_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EibAddrPulse", "EIBType"})
 _DIAGNOSTIC_LABEL_LIMIT = 100
 
 
 class ProjectQueryError(ValueError):
     """A fixed public query category; never carries source content."""
+
+
+def _freeze_index_groups(
+    groups: dict[str, list[str]] | dict[str, list[str] | tuple[str, ...]],
+) -> Mapping[str, tuple[str, ...]]:
+    """Freeze temporary groups in place; no backing list escapes construction."""
+    frozen = cast(dict[str, tuple[str, ...]], groups)
+    for key, values in groups.items():
+        if not isinstance(values, tuple):
+            frozen[key] = tuple(values)
+    if isinstance(groups, defaultdict):
+        groups.default_factory = None
+    return MappingProxyType(frozen)
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectQueryIndex:
+    """Read-only topology only; owned by bounded queries, never authorization."""
+
+    graph: ProjectGraph = field(repr=False)
+    nodes: Mapping[str, GraphNode] = field(init=False, repr=False)
+    parents: Mapping[str, str] = field(init=False, repr=False)
+    containment_parents: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    knx_addresses: Mapping[str, int] = field(init=False, repr=False)
+    knx_by_address: Mapping[int, tuple[str, ...]] = field(init=False, repr=False)
+    container_bytes: int = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        parents: dict[str, str] = {}
+        containment: dict[str, list[str] | tuple[str, ...]] = {}
+        children: dict[str, list[str]] = defaultdict(list)
+        containment_links = 0
+        for edge in self.graph.edges:
+            if edge.kind == "contains":
+                containment_links += 1
+                parents[edge.target] = edge.source
+                prior = containment.get(edge.target)
+                if prior is None:
+                    containment[edge.target] = (edge.source,)
+                elif isinstance(prior, tuple):
+                    # Ambiguous ancestry accumulates linearly, never by tuple concatenation.
+                    containment[edge.target] = [prior[0], edge.source]
+                else:
+                    prior.append(edge.source)
+                children[edge.source].append(edge.target)
+        nodes = {node.key: node for node in self.graph.nodes}
+        knx_addresses = {}
+        knx_groups: dict[int, list[str]] = defaultdict(list)
+        for node in self.graph.nodes:
+            if node.knx is not None and node.knx.group_address is not None:
+                number = address_number(node.knx.group_address.canonical)
+                if number is not None:
+                    knx_addresses[node.key] = number
+                    knx_groups[number].append(node.key)
+        containment_size = getsizeof(containment)
+        children_size = getsizeof(children)
+        containment_index = _freeze_index_groups(containment)
+        children_index = _freeze_index_groups(children)
+        object.__setattr__(self, "nodes", MappingProxyType(nodes))
+        object.__setattr__(self, "parents", MappingProxyType(parents))
+        object.__setattr__(self, "containment_parents", containment_index)
+        object.__setattr__(self, "children", children_index)
+        object.__setattr__(self, "knx_addresses", MappingProxyType(knx_addresses))
+        knx_by_address = {number: tuple(keys) for number, keys in knx_groups.items()}
+        object.__setattr__(self, "knx_by_address", MappingProxyType(knx_by_address))
+        # Keys/nodes/graph strings are borrowed; count owned containers once.
+        object.__setattr__(
+            self,
+            "container_bytes",
+            (
+                getsizeof(self)
+                + getsizeof(nodes)
+                + getsizeof(parents)
+                + getsizeof(knx_addresses)
+                + getsizeof(knx_by_address)
+                + sum(getsizeof(keys) for keys in knx_by_address.values())
+                + sum(getsizeof(number) for number in knx_addresses.values())
+                + containment_size
+                + children_size
+                + getsizeof(()) * (len(containment_index) + len(children_index))
+                + (getsizeof((None,)) - getsizeof(())) * containment_links * 2
+                + sum(
+                    getsizeof(value)
+                    for value in (
+                        self.nodes,
+                        self.parents,
+                        self.containment_parents,
+                        self.children,
+                        self.knx_addresses,
+                        self.knx_by_address,
+                    )
+                )
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,16 +143,27 @@ class ProjectQuery:
 
     view: ProjectView
     control_names: dict[str, str]
-    _nodes: dict[str, GraphNode] = field(init=False, repr=False)
+    graph_index: ProjectQueryIndex | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
+    _nodes: Mapping[str, GraphNode] = field(init=False, repr=False)
     _mappings: dict[str, ControlMapping] = field(init=False, repr=False)
     _mapped_nodes: dict[str, list[ControlMapping]] = field(init=False, repr=False)
-    _parents: dict[str, str] = field(init=False, repr=False)
-    _children: dict[str, list[str]] = field(init=False, repr=False)
+    _parents: Mapping[str, str] = field(init=False, repr=False)
+    _containment_parents: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    _children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "_nodes", {node.key: node for node in self.view.snapshot.graph.nodes}
-        )
+        index = self.graph_index
+        if index is None:
+            index = ProjectQueryIndex(self.view.snapshot.graph)
+        elif index.graph is not self.view.snapshot.graph:
+            raise ProjectQueryError("project_index_mismatch")
+        object.__setattr__(self, "graph_index", index)
+        object.__setattr__(self, "_nodes", index.nodes)
+        object.__setattr__(self, "_parents", index.parents)
+        object.__setattr__(self, "_containment_parents", index.containment_parents)
+        object.__setattr__(self, "_children", index.children)
         mappings = {entry.control_uuid: entry for entry in self.view.mapping.entries}
         object.__setattr__(self, "_mappings", mappings)
         mapped_nodes: dict[str, list[ControlMapping]] = defaultdict(list)
@@ -42,14 +171,21 @@ class ProjectQuery:
             for key in entry.node_keys:
                 mapped_nodes[key].append(entry)
         object.__setattr__(self, "_mapped_nodes", mapped_nodes)
-        parents: dict[str, str] = {}
-        children: dict[str, list[str]] = defaultdict(list)
-        for edge in self.view.snapshot.graph.edges:
-            if edge.kind == "contains":
-                parents[edge.target] = edge.source
-                children[edge.source].append(edge.target)
-        object.__setattr__(self, "_parents", parents)
-        object.__setattr__(self, "_children", children)
+
+    def _edge_data(self, edge: GraphEdge) -> dict[str, object]:
+        data: dict[str, object] = {"kind": edge.kind, "source": edge.source, "target": edge.target}
+        if edge.kind == "api_connection":
+            source = self._endpoint_block(edge.source)
+            target = self._endpoint_block(edge.target)
+            data["api_connection"] = {
+                "semantics": "block_communication_dependency",
+                "source_block_project_node_id": source.key if source else None,
+                "target_block_project_node_id": target.key if target else None,
+                "value_available": False,
+                "payload_semantics": "unknown",
+                "rule_id": API_CONNECTOR_RULE_ID,
+            }
+        return data
 
     @staticmethod
     def _semantic_edge_data(edge: SemanticEdge) -> dict[str, object]:
@@ -67,7 +203,7 @@ class ProjectQuery:
         pending = deque([key])
         while pending:
             current = pending.popleft()
-            for child in self._children[current]:
+            for child in self._children.get(current, ()):
                 if child in seen:
                     continue
                 if len(result) >= limit:
@@ -119,8 +255,8 @@ class ProjectQuery:
                     pending.append(neighbor)
         return observations, truncated
 
-    def _summary(self, node: GraphNode) -> dict[str, object]:
-        mapping = self._mapped_nodes.get(node.key, [])
+    def _summary(self, node: GraphNode, *, include_names: bool = False) -> dict[str, object]:
+        mapping = self._mapped_nodes.get(self.view.snapshot.canonical_node_key(node.key), [])
         exact = [item for item in mapping if item.status == "exact"]
         runtime_control = exact[0] if len(exact) == 1 else None
         connector_key = next((value for key, value in node.attributes if key == "K"), None)
@@ -131,6 +267,30 @@ class ProjectQuery:
             "block_type": node.block_type,
             "source_id": node.source_id,
             "connector_key": connector_key,
+            "api_connector": (
+                {
+                    "semantics": "connection_metadata_only",
+                    "value_available": False,
+                    "rule_id": API_CONNECTOR_RULE_ID,
+                }
+                if is_api_connector(node)
+                else None
+            ),
+            "source_occurrence_count": len(self.view.snapshot.source_ids_for(node.key)) or 1,
+            "source_project_node_ids": list(self.view.snapshot.occurrence_keys_for(node.key)),
+            "logical_identity": (
+                {
+                    "classification": identity.classification,
+                    "reason": identity.reason,
+                    "candidate_project_node_ids": list(identity.candidate_node_ids),
+                    "candidates_omitted": identity.candidates_omitted,
+                }
+                if (identity := self.view.snapshot.logical_identity.get(node.key)) is not None
+                else None
+            ),
+            "model_source_ids": list(
+                self.view.snapshot.source_ids_for(node.key) or (node.project,)
+            ),
             "runtime_control": (
                 {
                     "uuid": runtime_control.control_uuid,
@@ -146,9 +306,21 @@ class ProjectQuery:
                     "object_kind": knx.object_kind,
                     "flow_direction": knx.flow_direction,
                     "source_type": knx.source_type,
+                    **(
+                        {"title": knx.title, "description": knx.description}
+                        if include_names
+                        else {}
+                    ),
                     "group_address": (
                         {
                             "canonical": knx.group_address.canonical,
+                            "original": knx.group_address.original,
+                            "source_field": knx.group_address.source_field,
+                            "variant": (
+                                {"kind": "edge", "value": knx.group_address.variant.value}
+                                if knx.group_address.variant is not None
+                                else None
+                            ),
                         }
                         if knx.group_address is not None
                         else None
@@ -162,6 +334,25 @@ class ProjectQuery:
     def _detail(self, node: GraphNode, *, limit: int) -> dict[str, object]:
         """Return the one-object projection including all KNX source evidence."""
         result = self._summary(node)
+        flow = next(
+            (
+                f
+                for f in self.view.snapshot.graph.state_flows
+                if f.block_key
+                == (self._parents.get(node.key, node.key) if node.kind == "connector" else node.key)
+            ),
+            None,
+        )
+        if flow is not None:
+            result["state_semantics"] = {
+                "config_version": flow.version[0],
+                "xml_version": flow.version[1],
+                "block_revision": flow.version[2],
+                "rule_id": STATE_RULE_ID if flow.reason is None else None,
+                "aq_complete": flow.reason is None,
+                "aq_dependencies": list(flow.dependencies),
+                "reason": flow.reason,
+            }
         source_diagnostics, labels_truncated, diagnostics_truncated, diagnostics_omitted = (
             self._node_source_diagnostics(node)
         )
@@ -171,10 +362,55 @@ class ProjectQuery:
         result["source_diagnostics_omitted"] = diagnostics_omitted
         parser_codes = dict(self.view.snapshot.source_diagnostics.parser_codes_by_node)
         source_diagnostics.extend({"code": code} for code in parser_codes.get(node.key, ()))
+        result["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, limit)
+        modbus = result["modbus"]
+        if isinstance(modbus, dict) and isinstance(modbus.get("ancestors"), list):
+            for ancestor in modbus["ancestors"]:
+                ancestor["source_diagnostics"] = [
+                    {"code": code} for code in parser_codes.get(ancestor["project_node_id"], ())[:2]
+                ]
+        if (
+            node.block_type is not None
+            and node.block_type.startswith("Modbus")
+            and node.block_type
+            not in {"ModbusASensor", "ModbusAActor", "ModbusDev", "ModbusServer"}
+        ):
+            source_diagnostics.append({"code": "unsupported_modbus_source_type"})
         knx = node.knx
         if knx is None:
             return result
         observations, observations_truncated = self._semantic_observations(node, limit)
+        connector_evidence: list[dict[str, object]] = []
+        connector_evidence_truncated = False
+        if knx.object_kind == "endpoint":
+            connector_ids = sorted(
+                key
+                for occurrence in self.view.snapshot.occurrence_keys_for(node.key)
+                for key in self._children.get(occurrence, ())
+                if self._nodes[key].kind == "connector"
+            )
+            connector_evidence_truncated = len(connector_ids) > limit
+            selected = set(connector_ids[:limit])
+            incoming: dict[str, int] = defaultdict(int)
+            outgoing: dict[str, int] = defaultdict(int)
+            for edge in self.view.snapshot.graph.edges:
+                if edge.kind == "signal":
+                    if edge.target in selected:
+                        incoming[edge.target] += 1
+                    if edge.source in selected:
+                        outgoing[edge.source] += 1
+            for key in connector_ids[:limit]:
+                connector = self._nodes[key]
+                raw_key = next((value for name, value in connector.attributes if name == "K"), None)
+                connector_evidence.append(
+                    {
+                        "project_node_id": key,
+                        "connector_key": raw_key[:100] if raw_key is not None else None,
+                        "connector_key_truncated": raw_key is not None and len(raw_key) > 100,
+                        "incoming_signals": incoming[key],
+                        "outgoing_signals": outgoing[key],
+                    }
+                )
         result["knx"] = {
             "object_kind": knx.object_kind,
             "flow_direction": knx.flow_direction,
@@ -190,6 +426,12 @@ class ProjectQuery:
                     "segments": list(knx.group_address.segments)
                     if knx.group_address.segments is not None
                     else None,
+                    "source_field": knx.group_address.source_field,
+                    "variant": (
+                        {"kind": "edge", "value": knx.group_address.variant.value}
+                        if knx.group_address.variant is not None
+                        else None
+                    ),
                 }
                 if knx.group_address is not None
                 else None
@@ -198,15 +440,33 @@ class ProjectQuery:
                 {
                     "source_field": knx.datatype.source_field,
                     "source_value": knx.datatype.source_value,
+                    "source_kind": "loxone_config",
                     "system": knx.datatype.system,
                     "normalized_code": knx.datatype.normalized_code,
                 }
                 if knx.datatype is not None
                 else None
             ),
+            "normalized_dpt_evidence": (
+                {
+                    "source_format": knx.normalized_dpt_evidence.source_format,
+                    "mapping_version": knx.normalized_dpt_evidence.mapping_version,
+                    "format_version": knx.normalized_dpt_evidence.format_version,
+                    "config_version": knx.normalized_dpt_evidence.config_version,
+                    "status": knx.normalized_dpt_evidence.status,
+                    "eis": knx.normalized_dpt_evidence.eis,
+                    "dpt_main_types": list(knx.normalized_dpt_evidence.dpt_main_types),
+                    "subtype": None,
+                    "compatibility": "not_established",
+                }
+                if knx.normalized_dpt_evidence is not None
+                else None
+            ),
             "truncated_fields": list(knx.truncated_fields),
             "usage_observations": observations,
             "usage_observations_truncated": observations_truncated,
+            "connector_evidence": connector_evidence,
+            "connector_evidence_truncated": connector_evidence_truncated,
         }
         return result
 
@@ -238,7 +498,7 @@ class ProjectQuery:
                 diagnostics.append({"code": "missing_group_address"})
             elif knx.group_address.canonical is None:
                 diagnostics.append({"code": "invalid_group_address"})
-            if knx.datatype is None:
+            if knx.datatype is None and expects_raw_datatype(knx.source_type):
                 diagnostics.append({"code": "missing_raw_datatype"})
         if knx.object_kind == "logic_block":
             rules = signal_use_rules(node.block_type)
@@ -246,7 +506,7 @@ class ProjectQuery:
                 diagnostics.append({"code": "unreviewed_knx_logic"})
             else:
                 connectors: dict[str, int] = defaultdict(int)
-                for child_key in self._children[node.key]:
+                for child_key in self._children.get(node.key, ()):
                     connector_key = next(
                         (value for name, value in self._nodes[child_key].attributes if name == "K"),
                         None,
@@ -307,14 +567,33 @@ class ProjectQuery:
         mapping_counts: dict[str, int] = {"exact": 0, "ambiguous": 0, "unmapped": 0}
         for entry in self.view.mapping.entries:
             mapping_counts[entry.status] = mapping_counts.get(entry.status, 0) + 1
+        breakdown = dict.fromkeys(
+            (
+                "exact",
+                "ambiguous",
+                "independent_unmapped",
+                "derived_from_parent",
+                "derived_parent_unmapped",
+                "derived_parent_ambiguous",
+            ),
+            0,
+        )
+        for entry in self.view.mapping.entries:
+            status = entry.mapping_status
+            breakdown["independent_unmapped" if status == "unmapped" else status] += 1
         return {
             "project_fingerprint": self.view.snapshot.fingerprint,
             "model_version": self.view.snapshot.model_version,
             "project_parts": len(self.view.snapshot.projects),
+            "model_sources": [
+                {"model_source_id": part.namespace, "element_count": part.element_count}
+                for part in self.view.snapshot.projects
+            ],
             "nodes": len(graph.nodes),
             "edges": len(graph.edges),
             "unresolved_relationships": len(graph.unresolved),
             "mapping": mapping_counts,
+            "mapping_breakdown": breakdown,
             "source_diagnostics": {
                 "entries": [
                     {
@@ -333,7 +612,59 @@ class ProjectQuery:
                 "groups_omitted": self.view.snapshot.source_diagnostics.groups_omitted,
                 "labels_truncated": self.view.snapshot.source_diagnostics.labels_truncated,
             },
+            "coverage_by_source_type": coverage_by_source_type(self.view.snapshot),
         }
+
+    def mapping_inventory_entries(
+        self, *, mapping_status: str | None = None, runtime_control_uuid: str | None = None
+    ) -> list[ControlMapping]:
+        """Select lightweight references; callers project evidence after pagination."""
+        return sorted(
+            (
+                entry
+                for entry in self._mappings.values()
+                if (mapping_status is None or entry.mapping_status == mapping_status)
+                and (runtime_control_uuid is None or entry.control_uuid == runtime_control_uuid)
+            ),
+            key=lambda item: item.control_uuid,
+        )
+
+    def mapping_evidence(self, identifier: str) -> dict[str, object]:
+        entry = self._mappings[identifier]
+        parent = entry.parent
+        references = parent.parent_project_node_ids if parent else entry.node_keys
+        sources = sorted(
+            {
+                source
+                for key in references
+                for source in (
+                    self.view.snapshot.source_ids_for(key) or (self._nodes[key].project,)
+                )
+            }
+        )
+        return {
+            "runtime_control_uuid": entry.control_uuid,
+            "mapping_status": entry.mapping_status,
+            "mapping_rule": parent.mapping_rule if parent else entry.rule,
+            "project_node_ids": list(entry.node_keys[:32]),
+            "parent_runtime_control_uuid": parent.parent_runtime_control_uuid if parent else None,
+            "parent_mapping_status": parent.parent_mapping_status if parent else None,
+            "parent_project_node_ids": list(parent.parent_project_node_ids[:32]) if parent else [],
+            "anchor_runtime_control_uuid": parent.anchor_runtime_control_uuid if parent else None,
+            "subcontrol_key": parent.subcontrol_key if parent else None,
+            "runtime_parent_chain": list(parent.runtime_parent_chain) if parent else [],
+            "model_source_ids": sources[:32],
+            "reason": parent.reason if parent else None,
+            "references_truncated": len(references) > 32 or len(sources) > 32,
+        }
+
+    def derived_target(self, identifier: str, identifier_type: str) -> dict[str, object] | None:
+        entry = (
+            self._mappings.get(identifier) if identifier_type == "runtime_control_uuid" else None
+        )
+        if entry is not None and entry.mapping_status == "derived_from_parent":
+            return self.mapping_evidence(identifier)
+        return None
 
     def find(
         self,
@@ -347,6 +678,7 @@ class ProjectQuery:
         knx_object_kind: str | None = None,
         knx_flow_direction: str | None = None,
         knx_group_address: str | None = None,
+        metadata_matches: frozenset[int] = frozenset(),
     ) -> list[dict[str, object]]:
         if kind is not None and kind not in {"block", "connector"}:
             raise ProjectQueryError("project_query_invalid")
@@ -363,16 +695,21 @@ class ProjectQuery:
             "loxone_to_bus",
         }:
             raise ProjectQueryError("project_query_invalid")
+        if knx_group_address is not None and not is_valid_group_address_filter(knx_group_address):
+            raise ProjectQueryError("project_query_invalid")
         if runtime_control_uuid is not None:
             mapping = self._mappings.get(runtime_control_uuid)
             if mapping is None:
                 return []
             candidates = set(mapping.node_keys)
+            if mapping.parent and mapping.parent.status == "derived_from_parent":
+                candidates = set(mapping.parent.parent_project_node_ids)
         else:
             candidates = None
         needle = query.casefold().strip() if query else None
+        assert self.graph_index is not None
         result = []
-        for node in self.view.snapshot.graph.nodes:
+        for node in self.view.snapshot.logical_nodes():
             knx = node.knx
             if candidates is not None and node.key not in candidates:
                 continue
@@ -380,7 +717,10 @@ class ProjectQuery:
                 continue
             if block_type is not None and node.block_type != block_type:
                 continue
-            if source_id is not None and node.source_id != source_id:
+            if source_id is not None and not any(
+                self._nodes[key].source_id == source_id
+                for key in self.view.snapshot.occurrence_keys_for(node.key)
+            ):
                 continue
             if technology == "knx_eib" and knx is None:
                 continue
@@ -397,7 +737,8 @@ class ProjectQuery:
                 not in {knx.group_address.original, knx.group_address.canonical}
             ):
                 continue
-            item = self._summary(node)
+            item = self._summary(node, include_names=True)
+            item["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, 1)
             if needle is not None:
                 connector_key = next((value for key, value in node.attributes if key == "K"), None)
                 knx_values = (
@@ -410,14 +751,28 @@ class ProjectQuery:
                     if knx is not None
                     else ()
                 )
-                searchable = (node.key, node.source_id, node.block_type, connector_key, *knx_values)
+                source_references = tuple(
+                    value
+                    for key in self.view.snapshot.occurrence_keys_for(node.key)
+                    for value in (key, self._nodes[key].source_id)
+                )
+                searchable = (*source_references, node.block_type, connector_key, *knx_values)
                 runtime = item["runtime_control"]
                 runtime_name = runtime.get("name") if isinstance(runtime, dict) else None
+                metadata_number = self.graph_index.knx_addresses.get(node.key)
                 if not any(
                     needle in value.casefold() for value in (*searchable, runtime_name) if value
-                ):
+                ) and (metadata_number is None or metadata_number not in metadata_matches):
                     continue
             result.append(item)
+        provenance = (
+            self.derived_target(runtime_control_uuid, "runtime_control_uuid")
+            if runtime_control_uuid
+            else None
+        )
+        if provenance:
+            for item in result:
+                item["runtime_target_mapping"] = provenance
         return result
 
     def resolve(self, identifier: str, identifier_type: str) -> GraphNode:
@@ -429,33 +784,95 @@ class ProjectQuery:
         if identifier_type != "runtime_control_uuid":
             raise ProjectQueryError("project_query_invalid")
         mapping = self._mappings.get(identifier)
+        if mapping is not None and mapping.parent is not None:
+            if mapping.parent.status == "derived_from_parent":
+                return self._nodes[mapping.parent.parent_project_node_ids[0]]
+            if mapping.parent.status == "derived_parent_ambiguous":
+                raise ProjectQueryError("project_mapping_ambiguous")
         if mapping is None or mapping.status == "unmapped":
             raise ProjectQueryError("project_node_unknown")
         if mapping.status != "exact":
             raise ProjectQueryError("project_mapping_ambiguous")
         return self._nodes[mapping.node_keys[0]]
 
-    def describe(self, node: GraphNode, *, limit: int) -> dict[str, object]:
+    def describe(
+        self, node: GraphNode, *, limit: int, include_state_table: bool = False
+    ) -> dict[str, object]:
         if not 1 <= limit <= 100:
             raise ProjectQueryError("project_query_invalid")
         graph = self.view.snapshot.graph
-        contains_in = [
-            edge.source
-            for edge in graph.edges
-            if edge.kind == "contains" and edge.target == node.key
-        ]
-        contains_out = [
-            edge.target
-            for edge in graph.edges
-            if edge.kind == "contains" and edge.source == node.key
-        ]
+        table: dict[str, object] | None = None
+        if include_state_table:
+            block = self._endpoint_block(node.key)
+            flow = next((f for f in graph.state_flows if block and f.block_key == block.key), None)
+            visible = block is not None and self._summary(block).get("runtime_control") is not None
+            if flow is not None:
+                selected = flow.table_rows[:limit] if visible and flow.reason is None else ()
+                total = len(flow.table_rows) if visible else 0
+                omitted = total - len(selected)
+                table = {
+                    "selection": "first_match",
+                    "conjunction": "and",
+                    "complete": visible
+                    and flow.reason is None
+                    and not omitted
+                    and not any(row.text_truncated for row in selected),
+                    "reason": flow.reason if visible else "state_table_unavailable",
+                    "rows_total": total,
+                    "rows_omitted": omitted,
+                    "text_semantics": "literal_template_only",
+                    "output_api_complete": False,
+                    "rows": [
+                        {
+                            "position": position,
+                            "conditions": [
+                                {
+                                    "position": int(condition.encoding[0][0][-1]),
+                                    "input_key": condition.input_key,
+                                    "operator": condition.operator,
+                                    "numeric_operand": str(condition.numeric)
+                                    if condition.numeric is not None
+                                    else None,
+                                    "text_operand": condition.text,
+                                }
+                                for condition in row.conditions
+                            ],
+                            "aq_value": str(row.numeric),
+                            "text_template": row.text,
+                            "text_truncated": row.text_truncated,
+                        }
+                        for position, row in enumerate(selected)
+                    ],
+                }
+        occurrence_keys = set(self.view.snapshot.occurrence_keys_for(node.key))
+        contains_in = sorted(
+            {
+                edge.source
+                for edge in graph.edges
+                if edge.kind == "contains" and edge.target in occurrence_keys
+            }
+        )
+        contains_out = sorted(
+            {
+                edge.target
+                for edge in graph.edges
+                if edge.kind == "contains" and edge.source in occurrence_keys
+            }
+        )
         direct = [
-            {"kind": edge.kind, "source": edge.source, "target": edge.target}
+            self._edge_data(edge)
             for edge in graph.edges
-            if edge.kind != "contains" and (edge.source == node.key or edge.target == node.key)
+            if edge.kind != "contains"
+            and (edge.source in occurrence_keys or edge.target in occurrence_keys)
+        ]
+        api_connections = [
+            self._edge_data(edge)
+            for edge in graph.edges
+            if edge.kind == "api_connection"
+            and (edge.source in contains_out or edge.target in contains_out)
         ]
         child_ids = sorted(contains_out)
-        unresolved = [code for key, code in graph.unresolved if key == node.key]
+        unresolved = [code for key, code in graph.unresolved if key in occurrence_keys]
         truncated_fields = []
         if len(child_ids) > limit:
             truncated_fields.append("child_project_node_ids")
@@ -465,9 +882,12 @@ class ProjectQuery:
             truncated_fields.append("unresolved_relationships")
         return {
             **self._detail(node, limit=limit),
+            **({"state_table": table} if table is not None else {}),
             "parent_project_node_id": contains_in[0] if len(contains_in) == 1 else None,
             "child_project_node_ids": child_ids[:limit],
             "relationships": direct[:limit],
+            "api_connections": api_connections[:limit],
+            "api_connections_truncated": len(api_connections) > limit,
             "unresolved_relationships": unresolved[:limit],
             "truncated_fields": truncated_fields,
         }
@@ -509,6 +929,8 @@ class ProjectQuery:
         truncated = False
         included_keys = set(keys)
         for key in keys:
+            if key not in predecessors:
+                continue  # Context-only containing blocks do not establish a path.
             end = self._endpoint_block(key)
             if end is None or end.key == start.key:
                 continue
@@ -543,7 +965,6 @@ class ProjectQuery:
             if len(paths) >= limit:
                 truncated = True
                 break
-            identities.add(identity)
             walked = [key]
             current = key
             previous = predecessors.get(current)
@@ -552,6 +973,7 @@ class ProjectQuery:
                 walked.append(current)
                 previous = predecessors.get(current)
             walked.reverse()
+            identities.add(identity)
             if source is not start:
                 walked.reverse()
             paths.append(
@@ -582,31 +1004,75 @@ class ProjectQuery:
             keys.append(boundary.key)
         return truncated
 
+    @staticmethod
+    def _signal_predecessors(
+        seeds: list[str], relationships: list[dict[str, object]], direction: str, max_depth: int
+    ) -> tuple[dict[str, str | None], bool]:
+        """Find scalar alternatives only inside already bounded trace evidence."""
+        adjacency: dict[str, list[str]] = defaultdict(list)
+        for relationship in relationships:
+            if relationship.get("kind") == "api_connection":
+                continue
+            source, target = relationship["source"], relationship["target"]
+            assert isinstance(source, str) and isinstance(target, str)
+            if direction == "upstream":
+                source, target = target, source
+            adjacency[source].append(target)
+        predecessors: dict[str, str | None] = {key: None for key in seeds}
+        pending = deque((key, 0) for key in seeds)
+        truncated = False
+        while pending:
+            key, depth = pending.popleft()
+            if depth >= max_depth:
+                truncated |= any(neighbor not in predecessors for neighbor in adjacency[key])
+                continue
+            for neighbor in adjacency[key]:
+                if neighbor not in predecessors:
+                    predecessors[neighbor] = key
+                    pending.append((neighbor, depth + 1))
+        return predecessors, truncated
+
+    def _trace_occurrences(self, key: str) -> tuple[str, ...]:
+        """Expand verified logical blocks and their explicit physical ports."""
+        snapshot = self.view.snapshot
+        return snapshot._logical_ports.get(key) or snapshot.occurrence_keys_for(key)
+
     def trace(
-        self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
+        self,
+        node: GraphNode,
+        *,
+        direction: str,
+        max_depth: int,
+        max_nodes: int,
+        include_internal_flow_gaps: bool = False,
     ) -> dict[str, object]:
         if (
             direction not in {"upstream", "downstream"}
             or not 1 <= max_depth <= 16
             or not 1 <= max_nodes <= 200
+            or type(include_internal_flow_gaps) is not bool
         ):
             raise ProjectQueryError("project_query_invalid")
         adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
         for edge in self.view.snapshot.graph.edges:
-            if edge.kind not in {"signal", "reference"}:
+            if edge.kind not in {"signal", "reference", "api_connection"}:
                 continue
             key = edge.target if direction == "upstream" else edge.source
             adjacency[key].append(edge)
         for semantic_edge in self.view.snapshot.graph.semantic_edges:
             key = semantic_edge.target if direction == "upstream" else semantic_edge.source
             adjacency[key].append(semantic_edge)
-        seeds = [node.key]
-        seed_set = {node.key}
-        pending = deque([node.key])
-        seed_truncated = False
+        occurrences = (
+            node.key,
+            *(key for key in self._trace_occurrences(node.key) if key != node.key),
+        )
+        seeds = list(occurrences[:max_nodes])
+        seed_set = set(seeds)
+        pending = deque(seeds)
+        seed_truncated = len(occurrences) > max_nodes
         while pending and not seed_truncated:
             current = pending.popleft()
-            for child in self._children[current]:
+            for child in self._children.get(current, ()):
                 if child in seed_set:
                     continue
                 if len(seeds) >= max_nodes:
@@ -617,10 +1083,9 @@ class ProjectQuery:
                 pending.append(child)
         visited = seed_set
         queue = deque((key, 0) for key in seeds)
-        keys = seeds
-        edges: list[dict[str, str]] = []
+        keys = list(seeds)
+        edges: list[dict[str, object]] = []
         semantic_edges: list[dict[str, object]] = []
-        predecessors: dict[str, str | None] = {key: None for key in seeds}
         truncated = seed_truncated
         reason: str | None = "max_nodes" if seed_truncated else None
         while queue:
@@ -629,6 +1094,17 @@ class ProjectQuery:
                 if adjacency[current]:
                     truncated, reason = True, "max_depth"
                 continue
+            for alias in self._trace_occurrences(current):
+                if alias in visited:
+                    continue
+                if len(keys) >= max_nodes:
+                    truncated, reason = True, "max_nodes"
+                    break
+                visited.add(alias)
+                keys.append(alias)
+                queue.append((alias, depth))
+            if truncated:
+                break
             for relationship in adjacency[current]:
                 neighbor = relationship.source if direction == "upstream" else relationship.target
                 if neighbor in visited:
@@ -638,13 +1114,7 @@ class ProjectQuery:
                     if isinstance(relationship, SemanticEdge):
                         semantic_edges.append(self._semantic_edge_data(relationship))
                     else:
-                        edges.append(
-                            {
-                                "kind": relationship.kind,
-                                "source": relationship.source,
-                                "target": relationship.target,
-                            }
-                        )
+                        edges.append(self._edge_data(relationship))
                     continue
                 if len(keys) >= max_nodes:
                     truncated, reason = True, "max_nodes"
@@ -655,33 +1125,92 @@ class ProjectQuery:
                 visited.add(neighbor)
                 keys.append(neighbor)
                 queue.append((neighbor, depth + 1))
-                predecessors[neighbor] = current
                 if isinstance(relationship, SemanticEdge):
                     semantic_edges.append(self._semantic_edge_data(relationship))
                 else:
-                    edges.append(
-                        {
-                            "kind": relationship.kind,
-                            "source": relationship.source,
-                            "target": relationship.target,
-                        }
-                    )
+                    edges.append(self._edge_data(relationship))
             if truncated:
                 break
+        semantic_scope = tuple(keys)
+        boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
+        trace_keys = set(keys)
         unresolved_relationships: list[dict[str, str]] = []
         unresolved_truncated = False
         for key, code in self.view.snapshot.graph.unresolved:
-            if key not in visited:
+            if key not in trace_keys:
                 continue
             if len(unresolved_relationships) >= max_nodes:
                 unresolved_truncated = True
                 break
             unresolved_relationships.append({"project_node_id": key, "code": code})
-        boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
-        technology_paths, paths_truncated = self._technology_paths(
-            node, keys, predecessors, max_nodes, direction
+        signal_predecessors, signal_truncated = self._signal_predecessors(
+            seeds, [*edges, *semantic_edges], direction, max_depth
         )
+        technology_paths, paths_truncated = self._technology_paths(
+            node, keys, signal_predecessors, max_nodes, direction
+        )
+        semantic_gaps: list[dict[str, str]] = []
+        modeled_nodes = (
+            {
+                key
+                for edge in self.view.snapshot.graph.semantic_edges
+                for key in (edge.source, edge.target)
+            }
+            if include_internal_flow_gaps
+            else set()
+        )
+        scoped_nodes = set(semantic_scope)
+        state_flows = {f.block_key: f for f in self.view.snapshot.graph.state_flows}
+        for reached in semantic_scope:
+            parent = (
+                self._parents.get(reached) if self._nodes[reached].kind == "connector" else None
+            )
+            if include_internal_flow_gaps and self._nodes[reached].kind == "connector":
+                parents = self._containment_parents.get(reached, ())
+                if len(parents) > 1:
+                    semantic_gaps.append(
+                        {"project_node_id": reached, "code": "internal_flow_parent_ambiguous"}
+                    )
+                    continue
+            flow = state_flows.get(parent or reached)
+            if flow is None:
+                if not include_internal_flow_gaps or reached in modeled_nodes:
+                    continue
+                node_kind = self._nodes[reached].kind
+                connectors = (
+                    [
+                        key
+                        for key in self._children.get(reached, ())
+                        if self._nodes[key].kind == "connector"
+                    ]
+                    if node_kind == "block"
+                    else []
+                )
+                # Reached ports carry occurrence-specific coverage. A block
+                # reached without its ports is assessed only at block scope.
+                if node_kind == "connector" or (
+                    connectors
+                    and not any(key in scoped_nodes for key in connectors)
+                    and not any(key in modeled_nodes for key in connectors)
+                ):
+                    semantic_gaps.append(
+                        {
+                            "project_node_id": reached,
+                            "code": "internal_flow_not_modeled",
+                        }
+                    )
+                continue
+            gap_reason = (
+                state_connector_reason(
+                    flow, dict(self._nodes[reached].attributes).get("K"), direction
+                )
+                if parent is not None
+                else flow.reason
+            )
+            if gap_reason is not None:
+                semantic_gaps.append({"project_node_id": reached, "code": gap_reason})
         return {
+            "semantic_gaps": semantic_gaps,
             "start": self._summary(node),
             "direction": direction,
             "nodes": [self._summary(self._nodes[key]) for key in keys],
@@ -690,9 +1219,124 @@ class ProjectQuery:
             "technology_paths": technology_paths,
             # A raw traversal limit can hide a semantic edge or a projected
             # technology path, so semantic output must not claim completeness.
-            "semantic_truncated": truncated or boundary_truncated or paths_truncated,
+            "semantic_truncated": (
+                truncated or boundary_truncated or paths_truncated or signal_truncated
+            ),
             "truncated": truncated,
             "truncation_reason": reason,
             "unresolved_relationships": unresolved_relationships,
+            "unresolved_truncated": unresolved_truncated,
+        }
+
+    def observable_controls(
+        self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
+    ) -> dict[str, object]:
+        """Collect exact runtime controls from bounded structural traces.
+
+        The result deliberately reports reachability only.  It does not assign a
+        state-level role or claim that a reachable signal caused an observation.
+        """
+
+        if direction not in {"upstream", "downstream", "both"}:
+            raise ProjectQueryError("project_query_invalid")
+        directions = ("upstream", "downstream") if direction == "both" else (direction,)
+        controls: dict[str, dict[str, object]] = {}
+        reached_blocks: set[str] = set()
+        truncated = False
+        truncation_reasons: list[str] = []
+        unresolved_relationship_counts: dict[tuple[str, str], int] = {}
+        unresolved_truncated = False
+        for trace_direction in directions:
+            trace = self.trace(
+                node, direction=trace_direction, max_depth=max_depth, max_nodes=max_nodes
+            )
+            trace_truncated = bool(trace["truncated"])
+            semantic_truncated = bool(trace.get("semantic_truncated", trace_truncated))
+            truncated = truncated or trace_truncated or semantic_truncated
+            reason = trace["truncation_reason"]
+            if isinstance(reason, str) and reason not in truncation_reasons:
+                truncation_reasons.append(reason)
+            if (
+                semantic_truncated
+                and not trace_truncated
+                and "semantic_incomplete" not in truncation_reasons
+            ):
+                truncation_reasons.append("semantic_incomplete")
+            unresolved = trace["unresolved_relationships"]
+            if isinstance(unresolved, list):
+                trace_unresolved_counts: defaultdict[tuple[str, str], int] = defaultdict(int)
+                for relationship in unresolved:
+                    if not isinstance(relationship, dict):
+                        continue
+                    node_key = relationship.get("project_node_id")
+                    code = relationship.get("code")
+                    if isinstance(node_key, str) and isinstance(code, str):
+                        trace_unresolved_counts[(node_key, code)] += 1
+                for key, count in trace_unresolved_counts.items():
+                    unresolved_relationship_counts[key] = max(
+                        unresolved_relationship_counts.get(key, 0), count
+                    )
+            unresolved_truncated = unresolved_truncated or bool(trace["unresolved_truncated"])
+            nodes = trace["nodes"]
+            if not isinstance(nodes, list):
+                continue
+            for item in nodes:
+                if not isinstance(item, dict):
+                    continue
+                node_key = item.get("project_node_id")
+                if not isinstance(node_key, str):
+                    continue
+                if self._nodes[node_key].kind == "block":
+                    reached_blocks.add(self.view.snapshot.canonical_node_key(node_key))
+                for mapping in self._mapped_nodes.get(
+                    self.view.snapshot.canonical_node_key(node_key), ()
+                ):
+                    if mapping.status != "exact":
+                        continue
+                    control_uuid = mapping.control_uuid
+                    record = controls.setdefault(
+                        control_uuid,
+                        {
+                            "control_uuid": control_uuid,
+                            "project_node_ids": [],
+                            "directions": [],
+                        },
+                    )
+                    project_node_ids = record["project_node_ids"]
+                    if isinstance(project_node_ids, list) and node_key not in project_node_ids:
+                        project_node_ids.append(node_key)
+                    record_directions = record["directions"]
+                    if (
+                        isinstance(record_directions, list)
+                        and trace_direction not in record_directions
+                    ):
+                        record_directions.append(trace_direction)
+        ambiguous_objects = 0
+        unmapped_objects = 0
+        for block_key in reached_blocks:
+            mappings = self._mapped_nodes.get(block_key, ())
+            ambiguous_objects += any(mapping.status == "ambiguous" for mapping in mappings)
+            unmapped_objects += not any(
+                mapping.status in {"exact", "ambiguous"} for mapping in mappings
+            )
+        coverage_truncated = truncated or unresolved_truncated
+        return {
+            "target": self._summary(node),
+            "mapping_coverage": {
+                "exact_runtime_controls": len(controls),
+                "ambiguous_project_objects": ambiguous_objects,
+                "unmapped_project_objects": unmapped_objects,
+                "complete": not (
+                    ambiguous_objects
+                    or unmapped_objects
+                    or coverage_truncated
+                    or unresolved_relationship_counts
+                ),
+                "truncated": coverage_truncated,
+            },
+            "controls": [controls[key] for key in sorted(controls)],
+            "truncated": truncated,
+            "truncation_reasons": truncation_reasons,
+            "unresolved_relationships": sum(unresolved_relationship_counts.values()),
             "unresolved_truncated": unresolved_truncated,
         }

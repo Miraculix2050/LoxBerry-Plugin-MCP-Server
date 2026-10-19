@@ -1,17 +1,55 @@
-<link rel="stylesheet" href="mcp-ui.css">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-v2">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
   data-working="<TMPL_VAR EXPLORER.WORKING ESCAPE=HTML>"
+  data-call-completed="<TMPL_VAR EXPLORER.CALL_COMPLETED ESCAPE=HTML>"
   data-error="<TMPL_VAR EXPLORER.ERROR ESCAPE=HTML>"
   data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
   data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
+  data-scope-granted="<TMPL_VAR EXPLORER.SCOPE_GRANTED ESCAPE=HTML>"
+  data-scope-not-granted="<TMPL_VAR EXPLORER.SCOPE_NOT_GRANTED ESCAPE=HTML>"
   data-no-tools="<TMPL_VAR EXPLORER.NO_TOOLS ESCAPE=HTML>"
+  data-no-matching-tools="<TMPL_VAR EXPLORER.NO_MATCHING_TOOLS ESCAPE=HTML>"
   data-invalid-json="<TMPL_VAR EXPLORER.INVALID_JSON ESCAPE=HTML>"
   data-invalid-arguments="<TMPL_VAR EXPLORER.INVALID_ARGUMENTS ESCAPE=HTML>"
   data-invalid-output="<TMPL_VAR EXPLORER.INVALID_OUTPUT ESCAPE=HTML>"
   data-unsupported-schema="<TMPL_VAR EXPLORER.UNSUPPORTED_SCHEMA ESCAPE=HTML>"
   data-empty-result="<TMPL_VAR EXPLORER.EMPTY_RESULT ESCAPE=HTML>"
+  data-expand-result="<TMPL_VAR EXPLORER.EXPAND_RESULT ESCAPE=HTML>"
+  data-collapse-result="<TMPL_VAR EXPLORER.COLLAPSE_RESULT ESCAPE=HTML>"
+  data-more-results="<TMPL_VAR EXPLORER.MORE_RESULTS ESCAPE=HTML>"
+  data-analysis-page="<TMPL_VAR EXPLORER.ANALYSIS_PAGE ESCAPE=HTML>"
+  data-lighting-notice="<TMPL_VAR EXPLORER.LIGHTING_NOTICE ESCAPE=HTML>"
+  data-lighting-conditional="<TMPL_VAR EXPLORER.LIGHTING_CONDITIONAL ESCAPE=HTML>"
+  data-lighting-naming-incomplete="<TMPL_VAR EXPLORER.LIGHTING_NAMING_INCOMPLETE ESCAPE=HTML>"
+  data-lighting-transfer-context="<TMPL_VAR EXPLORER.LIGHTING_TRANSFER_CONTEXT ESCAPE=HTML>"
+  data-planning-notice="<TMPL_VAR EXPLORER.PLANNING_NOTICE ESCAPE=HTML>"
+  data-planning-unavailable="<TMPL_VAR EXPLORER.PLANNING_UNAVAILABLE ESCAPE=HTML>"
+  data-planning-pv="<TMPL_VAR EXPLORER.PLANNING_PV ESCAPE=HTML>"
+  data-planning-grid="<TMPL_VAR EXPLORER.PLANNING_GRID ESCAPE=HTML>"
+  data-planning-context="<TMPL_VAR EXPLORER.PLANNING_CONTEXT ESCAPE=HTML>"
+  data-planning-clarify="<TMPL_VAR EXPLORER.PLANNING_CLARIFY ESCAPE=HTML>"
+  data-planning-hypothetical="<TMPL_VAR EXPLORER.PLANNING_HYPOTHETICAL ESCAPE=HTML>"
+  data-planning-real="<TMPL_VAR EXPLORER.PLANNING_REAL ESCAPE=HTML>"
+  data-history-context="<TMPL_VAR EXPLORER.HISTORY_CONTEXT ESCAPE=HTML>"
+  data-history-absorption="<TMPL_VAR EXPLORER.HISTORY_ABSORPTION ESCAPE=HTML>"
+  data-pvpf-notice="<TMPL_VAR EXPLORER.PVPF_NOTICE ESCAPE=HTML>"
+  data-analysis-facts="<TMPL_VAR EXPLORER.ANALYSIS_FACTS ESCAPE=HTML>"
+  data-analysis-review="<TMPL_VAR EXPLORER.ANALYSIS_REVIEW ESCAPE=HTML>"
+  data-analysis-gaps="<TMPL_VAR EXPLORER.ANALYSIS_GAPS ESCAPE=HTML>"
+  data-analysis-static="<TMPL_VAR EXPLORER.ANALYSIS_STATIC ESCAPE=HTML>"
+  data-analysis-limited="<TMPL_VAR EXPLORER.ANALYSIS_LIMITED ESCAPE=HTML>"
+  data-knx-metadata="<TMPL_VAR EXPLORER.KNX_METADATA ESCAPE=HTML>"
+  data-knx-source-notice="<TMPL_VAR EXPLORER.KNX_SOURCE_NOTICE ESCAPE=HTML>"
+  data-knx-loxone="<TMPL_VAR EXPLORER.KNX_LOXONE ESCAPE=HTML>"
+  data-knx-ets="<TMPL_VAR EXPLORER.KNX_ETS ESCAPE=HTML>"
+  data-knx-manual="<TMPL_VAR EXPLORER.KNX_MANUAL ESCAPE=HTML>"
+  data-knx-name="<TMPL_VAR EXPLORER.KNX_NAME ESCAPE=HTML>"
+  data-knx-description="<TMPL_VAR EXPLORER.KNX_DESCRIPTION ESCAPE=HTML>"
+  data-knx-unknown="<TMPL_VAR EXPLORER.KNX_UNKNOWN ESCAPE=HTML>"
+  data-knx-empty="<TMPL_VAR EXPLORER.KNX_EMPTY ESCAPE=HTML>"
+  data-select-value="<TMPL_VAR EXPLORER.SELECT_VALUE ESCAPE=HTML>"
   data-empty-history="<TMPL_VAR EXPLORER.EMPTY_HISTORY ESCAPE=HTML>"
   data-no-target="<TMPL_VAR EXPLORER.NO_TARGET ESCAPE=HTML>"
   data-copied="<TMPL_VAR EXPLORER.COPIED ESCAPE=HTML>"
@@ -22,6 +60,7 @@
   data-restore-failed="<TMPL_VAR EXPLORER.RESTORE_FAILED ESCAPE=HTML>"
   data-session-other-tab="<TMPL_VAR EXPLORER.SESSION_OTHER_TAB ESCAPE=HTML>"
   data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
+  data-knx-write-required="<TMPL_VAR EXPLORER.KNX_WRITE_REQUIRED ESCAPE=HTML>"
   data-control-required="<TMPL_VAR EXPLORER.CONTROL_REQUIRED ESCAPE=HTML>"
   data-loxberry-required="<TMPL_VAR EXPLORER.LOXBERRY_REQUIRED ESCAPE=HTML>"
   data-history-required="<TMPL_VAR EXPLORER.HISTORY_REQUIRED ESCAPE=HTML>"
@@ -34,6 +73,8 @@
   data-range-day="<TMPL_VAR EXPLORER.RANGE_DAY ESCAPE=HTML>"
   data-range-week="<TMPL_VAR EXPLORER.RANGE_WEEK ESCAPE=HTML>"
   data-range-today="<TMPL_VAR EXPLORER.RANGE_TODAY ESCAPE=HTML>"
+  data-add-entry="<TMPL_VAR EXPLORER.ADD_ENTRY ESCAPE=HTML>"
+  data-remove-entry="<TMPL_VAR EXPLORER.REMOVE_ENTRY ESCAPE=HTML>"
   data-array-help="<TMPL_VAR EXPLORER.ARRAY_HELP ESCAPE=HTML>"
   data-object-help="<TMPL_VAR EXPLORER.OBJECT_HELP ESCAPE=HTML>"
   data-help-cursor="<TMPL_VAR EXPLORER.HELP_CURSOR ESCAPE=HTML>"
@@ -49,13 +90,34 @@
   data-response="<TMPL_VAR EXPLORER.RESPONSE ESCAPE=HTML>"
   data-duration="<TMPL_VAR EXPLORER.DURATION ESCAPE=HTML>"
   data-status="<TMPL_VAR EXPLORER.STATUS ESCAPE=HTML>"
+  data-date-time="<TMPL_VAR EXPLORER.DATE_TIME ESCAPE=HTML>"
   data-tool-group-loxone-read="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_READ ESCAPE=HTML>"
   data-tool-group-loxone-history="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_HISTORY ESCAPE=HTML>"
   data-tool-group-loxone-control="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL ESCAPE=HTML>"
+  data-tool-group-loxone-messages="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_MESSAGES ESCAPE=HTML>"
+  data-messages-required="<TMPL_VAR EXPLORER.MESSAGES_REQUIRED ESCAPE=HTML>"
   data-tool-group-loxberry-read="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ ESCAPE=HTML>"
+  data-tool-group-knx-catalog="<TMPL_VAR EXPLORER.TOOL_GROUP_KNX_CATALOG ESCAPE=HTML>"
   data-tool-group-loxberry-operate="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE ESCAPE=HTML>"
+  data-tool-group-other="<TMPL_VAR EXPLORER.TOOL_GROUP_OTHER ESCAPE=HTML>"
+  data-filter-all="<TMPL_VAR EXPLORER.FILTER_ALL ESCAPE=HTML>"
   data-tool-badge-read-only="<TMPL_VAR EXPLORER.TOOL_BADGE_READ_ONLY ESCAPE=HTML>"
   data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"
+  data-tool-badge-write-possible="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE_POSSIBLE ESCAPE=HTML>"
+  data-tool-hint-destructive="<TMPL_VAR EXPLORER.TOOL_HINT_DESTRUCTIVE ESCAPE=HTML>"
+  data-tool-hint-additive="<TMPL_VAR EXPLORER.TOOL_HINT_ADDITIVE ESCAPE=HTML>"
+  data-tool-hint-idempotent="<TMPL_VAR EXPLORER.TOOL_HINT_IDEMPOTENT ESCAPE=HTML>"
+  data-tool-hint-repeat-effect="<TMPL_VAR EXPLORER.TOOL_HINT_REPEAT_EFFECT ESCAPE=HTML>"
+  data-tool-hint-open-world="<TMPL_VAR EXPLORER.TOOL_HINT_OPEN_WORLD ESCAPE=HTML>"
+  data-tool-hint-closed-world="<TMPL_VAR EXPLORER.TOOL_HINT_CLOSED_WORLD ESCAPE=HTML>"
+  data-tool-hints-notice="<TMPL_VAR EXPLORER.TOOL_HINTS_NOTICE ESCAPE=HTML>"
+  data-tool-description="<TMPL_VAR EXPLORER.TOOL_DESCRIPTION ESCAPE=HTML>"
+  data-tool-required-scopes="<TMPL_VAR EXPLORER.TOOL_REQUIRED_SCOPES ESCAPE=HTML>"
+  data-tool-scope-either="<TMPL_VAR EXPLORER.TOOL_SCOPE_EITHER ESCAPE=HTML>"
+  data-tool-scope-or="<TMPL_VAR EXPLORER.TOOL_SCOPE_OR ESCAPE=HTML>"
+  data-tool-scope-local-approval="<TMPL_VAR EXPLORER.TOOL_SCOPE_LOCAL_APPROVAL ESCAPE=HTML>"
+  data-tool-scopes-unknown="<TMPL_VAR EXPLORER.TOOL_SCOPES_UNKNOWN ESCAPE=HTML>"
+  data-tool-technical-metadata="<TMPL_VAR EXPLORER.TOOL_TECHNICAL_METADATA ESCAPE=HTML>"
   data-result-current-call="<TMPL_VAR EXPLORER.RESULT_CURRENT_CALL ESCAPE=HTML>"
   data-result-from-history="<TMPL_VAR EXPLORER.RESULT_FROM_HISTORY ESCAPE=HTML>"
   data-history-arguments="<TMPL_VAR EXPLORER.HISTORY_ARGUMENTS ESCAPE=HTML>"
@@ -65,32 +127,57 @@
   data-fields="<TMPL_VAR EXPLORER.FIELDS ESCAPE=HTML>"
   data-origin-mismatch="<TMPL_VAR EXPLORER.ORIGIN_MISMATCH ESCAPE=HTML>">
 
-  <section class="mcp-explorer-card" aria-labelledby="explorer-title">
-    <p class="mcp-explorer-actions">
-      <a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>
-      <a class="lb-button" href="tool-schema-reference.html" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
-    </p>
-    <h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1>
-    <p><TMPL_VAR EXPLORER.INTRO></p>
-    <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN></p>
-    <div class="mcp-explorer-actions">
-      <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
-      <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
+  <p class="mcp-explorer-actions mcp-explorer-header-links">
+    <a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>
+    <a class="lb-button" href="tool-schema-reference.html" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
+  </p>
+  <details id="explorer-connection-panel" class="mcp-explorer-card" open>
+    <summary><h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1> <span id="explorer-connection-badge" class="mcp-service-badge" data-kind="inactive"><TMPL_VAR EXPLORER.DISCONNECTED></span></summary>
+    <div class="mcp-explorer-panel-content mcp-explorer-stack">
+      <p><TMPL_VAR EXPLORER.INTRO></p>
+      <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN></p>
+      <div class="mcp-explorer-actions">
+        <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
+        <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
+      </div>
+      <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
+        <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
+        <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>
+      </p>
+      <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
+      <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
+      <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>
+      <details id="explorer-access-scopes" hidden>
+        <summary><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></summary>
+        <p id="explorer-scope-unavailable" class="mcp-explorer-muted" hidden><TMPL_VAR EXPLORER.SCOPE_UNAVAILABLE></p>
+        <ul id="explorer-scope-list" class="mcp-explorer-scope-list"></ul>
+      </details>
     </div>
-    <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
-      <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
-      <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>
-    </p>
-    <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
-    <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
-    <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>
-  </section>
+  </details>
 
   <div class="mcp-explorer-grid">
     <aside class="mcp-explorer-stack">
       <details id="explorer-tools-panel" class="mcp-explorer-card" open>
         <summary><span class="mcp-explorer-panel-label"><TMPL_VAR EXPLORER.TOOLS> <span id="explorer-selected-tool" class="mcp-explorer-panel-selection" hidden></span></span></summary>
         <div class="mcp-explorer-panel-content">
+          <div class="mcp-explorer-discovery">
+            <label for="explorer-tool-search"><TMPL_VAR EXPLORER.SEARCH_TOOLS></label>
+            <input id="explorer-tool-search" type="search" placeholder="<TMPL_VAR EXPLORER.SEARCH_TOOLS_PLACEHOLDER ESCAPE=HTML>" autocomplete="off">
+            <details id="explorer-tool-filters" class="mcp-explorer-tool-filters">
+              <summary><TMPL_VAR EXPLORER.FILTER_TOOLS> <span id="explorer-tool-filter-count">(<TMPL_VAR EXPLORER.FILTER_ALL>)</span></summary>
+              <div class="mcp-explorer-tool-filter-options" role="group" aria-label="<TMPL_VAR EXPLORER.FILTER_TOOLS ESCAPE=HTML>">
+                <label><input type="checkbox" data-tool-group="all" checked> <TMPL_VAR EXPLORER.FILTER_ALL></label>
+                <label><input type="checkbox" data-tool-group="loxoneRead"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_READ></label>
+                <label><input type="checkbox" data-tool-group="loxoneHistory"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_HISTORY></label>
+                <label><input type="checkbox" data-tool-group="loxoneControl"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL></label>
+                <label><input type="checkbox" data-tool-group="loxoneMessages"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_MESSAGES></label>
+                <label><input type="checkbox" data-tool-group="loxberryRead"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ></label>
+                <label><input type="checkbox" data-tool-group="knxCatalog"> <TMPL_VAR EXPLORER.TOOL_GROUP_KNX_CATALOG></label>
+                <label><input type="checkbox" data-tool-group="loxberryOperate"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE></label>
+                <label><input type="checkbox" data-tool-group="other"> <TMPL_VAR EXPLORER.TOOL_GROUP_OTHER></label>
+              </div>
+            </details>
+          </div>
           <div id="explorer-tools" class="mcp-explorer-tool-list"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
         </div>
       </details>
@@ -103,41 +190,50 @@
     </aside>
 
     <div class="mcp-explorer-workspace">
-      <section id="explorer-request" class="mcp-explorer-card mcp-explorer-stack" aria-labelledby="arguments-title" tabindex="-1">
-        <div id="explorer-tool-summary"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
-        <h2 id="arguments-title"><TMPL_VAR EXPLORER.ARGUMENTS></h2>
-        <div class="mcp-explorer-tabs" role="tablist">
-          <button id="explorer-form-tab" type="button" role="tab" aria-selected="true" aria-controls="explorer-form-panel"><TMPL_VAR EXPLORER.FORM></button>
-          <button id="explorer-json-tab" type="button" role="tab" aria-selected="false" aria-controls="explorer-json-panel"><TMPL_VAR EXPLORER.JSON></button>
+      <details id="explorer-request" class="mcp-explorer-card" tabindex="-1" open>
+        <summary><h2 id="request-title"><TMPL_VAR EXPLORER.SELECTED_TOOL></h2> <span id="explorer-request-selection" class="mcp-explorer-panel-selection" hidden></span></summary>
+        <div class="mcp-explorer-panel-content mcp-explorer-stack">
+          <div id="explorer-tool-summary"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
+          <h2 id="arguments-title"><TMPL_VAR EXPLORER.ARGUMENTS></h2>
+          <div class="mcp-explorer-tabs" role="tablist">
+            <button id="explorer-form-tab" type="button" role="tab" aria-selected="true" aria-controls="explorer-form-panel"><TMPL_VAR EXPLORER.FORM></button>
+            <button id="explorer-json-tab" type="button" role="tab" aria-selected="false" aria-controls="explorer-json-panel"><TMPL_VAR EXPLORER.JSON></button>
+          </div>
+          <div id="explorer-form-panel" role="tabpanel" aria-labelledby="explorer-form-tab">
+            <div id="explorer-form" class="mcp-explorer-stack"></div>
+            <p id="explorer-schema-warning" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.UNSUPPORTED_SCHEMA></p>
+          </div>
+          <div id="explorer-json-panel" role="tabpanel" aria-labelledby="explorer-json-tab" hidden>
+            <label for="explorer-json" class="mcp-explorer-muted"><TMPL_VAR EXPLORER.JSON></label>
+            <textarea id="explorer-json" class="mcp-explorer-json" spellcheck="false">{}</textarea>
+          </div>
+          <div class="mcp-explorer-actions">
+            <button id="explorer-run" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RUN></button>
+            <button id="explorer-reset-draft" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RESET_DRAFT></button>
+          </div>
+          <div id="explorer-call-feedback" class="mcp-explorer-status" role="status" aria-live="polite" hidden></div>
+          <div id="explorer-validation" class="mcp-explorer-status" role="alert" data-kind="error" hidden></div>
         </div>
-        <div id="explorer-form-panel" role="tabpanel" aria-labelledby="explorer-form-tab">
-          <div id="explorer-form" class="mcp-explorer-stack"></div>
-          <p id="explorer-schema-warning" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.UNSUPPORTED_SCHEMA></p>
-        </div>
-        <div id="explorer-json-panel" role="tabpanel" aria-labelledby="explorer-json-tab" hidden>
-          <label for="explorer-json" class="mcp-explorer-muted"><TMPL_VAR EXPLORER.JSON></label>
-          <textarea id="explorer-json" class="mcp-explorer-json" spellcheck="false">{}</textarea>
-        </div>
-        <div class="mcp-explorer-actions">
-          <button id="explorer-run" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RUN></button>
-          <button id="explorer-reset-draft" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RESET_DRAFT></button>
-        </div>
-        <div id="explorer-validation" class="mcp-explorer-status" role="alert" data-kind="error" hidden></div>
-      </section>
+      </details>
 
-      <section id="explorer-result" class="mcp-explorer-card mcp-explorer-stack" aria-labelledby="result-title" tabindex="-1">
-        <h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2>
-        <div class="mcp-explorer-actions">
-          <button id="explorer-copy" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.COPY_JSON></button>
-          <button id="explorer-next-page" class="lb-button" type="button" hidden disabled><TMPL_VAR EXPLORER.NEXT_PAGE></button>
-          <button id="explorer-restore-history" class="lb-button" type="button" hidden><TMPL_VAR EXPLORER.RESTORE_HISTORY></button>
+      <details id="explorer-result" class="mcp-explorer-card" tabindex="-1" open>
+        <summary><h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2></summary>
+        <div class="mcp-explorer-panel-content mcp-explorer-stack">
+          <div class="mcp-explorer-actions">
+            <button id="explorer-copy" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.COPY_JSON></button>
+            <button id="explorer-next-page" class="lb-button" type="button" hidden disabled><TMPL_VAR EXPLORER.NEXT_PAGE></button>
+            <button id="explorer-restore-history" class="lb-button" type="button" hidden><TMPL_VAR EXPLORER.RESTORE_HISTORY></button>
+          </div>
+          <p id="explorer-result-context" class="mcp-explorer-muted" hidden></p>
+          <details id="explorer-history-arguments" hidden>
+            <summary><TMPL_VAR EXPLORER.HISTORY_ARGUMENTS></summary>
+            <pre id="explorer-history-arguments-value" class="mcp-explorer-pre"></pre>
+          </details>
+          <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
+          <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>
         </div>
-        <p id="explorer-result-context" class="mcp-explorer-muted" hidden></p>
-        <div id="explorer-history-arguments" class="mcp-explorer-stack" hidden></div>
-        <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
-        <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>
-        <details id="explorer-transcript-details"><summary><TMPL_VAR EXPLORER.TRANSCRIPT></summary><div id="explorer-transcript"></div></details>
-      </section>
+      </details>
+      <details id="explorer-transcript-details" class="mcp-explorer-card mcp-explorer-protocol"><summary><TMPL_VAR EXPLORER.TRANSCRIPT></summary><div id="explorer-transcript" class="mcp-explorer-panel-content"></div></details>
     </div>
   </div>
 </main>
@@ -170,4 +266,10 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>"></script>
+<script defer src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-pv-planning-v1-lighting-v2"></script>
+<script defer src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1-solar-numerical-v1"></script>
+<script defer src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
+<script defer src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
+<script defer src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modbus-v3"></script>
+<script defer src="explorer-views.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-pv-planning-v1-solar-numerical-v1-energy-context-v1-history-day-context-v1-lighting-v1"></script>
+<script defer src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1-solar-numerical-v1-lighting-v1"></script>

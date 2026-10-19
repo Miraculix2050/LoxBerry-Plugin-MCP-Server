@@ -1,10 +1,309 @@
 # Capabilities and limits
 
+Local Event History accepts exact discovered runtime control IDs with subcontrol
+suffixes. Preserve their complete spelling and case; state IDs remain UUIDs.
+Reads and existing recording-source selection use the exact visible child/state
+pair, without parent or sibling fallback. A visible child without retained local
+history returns `not_found`; this does not prove inactivity. Recording and
+LoxBerry approval gates remain unchanged. Chart selection forwards bounded
+control IDs unchanged for the same server-side validation.
+
 [Deutsch](capabilities.de.md)
+
+`loxone_analyze_history` computes compact temperature sample means, verified
+energy and observed state duration with `loxone:read` and `loxone:history`.
+Select exact sources or confirmed profile bindings, a half-open period and an
+explicit IANA timezone. Unknown units, resets, initial values and capture gaps
+remain explicit limitations. State duration is not measured energy; sample means
+are not time-weighted means. Raw data is transferred only when explicitly
+requested, with at most 100 items per page. Limits: 16 sources, 31 local days,
+100,000 input points, 30 seconds and 64 KiB results. Raw statistics retain their
+stricter seven-day limit.
+
+The same tool provides `consumer_ranking`, `pv_load_overlap`, `operating_phases`
+and `baseload`. Ranking requires confirmed consumer bindings, comparable
+measurement boundaries and an explicit
+`comparison_options.comparable_boundaries_confirmed` assertion; parent/child
+counters must be excluded and are not summed. PV/load comparison uses confirmed
+roles and common whole hourly intervals, optionally inside evidenced active
+phases. Temporal coincidence and an energy upper bound do not prove exact solar
+self-consumption. Operating phases retain gaps and never allocate partial-interval
+energy. Nighttime estimation uses the time-weighted median of evidenced hourly
+mean powers derived from hourly energy in the local 00:00-05:00 window;
+`night_start_hour` and `night_end_hour` override whole hours. Daily extrapolation
+remains an estimate for the selected channel. Unevidenced power samples cannot
+establish that estimate.
+
+Statistics and local Event History responses expose `coverage_evidence` with
+UTC time basis, half-open evidenced intervals or point observations, and explicit
+limitations. Existing inclusive filters and cursors remain compatible. Samples
+do not prove continuous recording; missing values are not interpolated. Only
+documented hourly difference records receive an exact one-hour interval. Legacy
+local times remain unresolved without a confirmed Miniserver timezone.
+
+New Event History capture phases persist the observed initial value and its
+timestamp. `capture_intervals` exposes that evidence at phase start; later
+boundary values require replaying intervening transitions. Old or pruned phases
+may lack an initial value. Reconnect gaps stay gaps; no transitions do not prove
+inactivity. Bounded metadata explicitly reports truncation. Local calendar
+boundaries require an explicit IANA timezone; DST can produce 23- or 25-hour
+days. Native Control History remains a separate event source.
 
 ## Supported scope
 
+The [confirmed installation profile](installation-profile.en.md) persists minimal
+bindings through the Admin page. MCP reads them with fresh visibility and can
+manage them with separate local profile approval, an expected revision and explicit
+user confirmation. User roles remain separate from technical semantics.
+Exact weather bindings and optional PV geometry/capacity declarations use the same
+profile. Their provenance remains separate. Independently opt-in
+[local weather recording](weather-history.en.md) provides bounded received-time
+history; unverified radiation encoding is not numerically interpreted.
+
+WindowMonitor `windowStates` is decoded through ordinary state reads, state
+semantics and optional compact-read semantics. Use `semantic_value.contacts`:
+each original index retains its raw token, documented bitmask labels and available
+contact metadata/reference. Bits 1/2/4/8/16 mean closed/tilted/open/locked/unlocked;
+zero is `unknown_or_offline`. Combined bits remain combined, without alarm priority.
+Inspect decoding/mapping completeness, vector alignment, truncation and observation
+quality separately. Missing, invalid or stale values do not establish a current
+closed contact. Limits are 100 positions, 65,536 input characters and 16 KiB of
+semantic enrichment. Opening-contact analysis uses the same optional `decoded_state`
+and retains its existing redaction of nonnumeric tokens.
+
+For history, inspect the full control description's native history availability
+and `loxone_list_event_history_sources`, then use `loxone_get_control_history` or
+`loxone_get_event_history` only for an available source. Report the actual source,
+requested interval, observed timestamps and reported coverage; native history
+does not promise full-period coverage. Current values, event text and today's
+configuration cannot reconstruct earlier contact states or historical positions.
+Compare separately read arming/heating/temperature/absence evidence with its own
+timestamps and gaps. Such AI assessments are not WindowMonitor alarms, physical
+opening coverage or proof of consumer wiring. No recording is enabled automatically.
+
+`loxone_get_state_semantics` reads semantic evidence and cached values for one
+visible control with `loxone:read`, using a fresh visibility check. Select 1–100
+unique exact `state_names`, or omit them and page all normalized states with
+`offset` and `limit` (default/maximum 100). Follow `next_offset` with the same
+selection. Unknown selections fail together; hidden controls are excluded.
+
+Each item separates the original `value`, optional `semantic_value`, observation
+`quality` and `semantics`. `known` means the interpretation is supported by the
+identified existing decoder rule; `partial`, `unknown` and `invalid` preserve
+gaps, absent companions and invalid source coding. A current value can have
+unknown meaning, and a stale value can still have a known interpretation.
+Missing document or firmware versions remain null. Per-field sources identify
+Structure metadata, companion runtime states or decoder rules; Structure
+modification times are not firmware. Formats longer than 64 characters are omitted
+with original/returned lengths and explicit truncation instead of altered text.
+
+V1 covers existing Irrigation/AlarmClock decoders, `value` display formats for
+InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog ranges and position-bound
+StatusMonitor `inputStates` configured tuple mapping and status-count semantics. Generic analog formats do not prove units,
+precision or direction; configured labels do not prove severity or household roles.
+Encoding and position lists retain at most 100 entries, sources at most eight,
+with counts and completeness. Page completeness is independent of semantic and
+metadata completeness. No project join, documentation-content download, hidden
+diagnosis, alarm acknowledgement or installation-wide semantic coverage is provided.
+
+Exact `IRoomControllerV2.tempActual` and `tempTarget` now identify current and
+target temperature. `measurement_quantity`, `measurement_role` and
+`semantic_value.kind=temperature` preserve this distinction. Only a complete,
+explicit Celsius/Fahrenheit temperature format proves the unit; `%.1f°` keeps
+it unknown. `InfoOnlyDigital.active` and `Hourcounter.active` decode numeric
+zero/one as `semantic_value.kind=binary_state`, preserving indication versus
+counter activity. Missing values remain partial; invalid codes, strings,
+booleans and nonfinite numbers remain invalid. These documented rules do not
+establish physical appliance roles, heating activity, energy or historical
+coverage. See the [versioned evidence matrix](../development/analysis-semantic-evidence.md).
+Other energy, meter or controller meanings can remain unknown. This coverage is
+fixture-tested; it does not establish new hardware or firmware compatibility.
+
+For runtime `Meter` controls, the full description exposes `model.meter_type`
+from documented `details.type`: `unidirectional` (also the documented default
+when absent), `bidirectional`, `storage`, or `legacy`. Unknown, malformed or
+contradictory subtype metadata does not gain output semantics. `powerName`,
+project `PwrN`, display icons, units and household labels do not select the type.
+For advertised `actual`, state semantics and compatible raw StatisticV2 semantics
+report `sign_convention`: `non_negative` for Uni (zero included),
+`positive_consumption_negative_delivery` for Bi, and
+`positive_discharge_negative_charge` for storage. Valid state values add
+`semantic_value.kind=meter_output` with `output_direction`; zero is only `zero`,
+not evidence of a stopped physical device. Reading channels `total`, `totalNeg`
+and their documented day/week/month/year variants are nonnegative; `totalNeg`
+is a separate counter, not a negative net value. No undocumented counter aliases
+are assigned. Units and physical boundaries remain separately qualified, so
+these state descriptors remain partial. Legacy meters retain their prior behavior.
+Invalid numeric values or negative values on nonnegative channels produce no
+semantic value; original raw values are retained. Input-polarity configuration
+is not required to interpret these documented outputs. Native EFM aggregates
+do not inherit these rules. See the [meter evidence](../development/meter-output-semantics.md).
+
+Native series now expose `semantics` through description, observability and
+statistic reads. Explicit accumulated metadata distinguishes cumulative counters
+from samples and the adapter's aggregated difference sums. Exact Meter channels
+can identify source-declared power/energy units; direction, physical boundary,
+measurement method and reset/rollover correction remain unknown without evidence.
+Temperature series retain actual/target roles and explicit units; conflicting
+units remain unknown. Sampling mode does not prove continuous coverage or an
+average/min/max. Legacy local-clock conversion remains unverified. Profile rule
+references are versioned; new/changed evidence requires review of affected bindings.
+
+
+For WindowMonitor controls, the full description retains the first 100 configured
+positions in list or mapping source order, including malformed placeholders.
+`capabilities.model.window_monitor_summary` reports `total`, `returned`, `omitted`,
+and `truncated`; only retained explicit references can additionally expose internal
+controls for reading. Explicit independent user links retain their existing authorization;
+the monitor-only read restriction does not override them or other read-only restrictions.
+Missing/null collections are empty. Unsupported collection shapes report
+`invalid_window_monitor_collection`, with unknown (`null`) total and
+omitted counts. Match `windowStates` by the original zero-based item index; omitted
+positions are not evidence of missing contacts. These fields are absent from compact
+views. Complete configured representation does not establish physical opening coverage.
+
+Each retained item exposes a sorted, fixed-code `diagnostics` list without rejected
+source values. Codes distinguish malformed entries (`invalid_window_monitor_entry`),
+invalid fields (`invalid_name`, `invalid_install_place`, `invalid_control_reference`,
+`invalid_room_reference`), missing references (`missing_control_reference`,
+`missing_room_reference`), unavailable visible references (`control_reference_unavailable`,
+`room_reference_unavailable`), and explicit room conflicts (`room_reference_mismatch`).
+Absent optional names/install places are valid; invalid present values, including null,
+are diagnosed. A rejected reference without a valid fallback can also be missing.
+A valid mapping-key fallback remains usable even when the explicit UUID is invalid.
+
+`resolution_status` is `resolved` when both the control and item room resolve,
+`partially_resolved` when exactly one resolves, otherwise `unresolved`. The summary
+counts these statuses over retained positions only; their sum equals `returned`.
+`room_consistency` is separately `match`, `mismatch`, or `unknown`, comparing only
+explicit UUIDs when both rooms and the control are visible. A mismatch does not
+change resolution status. Hidden and unknown targets are both unavailable; names
+never establish identity, contact roles, or physical correctness.
+
+### Opening-contact assignment review
+
+`loxone_analyze_opening_contacts` joins monitor references and exact consumer paths
+in one bounded read-only call (`loxone:read`). Select `scope_type=monitor|room|contact|consumer`
+and an exact visible `scope_uuid`. Additional candidates are at most 100 unique
+visible `candidate_contact_uuids`; their physical contact role is not confirmed.
+`include_current_state=false` is the default. Trace limits default to depth 6 and
+100 nodes/edges, with maxima of 16 and 200. Each call inspects at most 100 monitors,
+100 contact candidates, 100 consumers and 200 trace starts; responses stay within
+65,536 bytes. At most 200 connections and 200 findings are materialized; additional
+records are counted separately and prevent a complete result. Check separate monitor,
+mapping, graph and state completeness, warnings and omission counts.
+Each directed evidence trace adds up to 20 `gaps`, with at most 200 across the call.
+A gap identifies the reached opaque project node, direction, safe technical block type
+and connector key, fixed reason, connector-rule version and available rule references.
+Invalid or overlong technical tokens are null; names and raw attributes are omitted.
+`gaps_omitted` counts omitted cases per trace; `max_gap_evidence` preserves incomplete
+graph evidence. `parent_boundary_incomplete` describes the existing conservative
+parent check; it does not prove which adjacent port matters or a configuration defect.
+The existing `unmodeled_internal_flow` warning remains unchanged.
+Counts cover inspected retained positions, not the
+entire installation. Duplicates use identical reference UUIDs. Without project
+access, monitor findings remain available. Requested states expose original indices,
+vector length and separate state freshness; `state_value` is an uninterpreted numeric
+source token. State time is Unix time, independent of the analysis timestamp and
+verified project marker.
+
+The first consumer rule is exactly `AutoJalousie.Window`; `Dwc` is not assumed to be
+an alias. `Or.I1/I2 -> Q` and projection of a resolved explicit `InputRef` reference
+onto a unique `AQ` are marked derived rules. Bounded trace starts retain every
+exactly identified occurrence of a logical KNX contact across internal model sources;
+reaching that bound prevents a complete graph claim. Intermediate logic, lockout sources
+and connector context remain visible in evidence. Unknown semantics, ambiguity
+and reached limits prevent negative connection conclusions.
+Connected inputs or outputs outside the reviewed connector rules also mark the
+block's evidence incomplete; disconnected additional connectors do not.
+A `cross_assignment_review_candidate` compares a proven feeding contact with another
+non-feeding same-room candidate; it does not determine physical assignment.
+`physical_opening_coverage` remains `not_assessable`. Monitor scope inspects retained
+entries; room scope selects monitors by monitor/item room and candidates by exact
+item/control rooms. Contact scope finds direct or explicitly linked monitor membership;
+consumer scope uses its room for monitor context. Room and consumer scopes also
+restrict consumers; monitor and contact scopes compare visible supported consumers.
+
+The canonical skill separates monitor coverage, configured consumer wiring and
+physical opening coverage. Find exact visible `WindowMonitor` controls, follow
+discovery pages, and use `loxone_describe_control(view="full")`. Keep direct item
+references separate from `relationships.linked_controls` (including links from
+aggregate objects), exact Project Intelligence paths and name-only/shared-room
+review candidates. A direct item reference is normalized and may originate from
+an explicit UUID or a mapping-key fallback; resolution alone does not identify
+the source. Describe each resolved referenced control separately with
+`loxone_describe_control(control_uuid=..., view="full")` before inspecting its
+`relationships.linked_controls`; the monitor embeds only compact item references.
+An explicit link is indirectly linked evidence, not direct
+monitor membership. Use diagnostics and original indices; malformed, unavailable,
+room-mismatched and omitted entries limit conclusions. `partially_resolved` may
+mean only the room resolved. Resolution counts cover retained positions only.
+If current state matters, read `windowStates` and report index/vector discrepancies.
+
+For correct-assignment questions, check `loxone_get_project_status`, resolve exact
+contacts and consumers with `loxone_describe_project_object`, trace contacts
+downstream with `loxone_trace_project_logic`, and trace the exact consumer
+connector upstream, initially `AutoJalousie.Window`. Locate the connector through
+returned child node IDs and their descriptions; compare exact graph node IDs and
+edge endpoints. Preserve `InputRef`, `Or`, lockout controls and connector names.
+Containment and shared reachability are not signal flow; do not invent internal
+edges through unmodeled blocks. Check mapping ambiguity, `truncated_fields`,
+trace truncation, unresolved relationships and freshness. Missing paths in
+incomplete evidence do not prove missing wiring. This manual workflow supplements
+the analyzer evidence and helps refine incomplete results.
+
+Generic example: `roof-window contact -> InputRef -> Or with a lockout switch ->
+blind named window.Window`, while another same-room window contact is monitored.
+If complete relevant traces show that the latter does not feed that connector,
+report a `cross_assignment_review_candidate` with the exact evidence. Wrong
+contact wiring and misleading consumer naming are both possible; neither names
+nor monitor membership justify a physical correction. If only separate segments
+are available, report the gap. Use explicit wording such as "unresolved" and
+"indirectly linked". Without an authoritative inventory and exact identity links,
+physical completeness is `not_assessable`. Never infer one opening per blind or
+contact roles from names, categories or room counts.
+
+### Runtime and project capabilities
+
+Project status optionally includes a paginated mapping inventory with
+`include_mapping_inventory=true`, `mapping_status`, `runtime_control_uuid`,
+`cursor` and `limit` (default 20, maximum 100). Repeat filters on continuation;
+filters and cursors require the inventory. `mapping_breakdown` separates
+`independent_unmapped`, `derived_from_parent`, `derived_parent_unmapped` and
+`derived_parent_ambiguous`; legacy `mapping` counters retain their definition.
+The inventory uses `unmapped` for independently unmapped entries.
+
+Derived mappings require explicit visible runtime containment. A suffix alone
+does not establish a parent or Config connector. Provenance identifies the
+immediate parent, the exact ancestor used as project anchor, the bounded parent
+chain, source references and rule `explicit_runtime_parent_v1`. Parent chains
+are limited to 16 steps; unresolved, conflicting or cyclic chains never establish
+a successful mapping. Own exact or ambiguous UUID mappings take precedence.
+Project search, description and trace identify the selected child through
+`runtime_target_mapping` while returning parent project topology.
+
+For a selected derived target, Observability exposes `target_runtime_evidence`
+with that child's current-state availability, statistic metadata and local history
+coverage. Its `project_node_ids` is empty; parent references are provenance.
+Existing controls and summary counters remain exact-only. Siblings are not
+included automatically. Structural reachability does not establish causation.
+
+
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
+
+For known visible UUIDs, prefer `loxone_read_controls` for identity and current values in one call, as described below. For reference-only selection, explicit hidden diagnosis or servers without that tool, use `loxone_describe_control(view="state_refs")` after discovery. It returns only control identity, visibility and the complete normalized `states` list of names and UUIDs, without room/category context, capabilities, statistics, history, presentation or relationships. The view reloads the user-filtered structure and returns an error rather than cached references if the refresh fails. `stale` marks a disconnected event stream; `observed_at` timestamps the description, not a state value. Select only needed UUIDs, deduplicate them and call `loxone_get_states` in batches of at most 100; make no value-read call for an empty selection. Preserve explicit `include_hidden=true` for hidden-control diagnosis and its value reads. Use `history_targets` for history/statistic selection, `operation_targets` for operation preparation, and `full` for additional diagnosis.
+
+After locating a control with `loxone_find_controls`, `loxone_describe_control` can use `view="history_targets"` to return only its identity, state names and UUIDs, advertised native control-history flag, and statistic series IDs and metadata. The default `view="full"` retains the detailed response. `native_statistics_truncated=true` in the compact view means more than 128 valid StatisticV2 series were found and some are omitted. A listed target does not establish that local event history is recorded or that native history or statistics cover a requested period; check the respective history response.
+
+For a control operation, use `view="operation_targets"` immediately before calling `loxone_operate_control`. It returns only the control identity, visible allowed actions, and action-specific targets needed to form parameters: radio outputs, scene IDs, analog range, override modes, mood-list state reference, and color temperature bounds when applicable. Empty target fields mean that the control does not advertise those choices. Tool-schema bounds still apply to numeric operation parameters. This view omits state lists, statistics, history, relationships, and presentation metadata; `full` remains available for diagnosis. This view reloads the current user-filtered structure; if the refresh fails, no cached operation targets are returned.
+
+When enabled by an administrator, selected state UUIDs can additionally be recorded locally as bounded event history. This supplements native Loxone history for short-lived transitions and never grants access beyond the caller's current visible structure.
+
+`loxone_list_event_history_sources` lists active and retained removed sources only when the caller can currently see their exact control and state. It needs `loxone:read` and `loxone:history`; an unavailable current Loxone view returns an error. `loxberry_list_event_history_sources` gives the complete source inventory with the same paged response and additionally requires either enabled `loxberry:read` with exact local read approval or enabled `loxberry:operate` with exact local operate approval. The scopes and approvals are independent. Both lists report `recording_status` and a known `recording_ended_at`; follow `next_cursor` to retrieve every source. Listing never grants source changes: add, remove and purge retain their operate requirements.
+
+Removing an event-history source stops recording but leaves retained events readable while the control and state remain currently visible to the caller. `loxone_get_event_history` reports `recording_status`, `recording_ended_at`, `recording_notice`, and the requested period's `coverage` separately. `active` means configured for recording, while only `coverage` establishes capture for the requested period. A gap after removal is never treated as continuous recording. Global age and database-size limits still apply. An approved client can permanently delete one inactive source's events and coverage with `loxberry_purge_event_history_source` and `confirm=true`. A purge with an unknown outcome, including a timeout or post-commit maintenance failure, must not be retried automatically.
+
+If a removal reports that its metadata outcome is unknown, inspect the source list and history before a manual retry. A repeated removal can repair the retained-source marker; `recording_ended_at` stays empty when the original end time cannot be confirmed.
 
 `loxone_get_project_status`, `loxone_find_project_objects`,
 `loxone_describe_project_object`, `loxone_trace_project_logic`, and
@@ -14,27 +313,184 @@ graph evidence rather than raw XML: a signal or reference trace describes struct
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
 block types and unresolved relationships remain visible without invented semantics. A trace caps
 its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
+Exact `ModbusASensor` and `ModbusAActor` objects add optional read-only `modbus` evidence to project search and
+describe. Search remains by `block_type`, without a new technology filter.
+The sensor allowlist is `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `ModbusPollingCycle`,
+`SourceValHigh`, `DestValHigh`; observed `ModbusDev` ancestors expose raw configured `Channel`,
+`ModbusServer` exposes `Timeout`, and `Comm485` exposes `RxTimeout`, `Baudrate`, `Databits`,
+`Parity`, `Pause`, `Protocol`. Comm485 is reported only as an observed source type in this
+ancestry, never classified as Modbus by itself. `source_read` derives from the exact sensor
+type; actors use `configured_write` to describe their configured direction, without granting
+write access. Actor fields are `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `SourceValHigh`,
+`DestValHigh`, `Channel`, `RepeatRate` and `ModbusCoilQuantity`; repetition and quantity retain
+unknown units/semantics and are not sensor polling or decoded register spans.
+The observed `ActorCaption` ancestor retains containment identity with no extra fields.
+Containment is hierarchy, not signal causality. Existing connector and relationship
+evidence remains available in describe.
+
+Each field carries `explicit`, `absent`, `ambiguous` or `invalid` evidence, source field,
+raw occurrences and opaque model-source/project-node provenance. Conflicting values have no
+single `raw_value`; identical duplicate occurrences remain visible. Numeric source strings are
+limited to 64 characters and eight occurrences per field, with `occurrences_omitted`.
+Malformed or oversized strings remain internal source evidence; public occurrences mark them
+invalid and omit their content. All units/enums and datatype semantics remain `unresolved`.
+Channel is not a proven unit ID. No defaults, scaling formula, bit/word order, actor operations,
+runtime freshness or successful transactions are inferred. Configured polling is static evidence.
+Search shows one ancestor at most; describe shows at most `min(limit, 16)`, with
+`ancestry_status` and `ancestry_truncated`. Unsupported Modbus types receive a describe diagnostic.
+Actors remain unsupported by this analog-sensor analyzer; raw actor metadata does not expand
+analysis coverage or establish physical actuator compatibility.
+`loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
+`inventory`, `configured_register_mappings`, `direct_consumers`,
+`configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
+the default scope (version 13). Changing Explorer scope clears selection and cursor.
+Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
+within uniquely observed project transport/device ancestry in one source.
+Repeated mappings or differing explicit raw attributes are review candidates,
+not defects.
+Comparison exclusions preserve the specific reason, affected raw field, value
+and evidence status. An explicit unknown command remains explicit; it is treated
+as neither an absent value nor an invalid device configuration.
+Polling values have unknown units and establish no achieved rate or
+bus load. Direct signal edges and distinct consumers are counted separately;
+references remain separate and no observed direct consumer does not prove non-use.
+Inspect check status, coverage, gaps, omissions and pagination. These checks
+create no bus traffic and establish no current measurement or device health.
+Shared sensor/actor registers can be intentional. Register width, overlap,
+device addressing, scaling and byte order require independent register documentation.
+Describe carries bounded parser diagnostics for observed ancestors and caps the structured
+envelope at 65,536 UTF-8 bytes: it shortens ancestry with an explicit truncation flag or returns
+`response_too_large` if the remaining description cannot fit.
+`coverage_complete=false` explicitly avoids an installation inventory claim; register numbers,
+names and cross-part source IDs do not merge occurrences. Existing identity, authorization,
+marker, cursor and response-byte checks still apply. The Explorer displays these optional typed
+fields, including source-field array labels. Sanitized public historic RTU and vendor TCP fixtures
+prove source shape only; live sensor/device compatibility is unverified (issues #350/#352).
+
 Confirmed KNX/EIB project objects add bounded source-backed metadata for bus lines, endpoints and
 KNX logic blocks. Endpoint direction is `bus_to_loxone` or `loxone_to_bus`; it is not a claim
 about the physical device role. Group addresses retain their original text and only expose a
-canonical form when it is valid. `EIBType` remains an unresolved source code, not an inferred DPT.
+canonical form when it is valid. `EIBType` remains a raw source code. Only the
+versioned mapping paired against Config objects adds evidenced DPT main types.
+`EIBextsensor` and `EIBtextsensor` are bus-to-Loxone endpoints;
+`EIBextactor` and `EIBtextactor` are Loxone-to-bus endpoints. Validated `:0` and
+`:1` address variants remain distinct; the address reports whether it came from
+`EibAddr` or, for `EIBextsensor` when that field is absent, `EibAddrPulse`.
+Variants are supported only for the two external endpoint types. The suffix does not prove
+which physical edge occurred. An exact variant search returns that variant;
+searching the canonical base may return both.
 Equal group addresses do not create a graph relationship or prove causality. Find and trace return
-only a compact KNX summary; use `loxone_describe_project_object` for the original value, segments,
-names, and raw DPT code. Project find pages and traces are additionally limited to 64 KiB and
+a compact KNX summary with original and canonical addresses, source field, and variant; use
+`loxone_describe_project_object` for address segments, names, any raw datatype code,
+and bounded connector IDs, keys, and incoming/outgoing signal counts. In the verified
+format, absent EIBType on ordinary sensors/actors adds separate implicit DPT1 evidence
+without EIS; text types add DPT16. Unverified versions and extended families remain unmapped.
+The `knx_group_address` filter accepts valid two- or three-level addresses and `:0`/`:1`
+variants. Invalid syntax or numeric ranges return `invalid_input`; a valid address without
+matches returns a successful empty search page. Valid original forms are still compared exactly
+with original or canonical addresses.
+Project find pages and traces are additionally limited to 64 KiB and
 report a size trim through `truncated` and `truncation_reason`.
+`project_parts` counts internally ingested model sources rather than Loxone Config projects.
+Status exposes opaque `model_sources`; identical KNX source occurrences from separate model
+sources are presented once as a logical object with `source_occurrence_count` and
+`model_source_ids`. Equal titles or group addresses never cause such a merge.
+For `SysVar`, `DigitalIn`, `Actor`, `Online`, `Mode`, and `VoltageOut`, model version
+15 also resolves verified cross-source UUID occurrences with equal or complementary
+explicit connector topology. Conflicts and insufficient evidence remain ambiguous.
+`source_project_node_ids` preserves physical references; `logical_identity` explains
+the classification with a fixed reason and bounded candidate references. Description
+and trace include all verified occurrences within their normal limits. This proves
+static identity and wiring only; it establishes no permission or physical behavior.
+Exact source ID filters check every represented occurrence.
+Text search also checks every represented physical node ID and source ID.
+Project model version 13 allows an `OutputRef` without a local target to resolve
+to a unique `VirtualOutCmd` in
+another model source of the same authorized bundle using an exact normalized UUID.
+Local targets retain precedence; ambiguous, missing or other cross-source references
+remain unresolved. This is static reference evidence, not a live output operation.
 Where an exact reviewed block and connector rule is available, describe also returns one or more
 separate KNX signal-use observations, while trace returns separately marked derived connector edges
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 2 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 13 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
-context, local peer and graph outliers, path counts, and endpoints without an observed project
-relationship. Runtime names and control types are used only for exact UUID mappings; names never
+context, local peer and graph outliers, path counts, and endpoints without direct configured
+wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived
+semantic edges with bounded connector evidence. A connectivity finding distinguishes direct signal
+wiring from references and identifies the inspected connectors. "No direct configured consumer
+found" (or, for an output, "no direct configured input source found") refers only to static project
+wiring; it does not mean a group address is unused or a device is inactive.
+Runtime names and control types are used only for exact UUID mappings; names never
 establish a mapping. Findings are review facts, not quality ratings. Fixed
 limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
 are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
 device use; use a returned project-node ID with describe or trace to inspect its evidence.
+Project status and analysis also expose `coverage_by_source_type`. Raw source-object
+counts are separate from logical endpoint, logic-block and line counts; additional
+occurrences merged across model sources are counted explicitly. Unknown KNX-like
+objects and omitted type groups make coverage incomplete. Object details identify
+`EIBType` as raw Loxone Config evidence. Separate `normalized_dpt_evidence` identifies
+main types, EIS, format/Config version, mapping version and provenance. ETS subtypes
+remain independent; main-type agreement never establishes device/telegram compatibility.
+Select `address_hierarchy` to page through measured one-, two- and three-level
+address prefixes. Each prefix fact separates logical endpoints, raw model-source
+occurrences, canonical addresses and edge variants, and includes bounded original
+address examples. Direct wiring means an observed project signal/reference
+relationship; unresolved relationships remain separate. Pattern and outlier
+candidates report a local peer baseline, not a configuration verdict. The
+optional Admin-managed KNX address labels apply only to the configured Miniserver,
+require an explicit two- or three-level format, appear as `admin_configured`
+metadata, and do not change project facts.
+For three-level group addresses, `3:6/2=Label` labels a middle group;
+`2:6/2=Label` labels a complete two-level address instead. The Admin page can
+export the current text as a UTF-8 file and load such a file into the text field.
+Loading does not save labels; use “Save KNX address labels” to apply them. The
+file contains only label text, without a Miniserver address. Names and
+address shape never establish floors, functions, DPTs, ETS meaning or bus activity.
+`loxone_analyze_observability` separately assesses a bounded, explicitly requested
+time range for a project target. It combines exact UUID-mapped structural reachability,
+current-state availability, advertised native statistic series, and local event-history
+coverage. Reachability is not proof of a historical cause; configured statistic series are
+reported as not time-checked, and absent or partial local coverage never proves that a state
+did not occur. At most 20 statistic series per control are returned; omitted metadata is marked
+by `native_statistics_truncated`. State names are capped at 200 UTF-8 bytes and
+`state_names_truncated` marks omitted text. Control names and types use the same cap;
+`control_metadata_truncated` marks omitted text.
+`mapping_coverage` counts exact runtime controls, ambiguously mapped blocks and
+blocks lacking mapping evidence within the same bounded traversal. Canonical blocks
+count once; connectors and containers are not mapping gaps. `exact_runtime_controls`
+equals `summary.relevant_controls`; separate derived-target evidence does not add
+an exact control. `complete` requires no mapping gaps, unresolved
+relationships or traversal/diagnostic truncation; `truncated` marks truncation.
+Missing mapping evidence does not prove physical absence. Counts apply to the whole
+analysis independently of `next_cursor` and `page_truncated`; they do not establish
+historical completeness.
+The bundled `using-loxberry-mcp` guide combines these existing tools into a
+diagnostic workflow: identify the target, check current observations and their
+timestamps, verify historical coverage for the requested period, and distinguish
+structural paths from evidence of events and possible causes. A value observed
+after reconnect does not reveal when it changed while disconnected.
+For each state without complete local coverage, `recommendations` suggests
+native statistics, local on-change recording, or `undetermined` from observable
+value and control metadata.
+Documented digital states of `InfoOnlyDigital`, `Switch`, `Pushbutton`,
+`PresenceDetector`, and other supported control types can be recommended for
+on-change recording with observed 0/1 values even without `is_analog`.
+The documented `value` state of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` is treated as analog even without
+`details.analog`; a small value range does not make it a digital state.
+An explicit conflicting `details.analog=false` leaves the recommendation
+undetermined.
+For a `Daytimer`, `is_analog` applies only to the `value` state, not its mode or
+time values. Local recording is not recommended for `Daytimer` because local
+event-history sources do not support this control type. An active native series is preferred only when its output maps to
+the state. A legacy series without a state UUID leaves the recommendation
+undetermined. Coverage of the requested period still needs checking. Partial local recording
+is reported as a coverage gap, not a request to add another source. Native
+sampling advice has no fixed interval without
+evidence about signal dynamics; the tool never changes recording settings.
 `source_diagnostics` reports bounded source gaps such as parser anomalies, invalid KNX fields
 and unmodeled attributes. They are not configuration verdicts and never expose unknown source
 values: only fixed codes, field names, value shapes and project-node references are returned.
@@ -49,6 +505,21 @@ targeted discovery tools for details. Each breakdown contains at most 50 items,
 and the complete result envelope is limited to 64 KiB with explicit completeness
 metadata.
 
+`counts.rooms` and `counts.categories` count visible definitions referenced by
+the normalized discovery corpus, excluding the synthetic `unassigned` bucket.
+Each group's `total` includes one such bucket if controls have missing or
+unresolvable references within the visible structure:
+`total = definitions_count + (unassigned_bucket_present ? 1 : 0)`.
+With two assigned rooms and no unassigned controls, `counts.rooms=2` and
+`rooms.total=2`; with unassigned controls, `counts.rooms=2` and `rooms.total=3`.
+The same applies to categories. Types have no synthetic unassigned bucket.
+`returned` counts delivered items; totals remain unchanged under truncation,
+even if the unassigned bucket is omitted. `complete` describes delivery, not
+freshness or installation coverage. Complete `control_count` sums equal
+`counts.controls`, including normalized subcontrols; truncated sums may be
+smaller. Empty Config definitions and definitions referenced only by hidden
+controls are excluded.
+
 For initial orientation, this replaces separate calls to `loxone_list_rooms`,
 `loxone_list_categories`, and an unfiltered `loxone_find_controls` request just
 to learn their aggregate distribution. For example, a client can make one
@@ -56,6 +527,157 @@ overview call to see that its authorized visible structure has 18 controls in
 four rooms and three categories, then use `loxone_find_controls` only for the
 chosen room, category, or type. It does not replace those targeted calls when a
 client needs individual controls, descriptions, or current states.
+
+### StatusMonitor
+
+StatusMonitor now decodes comma-separated `inputStates` into position-stable
+per-input tuples: raw token, configured ID/text/color/priority/status UUID, input
+reference and explicit mapping status. `loxone_describe_control` exposes bounded
+definition/input totals and completeness; `loxone_get_state_semantics`,
+`loxone_get_states` and semantic projections of `loxone_read_controls` share the
+decoder. State reads require fresh visibility; a failed refresh does not fall
+back to cached authorization. Enrichment retains at most 100 positions and 16 KiB;
+empty, malformed, unmatched or missing
+positions never shift later inputs. Check `decoding_complete`, `mapping_complete`
+and `truncated` separately from observation freshness. Stale values are historical
+mappings, not confirmed current status. IDs are configured output indexes, not
+original input values. `numState0`–`numState9`/`numDef` are counts mapped to IDs
+0–10; a positive count is not a monitor-wide status or alarm. Integrated-monitor
+aggregation is identified only through an already-visible referenced StatusMonitor;
+no reference expansion or state read is performed. There is no single inferred
+current tuple for a multi-input monitor.
+
+Use these source facts for contextual AI review of text/spelling, configured color
+and value grouping and consistency. Missing statuses can only be assessed when
+project logic and intended purpose provide evidence; visualization metadata does
+not establish complete wiring or intent. Labels, priorities and colors never
+establish an intrinsic alarm meaning. Source: Structure File 17.1, pp.130–131.
+
+## Compact reads of known controls
+
+Use `loxone_read_controls` when visible control UUIDs are already known; otherwise
+discover them with `loxone_find_controls` first. For example:
+
+The optional `native_result_view` (`actual`, `day`, `week`, `month`, `year`,
+`lifetime`) reads one native EFM result for a freshly verified **Loxone
+administrator** on firmware **17.2.8.28**. Use one target without `state_names`
+and keep `include_semantics=false`. Periods additionally require `loxone:history`
+and enabled history. A LoxBerry Admin login does not establish this permission.
+Native results use a separate `native_result` section with empty `values` and
+zero state counts. Gpwr/Ppwr/Spwr/Cpwr gain documented power quantity and W/kW only
+from unchanged, evidenced EFM format metadata; Cpwr denotes load power.
+Native Rest remains unqualified.
+For the existing W/kW enrichment, `unit_origin="configured_display_format"`
+identifies a declared display unit, not a verified sensor scale or physical
+calibration. Values are never converted because of a display label. Unsupported,
+missing or changed formats leave both unit and origin null; the same applies to
+Rest and period fields until their individual binding is established.
+The [semantic review for firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
+confirms this boundary: the Loxone KB describes the block output Rest as calculated
+remaining power of the top group, but its mapping to the native result remains
+unproven. Rest's documented block function is therefore known; the native mapping
+is the remaining question. Residuals may include unmetered loads and measurement
+differences. Different sampling times, tolerances and rounded displays do not
+justify an exact zero balance, clamping a residual, or diagnosing an unmetered
+consumer from a nonzero residual alone. Meter/node signs and units are not
+transferred to native aggregates.
+In the result, signs, scaling, currency, physical observation
+freshness and period boundaries remain unknown. The `native_efm_result.v2` result
+records the source rule and provenance; changed metadata leaves units unknown.
+Missing fields, including `Rest`, are not
+zero. Calendar views are running native periods, not arbitrary historical dates;
+no self-consumption or balance calculation is provided. Omit the option for
+unchanged cached-state reads. Other firmware and non-admin native reads remain
+unsupported; device acceptance is reported separately.
+
+A read-only comparison on one installation with firmware **17.2.8.28** has now
+observed negative, zero and positive native `Spwr` values consistent with the
+explicitly linked storage meter and EFM participant state. This supports the
+documented meter-output convention on that installation: positive for discharge,
+negative for charge. It does not establish the configured input polarity or an
+actual inversion. This bounded device observation changes neither general sign
+semantics nor the decoder.
+
+A further [read-only Rest/display comparison](../development/efm-rest-display-observations.md)
+on that firmware found all five explicit participant/meter bindings consistent,
+including signed values at the separately referenced meter displayed as Rest.
+Native Rest was missing in all three actual responses. Cpwr's declared display
+unit is now qualified through the consumption-specific documentation and stable
+same-EFM format, semantic rule v2. Matching adjacent consumption values support
+the tested installation, not a universal inclusion formula or simultaneous
+physical measurements. Cached production aggregates can differ from a single
+production participant. No new code was deployed to the target for this comparison.
+
+Return available Rest values unchanged **without a unit**. A native `Rest`
+retains its raw number; a missing native field stays missing. Read the exactly
+bound Rest meter separately through the existing state workflow (`actual`,
+without `native_result_view`). Identify its value and source as a separate meter
+reading; it does not replace a missing native EFM field.
+
+The final [aggregate/period review](../development/efm-semantic-matrix.v1.md#final-aggregateperiod-disposition)
+does not transfer meanings from similar fields: `totalFormat` is evidenced for
+`total/totalNeg`, not automatically for the seven native period fields. The KB
+formula for block output `Yd` is not an established contract for native `Income`.
+Project currency and timezone define neither its unit nor period boundaries or
+lifetime origin. These values remain readable as raw numbers with the stated
+metadata unknown. Current App/Config change notes provide version context, not
+an additional compatibility claim or native calculation formula.
+
+For dated energy reports use confirmed history bindings and the existing
+`loxone_analyze_history(operation="energy")`, respecting its semantics and coverage.
+Current native power values stay separate snapshots; `get/day` cannot provide
+yesterday's values. Missing self-consumption, storage or residual-load components
+remain unknown. `report_applicability` and `report_limitations` describe native
+component suitability and limits.
+
+Native Energy Manager context is available through
+`loxone_describe_control(view="energy_context")` for one freshly visible control
+and a freshly verified Loxone administrator. Hidden controls are excluded.
+Generation 1 and generation 2 retain separate capability and missing-evidence
+lists. Other families remain unsupported; the documented contract alone does not
+establish device compatibility.
+
+The read-only [#533 device investigation](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/533)
+on 2026-10-18 found neither family in the authorized visible inventory of the test
+target (firmware 17.2.8.28). Real-device acceptance remains **unverified** for
+generation 1 and generation 2 independently. This does not establish absence
+from inaccessible areas or other installations; positive context and load-state
+evidence is still missing.
+
+Generation 1 exposes declared load metadata separately from cached load states;
+names do not establish an association. A zero minimum on-time means the documented
+trigger is unavailable. Generation 2 exposes parameter editing locks separately
+from load constraints. Its documented global power states use kW and SOC states
+use percent; load power units and priority direction remain unknown. `hasActual`
+does not prove a power meter, and native activation does not prove a physical
+consumption cycle. Freshness is reported independently. No native scheduling
+algorithm or historical constraints are reconstructed.
+
+Cached-state example:
+
+```json
+{"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
+```
+
+The response joins `identity` (name, type, visibility, room and category) with
+named `values` (UUID, original value, freshness and observation time) in one call.
+Omit `state_names` to read all states of the selected control. Exact names are
+required. Select 1–25 unique controls and at most 100 named states in total;
+identifiers/names are limited to 128 characters. Aliases count separately.
+Hidden/unknown controls or unknown state names reject the whole batch.
+
+`include_semantics=true` optionally adds the same evidence and observation-quality
+model as `loxone_get_state_semantics`. No relationships, notes, history, statistics,
+actions or project data are expanded. Existing detail tools remain available.
+`complete` and requested/returned counts describe delivery of the selected data,
+including unavailable or stale values; they do not prove freshness or complete
+semantic knowledge. Semantic metadata has its own completeness fields.
+The structured response is limited to 64 KiB; `response_too_large` returns no
+partial values. Split the targets or select fewer states.
+
+Compared with full descriptions this reduces payloads substantially for controls
+with many relationships. For one small control, `describe_control(view="state_refs")`
+plus `get_states` may use fewer bytes, but still needs two calls.
 
 ## Limits
 
@@ -75,3 +697,303 @@ fixtures: `Switch.on`, `Switch.off`, `Dimmer.set_level`, `Dimmer.off`,
 controls, actions or installations.
 
 The current mapping of platforms, clients and evidence status is in the [support matrix](../development/support-matrix.md).
+
+
+### Active visible alerts
+
+For alarm diagnosis load `section="alerts"` after core rules (or
+`skill://using-loxberry-mcp/alerts.md`). The short section contains status checks,
+focused project follow-up tasks and observable acceptance criteria. Full guidance
+remains required before writes and for other workflows.
+
+For defect and optimization audits, discover relevant visible source types with
+`loxone_find_controls`, including inactive sources, and follow pagination. Compare
+complete project paths with the intended function; an empty truncated trace does
+not prove missing wiring. Unknown parameters, units and escalation settings need
+an authorized reader or project-tool handoff before a concrete change is proposed.
+
+For current status, check freshness, coverage and truncation before interpreting
+the findings; an unknown total or empty partial result is not alarm freedom.
+Use exact source references for focused state reads. For project diagnosis,
+map the runtime control exactly, inspect its project description and trace
+relevant input/output paths. Static wiring is not proof of a trigger or cause.
+Optimization candidates concern evidenced paths and recording gaps against the
+intended function; they do not establish sensor sufficiency or installation
+safety. Report observations, static facts, hypotheses and suggestions separately.
+The project analyzer supports KNX and Modbus, not an alarm scope. Arming is a
+separate question, and this workflow does not acknowledge or test alarms.
+
+`loxone_get_active_alerts` provides a bounded read-only overview from one freshly
+authorized visible structure and captured cached observations. It evaluates
+`AalEmergency.status` (0 normal, 1 alarm, 2 reset, 3 disabled),
+`AalSmartAlarm.alarmLevel` (0 inactive, 1 immediate, 2 delayed), and
+`AlarmChain.activeAlarmType` (bits 2/4/8 active alarm types; bit 1 acknowledgement).
+Integral numeric values are accepted; booleans, strings and unknown codes are
+invalid. AlarmChain combinations 0–15 are accepted; acknowledgement alone is
+inactive, while acknowledgement never cancels active alarm bits. Rules use
+Structure File 17.1, pages 26–30; document provenance is no firmware promise.
+Only current, available primary states establish activity or inactivity.
+
+`Alarm.level` additionally accepts integral numeric codes 0–6: 1 silent, 2 acoustic,
+3 optical, 4 internal, 5 external, 6 remote. Code 0 means no running alarm under
+an explicit owner-approved assumption (#346, 11 October 2026), not a Loxone guarantee.
+Rule `Alarm.level.v1` exposes separate provenance for Structure File 17.0 p.28
+(stages) and the issue decision (zero/activity and accepted format), with
+`reason=owner_approved_decoder`. If the assumption proves incorrect, it is a bug.
+Stages are not danger ratings. Acknowledgement resets the digital alarm outputs
+while retaining arming; the API level transition and test-mode mapping are not
+specified. Test, acknowledgement and suppression context remains unknown; armed,
+nextLevelAt and startTime do not override activity. Missing, invalid or stale
+levels never establish inactivity.
+
+SmokeAlarm.level accepts 0 (inactive), 1 (pre-alarm) and 2 (main alarm). Levels 1/2 and numeric testAlarm 0/1 use Structure File 17.1 p.126; level=0 is an owner-approved assumption from issue #347 (2026-10-11), separately identified in decoder provenance with reason=owner_approved_decoder. If disproven, it is a bug. Optional testAlarm never overrides activity; missing, stale or invalid test context remains unknown. Acknowledgement and signal suppression remain unknown; acousticAlarm=0 does not prove inactivity. No command-transition or hardware compatibility claim follows.
+
+`semantic_value` exposes decoded source levels/types and context without tool-side
+reinterpretation. Active findings include optional `context`: `test_alarm`, `acknowledged` and
+`signals_suppressed` are true/false/null; null means unknown or not exposed by
+the source. AalSmartAlarm lock/leave/disable states are optional context sources
+and never override an active level. `context.source_states` preserves captured
+companion values, UUIDs, freshness and observation times; stale/invalid context
+is not interpreted. No test or suppression state is inferred from a command.
+Active test alarms and acknowledged active source states remain counted.
+
+Check `coverage.complete` independently of `truncated`/`complete`. Empty partial
+results do not establish absence of alarms. The tool does not classify StatusMonitor or
+WindowMonitor states as alarms. Use source control/state references for targeted
+reads; do not infer danger, cause or severity from names or colors. This snapshot
+is not an emergency notification service and never acknowledges alarms.
+`limit` allows 1–50 findings (default 50), without cursor/family filter. Coverage
+applies only to known candidate families, never the physical installation;
+`total_active` remains null for partial evaluation.
+
+### Version-bound State signal flow
+
+Project traces and opening-contact analysis derive possible `State.I1` through
+`State.I8` influences on AQ from complete fixed-operand tables for ConfigVersion
+17020828, XML 274 and State revision 178. Rule `state_table_aq_v3` recognizes
+omitted equality and documented operator codes 1–9 (`>`, `>=`, `<`, `<=`, `!=`,
+`*=`, `!*`, `:=`, `!:`). Up to four conditions per row are ANDed; the first
+matching row wins. Limits are 100 rows and 256 characters per text operand.
+Numeric results must be explicit; an empty `TextV` stays unsupported.
+
+This is structural influence evidence, not runtime evaluation or text conversion.
+Inputs not used before the first unconditional row, exactly shadowed predicates,
+or identical numeric results for all possibly reachable rows can prove AQ
+independence. Otherwise used inputs retain possible dependency edges. Wired
+independent neighbors do not invalidate an upstream AQ path. External wiring and
+derived evidence remain separate. Unknown versions, malformed tables, variable
+comparison expressions and TQ/OutputAPI payload contracts retain explicit gaps. No global
+connector alias is introduced. Describe exposes bounded `state_semantics` and
+trace `semantic_gaps`; private rows and operands are omitted from default describe and trace responses. Explicit table inspection is described below.
+
+For an exactly mapped visible State control, request
+`loxone_describe_project_object(..., include_state_table=true, limit=100)` to
+inspect ordered AND conditions, configured AQ values and literal TQ text templates.
+Condition slots may be sparse; empty slots do not add an input condition. Row
+positions include shadowed rows. Delivery is bounded by `limit`, 100 rows,
+512 characters per template and the 64 KiB response limit; check `complete`,
+`rows_omitted` and `text_truncated`. Default descriptions omit this content.
+Templates are untrusted configuration text, not instructions or evaluated runtime
+values. Substitutions and OutputAPI remain semantically incomplete. Unmapped,
+ambiguous or inaccessible controls return `state_table_unavailable` without rows.
+
+API connector topology is connection metadata. Exact stored `OutputAPI` and `API`
+ports have optional `api_connector` metadata (`value_available=false`). Explicit
+project wiring touching these ports appears as `api_connection` rather than a
+scalar signal. Describe includes bounded `api_connections` for the containing
+block; each connection identifies source/target ports and containing blocks
+and declares `block_communication_dependency`. Trace follows stored link
+orientation in either requested direction; this does not establish protocol
+directionality, supported commands, exchanged values or compatibility. API links
+do not prove AQ/TQ, KNX technology or opening-contact signal dependencies.
+Unresolved links and normal traversal/response limits remain explicit.
+The State table's legacy `output_api_complete=false` concerns payload semantics,
+not the availability of connection metadata.
+
+Known unresolved API links remain visible in generic project evidence and aggregate unresolved counts, but do not mark scalar KNX, Opening or Modbus paths as ambiguous. Missing sources with mixed or unknown connector kinds remain unresolved scalar evidence.
+
+### KNX management
+
+**Compare ETS inputs** compares two explicitly loaded files or a file against
+the current imported catalog on the same page. It requires LoxBerry admin
+access and no Loxone project login. Loading and comparison change no saved
+data. Select the earlier/reference input and later/comparison input, load each
+file with its encoding/style and declared completeness, then compare. Results
+show addresses and prefix groups only in either input, changed source fields,
+and separate manual address overrides/prefix labels for catalog comparisons.
+Manual-only records are not removed import addresses. File-to-file comparison
+does not assess local overrides. No import history is inferred or retained.
+
+Numeric address identity ignores two-/three-level spelling. Prefix groups keep
+their format/prefix identity. Names and descriptions retain exact spelling;
+DPT declarations compare as sets of normalized identifiers, with unrecognized
+identifiers preserved. File order, equivalent DPT spelling and DPT order do not
+create source changes. Missing, explicitly empty and false differ; optional
+information supplied only by one format remains a genuine information gap.
+Missing from a partial input does not prove deletion in ETS. The current catalog
+may combine imports and has unknown project completeness. The comparison never
+applies a change; importing uses its separate reviewed save flow.
+
+Results are paginated in 50-row pages. A changed target/revision requires newly
+loaded inputs. Contradictory duplicates must be resolved in the file before
+comparison; identical duplicates merge. Temporary comparison drafts expire
+after ten minutes, share the existing 32 MiB total draft budget and permit at
+most 16 MiB per file. They do not replace an unsaved import draft. **Discard
+comparison files and results** clears this admin session's comparison drafts
+while retaining its import preview and all confirmed KNX metadata.
+
+**ETS/Loxone project comparison** requires a separate Loxone login with project
+access. Alongside standalone local ETS/manual addresses and active prefix labels,
+all stored imported main/middle groups are also available through
+`kind="imported_groups"`, independently of active labels.
+`loxberry_get_knx_catalog` requires separate, default-off target-bound Admin
+delegation and `loxberry:knx:read` consent. See [KNX through MCP](knx-mcp.en.md)
+for bounded views, filters, source interpretation and continuation rules.
+
+The comparison shows addresses common to both sources, only in the imported catalog,
+or only observed in the authorized parsed project. All relevant primary Loxone
+names stay separate from ETS names and manual metadata; bounded object lists
+show omitted counts. Different names are naming deviations, not proven errors.
+Missing/truncated names limit comparison. Original two-/three-level addresses
+and `:0`/`:1` variants remain visible. Import-only does not prove unused bus
+addresses, and project-only does not prove a configuration error. The latest
+file's declared completeness does not establish completeness of a catalog that
+may combine imports. Check source gaps, freshness, model version and pagination.
+The comparison changes no data. MCP clients explicitly select
+`scope="knx", analyses=["ets_project_comparison"]`; standard analyses stay
+unchanged. A target or metadata revision change requires a new comparison.
+
+Local search matches substrings in imported and manual names/descriptions, including import values hidden by overrides. Addresses also match their equivalent two-/three-level representation. Source filters distinguish imported values, manual declarations and both. **Different local and imported values** identifies differing declarations, not proven errors. Prefix labels remain separate. Results are ordered by address and limited to 50 rows per page. Changes to the target or data revision require a fresh search; subsequent pages never mix revisions. JSON page export uses the displayed filters and revision.
+
+**Sources and DPT declarations** separates import values and manual declarations per field, including unknown and explicitly empty values. Available format, timestamp and import digest identify the source. Multiple DPT identifiers remain intact; ETS identifiers such as `DPST-1-1` are additionally shown as `1.001`, while `DPT-1` specifies only the main type. Unrecognized identifier formats remain visible. Recognized syntax does not confirm type registration/meaning, telegram type or device programming. No type is selected and Loxone `EIBType` is not reinterpreted. Group-address versus communication-object assignment is not established here; CSV may flatten that association. Local search and sources require no Loxone project access. Authorized project search also considers additional ETS/manual names and descriptions, including import values hidden by overrides. Results retain Loxone names and project descriptions as primary and add separate `knx.metadata` source fields. Describe preserves the original `EIBType`; multiple DPT declarations retain syntax status without a preferred type. The Explorer shows an expandable source view. Changing the KNX revision invalidates search/analysis continuations; start a fresh request. Selected imported group labels supplement hierarchy analysis below manual labels.
+
+The dedicated KNX page is accessible from administration. It manages prefix labels and manual group addresses separately for each configured Miniserver. Address, display format and an additional name are required; description and DPT declarations are optional. These declarations do not change Loxone names or project facts.
+
+The main sections are collapsible. **ETS import** is the first subsection of **Group addresses**; its badge counts addresses matching the current search across all pages. **ETS/Loxone project comparison** shows connection status, the latest session expiry and OAuth scopes confirmed by the session. Unknown scopes are not displayed as granted. Comparing local ETS inputs does not require this OAuth connection. Tables and desktop buttons are more compact; with touch input, buttons remain at least 44 CSS pixels high.
+
+On initial page load and when reloading data, the affected section headings show loading hints, including collapsed cards. Read and draft approvals, correction drafts and restoration of the project-comparison session also show their local status. Loading hints stop on success or failure; error messages remain visible.
+
+ETS group addresses can be imported as modern XML: open “Export Group Addresses” in ETS and choose **XML**, not “XML (ETS4 Format)”. Two- and three-level addresses are detected. For an empty file, explicitly select the address format. Free hierarchies, other namespaces, DTDs and external entities are rejected. UTF-8 with/without BOM and Windows-1252 are supported; the preview shows the detected encoding and an explicit selection is available.
+
+Alternatively, select **CSV**, without ETS3 compatibility, **3/1**, **with header lines** and **tab separator**. **3/3** is also supported; repeated column names are resolved by position. Modern headers must include `Description` and `DatapointType`; their values remain optional. Comma/semicolon separators, absent or ambiguous headers and legacy compatibility formats are rejected. The [ETS export documentation](https://support.knx.org/hc/en-us/articles/360022237580-Group-Address-Export) describes the layouts. File type is detected automatically or explicitly selected; the preview shows XML or CSV 3/1 or 3/3 and the encoding.
+
+CSV group rows are distinguished from individual addresses; multiple DPTs remain separate, ordered declarations. Empty optional CSV cells mean "not supplied"; they cannot express an intentionally empty imported description. A local override can still be intentionally empty. Explicit declarations are retained without defaults. XML and CSV may contain different optional information, such as a security field present only in CSV; this is a source difference. CSV does not replace original XML evidence for later ETS reconstruction. Original three-level CSV files are tested on Loxberry-Test; two-level CSV variants have synthetic coverage and remain unconfirmed by a real two-level ETS export.
+
+For a complete export, select the top-level group-address node in ETS. The importer validates the file but cannot independently prove its completeness for the ETS project. The administrator assigns it to the displayed configured Miniserver.
+
+Load the file, check the target and scope, resolve contradicting duplicates, then choose **Save reviewed import**. Identical duplicates are merged. Preview, cancellation and invalid files do not change saved address data. A valid new import draft replaces the previous import draft in the same admin session; an invalid upload retains it. Drafts expire after ten minutes and are bound to the session, Miniserver, address revision and manual prefix labels. Changed data requires a new preview.
+
+The default adds/updates import values for addresses included in the file. Absent optional fields become unknown, not intentionally empty; manual field overrides remain. **Use import value** removes that field override when the address is saved. ETS and manual names are displayed separately. Local selection does not give names precedence over Loxone names. Multiple DPT declarations and explicit ETS flags remain source information; they do not replace Loxone `EIBType`.
+
+**Replace the complete imported catalog** is available only after confirming that the file contains the complete project catalog. Absent import addresses are removed; manual records remain. Overrides on removed import addresses are preserved as manual metadata and shown in the preview. If the manual name is missing, preserving the previous additional ETS name as manual metadata is selected by default. The preview shows the preserved name before explicit saving. Alternatively, explicitly choose to retain only the override with an unknown name. This does not change Loxone configuration.
+
+Imported groups can be explicitly selected as prefix labels. Manual labels take precedence for the same format/prefix. At most 128 active labels with up to 80 characters each are allowed. Unselected group metadata remains stored. Selected import labels already appear on this page; integration into project analysis follows with project integration.
+
+Per-Miniserver bounds: 65,536 addresses, 1,024 imported groups, names up to 255 and descriptions up to 4,096 characters, up to 16 DPT declarations per address. Every import file is limited to 16 MiB. Excess is rejected, never truncated.
+
+Upgrades migrate the KNX database idempotently; restarts retain confirmed data. Before uninstalling, separately back up plugin configuration and `data/plugins/mcpserver/knx/metadata.sqlite3`. JSON and label text transfer the documented local metadata but do not preserve original XML attributes and hierarchy as ETS reconstruction evidence. Retain original ETS export files as well. Temporary drafts are not part of the confirmed catalog.
+
+Label text can still be loaded and exported. Versioned JSON exchange includes address metadata only, without a Miniserver endpoint or secrets, and is not an ETS import format. Loading shows a preview; explicit application adds/updates records. Absent addresses remain. Concurrent changes or a target switch can reject application; reload in that case.
+
+JSON export contains the displayed address page. Larger catalogs can be exchanged page by page so every file remains within the import bound.
+
+Deletion and discarding form input are confirmed in a dialog within the page. Cancel and Escape retain the input. Save before reloading or closing the browser tab: unsaved input is discarded by those browser actions.
+
+
+## Experimental ETS XML correction export
+
+On the KNX management page, run an authorized ETS/Loxone comparison, then select
+individual imported addresses on its current result page (maximum 50). Choose
+name and description separately: keep the ETS value, use a specifically shown
+Loxone value or explicitly enter a value. Multiple Loxone names require a choice;
+there is no automatic bulk selection. This decision changes no local overrides
+or Loxone data.
+
+Preview and download recheck target, catalog revision and the freshly authorized
+project snapshot. The serializer uses only proven source data from the latest
+XML import, including its parent hierarchy. Following CSV or earlier XML imports,
+you may need to reimport the original XML file. Mixed provenance or information
+that cannot safely be retained blocks export. Leading document comments are
+preserved; other comment positions cannot be safely reconstructed for selected
+addresses and block version 1. There is no CSV correction export.
+
+Only names and nonempty descriptions can change. No new addresses, deletions,
+readdressing or group structure/names, DPT, flag or security changes. Download
+changes neither ETS nor the imported catalog. Before/after and unchanged XML
+attributes are available in the preview.
+Preview and download are each limited to a 20 MiB JSON response. Unicode escapes
+or duplicated before/after attributes can reach this limit even for a smaller XML
+file; select fewer addresses in that case.
+
+**Experimental, not yet confirmed by actual ETS import:** Create a project backup
+and test in a project copy before import. Parser roundtrips, browser, MCP and SSH
+prove only file generation and the plugin flow. They prove neither ETS behavior
+with absent attributes nor retention of communication-object associations.
+#419 and overall tracking #411 remain open until unchanged and targeted correction
+imports, DPTs/flags/security, hierarchy and object associations are demonstrated
+in ETS for two-/three-level styles. Record the ETS version and compare a fresh export.
+
+## System Messages
+
+Single-message confirmation is a separate default-disabled capability with its
+own optional OAuth scope, expiring exact-message preview and explicit approval.
+Verified manual-warning Okay historizes; native acknowledgement remains distinct.
+No bulk acknowledgement, deletion or underlying repair is performed.
+
+See [System Messages](system-messages.en.md) for experimental current and historical
+reads, source permission, bounds and evidence-linked follow-up tasks.
+
+## EFM participant references (#363)
+
+Full Describe exposes `capabilities.model.efm` for exact source type `EFM`.
+Paths preserve ordered occurrences and parents, separate from causal wiring and
+subcontrols. Associations resolve only against fresh caller visibility;
+unavailable targets disclose no identity. Reused controls remain separate.
+Titles, icons and rest metadata are presentation, never measured values.
+Roles retain bounded source tokens and remain semantically unknown without a
+matching version rule; numeric XML aliases are not decoded. Limits are 100
+occurrences, eight levels and 32 KiB retained metadata. Omitted subtree roots
+are counted; their unvisited descendants remain unknown. Topology, references
+and roles have separate completeness. Compact views remain unchanged.
+State bindings belong to separate #364; no values or remote node reads occur.
+
+Resolved control display names/types are capped at 200/64 characters with a
+truncation marker. The complete serialized EFM projection also fits 32 KiB.
+`projection_omitted` counts normalized occurrences omitted from the DFS suffix
+by that final budget; retained parents and source paths remain stable.
+
+## EFM state reference bindings (#364)
+
+Full EFM Describe adds `capabilities.model.efm_bindings`, keyed by the participant
+occurrence path from #363. The only decoder joins explicit `actualEfmState`
+UUID-form strings by exact equality to values in the same authorized monitor's
+state-name/UUID map. It requires a fresh firmware probe of **17.2.8.28** whose
+Miniserver identity matches the freshly authorized structure. Unknown/other
+versions and failed or mismatched probes remain unsupported; there is no version
+range, positional/actualN guess, name decoder or XML alias. Compact views perform
+no additional probe. No numeric values or remote node reads are requested.
+
+Source field, observed JSON type, encoding, exact source names and validated
+state UUIDs remain separate from node/control identity. Status distinguishes
+absent, malformed, unsupported encoding/version, missing reference, conflict,
+partial and state-map limit. All aliases and contradictory source facts are
+preserved within bounds; nested absence does not remove a participant. Reference
+completeness does not imply semantics, units, observations or energy balances.
+Config version remains unknown. Duplicate JSON property names are not checked;
+synthetic contradictory normalized pairs do not prove duplicate-wire detection.
+
+The source map is bounded to 1,000 entries, candidates to 100 across the monitor,
+and the serialized binding projection to 32 KiB. Omitted candidates retain counts
+and incomplete status. Structure File 17.1 documents a name reference; the
+observed UUID wire form differs. Only the specimen's UUID encoding is implemented.
+All negative/alias/nested/reordered/conflicting/name-form tests are explicitly
+synthetic. Neither automated tests nor this rule establish general compatibility.
+
+Bindings cover only participant paths emitted by the bounded #363 projection.
+`projection_omitted` separately counts retained occurrences excluded there.
+`firmware_verification` distinguishes verified version metadata, identity mismatch,
+invalid version data, unavailable probes and unrequested/unknown applicability.
+
+Source identity uses the existing strict MAC serial canonicalization (case and
+colon/hyphen presentation only). Invalid identities remain `invalid_identity`;
+no arbitrary string or installation-name equivalence grants applicability.

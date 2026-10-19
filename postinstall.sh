@@ -36,10 +36,6 @@ plugin_log="$LBPLOG/$actual_folder"
 config_file="$plugin_config/mcpserver.json"
 upgrade_backup_dir="$installer_root/.mcpserver-upgrade"
 upgrade_backup="$upgrade_backup_dir/mcpserver.json"
-is_upgrade=0
-if [ -d "$upgrade_backup_dir" ]; then
-    is_upgrade=1
-fi
 venv="$plugin_data/venv"
 new_venv="$plugin_data/.venv.new.$$"
 old_venv="$plugin_data/.venv.previous.$$"
@@ -68,6 +64,15 @@ for auth_file in sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc 
         rm -f -- "$upgrade_auth"
     fi
 done
+python3 "$installer_root/bin/event-history-upgrade.py" restore \
+    "$upgrade_backup_dir/state-events.sqlite3" \
+    "$plugin_data/event-history/state-events.sqlite3" || exit 2
+python3 "$installer_root/bin/event-history-upgrade.py" restore \
+    "$upgrade_backup_dir/knx-metadata.sqlite3" \
+    "$plugin_data/knx/metadata.sqlite3" || exit 2
+python3 "$installer_root/bin/event-history-upgrade.py" restore \
+    "$upgrade_backup_dir/knx-drafts.sqlite3" \
+    "$plugin_data/knx/drafts.sqlite3" || exit 2
 rmdir "$upgrade_backup_dir" 2>/dev/null || true
 
 if [ ! -d "$wheelhouse" ] || ! find "$wheelhouse" -maxdepth 1 -name '*.whl' -print -quit | grep -q .; then
@@ -101,18 +106,16 @@ trap - EXIT
 
 chown -R loxberry:loxberry "$plugin_config" "$plugin_data" "$plugin_log"
 chmod 700 "$plugin_data/venv" "$plugin_data/auth"
-if [ "$is_upgrade" -eq 0 ]; then
-    perl -I"$loxberry_home/libs/perllib" -MLoxBerry::Log -e '
-        my ($folder, $logdir) = @ARGV;
-        my $log = LoxBerry::Log->new(
-            name => "admin-ui",
-            package => $folder,
-            logdir => $logdir,
-            addtime => 1,
-            loglevel => 7,
-        );
-        $log->LOGSTART("component=admin_ui outcome=initialized");
-    ' "$actual_folder" "$plugin_log" || exit 2
-fi
+perl -I"$loxberry_home/libs/perllib" -MLoxBerry::Log -e '
+    my ($folder, $logdir) = @ARGV;
+    my $log = LoxBerry::Log->new(
+        name => "admin-ui",
+        package => $folder,
+        logdir => $logdir,
+        addtime => 1,
+        loglevel => 7,
+    );
+    $log->LOGSTART("component=admin_ui outcome=initialized");
+' "$actual_folder" "$plugin_log" || exit 2
 echo "<OK> Python runtime installed offline for plugin folder $actual_folder."
 exit 0

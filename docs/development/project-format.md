@@ -41,14 +41,79 @@ references stay unresolved. No Miniserver identity is inferred from ZIP filename
 
 ## KNX/EIB semantic projection
 
+### Separate offline Config-file evidence
+
+`python -m mcpserver.loxone.project.config_knx <local-file.Loxone>` reads local
+Config XML through the bounded parser and prints datatype evidence only. It
+does not upload, modify or import a project into the running server. This path
+is separate from the Miniserver worker. The independently paired Miniserver
+mapping is described below.
+
+Mapping `config-knx-v2` is enabled only for ControlList Version `274` and the
+unambiguous Document ConfigVersion `17020828`, observed in the user-supplied
+2026-10-17 Config test project. The minimal fixture records source types and
+codes without private project data. Explicit scalar mappings are:
+
+| EIBType | EIS | Candidate DPT main types |
+| --- | --- | --- |
+| 1 | 2 | 3 |
+| 2 | 3 | 10 |
+| 3 | 4 | 11 |
+| 4 | 5 | 9 |
+| 5 | 6 | 5 |
+| 6 | 7 | 1 |
+| 8 | 9 | 14 |
+| 9 | 10 | 7, 8 |
+| 10 | 11 | 12, 13 |
+| 13 | 14 | 5, 6 |
+
+Explicit codes map only for observed source-type/code pairs. In this verified
+Config format, `EIBsensor` and `EIBactor` without an `EIBType` attribute use
+DPT main type 1 with status `mapped_implicit_config_default`, `source_value=null`
+and `eis=null`. This is the explicitly agreed Config default, not an inferred
+numeric code zero or EIS type. `EIBactor` with code `6` remains separately
+EIS7/DPT1 with `mapped_explicit_code` provenance. Both have DPT1 as their main
+type, while their source evidence stays distinct. Empty or whitespace values,
+unknown/conflicting codes, unsupported versions and unobserved pairs remain
+unresolved. The offline default never applies to extended endpoint types. Miniserver defaults
+require their separate paired format verification.
+EIBtextsensor/EIBtextactor without EIBType map separately to EIS15/DPT16 by
+object type. Names and dropdown positions never select a datatype. EIS8/12/13
+are not supported selections for ordinary sensors/actors; no arithmetic rule
+fills their code gaps. Extended endpoint families are outside this mapping.
+The [Loxone datatype table](https://www.loxone.com/dede/kb/eibknx-datentypen/)
+supplies EIS/DPT main-type relationships, not the XML codes. Multiple candidate
+main types remain separate; no subtype, signedness or compatibility is inferred.
+
+### Miniserver projection
+
 The worker classifies only confirmed exact project types: `EIBline`, `EIBsensor`,
-`EIBactor`, `EIBPush`, `EibDimmer`, and `EIBJalousie`. `EIBsensor` is a
-`bus_to_loxone` endpoint and `EIBactor` a `loxone_to_bus` endpoint. This records
+`EIBextsensor`, `EIBtextsensor`, `EIBactor`, `EIBextactor`, `EIBtextactor`,
+`EIBPush`, `EibDimmer`, and `EIBJalousie`. Sensor types are
+`bus_to_loxone` endpoints; actor types are `loxone_to_bus` endpoints. This records
 the bus data-flow direction, never a physical device role. Group addresses are
 kept verbatim and normalized only for validated two- or three-level forms.
-`EIBType` is retained as an unresolved source code; the model does not infer an
-EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
-projection. Equal group addresses do not create graph edges.
+For `EIBextsensor` and `EIBextactor`, validated `:0` and `:1` suffixes retain their exact original
+value and an `edge` variant distinct from the canonical base address. `EibAddr`
+is used when present; only `EIBextsensor` uses `EibAddrPulse` when `EibAddr` is absent. The
+address projection names the field actually used. Other suffixes are invalid;
+the suffix does not establish rising or falling edge semantics. Exact variant
+search matches only that variant, while a canonical-base search may return both.
+`EIBType` is retained verbatim. Only the versioned, paired
+[datatype mapping](knx-datatype-evidence.md) adds normalized DPT main-type evidence;
+unpaired codes, missing/ambiguous versions and unsupported families remain unresolved. Unknown attributes remain internal and are never a raw MCP
+projection. Describe bounds connector IDs and keys plus incoming and outgoing
+signal counts; those counts report configured graph wiring, not bus traffic.
+Missing `EIBType` on the three newly modeled families is not diagnosed as a
+source gap. Equal group addresses do not create graph edges.
+
+When identical confirmed KNX blocks occur in distinct internal model sources,
+the public projection uses one logical object. Its normalized source identity,
+block type, and KNX projection must agree; equal titles or addresses alone never
+merge objects. The raw graph remains internal provenance, while bounded opaque
+model-source IDs and an occurrence count disclose multiplicity. Project status
+calls the number of ingested model sources `project_parts`; it is not a count of
+Loxone Config projects.
 
 ## Derived KNX signal-use evidence
 
@@ -60,6 +125,14 @@ interpretation such as `level`, `value`, `rising_edge`, or
 Unknown block types, connector keys, duplicate connector keys, and incomplete
 rules create no derived edge.
 
+Model version 8 additionally models the observed `Or.I1/I2 -> Q` project keys
+(`or_i1_q_v1`, `or_i2_q_v1`, `logical_or`) and an exact resolved `InputRef` block
+reference projected onto its unique `AQ` connector (`input_ref_aq_v1`,
+`reference_projection`). The latter preserves the explicit source-reference edge
+and separately marks the reference-output projection; it is not a containment edge.
+The anonymized opening-contact fixture records the reviewed structural forms.
+These rules do not introduce aliases for UI labels such as `O` or `Dwc`.
+
 One KNX endpoint can reach several derived edges and therefore has several
 usage observations. A trace may classify a bounded path as `knx_to_loxone`,
 `loxone_to_knx`, or `knx_to_knx` only when its boundary endpoints are confirmed
@@ -68,26 +141,148 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 2 returns bounded, deterministic project-local
+`loxone_analyze_project` version 8 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and
-graph outliers, static KNX/Loxone paths, and endpoints without an observed
-project relationship. A runtime name, room, category, or control type is used
+graph outliers, static KNX/Loxone paths, and endpoints without direct configured
+wiring. Graph outlier degree retains raw signal-plus-reference counts, with separate
+component and logical-counterpart counts; bounded edge samples keep derived semantic
+edges distinct. Connectivity findings name the inspected connector scope and separate
+direct signals from references. Reference-only endpoints receive a distinct finding.
+Existing finding IDs use the version 6 hash basis despite the analysis-version change.
+A runtime name, room, category, or control type is used
 only after an exact UUID mapping and is never used to identify a project node.
-Raw `EIBType` remains an unknown-system source code, so the analysis never
+Address-specific datatype and signal-use comparisons keep edge variants separate;
+address-prefix patterns use the canonical base. Raw `EIBType` remains an
+unknown-system source code, so the analysis never
 claims DPT compatibility. It reports fixed limitation codes whenever normalized
 DPTs, semantic domains, reviewed usage, or exact runtime mappings are missing.
 ETS data, bus traffic and physical-device use are outside this projection.
+Status and KNX analysis share `coverage_by_source_type`. `source_objects` counts raw
+`C` occurrences. `modeled_endpoints`, `modeled_logic_blocks`, and `modeled_lines`
+count logical objects after the existing identity-backed model-source collapse;
+`duplicate_source_occurrences` counts the additional collapsed raw occurrences.
+`invalid_or_missing_address` counts logical endpoints without a validated canonical
+address. `unsupported` counts unmodeled `EIB*` source types, not unknown physical
+devices. Marker-bearing objects without a confirmed `EIB*` type are counted only in
+`ambiguous_source_objects`; they are not claimed as unsupported. Up to 50 sorted
+source-type groups are returned. `groups_omitted` and `complete` disclose omitted
+groups or ambiguous candidates; long labels have a bounded, hash-suffixed form.
+Object details identify raw `EIBType` as `loxone_config` evidence. The separate
+`normalized_dpt_evidence` field holds the separate paired Miniserver main-type
+mapping where supported, otherwise null. A unique main type sets `normalized_code`;
+ETS/manual subtypes remain separate and compatibility stays unestablished.
+The `address_hierarchy` analysis emits one paginated fact per observed canonical
+prefix and bounded local pattern/outlier candidates. Prefixes are partitioned by
+two- or three-level address format; a three-level leaf retains the original
+address and edge variant in bounded examples. Logical-object and raw-occurrence
+counts remain separate. Direct wiring counts directional project signal/reference
+relationships and reports unresolved relationships separately. The optional
+`knx_address_taxonomy` configuration contains at most 128 exact canonical
+prefix labels bound to the configured Miniserver endpoint and explicit
+`address_format` (`two_level` or `three_level`). The Admin form uses `2:` or
+`3:` before each prefix. This distinguishes a two-level leaf from a three-level
+middle prefix with the same numbers. Labels have
+`admin_configured` provenance and never alter graph facts or counts. Analysis
+cursor scope includes the taxonomy, so changed labels invalidate prior cursors.
+When other analyses are requested, hierarchy findings use at most half of the
+shared finding limit. `max_findings` marks omitted rows; summary counts still
+describe all observed prefixes.
+
+### Future live KNX diagnostics boundary
+
+There is currently no authorized ETS import or bus-diagnostic adapter. A future
+read-only capability must be explicitly enabled and require a dedicated
+`knx:diagnostics` OAuth scope in addition to project read access. Neither the
+scope nor a live tool is published until an actual fixed, authorized source and
+its revocation path exist. Its bounded result must identify the adapter kind,
+source version or fingerprint, observation time and freshness; redact raw
+telegram payloads, credentials and private addresses. Static project wiring and
+live observations must occupy separate fields. No observation may assert that
+static graph reachability caused bus activity. With no authorized source, the
+capability reports `unavailable` and produces no synthesized observations.
+
 Findings are stable only for an unchanged project model and analysis version;
 they include project-node evidence for follow-up describe or trace calls.
 Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.
 Only project bytes and limits cross into the worker, never authentication tokens.
+`process_analysis(..., timings=...)` optionally fills a private numeric diagnostic
+dictionary: process creation, input pickle, stdin write/drain, waiting until the
+first output byte, remaining stdout through EOF, process exit, result unpickle,
+total duration and input/output byte counts. Child stdin, input unpickle, analysis
+and result pickle durations are returned as four framed binary numbers on stderr
+only in this opt-in mode. Other stderr diagnostics are discarded; warnings do not
+invalidate the timing frame. The supplied dictionary is cleared at call entry,
+so failed calls or absent frames cannot retain measurements from earlier calls.
+No project content, selected-analysis names or identity
+is logged or added to MCP responses. Child durations overlap parent pipe/wait
+intervals; do not add them to the parent total. Process creation does not include
+all child imports, and stdin backpressure can include remaining child startup.
+The first-byte/EOF intervals are observable stream boundaries, not pure kernel
+transfer timings. Measure repeated real-project runs with target load before
+attributing a bottleneck; fewer pickle bytes alone do not establish a speedup.
+Analysis input uses a per-pickler dispatch table for `GraphNode`, `GraphEdge` and
+`SemanticEdge`. It passes all fields to the existing immutable constructors,
+avoiding repeated frozen-slot dataclass field inspection on serialization and
+restoration. It does not project or omit graph data, change global pickle
+registration, or persist pickle bytes. Source/snapshot workers keep their existing
+serialization. Both processes must use the same installed model code.
 The service serializes builds and publishes complete immutable snapshots. Its
 identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB
 accounting budget. A cache hit still requires a fresh successful download.
+
+## Observability analysis
+
+`loxone_analyze_observability` is a separate, time-bounded read-only projection for one
+project node or exact runtime-control mapping. It traces only the requested upstream,
+downstream, or combined structural reachability and keeps only exact UUID mappings. It then
+reports current-state availability, advertised native statistic-series metadata, and local
+event-history coverage for the requested period. Structural reachability is not a causal
+claim; advertised statistics are deliberately not fetched and report `not_checked` temporal
+coverage. At most 20 statistic series per control are returned; `native_statistics_truncated`
+marks omitted metadata. State names are capped at 200 UTF-8 bytes and
+`state_names_truncated` marks omitted text. Control names and types use the same cap and
+`control_metadata_truncated` marks omitted text. Missing or partial local coverage is an evidence
+gap, never proof of non-occurrence.
+`mapping_coverage` summarizes the same bounded traces across both directions,
+deduplicating canonical block identities and excluding connectors and containers.
+`exact_runtime_controls` equals `summary.relevant_controls` after the existing
+visibility filter; separate derived-target evidence does not add an exact control.
+`ambiguous_project_objects` counts reached blocks that are
+candidates of any ambiguous mapping, even if an exact mapping also exists.
+`unmapped_project_objects` counts reached blocks with neither exact nor ambiguous
+mapping evidence in the authorized runtime view; it does not imply physical absence.
+`complete` requires no mapping gaps, no unresolved relationships and no graph,
+semantic or unresolved-diagnostic truncation. `truncated` marks those truncation
+limits. Trace unresolved diagnostics include appended containing boundary blocks;
+their diagnostic count remains bounded by the existing trace limit. Unresolved
+relationships alone only clear `complete`. Counts under
+truncation describe the observed subset. Coverage is analysis-wide and independent
+of control pagination and byte-driven `page_truncated`; inspect `next_cursor` and
+page metadata separately. It never establishes historical completeness or causation.
+Each returned control also carries bounded, per-state `recommendations` for
+incomplete local coverage. They classify from the observed value and explicit
+control metadata, never from names; ambiguous behavior remains `undetermined`.
+Documented digital state keys are treated as discrete only when their observed
+numeric value is exactly 0 or 1 and no applicable analog flag contradicts it.
+`Daytimer.details.analog` applies to `value` only. Local recording is not recommended
+for `Daytimer` because event-history sources reject that control type. Control-level range metadata
+can support `value` but does not classify unrelated states.
+The documented `value` state of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` supplies analog evidence even when
+`details.analog` is absent. An explicit conflicting digital flag remains
+`undetermined`; the documented analog type takes priority over the small-range
+discrete heuristic.
+Native StatisticV2 outputs map by state key and legacy outputs by their documented
+UUID. Disabled groups or frequencies are omitted. A legacy output without a
+state UUID keeps the recommendation `undetermined`; mapped series still have
+unverified period coverage. Existing
+partial local recording is continued when no native series is advertised.
+Suggested native sampling intervals remain qualitative because the structure does not establish
+the signal dynamics or diagnostic resolution.
 
 ### Source diagnostics
 

@@ -5,6 +5,7 @@ Thumbs.db
 .vscode/
 .codex/
 .venv/
+node_modules/
 *.swp
 *~
 

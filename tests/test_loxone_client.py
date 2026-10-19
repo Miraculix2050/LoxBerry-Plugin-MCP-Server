@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
+from contextlib import suppress
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import httpx
@@ -11,12 +15,16 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from websockets.frames import Close
 
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneCredentialAuthenticationRejected,
+    LoxoneProtocolError,
     LoxoneSourceIpBlocked,
     LoxoneToken,
+    LoxoneTokenAuthenticationRejected,
     LoxoneWebSocketSession,
     MiniserverEndpoint,
     _close_websocket,
@@ -26,7 +34,410 @@ from mcpserver.loxone.client import (
     _websocket_command,
 )
 from mcpserver.loxone.events import MessageHeader, MessageType
+from mcpserver.loxone.models import LoxoneStructure
+from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.security import token_hmac
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase,code", [("getjwt", "401"), ("getjwt", "403"), ("getkey2", "401")])
+async def test_credential_rejection_is_typed_only_at_getjwt_401(
+    monkeypatch: pytest.MonkeyPatch, phase: str, code: str
+) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse("https://miniserver.example"), client_uuid=UUID(int=1)
+    )
+    socket = SimpleNamespace(close=AsyncMock())
+    monkeypatch.setattr(client, "_connect_websocket", AsyncMock(return_value=socket))
+
+    async def command(_socket: object, _encryptor: object, name: str, **_kwargs: object) -> object:
+        if phase in name:
+            raise LoxoneCommandRejected("private response", response_code=code)
+        return {"key": "00112233", "salt": "a1b2", "hashAlg": "SHA256"}
+
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", command)
+    expected = (
+        LoxoneCredentialAuthenticationRejected
+        if (phase, code) == ("getjwt", "401")
+        else LoxoneCommandRejected
+    )
+    with pytest.raises(expected) as rejected:
+        await client.acquire_token("reader", "synthetic-password")
+    assert type(rejected.value) is expected
+    assert socket.close.await_count == 1
+    if expected is LoxoneCredentialAuthenticationRejected:
+        assert "private response" not in str(rejected.value)
+
+
+@pytest.mark.asyncio
+async def test_structure_reuse_still_receives_own_complete_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcpserver.loxone.client as client_module
+
+    payload = (
+        '{"lastModified":"now","msInfo":{"serialNr":"000000000000"},'
+        '"rooms":{},"cats":{},"controls":{}}'
+    )
+    owner: dict[str, LoxoneStructure] = {}
+    websocket = SimpleNamespace(send=AsyncMock())
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=owner.get,
+            _has_received_structure=lambda username: any(
+                v.identity.username == username for v in owner.values()
+            ),
+        ),
+        structure_namespace="http://miniserver.example",
+    )
+    receive = AsyncMock(
+        return_value=(MessageHeader(MessageType.BINARY_FILE, False, len(payload)), payload)
+    )
+    monkeypatch.setattr(session, "_receive", receive)
+    normalize = Mock(wraps=client_module.normalize_structure)
+    monkeypatch.setattr(client_module, "normalize_structure", normalize)
+    first = await session.load_structure()
+    owner[first.parse_identity] = first
+    assert await session.load_structure() is first
+    assert normalize.call_count == 1
+    assert websocket.send.await_count == receive.await_count == 2
+    assert first.parse_identity and first.parse_identity not in repr(first)
+    receive.side_effect = LoxoneProtocolError("incomplete response")
+    with pytest.raises(LoxoneProtocolError, match="incomplete"):
+        await session.load_structure()
+    assert normalize.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "change", ["bytes", "username", "namespace", "controls", "states", "depth", "payload_limit"]
+)
+@pytest.mark.asyncio
+async def test_structure_reuse_context_is_exact(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    payload = '{"msInfo":{"serialNr":"000000000000"},"rooms":{},"cats":{},"controls":{}}'
+    owner: dict[str, LoxoneStructure] = {}
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=owner.get,
+            _has_received_structure=lambda username: any(
+                v.identity.username == username for v in owner.values()
+            ),
+        ),
+        structure_namespace="first-server",
+    )
+    receive = AsyncMock(
+        return_value=(MessageHeader(MessageType.TEXT, False, len(payload)), payload)
+    )
+    monkeypatch.setattr(session, "_receive", receive)
+    first = await session.load_structure()
+    owner[first.parse_identity] = first
+    if change == "bytes":
+        receive.return_value = (
+            MessageHeader(MessageType.TEXT, False, len(payload) + 1),
+            payload + " ",
+        )
+    elif change == "username":
+        session._token.username = "other-reader"
+    elif change == "namespace":
+        session._structure_namespace = "second-server"
+    else:
+        attribute = {
+            "controls": "_max_structure_controls",
+            "states": "_max_structure_state_references",
+            "depth": "_max_structure_depth",
+            "payload_limit": "_max_payload",
+        }[change]
+        setattr(session, attribute, getattr(session, attribute) - 1)
+    second = await session.load_structure()
+    assert second is not first
+    assert second.parse_identity != first.parse_identity
+
+
+@pytest.mark.asyncio
+async def test_structure_lookup_cannot_replace_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lookup = Mock(return_value=None)
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=lookup, _has_received_structure=lambda _username: False
+        ),
+    )
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.BINARY_FILE, False, 3), b"bad")),
+    )
+    with pytest.raises(LoxoneProtocolError, match="not text"):
+        await session.load_structure()
+    lookup.assert_not_called()
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.TEXT, False, 3), "bad")),
+    )
+    with pytest.raises(LoxoneProtocolError, match="not JSON"):
+        await session.load_structure()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_cold_structure_does_not_publish_pending_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop = asyncio.get_running_loop()
+    pending = loop.create_future()
+    monkeypatch.setattr(loop, "run_in_executor", lambda *_args: pending)
+    owner: dict[str, LoxoneStructure] = {}
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=owner.get,
+            _has_received_structure=lambda _username: False,
+        ),
+    )
+    payload = '{"msInfo":{"serialNr":"000000000000"},"rooms":{},"cats":{},"controls":{}}'
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.TEXT, False, len(payload)), payload)),
+    )
+    task = asyncio.create_task(session.load_structure())
+    await asyncio.sleep(0)
+    assert not task.done()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert pending.cancelled() and not owner
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["http://192.168.1.10", "https://miniserver.example"])
+async def test_connection_disables_transport_pings(
+    monkeypatch: pytest.MonkeyPatch, endpoint: str
+) -> None:
+    websocket = object()
+    connector = AsyncMock(return_value=websocket)
+    monkeypatch.setattr("mcpserver.loxone.client.connect", connector)
+    client = LoxoneClient(
+        MiniserverEndpoint.parse(endpoint),
+        client_uuid=UUID(int=1),
+        timeout_seconds=2,
+    )
+
+    assert await client._connect_websocket() is websocket
+    options = connector.call_args.kwargs
+    assert "ping_interval" in options
+    assert options["ping_interval"] is None
+    assert options["open_timeout"] == options["close_timeout"] == 2
+
+
+@pytest.mark.asyncio
+async def test_transport_ping_file_does_not_skip_to_later_structure_json() -> None:
+    unexpected_file = gzip.compress(b"<!doctype html><html>Unexpected file</html>", mtime=0)
+    structure = '{"msInfo":{},"rooms":{},"cats":{},"controls":{}}'
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[str | bytes] = []
+            self.sent: list[str] = []
+
+        async def ping(self) -> None:
+            # Reproduce the observed transport-ping/file ordering without a device.
+            self.messages.extend(
+                [
+                    bytes((3, MessageType.BINARY_FILE, 0, 0))
+                    + len(unexpected_file).to_bytes(4, "little"),
+                    unexpected_file,
+                ]
+            )
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+            self.messages.extend(
+                [
+                    bytes((3, MessageType.BINARY_FILE, 0, 0))
+                    + len(structure.encode()).to_bytes(4, "little"),
+                    structure,
+                ]
+            )
+
+        async def recv(self) -> str | bytes:
+            return self.messages.pop(0)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1_000,
+    )
+    await websocket.ping()
+    with pytest.raises(LoxoneProtocolError, match="structure response is not text"):
+        await session.load_structure()
+
+    assert websocket.sent == ["data/LoxAPP3.json"]
+    assert websocket.messages[-1] == structure
+    assert len(websocket.messages) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["idle", "disconnect", "out_of_service"])
+async def test_state_stream_keepalive_failure_is_terminal(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    terminal: bytes | BaseException
+    if failure == "idle":
+        terminal = TimeoutError()
+    elif failure == "disconnect":
+        terminal = ConnectionClosedError(Close(1006, ""), None)
+    else:
+        terminal = bytes((3, MessageType.OUT_OF_SERVICE, 0, 0, 0, 0, 0, 0))
+    messages: list[bytes | BaseException] = [TimeoutError(), terminal]
+
+    async def receive() -> bytes:
+        message = messages.pop(0)
+        if isinstance(message, BaseException):
+            raise message
+        return message
+
+    websocket = SimpleNamespace(recv=receive, send=AsyncMock())
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=0.1,
+        max_payload_bytes=100,
+    )
+    monkeypatch.setattr(session, "_command", AsyncMock(return_value="OK"))
+    stream = session.state_events()
+
+    with pytest.raises(LoxoneConnectionError):
+        await anext(stream)
+    websocket.send.assert_awaited_once_with("keepalive")
+    assert not messages
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", [MessageType.KEEPALIVE, MessageType.OUT_OF_SERVICE])
+async def test_application_keepalive_requires_acknowledgement(reply: MessageType) -> None:
+    websocket = SimpleNamespace(
+        send=AsyncMock(), recv=AsyncMock(return_value=bytes((3, reply, 0, 0, 0, 0, 0, 0)))
+    )
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=0.1,
+        max_payload_bytes=100,
+    )
+    if reply is MessageType.KEEPALIVE:
+        await session.keepalive()
+    else:
+        with pytest.raises(LoxoneProtocolError, match="did not acknowledge keepalive"):
+            await session.keepalive()
+    websocket.send.assert_awaited_once_with("keepalive")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("trigger", ["cancel", "deadline", "cleanup_cancel", "cleanup_deadline"])
+async def test_open_session_cancellation_aborts_without_close_budget(
+    monkeypatch, tmp_path, trigger
+):
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        client_uuid=UUID(int=1),
+        timeout_seconds=0.1,
+    )
+    started = asyncio.Event()
+    closing = asyncio.Event()
+    release_close = asyncio.Event()
+
+    async def authenticate(_session) -> None:
+        started.set()
+        if trigger.startswith("cleanup_"):
+            raise LoxoneConnectionError("authentication failed")
+        await asyncio.Event().wait()
+
+    async def blocked_close() -> None:
+        closing.set()
+        await release_close.wait()
+
+    websocket = SimpleNamespace(
+        close=AsyncMock(side_effect=blocked_close), transport=SimpleNamespace(abort=Mock())
+    )
+    monkeypatch.setattr(client, "websocket_public_key", AsyncMock(return_value="key"))
+    monkeypatch.setattr(client, "_connect_websocket", AsyncMock(return_value=websocket))
+    monkeypatch.setattr(LoxoneWebSocketSession, "authenticate", authenticate)
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.client = client
+    runtime.auth_coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    request = asyncio.create_task(
+        runtime._open_session(token, owner="tool_request", phase="session_establishment")
+    )
+    close_started = asyncio.create_task(closing.wait())
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        if trigger.startswith("cleanup_"):
+            await asyncio.wait_for(closing.wait(), 2)
+        if trigger in {"cancel", "cleanup_cancel"}:
+            request.cancel()
+        await asyncio.wait(
+            {request} if trigger.startswith("cleanup_") else {request, close_started},
+            timeout=2,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        # A hanging peer must not receive a fresh close timeout after the
+        # caller cancellation or the shared session deadline has expired.
+        assert request.done()
+        expected = (
+            asyncio.CancelledError if trigger in {"cancel", "cleanup_cancel"} else TimeoutError
+        )
+        with pytest.raises(expected):
+            await request
+        websocket.transport.abort.assert_called_once()
+        if trigger.startswith("cleanup_"):
+            websocket.close.assert_awaited_once()
+        else:
+            assert not closing.is_set()
+            websocket.close.assert_not_awaited()
+        assert (
+            await runtime.auth_coordinator.attempt(
+                AsyncMock(return_value="ok"), owner="local_admin", phase="test"
+            )
+            == "ok"
+        )
+    finally:
+        release_close.set()
+        request.cancel()
+        close_started.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await request
+        with suppress(asyncio.CancelledError):
+            await close_started
 
 
 @pytest.mark.parametrize(
@@ -914,6 +1325,38 @@ async def test_gen2_session_authentication_retains_negotiated_token_hash_algorit
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_code", "expected"),
+    [
+        ("401", LoxoneTokenAuthenticationRejected),
+        ("4003", LoxoneCommandRejected),
+        ("500", LoxoneCommandRejected),
+    ],
+)
+async def test_only_authwithtoken_401_is_conclusive_token_rejection(
+    monkeypatch: pytest.MonkeyPatch, response_code: str, expected: type[Exception]
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt-secret", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=100,
+        secure_transport=True,
+    )
+
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        if command == "jdev/sys/getkey":
+            return "aabbccdd"
+        raise LoxoneCommandRejected("rejected", response_code=response_code)
+
+    monkeypatch.setattr(session, "_command", fake_command)
+    with pytest.raises(expected) as rejected:
+        await session.authenticate()
+    assert type(rejected.value) is expected
+
+
+@pytest.mark.asyncio
 async def test_gen1_authenticated_session_kills_plaintext_token_inside_encryption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1156,3 +1599,189 @@ async def test_state_events_uses_keepalive_after_idle_timeout(
 
     assert len(events) == 1
     assert websocket.sent == ["keepalive"]
+
+
+@pytest.fixture
+def certificate_client(monkeypatch):
+    client = LoxoneClient(MiniserverEndpoint.parse("http://192.168.1.1"), client_uuid=UUID(int=1))
+    fetch = AsyncMock(return_value="public certificate")
+    monkeypatch.setattr(client, "_get_text", fetch)
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.normalize_loxone_certificate_chain_pem",
+        lambda value: "normalized " + value,
+    )
+    return client, fetch
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_nested_and_endpoint_bound(certificate_client):
+    client, fetch = certificate_client
+    with client.public_certificate_scope():
+        await client.websocket_public_key()
+        await client.websocket_public_key()
+        assert fetch.await_count == 1
+        with client.public_certificate_scope():
+            await client.websocket_public_key()
+        await client.websocket_public_key()
+        assert fetch.await_count == 2
+        client.endpoint = MiniserverEndpoint.parse("http://192.168.1.2")
+        await client.websocket_public_key()
+        await client.websocket_public_key()
+        assert fetch.await_count == 4
+    await client.websocket_public_key()
+    assert fetch.await_count == 5
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_concurrent_and_inherited_cleanup(certificate_client):
+    client, fetch = certificate_client
+    release = asyncio.Event()
+
+    async def inherited():
+        await release.wait()
+        await client.websocket_public_key()
+
+    async def query():
+        with client.public_certificate_scope():
+            await client.websocket_public_key()
+            child = asyncio.create_task(inherited())
+            await asyncio.sleep(0)
+            await client.websocket_public_key()
+        return child
+
+    children = await asyncio.gather(query(), query())
+    assert fetch.await_count == 2
+    release.set()
+    await asyncio.gather(*children)
+    assert fetch.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_cancellation_clears_holder(certificate_client):
+    client, fetch = certificate_client
+    started = asyncio.Event()
+    pending = asyncio.Event()
+    holders = []
+
+    async def blocked(_path):
+        started.set()
+        await pending.wait()
+        return "public certificate"
+
+    fetch.side_effect = blocked
+
+    async def query():
+        with client.public_certificate_scope():
+            holders.append(client._certificate_scope.get())
+            await client.websocket_public_key()
+
+    task = asyncio.create_task(query())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert holders[0].active is False
+    assert holders[0].pem is None
+    assert client._certificate_scope.get() is None
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_scope_does_not_store_failed_fetch(certificate_client):
+    client, fetch = certificate_client
+    fetch.side_effect = [LoxoneConnectionError("unavailable"), "public certificate"]
+    with client.public_certificate_scope():
+        with pytest.raises(LoxoneConnectionError):
+            await client.websocket_public_key()
+        await client.websocket_public_key()
+        await client.websocket_public_key()
+    assert fetch.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_public_certificate_inflight_child_cannot_repopulate_expired_scope(
+    certificate_client,
+):
+    client, fetch = certificate_client
+    started = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def blocked(_path):
+        started.set()
+        await finish.wait()
+        return "public certificate"
+
+    fetch.side_effect = blocked
+    with client.public_certificate_scope():
+        holder = client._certificate_scope.get()
+        child = asyncio.create_task(client.websocket_public_key())
+        await started.wait()
+    finish.set()
+    await child
+    assert not holder.active
+    assert holder.pem is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["http://192.168.1.1", "https://miniserver.example"])
+async def test_certificate_memo_preserves_new_socket_and_authentication(
+    monkeypatch, origin, caplog
+):
+    client = LoxoneClient(MiniserverEndpoint.parse(origin), client_uuid=UUID(int=1))
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = (
+        private_key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    fetch = AsyncMock(return_value="certificate")
+    connect = AsyncMock(side_effect=lambda: SimpleNamespace(close=AsyncMock()))
+    commands = []
+
+    async def command(socket, _encryptor, name, **_kwargs):
+        commands.append((socket, name))
+        return "aabbccdd" if name == "jdev/sys/getkey" else "OK"
+
+    monkeypatch.setattr(client, "_get_text", fetch)
+    monkeypatch.setattr(client, "_connect_websocket", connect)
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.normalize_loxone_certificate_chain_pem", lambda _value: pem
+    )
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", command)
+    token = LoxoneToken("test-token", "reader", "key", "SHA256", 100)
+    caplog.set_level("INFO", logger="mcpserver.loxone.client")
+    release = asyncio.Event()
+
+    async def inherited_reconnect():
+        await release.wait()
+        return await client.open_session(token)
+
+    with client.public_certificate_scope():
+        first = await client.open_session(token)
+        second = await client.open_session(token)
+        reconnect = asyncio.create_task(inherited_reconnect())
+    assert first is not second
+    assert connect.await_count == 2
+    assert fetch.await_count == (0 if client.endpoint.secure else 1)
+    assert sum(name.startswith("authwithtoken/") for _, name in commands) == 2
+    assert sum(name.startswith("jdev/sys/keyexchange/") for _, name in commands) == (
+        0 if client.endpoint.secure else 2
+    )
+    assert commands[0][0] is not commands[-1][0]
+    await first.close()
+    await second.close()
+    phases = [
+        record.getMessage()
+        for record in caplog.records
+        if "component=project_load" in record.getMessage()
+    ]
+    assert len(phases) == 6
+    release.set()
+    inherited = await reconnect
+    await inherited.close()
+    ordinary = await client.open_session(token)
+    await ordinary.close()
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if "component=project_load" in record.getMessage()
+    ] == phases

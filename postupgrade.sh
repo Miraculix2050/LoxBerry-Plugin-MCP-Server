@@ -102,6 +102,41 @@ if document.get("schema_version") == 5:
     mqtt.setdefault("username", "")
     document["schema_version"] = 6
     changed = True
+if document.get("schema_version") in {6, 8}:
+    event_history = document.setdefault("event_history", {})
+    if not isinstance(event_history, dict):
+        raise SystemExit("event history configuration is not an object")
+    event_history.setdefault("enabled", False)
+    event_history.setdefault("retention_days", 90)
+    event_history.setdefault("maximum_mib", 128)
+    event_history.setdefault("sources", [])
+    document["schema_version"] = 9
+    changed = True
+if document.get("schema_version") == 9:
+    limits = document.setdefault("limits", {})
+    policies = document.setdefault("policies", {})
+    if not isinstance(limits, dict) or not isinstance(policies, dict):
+        raise SystemExit("binding policy configuration is not an object")
+    limits.setdefault("explorer_binding_retention_hours", 72)
+    policies.setdefault("explorer_bindings", [])
+    document["schema_version"] = 10
+    changed = True
+if document.get("schema_version") == 10:
+    taxonomy = document.setdefault("knx_address_taxonomy", {})
+    if not isinstance(taxonomy, dict):
+        raise SystemExit("KNX address taxonomy configuration is not an object")
+    taxonomy.setdefault("endpoint", "")
+    taxonomy.setdefault("entries", [])
+    document["schema_version"] = 11
+    changed = True
+if document.get("schema_version") == 11:
+    tools = document.setdefault("tools", {})
+    if not isinstance(tools, dict):
+        raise SystemExit("KNX write configuration is not an object")
+    tools.setdefault("loxberry_knx_prefix_write_enabled", False)
+    document.setdefault("knx_prefix_apply_receipts", [])
+    document["schema_version"] = 12
+    changed = True
 if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)
@@ -109,17 +144,28 @@ if changed:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(document, handle, ensure_ascii=True, sort_keys=True, indent=2)
             handle.write("\n")
+            os.chmod(temporary, 0o600)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
         os.replace(temporary, path)
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+# A retry can see the migrated schema after a previous post-replace sync failure.
+# Confirm directory durability even when no additional migration is necessary.
+directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
 PY
 chmod 600 "$plugin_config/mcpserver.json"
 mkdir -p "$plugin_data/auth"
 chmod 700 "$plugin_data/auth"
 prepare_private_directory "$plugin_data/statistics-cache" || exit 2
+prepare_private_directory "$plugin_data/event-history" || exit 2
 
 echo "<OK> Configuration and sessions retained."
 exit 0

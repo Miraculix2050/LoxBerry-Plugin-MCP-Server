@@ -3,12 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+import time
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
+import mcpserver.loxone.runtime as runtime_module
 import mcpserver.tools as tools_module
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
@@ -18,7 +25,8 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     StoredAccessToken,
 )
-from mcpserver.config import PluginConfig
+from mcpserver.config import AtomicConfigStore, ExplorerBindingApproval, PluginConfig
+from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
 from mcpserver.loxone.models import (
     Control,
     Freshness,
@@ -39,6 +47,7 @@ from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    EventHistoryRuntime,
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     SystemStatusEnvelope,
@@ -48,6 +57,7 @@ from mcpserver.tools import (
     _result,
     _rfc3339,
     register_control_tool,
+    register_event_history_tools,
     register_history_tools,
     register_loxberry_operate_tool,
     register_loxberry_read_tools,
@@ -127,14 +137,11 @@ def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
         "loxberry_get_plugin_status",
         "loxberry_get_service_health",
         "loxberry_list_service_events",
-        "loxberry_list_miniserver_auth_events",
     }
     for name, tool in published.items():
         assert set(tool.parameters["properties"]) == (
             {"trace_id", "component", "severity", "start", "end", "cursor", "limit"}
             if name == "loxberry_list_service_events"
-            else {"cursor", "limit"}
-            if name == "loxberry_list_miniserver_auth_events"
             else set()
         )
         assert tool.annotations is not None
@@ -297,7 +304,7 @@ async def test_statistics_rounds_fractional_start_upward(
             nonlocal observed
             observed = (start, end)
             return (
-                object(),
+                Control("control", "Synthetic", "Unknown", None, None, None, ()),
                 StatisticSeries("series", "statistic_v2", "group", "output", "Series", ""),
                 (),
             )
@@ -462,7 +469,7 @@ async def test_statistics_cursor_uses_a_timestamp_anchor(monkeypatch: pytest.Mon
             calls += 1
             values = points if calls == 1 else (StatisticPoint(0, 0.0), *points)
             return (
-                object(),
+                Control("control", "Synthetic", "Unknown", None, None, None, ()),
                 StatisticSeries("series", "statistic_v2", "group", "output", "Series", ""),
                 values,
             )
@@ -507,7 +514,7 @@ async def test_statistics_cursor_preserves_same_timestamp_points_across_pages(
             self, *_: object
         ) -> tuple[object, StatisticSeries, tuple[StatisticPoint, ...]]:
             return (
-                object(),
+                Control("control", "Synthetic", "Unknown", None, None, None, ()),
                 StatisticSeries("series", "statistic_v2", "group", "output", "Series", ""),
                 points,
             )
@@ -597,7 +604,28 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
 
     assert tool.name == "loxone_get_skill_guide"
     assert tool.parameters == {
-        "properties": {},
+        "properties": {
+            "section": {
+                "default": "full",
+                "description": "Task section; omitted preserves the complete legacy guide.",
+                "enum": [
+                    "full",
+                    "core",
+                    "states",
+                    "history",
+                    "project",
+                    "knx",
+                    "modbus",
+                    "lighting",
+                    "energy",
+                    "operations",
+                    "diagnostics",
+                    "alerts",
+                ],
+                "title": "Section",
+                "type": "string",
+            }
+        },
         "title": "get_skill_guideArguments",
         "type": "object",
     }
@@ -606,7 +634,8 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 30  # type: ignore[union-attr]
+    assert result.data.revision == 119  # type: ignore[union-attr]
+    assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -614,8 +643,90 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert "`room_group`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_room_snapshot`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_weather" in result.data.content  # type: ignore[union-attr]
+    assert "`data.received_at`" in result.data.content  # type: ignore[union-attr]
     assert "`emergency_stop_active`" in result.data.content  # type: ignore[union-attr]
     assert "`error.data.blocked_since`" in result.data.content  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "required_evidence",
+    [
+        (
+            'view="full"',
+            "Direct monitor reference",
+            "Explicit linked control",
+            "Structural project path",
+            "Name-only",
+            "normalized control reference",
+            "mapping-key fallback",
+            'loxone_describe_control(control_uuid=..., view="full")',
+            "that object's `relationships.linked_controls`",
+        ),
+        (
+            "invalid_window_monitor_entry",
+            "control_reference_unavailable",
+            "partially_resolved",
+            "room_reference_mismatch",
+            "retained positions only",
+        ),
+        (
+            'identifier_type="runtime_control_uuid"',
+            'direction="downstream"',
+            'direction="upstream"',
+            'start_type="project_node_id"',
+            "child_project_node_ids",
+            "connector_key",
+        ),
+        (
+            "InputRef",
+            "Or",
+            "lockout",
+            "unmodeled logic",
+            "truncated_fields",
+            "unresolved_relationships",
+            "incomplete evidence",
+        ),
+        (
+            "cross_assignment_review_candidate",
+            "wrong contact wiring",
+            "misleading consumer",
+            "physical completeness not assessable",
+            "not_assessable",
+            "one opening per Jalousie",
+        ),
+    ],
+)
+def test_skill_opening_contact_review_preserves_evidence_boundaries(required_evidence) -> None:
+    content = read_skill_markdown()
+    workflow = content.split("### Review opening-contact coverage and consumer assignment\n", 1)[1]
+    workflow = workflow.split("### Read global metadata", 1)[0]
+    normalized = " ".join(workflow.split())
+    for evidence in required_evidence:
+        assert evidence in normalized
+    assert "loxone_analyze_opening_contacts" in workflow
+    assert "loxone_analyze_window_monitor" not in workflow
+
+
+@pytest.mark.parametrize("language", ["de", "en"])
+def test_opening_contact_user_documentation_preserves_tool_and_evidence_contract(language) -> None:
+    document = Path(__file__).resolve().parents[1] / "docs" / "user" / f"capabilities.{language}.md"
+    content = document.read_text(encoding="utf-8")
+    for evidence in (
+        "relationships.linked_controls",
+        'loxone_describe_control(control_uuid=..., view="full")',
+        "loxone_get_project_status",
+        "loxone_describe_project_object",
+        "loxone_trace_project_logic",
+        "downstream",
+        "upstream",
+        "AutoJalousie.Window",
+        "InputRef",
+        "Or",
+        "truncated_fields",
+        "cross_assignment_review_candidate",
+        "not_assessable",
+    ):
+        assert evidence in content
 
 
 def test_tool_input_schemas_explain_every_argument() -> None:
@@ -630,7 +741,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
         "loxone_get_room_snapshot": {"room_uuid", "cursor", "limit"},
         "loxone_list_categories": {"query", "cursor", "limit"},
         "loxone_list_global_metadata": {"kind", "query", "cursor", "limit"},
-        "loxone_get_weather": {"mode", "cursor", "limit"},
+        "loxone_get_weather": {"mode", "cursor", "limit", "history_options", "future_options"},
         "loxone_find_controls": {
             "query",
             "room_uuid",
@@ -646,9 +757,17 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "cursor",
             "limit",
         },
-        "loxone_describe_control": {"control_uuid", "include_hidden"},
+        "loxone_describe_control": {"control_uuid", "include_hidden", "view", "include_outputs"},
         "loxone_get_control_notes": {"control_uuid", "include_hidden"},
         "loxone_get_states": {"state_uuids", "include_hidden"},
+        "loxone_get_state_semantics": {"control_uuid", "state_names", "offset", "limit"},
+        "loxone_read_controls": {"targets", "include_semantics", "native_result_view"},
+        "loxone_get_active_alerts": {"limit"},
+        "loxone_get_system_messages": {"mode", "limit", "cursor"},
+        "loxone_get_notifications": set(),
+        "loxone_preview_system_message_confirmation": {"entry_uuid"},
+        "loxone_confirm_system_message": {"preview_id", "user_approved"},
+        "loxone_get_attention_overview": {"limit", "include_history"},
         "loxone_operate_control": {
             "control_uuid",
             "action",
@@ -676,6 +795,16 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["has_statistics"]["default"] is False
     assert "legacy" in find_properties["has_statistics"]["description"]
     assert find_properties["has_history"]["default"] is False
+    describe_view = published["loxone_describe_control"].parameters["properties"]["view"]
+    assert describe_view["default"] == "full"
+    assert describe_view["enum"] == [
+        "full",
+        "history_targets",
+        "operation_targets",
+        "state_refs",
+        "energy_context",
+        "lighting_context",
+    ]
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
     operation = published["loxone_operate_control"].parameters["properties"]
@@ -829,6 +958,28 @@ async def test_history_limit_is_enforced_at_runtime() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["loxone_get_statistics", "loxone_get_control_history"])
+async def test_history_error_preserves_preallocated_trace_id(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    identifiers = iter(("phase-trace", "incorrect-second-trace"))
+    monkeypatch.setattr(tools_module, "uuid4", lambda: next(identifiers))
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    server = FastMCP("history-error-trace")
+    register_history_tools(server, object())  # type: ignore[arg-type]
+    arguments = {"control_uuid": "control", "start": "invalid"}
+    if tool_name == "loxone_get_statistics":
+        arguments.update(
+            {"series_id": "series", "end": "2026-01-02T00:00:00Z", "granularity": "raw"}
+        )
+    result = await server._tool_manager.call_tool(tool_name, arguments)
+    assert result.trace_id == "phase-trace"
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
 async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
     class Cache:
         def clear(self) -> object:
@@ -879,6 +1030,1167 @@ async def test_loxberry_operate_rate_limits_denied_attempts(
         await runtime.clear_statistics_cache(access)
     with pytest.raises(tools_module.DiagnosticsUnavailable):
         await runtime.clear_statistics_cache(access)
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_rechecks_current_authorization() -> None:
+    source = ("control", "state")
+    allowed = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+    revoked = PluginConfig(event_history_sources=(source,))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return allowed
+
+        def mutate(self, operation: object) -> PluginConfig:
+            return operation(revoked)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            raise AssertionError("revoked source change must not reconfigure the monitor")
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
+
+    with pytest.raises(PermissionError):
+        await runtime.remove_event_history_source(
+            _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
+        )
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_reports_no_op_when_another_writer_removed_it() -> None:
+    source = ("control-a", "state-a")
+    replacement_source = ("control-b", "state-b")
+    initial = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+    replacement = replace(initial, event_history_sources=(replacement_source,))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return initial
+
+        def mutate(self, operation: object) -> PluginConfig:
+            return operation(replacement)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Store:
+        def mark_removed(
+            self, control_uuid: str, state_uuid: str, *, removed_at: float | None
+        ) -> None:
+            assert (control_uuid, state_uuid) == source
+            assert removed_at is None
+
+    class Monitor:
+        store = Store()
+
+        async def update_config(self, config: PluginConfig) -> None:
+            assert config is replacement
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
+
+    assert not await runtime.remove_event_history_source(
+        _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_repairs_failed_marker_without_guessing_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = ("control", "state")
+    now = time.time()
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 20)
+    original_mark_removed = store.mark_removed
+    fail_once = True
+
+    def mark_removed(control_uuid: str, state_uuid: str, *, removed_at: float | None) -> None:
+        nonlocal fail_once
+        if fail_once:
+            fail_once = False
+            raise EventHistoryUnavailable("local event history is unavailable")
+        original_mark_removed(control_uuid, state_uuid, removed_at=removed_at)
+
+    monkeypatch.setattr(store, "mark_removed", mark_removed)
+    initial = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+
+    class ConfigStore:
+        current = initial
+
+        def load(self) -> PluginConfig:
+            return self.current
+
+        def mutate(self, operation: object) -> PluginConfig:
+            self.current = operation(self.current)  # type: ignore[operator]
+            return self.current
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        def __init__(self) -> None:
+            self.store = store
+
+        async def update_config(self, config: PluginConfig) -> None:
+            if source not in config.event_history_sources:
+                store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        AuthStore(),
+        event_history=Monitor(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    with pytest.raises(tools_module.ControlOperationError, match="outcome is unknown"):
+        await runtime.remove_event_history_source(access, *source)
+    assert source not in runtime._config_store.load().event_history_sources
+
+    assert not await runtime.remove_event_history_source(access, *source)
+    page = store.page(*source, start=now - 20, end=now - 10, limit=10)
+    assert page.has_evidence and page.coverage == "complete"
+    assert page.recording_ended_at is None
+
+
+@pytest.mark.asyncio
+async def test_event_history_read_rejects_a_visible_state_outside_the_source_allowlist(
+    tmp_path: Path,
+) -> None:
+    source = ("control", "state")
+    control = Control(
+        uuid="control",
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", "state"),),
+    )
+
+    @asynccontextmanager
+    async def slot(_access: object = None):
+        yield
+
+    class Runtime:
+        history_call_slot = staticmethod(slot)
+        worker_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object, *, fresh_visibility: bool = False) -> object:
+            assert fresh_visibility
+            return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                event_history_enabled=True,
+                event_history_sources=(),
+            )
+
+    path = (tmp_path / "history.sqlite3").resolve()
+    EventHistoryStore(path, retention_days=90, maximum_mib=16).initialize()
+    runtime = EventHistoryRuntime(Runtime(), ConfigStore(), path)  # type: ignore[arg-type]
+
+    with pytest.raises(tools_module.ControlOperationError, match="no retained") as exc_info:
+        await runtime.page(
+            _loxberry_access(HISTORY_SCOPE), *source, start=0.0, end=1.0, limit=1, before=None
+        )
+
+    assert exc_info.value.code == "not_found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["Switch", "WindowMonitor"])
+async def test_removed_history_is_readable_only_while_currently_visible(
+    tmp_path: Path, kind
+) -> None:
+    source = ("control", "state")
+    now = time.time()
+    path = (tmp_path / "history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 30)
+    old_value, new_value = ("1,1", "1,4") if kind == "WindowMonitor" else (0, 1)
+    store.record_transition(*source, observed_at=now - 20, old_value=old_value, new_value=new_value)
+    store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+    store.mark_removed(*source, removed_at=now - 10)
+    control = Control(
+        uuid="control",
+        name="Visible",
+        control_type=kind,
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("windowStates" if kind == "WindowMonitor" else "active", "state"),),
+    )
+
+    @asynccontextmanager
+    async def slot(_access: object = None):
+        yield
+
+    class Runtime:
+        visible = True
+        history_call_slot = staticmethod(slot)
+        worker_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object, *, fresh_visibility: bool = False) -> object:
+            assert fresh_visibility
+            return SimpleNamespace(
+                structure=SimpleNamespace(controls=(control,) if self.visible else ())
+            )
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_history_enabled=True, event_history_enabled=True)
+
+    loxone = Runtime()
+    runtime = EventHistoryRuntime(loxone, ConfigStore(), path)  # type: ignore[arg-type]
+    _, _, page, active = await runtime.page(
+        _loxberry_access(HISTORY_SCOPE),
+        *source,
+        start=now - 30,
+        end=now,
+        limit=10,
+        before=None,
+    )
+    assert not active and len(page.entries) == 1
+    assert page.recording_ended_at == now - 10
+    assert page.coverage == "partial_coverage"
+    loxone.visible = False
+    with pytest.raises(tools_module.ControlOperationError) as exc_info:
+        await runtime.page(
+            _loxberry_access(HISTORY_SCOPE),
+            *source,
+            start=now - 30,
+            end=now,
+            limit=10,
+            before=None,
+        )
+    assert exc_info.value.code == "not_found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind,coverage",
+    [
+        ("Switch", "not_recorded"),
+        ("WindowMonitor", "not_recorded"),
+        ("WindowMonitor", "partial_coverage"),
+        ("WindowMonitor", "complete"),
+    ],
+)
+async def test_event_history_normalizes_standard_uuid_input_before_runtime_access(
+    monkeypatch: pytest.MonkeyPatch,
+    kind,
+    coverage,
+) -> None:
+    control_uuid = "00000000-0000-0000-0000000000000001"
+    state_uuid = "00000000-0000-0000-0000000000000002"
+    control = Control(
+        uuid=control_uuid,
+        name="Visible control",
+        control_type=kind,
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("windowStates" if kind == "WindowMonitor" else "active", state_uuid),),
+    )
+
+    class Runtime:
+        arguments: tuple[str, str] | None = None
+        active = True
+
+        async def page(
+            self, _access: object, control: str, state: str, **_kwargs: object
+        ) -> object:
+            self.arguments = (control, state)
+            return (
+                control_object,
+                control_object.state_uuids[0][0],
+                SimpleNamespace(
+                    coverage=coverage,
+                    entries=(),
+                    capture_started_at=None,
+                    retained_from=None,
+                    recording_ended_at=1_777_000_000.0,
+                    next_event_id=None,
+                    next_event_at=None,
+                ),
+                self.active,
+            )
+
+    control_object = control
+    runtime = Runtime()
+    server = FastMCP("event-history-uuid-normalization")
+    register_event_history_tools(server, runtime)  # type: ignore[arg-type]
+    monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(HISTORY_SCOPE))
+
+    result = await server._tool_manager.call_tool(
+        "loxone_get_event_history",
+        {
+            "control_uuid": "00000000-0000-0000-0000-000000000001",
+            "state_uuid": "00000000-0000-0000-0000-000000000002",
+            "start": "2026-09-01T00:00:00Z",
+            "end": "2026-09-01T01:00:00Z",
+        },
+    )
+
+    assert result.ok
+    assert runtime.arguments == (control_uuid, state_uuid)
+    assert result.data.control_uuid == control_uuid  # type: ignore[union-attr]
+    assert result.data.state_uuid == state_uuid  # type: ignore[union-attr]
+    assert result.data.recording_status == "active"  # type: ignore[union-attr]
+    assert result.data.coverage == coverage  # type: ignore[union-attr]
+    runtime.active = False
+    removed = await server._tool_manager.call_tool(
+        "loxone_get_event_history",
+        {
+            "control_uuid": control_uuid,
+            "state_uuid": state_uuid,
+            "start": "2026-09-01T00:00:00Z",
+            "end": "2026-09-01T01:00:00Z",
+        },
+    )
+    assert removed.ok
+    assert removed.data.recording_status == "removed"  # type: ignore[union-attr]
+    assert removed.data.recording_ended_at is not None  # type: ignore[union-attr]
+    assert removed.data.recording_notice  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_event_history_reconciliation_waits_for_the_monitor_after_cancellation() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            started.set()
+            await release.wait()
+
+    reconciliation = asyncio.create_task(
+        LoxBerryOperateRuntime._reconcile_event_history_config(Monitor(), PluginConfig())
+    )
+    await started.wait()
+    reconciliation.cancel()
+    await asyncio.sleep(0)
+    assert not reconciliation.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await reconciliation
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_timeout_returns_an_uncertain_envelope(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class TimedOutRuntime:
+        async def add_event_history_source(
+            self, _access: StoredAccessToken, _control_uuid: str, _state_uuid: str
+        ) -> tuple[bool, tuple[str, str, str]]:
+            raise TimeoutError
+
+    server = FastMCP("event-history-source-timeout")
+    register_loxberry_operate_tool(server, TimedOutRuntime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+
+    result = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {
+            "control_uuid": "00000000-0000-0000-0000-000000000001",
+            "state_uuid": "00000000-0000-0000-0000-000000000002",
+        },
+    )
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+    assert result.data.message == "Source change timed out; outcome is unknown"  # type: ignore[union-attr]
+    assert (
+        "control_uuid=00000000-0000-0000-0000-000000000001 "
+        "state_uuid=00000000-0000-0000-0000-000000000002"
+    ) in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_tools_preserve_loxone_uuids_through_config_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control_uuid = "00000000-0000-0000-0000000000000001"
+    state_uuid = "00000000-0000-0000-0000000000000002"
+    standard_control_uuid = "00000000-0000-0000-0000-000000000001"
+    standard_state_uuid = "00000000-0000-0000-0000-000000000002"
+    binding = "b" * 64
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_operate_requests_per_minute=10,
+            event_history_enabled=True,
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+
+    class Monitor:
+        def __init__(self) -> None:
+            self.configs: list[PluginConfig] = []
+            self.store = EventHistoryStore(
+                (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+            )
+            self.store.initialize()
+
+        async def validate_source(self, control: str, state: str) -> tuple[str, str, str]:
+            assert (control, state) == (control_uuid, state_uuid)
+            return "Visible control", "Switch", "active"
+
+        async def update_config(self, config: PluginConfig) -> None:
+            self.configs.append(config)
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class LoxoneRuntime:
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+    monitor = Monitor()
+    runtime = LoxBerryOperateRuntime(
+        object(), store, AuthStore(), event_history=monitor, loxone_runtime=LoxoneRuntime()
+    )
+    server = FastMCP("event-history-source-uuid-round-trip")
+    register_loxberry_operate_tool(server, runtime)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+
+    added = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {"control_uuid": standard_control_uuid, "state_uuid": standard_state_uuid},
+    )
+    repeated = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {"control_uuid": control_uuid, "state_uuid": state_uuid},
+    )
+    listed = await server._tool_manager.call_tool("loxberry_list_event_history_sources", {})
+    removed = await server._tool_manager.call_tool(
+        "loxberry_remove_event_history_source",
+        {"control_uuid": standard_control_uuid, "state_uuid": standard_state_uuid},
+    )
+
+    assert added.ok and added.data.changed is True  # type: ignore[union-attr]
+    assert repeated.ok and repeated.data.changed is False  # type: ignore[union-attr]
+    assert listed.ok
+    assert [item.model_dump() for item in listed.data.sources] == [  # type: ignore[union-attr]
+        {
+            "control_uuid": control_uuid,
+            "state_uuid": state_uuid,
+            "recording_status": "active",
+            "recording_ended_at": None,
+        }
+    ]
+    assert listed.data.next_cursor is None  # type: ignore[union-attr]
+    assert removed.ok and removed.data.changed is True  # type: ignore[union-attr]
+    assert store.load().event_history_sources == ()
+    assert [config.event_history_sources for config in monitor.configs] == [
+        ((control_uuid, state_uuid),),
+        ((control_uuid, state_uuid),),
+        (),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_views_share_inventory_but_enforce_independent_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    visible = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    removed = ("00000000-0000-0000-0000000000000003", "00000000-0000-0000-0000000000000004")
+    hidden = ("00000000-0000-0000-0000000000000005", "00000000-0000-0000-0000000000000006")
+    history_path = (tmp_path / "history.sqlite3").resolve()
+    history_store = EventHistoryStore(history_path, retention_days=90, maximum_mib=16)
+    history_store.initialize()
+    history_store.record_transition(*removed, observed_at=time.time(), old_value=0, new_value=1)
+    history_store.mark_removed(*removed, removed_at=1_700_000_000)
+    history_store.record_transition(*hidden, observed_at=time.time(), old_value=0, new_value=1)
+    history_store.mark_removed(*hidden, removed_at=None)
+
+    binding = "b" * 64
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            event_history_sources=(visible,),
+            loxberry_read_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_read_bindings=(binding,),
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class Runtime:
+        fail_visibility = False
+
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+        async def snapshot(self, _access: StoredAccessToken, *, fresh_visibility: bool):
+            assert fresh_visibility is True
+            if self.fail_visibility:
+                raise runtime_module.RuntimeUnavailable("visibility unavailable")
+            controls = tuple(
+                Control(control, control, "Switch", None, None, None, (("active", state),))
+                for control, state in (visible, removed)
+            )
+            structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), controls)
+            return RuntimeSnapshot("family", structure, True)
+
+    loxone_runtime = Runtime()
+    visible_runtime = EventHistoryRuntime(loxone_runtime, config_store, history_path)
+    full_runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=history_store),
+        loxone_runtime=loxone_runtime,
+    )
+    server = FastMCP("event-history-source-views")
+    register_event_history_tools(server, visible_runtime)
+    register_loxberry_operate_tool(server, full_runtime)
+
+    async def call(name: str, *scopes: str):
+        monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(*scopes))
+        return await server._tool_manager.call_tool(name, {})
+
+    base = (READ_SCOPE, HISTORY_SCOPE)
+    visible_result = await call("loxone_list_event_history_sources", *base)
+    assert visible_result.ok
+    assert [
+        (source.control_uuid, source.recording_status) for source in visible_result.data.sources
+    ] == [
+        (visible[0], "active"),
+        (removed[0], "removed"),
+    ]
+    assert visible_result.data.sources[1].recording_ended_at == "2023-11-14T22:13:20Z"
+    assert (
+        await call("loxberry_list_event_history_sources", *base)
+    ).data.error == "permission_denied"
+
+    for local_scope in (LOXBERRY_READ_SCOPE, LOXBERRY_OPERATE_SCOPE):
+        full_result = await call("loxberry_list_event_history_sources", *base, local_scope)
+        assert full_result.ok
+        assert {source.control_uuid for source in full_result.data.sources} == {
+            visible[0],
+            removed[0],
+            hidden[0],
+        }
+        assert full_result.data.sources[-1].recording_ended_at is None
+
+    config_store.save(replace(config_store.load(), loxberry_read_enabled=False))
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_READ_SCOPE)
+    ).data.error == "permission_denied"
+    assert (await call("loxberry_list_event_history_sources", *base, LOXBERRY_OPERATE_SCOPE)).ok
+    config_store.save(
+        replace(config_store.load(), loxberry_read_enabled=True, loxberry_read_bindings=())
+    )
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_READ_SCOPE)
+    ).data.error == "permission_denied"
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(*base, LOXBERRY_READ_SCOPE)
+    )
+    mutation = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {"control_uuid": visible[0], "state_uuid": visible[1]},
+    )
+    assert mutation.data.error == "permission_denied"
+    config_store.save(replace(config_store.load(), loxberry_operate_enabled=False))
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_OPERATE_SCOPE)
+    ).data.error == "permission_denied"
+    config_store.save(replace(config_store.load(), loxberry_operate_enabled=True))
+    config_store.save(replace(config_store.load(), loxberry_operate_bindings=()))
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_OPERATE_SCOPE)
+    ).data.error == "permission_denied"
+    assert (
+        await call("loxberry_list_event_history_sources", READ_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    ).data.error == "permission_denied"
+    loxone_runtime.fail_visibility = True
+    assert (
+        await call("loxone_list_event_history_sources", *base)
+    ).data.error == "temporarily_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_cursor_pages_include_sources_beyond_128(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    history_store.initialize()
+    for index in range(130):
+        control, state = f"control-{index:03}", f"state-{index:03}"
+        history_store.record_transition(
+            control, state, observed_at=time.time(), old_value=0, new_value=1
+        )
+        history_store.mark_removed(control, state, removed_at=None)
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    binding = "b" * 64
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            loxberry_read_enabled=True,
+            loxberry_read_bindings=(binding,),
+        )
+    )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class Runtime:
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=history_store),
+        loxone_runtime=Runtime(),
+    )
+    server = FastMCP("event-history-source-pagination")
+    register_loxberry_operate_tool(server, runtime)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_READ_SCOPE),
+    )
+    first = await server._tool_manager.call_tool(
+        "loxberry_list_event_history_sources", {"limit": 100}
+    )
+    assert first.ok and len(first.data.sources) == 100
+    assert first.data.next_cursor
+    second = await server._tool_manager.call_tool(
+        "loxberry_list_event_history_sources", {"limit": 100, "cursor": first.data.next_cursor}
+    )
+    assert second.ok and len(second.data.sources) == 30
+    assert second.data.next_cursor is None
+    assert len({source.control_uuid for source in first.data.sources + second.data.sources}) == 130
+    invalid = await server._tool_manager.call_tool(
+        "loxberry_list_event_history_sources", {"cursor": first.data.next_cursor + "x"}
+    )
+    assert invalid.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_default_page_keeps_all_64_active_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sources = tuple(
+        (
+            f"00000000-0000-0000-{index:016x}",
+            f"00000000-0000-0000-{index + 64:016x}",
+        )
+        for index in range(64)
+    )
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    binding = "b" * 64
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            event_history_sources=sources,
+            loxberry_read_enabled=True,
+            loxberry_read_bindings=(binding,),
+        )
+    )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class Runtime:
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=store),
+        loxone_runtime=Runtime(),
+    )
+    server = FastMCP("event-history-default-page")
+    register_loxberry_operate_tool(server, runtime)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_READ_SCOPE),
+    )
+    result = await server._tool_manager.call_tool("loxberry_list_event_history_sources", {})
+    assert result.ok and len(result.data.sources) == 64
+    assert result.data.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_requires_confirmation_and_reports_uncertain_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = (
+        "00000000-0000-0000-0000000000000001",
+        "00000000-0000-0000-0000000000000002",
+    )
+
+    class Runtime:
+        calls = 0
+        timed_out = False
+        unavailable = False
+
+        async def purge_event_history_source(self, *_args: object) -> tuple[int, int]:
+            self.calls += 1
+            if self.timed_out:
+                raise TimeoutError
+            if self.unavailable:
+                raise EventHistoryUnavailable("local event history maintenance is unavailable")
+            return 3, 1
+
+    runtime = Runtime()
+    server = FastMCP("event-history-purge")
+    register_loxberry_operate_tool(server, runtime)  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    arguments = {"control_uuid": source[0], "state_uuid": source[1]}
+    denied = await server._tool_manager.call_tool("loxberry_purge_event_history_source", arguments)
+    assert not denied.ok and runtime.calls == 0
+    assert denied.data.error == "invalid_input"  # type: ignore[union-attr]
+
+    confirmed = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert confirmed.ok and confirmed.data.deleted_events == 3  # type: ignore[union-attr]
+    assert confirmed.data.coverage_removed is True  # type: ignore[union-attr]
+    runtime.timed_out = True
+    uncertain = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert not uncertain.ok and "outcome is unknown" in uncertain.data.message  # type: ignore[union-attr]
+    runtime.timed_out = False
+    runtime.unavailable = True
+    uncertain = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert not uncertain.ok and "outcome is unknown" in uncertain.data.message  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_rejects_active_or_invisible_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = ("control", "state")
+    path = (tmp_path / "history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    store.initialize()
+    store.begin_coverage((source,), started_at=time.time() - 10)
+    control = Control(
+        uuid="control",
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", "state"),),
+    )
+
+    @asynccontextmanager
+    async def slot(_access: object = None):
+        yield
+
+    class Loxone:
+        visible = True
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(
+                structure=SimpleNamespace(controls=(control,) if self.visible else ())
+            )
+
+    class ConfigStore:
+        active = True
+        approved = True
+
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                loxberry_operate_enabled=True,
+                loxberry_operate_requests_per_minute=10,
+                event_history_enabled=True,
+                loxberry_operate_bindings=("binding",) if self.approved else (),
+                event_history_sources=(source,) if self.active else (),
+            )
+
+        def transaction(self, operation: object) -> tuple[int, int]:
+            return operation(self.load(), lambda _config: None)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    loxone = Loxone()
+    config = ConfigStore()
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config,
+        AuthStore(),
+        event_history=SimpleNamespace(store=store),
+        loxone_runtime=loxone,  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    with pytest.raises(tools_module.ControlOperationError, match="active"):
+        await runtime.purge_event_history_source(access, *source)
+    config.active = False
+    config.approved = False
+    with pytest.raises(PermissionError):
+        await runtime.purge_event_history_source(access, *source)
+    config.approved = True
+    loxone.visible = False
+    with pytest.raises(tools_module.ControlOperationError) as invisible:
+        await runtime.purge_event_history_source(access, *source)
+    assert invisible.value.code == "not_found"
+    loxone.visible = True
+    assert await runtime.purge_event_history_source(access, *source) == (0, 1)
+
+    def slow_purge(*_source: str) -> tuple[int, int]:
+        time.sleep(0.1)
+        return 0, 0
+
+    monkeypatch.setattr(store, "purge_source", slow_purge)
+    runtime._event_history_source_change_timeout_seconds = 0.01
+    with pytest.raises(TimeoutError):
+        await runtime.purge_event_history_source(access, *source)
+    with pytest.raises(tools_module.ControlOperationError, match="in progress"):
+        await runtime.purge_event_history_source(access, *source)
+    with pytest.raises(tools_module.ControlOperationError, match="in progress"):
+        await runtime.add_event_history_source(access, *source)
+    await asyncio.sleep(0.15)
+    assert not runtime._event_history_purges
+
+
+def test_event_history_changes_accept_current_explorer_approval() -> None:
+    now = int(time.time())
+    binding = "b" * 64
+    config = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        explorer_bindings=(
+            ExplorerBindingApproval(
+                binding_id=binding,
+                capability="loxberry:operate",
+                application_id="tool-explorer-v1",
+                version=1,
+                created_at=now,
+                last_active_at=now,
+                last_active_until=now + 3600,
+            ),
+        ),
+    )
+
+    class AuthStore:
+        def snapshot(self) -> dict[str, object]:
+            return {
+                "families": {
+                    "family": {
+                        "client_kind": "tool_explorer",
+                        "explorer_origin": "https://public.example",
+                    }
+                }
+            }
+
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    runtime = LoxBerryOperateRuntime(object(), object(), AuthStore())
+    runtime._event_history_change_allowed(
+        config, _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_serializes_with_admin_config_update(tmp_path: Path) -> None:
+    source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    binding = "b" * 64
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_operate_requests_per_minute=10,
+            event_history_enabled=True,
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+    control = Control(
+        uuid=source[0],
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", source[1]),),
+    )
+    started = threading.Event()
+    release = threading.Event()
+
+    class Store:
+        def purge_source(self, *_source: str) -> tuple[int, int]:
+            started.set()
+            assert release.wait(2)
+            return 1, 1
+
+    @asynccontextmanager
+    async def slot(_access: object):
+        yield
+
+    class Loxone:
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=Store()),
+        loxone_runtime=Loxone(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    purge = asyncio.create_task(runtime.purge_event_history_source(access, *source))
+    assert await asyncio.to_thread(started.wait, 1)
+    admin_update = asyncio.create_task(
+        asyncio.to_thread(
+            config_store.mutate,
+            lambda current: replace(current, event_history_sources=(source,)),
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert not admin_update.done()
+    release.set()
+    assert await purge == (1, 1)
+    await admin_update
+    assert config_store.load().event_history_sources == (source,)
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_rejects_pending_source_removal_reconciliation() -> None:
+    source = ("control", "state")
+    binding = "b" * 64
+    config = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        loxberry_operate_requests_per_minute=10,
+        event_history_enabled=True,
+        loxberry_operate_bindings=(binding,),
+    )
+    reconciled = asyncio.Event()
+    mutation_release = asyncio.Event()
+    purged = False
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return config
+
+        def transaction(self, operation: object) -> tuple[int, int]:
+            return operation(config, lambda _config: None)  # type: ignore[operator]
+
+    class Store:
+        def purge_source(self, *_source: str) -> tuple[int, int]:
+            nonlocal purged
+            assert reconciled.is_set(), "purge ran before the old recorder stopped"
+            purged = True
+            return 1, 1
+
+    class Monitor:
+        store = Store()
+
+        async def update_config(self, _config: PluginConfig) -> None:
+            reconciled.set()
+
+    @asynccontextmanager
+    async def slot(_access: object):
+        yield
+
+    class Loxone:
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(
+                structure=SimpleNamespace(
+                    controls=(
+                        Control(
+                            uuid=source[0],
+                            name="Visible",
+                            control_type="Switch",
+                            room_uuid=None,
+                            category_uuid=None,
+                            action_uuid=None,
+                            state_uuids=(("active", source[1]),),
+                        ),
+                    )
+                )
+            )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    monitor = Monitor()
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        AuthStore(),
+        event_history=monitor,  # type: ignore[arg-type]
+        loxone_runtime=Loxone(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+
+    async def late_mutation() -> None:
+        await mutation_release.wait()
+
+    mutation = asyncio.create_task(late_mutation())
+    runtime._reconcile_completed_event_history_mutation(monitor, mutation)  # type: ignore[arg-type]
+    await runtime._event_history_lock.acquire()
+    purge = asyncio.create_task(runtime.purge_event_history_source(access, *source))
+    await asyncio.sleep(0)
+    mutation_release.set()
+    await asyncio.sleep(0)
+    runtime._event_history_lock.release()
+
+    with pytest.raises(tools_module.ControlOperationError) as pending:
+        await purge
+    assert pending.value.code == "temporarily_unavailable"
+    assert not purged
+    await asyncio.wait_for(reconciled.wait(), 1)
+    await asyncio.wait_for(asyncio.gather(*runtime._event_history_reconciliation_tasks), 1)
+    assert await runtime.purge_event_history_source(access, *source) == (1, 1)
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_audit_rejects_and_sanitizes_invalid_uuids(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Runtime:
+        async def remove_event_history_source(self, *_args: object) -> bool:
+            raise AssertionError("invalid UUIDs must be rejected before runtime access")
+
+    server = FastMCP("event-history-source-uuid-audit")
+    register_loxberry_operate_tool(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    malicious_uuid = "invalid\nforged=value"
+
+    result = await server._tool_manager.call_tool(
+        "loxberry_remove_event_history_source",
+        {"control_uuid": malicious_uuid, "state_uuid": "also-invalid"},
+    )
+
+    assert result.ok is False
+    assert result.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert malicious_uuid not in caplog.text
+    assert "control_uuid=invalid state_uuid=invalid" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_timeout_reconciles_a_late_mutation() -> None:
+    expected = PluginConfig(event_history_enabled=True)
+    reconciled = asyncio.Event()
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return expected
+
+        def mutate(self, _operation: object) -> PluginConfig:
+            time.sleep(0.02)
+            return expected
+
+    class Monitor:
+        async def update_config(self, config: PluginConfig) -> None:
+            assert config is expected
+            reconciled.set()
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        object(),
+        event_history=Monitor(),
+        event_history_source_change_timeout_seconds=0.001,
+    )
+
+    with pytest.raises(TimeoutError):
+        await runtime._mutate_event_history_config(Monitor(), lambda config: config)
+
+    await asyncio.wait_for(reconciled.wait(), timeout=1)
 
 
 @pytest.mark.asyncio
@@ -1054,6 +2366,396 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
 
 
 @pytest.mark.asyncio
+async def test_describe_control_history_targets_is_compact_and_compatible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    series = StatisticSeries("v2:1:value", "statistic_v2", "1", "value", "Energy", "kWh")
+    control = Control(
+        uuid="meter-1",
+        name="Meter",
+        control_type="Meter",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("value", "state-1"),),
+        has_history=True,
+        statistic_series=(series,),
+        subcontrols=(Control("child-1", "Child", "InfoOnlyAnalog", None, None, None, ()),),
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(control,),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("history-targets")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+
+    original = await tool.fn("meter-1")
+    explicit_full = await tool.fn("meter-1", view="full")
+    compact = await tool.fn("meter-1", view="history_targets")
+    assert original.data.model_dump(mode="json") == explicit_full.data.model_dump(mode="json")  # type: ignore[union-attr]
+    assert "view" not in original.data.model_dump()  # type: ignore[union-attr]
+    data = compact.data.model_dump(mode="json")  # type: ignore[union-attr]
+    assert data["view"] == "history_targets"
+    assert data["states"] == [{"name": "value", "uuid": "state-1"}]
+    assert data["capabilities"]["has_history"] is True
+    assert data["capabilities"]["statistics"][0]["series_id"] == "v2:1:value"
+    assert data["capabilities"]["native_statistics_truncated"] is False
+    assert set(data["capabilities"]) == {"has_history", "statistics", "native_statistics_truncated"}
+    assert data["omitted_sections"] == ["presentation", "relationships", "non_history_capabilities"]
+    assert "presentation" not in data and "relationships" not in data
+    structure = replace(structure, controls=(replace(control, statistic_series_truncated=True),))
+    truncated = await tool.fn("meter-1", view="history_targets")
+    assert truncated.data.capabilities.native_statistics_truncated is True  # type: ignore[union-attr]
+    assert (await tool.fn("meter-1", view="unexpected")).data.error == "invalid_input"  # type: ignore[union-attr]
+    called = await server._tool_manager.call_tool(
+        "loxone_describe_control", {"control_uuid": "meter-1", "view": "unexpected"}
+    )
+    assert called.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert (await tool.fn("unknown", view="history_targets")).data.error == "not_found"  # type: ignore[union-attr]
+
+    async def denied(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        raise PermissionError
+
+    monkeypatch.setattr(tools_module, "_snapshot", denied)
+    assert (await tool.fn("meter-1", view="history_targets")).data.error == "unauthenticated"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("related_count", [0, 50])
+async def test_history_targets_payload_measurement(
+    monkeypatch: pytest.MonkeyPatch, related_count: int
+) -> None:
+    control = Control(
+        "meter-1",
+        "Meter",
+        "Meter",
+        None,
+        None,
+        None,
+        (("value", "state-1"),),
+        subcontrols=tuple(
+            Control(f"child-{index}", f"Child {index}", "InfoOnlyAnalog", None, None, None, ())
+            for index in range(related_count)
+        ),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return _loxberry_access(READ_SCOPE), RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("payload-measurement")
+    register_read_tools(server, None)
+    find = server._tool_manager.get_tool("loxone_find_controls")
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert find is not None and describe is not None
+    found = await find.fn(query="Meter")
+    full = await describe.fn("meter-1")
+    compact = await describe.fn("meter-1", view="history_targets")
+
+    def encoded_size(result: object) -> int:
+        return len(
+            json.dumps(result.model_dump(mode="json"), separators=(",", ":")).encode("utf-8")  # type: ignore[attr-defined]
+        )
+
+    discovery_bytes = encoded_size(found)
+    full_bytes = discovery_bytes + encoded_size(full)
+    compact_bytes = discovery_bytes + encoded_size(compact)
+    print(
+        f"history-target payload related={related_count} "
+        f"find+full={full_bytes} bytes find+compact={compact_bytes} bytes; 2 calls each"
+    )
+    assert compact_bytes < full_bytes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata_count", [0, 60])
+async def test_operation_targets_are_complete_and_compact(
+    monkeypatch: pytest.MonkeyPatch, metadata_count: int
+) -> None:
+    control = Control(
+        "dimmer-1",
+        "Living room dimmer",
+        "Dimmer",
+        None,
+        None,
+        "action-1",
+        tuple((f"state-{i}", f"uuid-{i}") for i in range(metadata_count)),
+        minimum=0,
+        maximum=100,
+        step=1,
+        has_history=metadata_count > 0,
+        statistic_series=tuple(
+            StatisticSeries(f"series-{i}", "statistic_v2", "g", "o", f"Series {i}", "W")
+            for i in range(metadata_count)
+        ),
+        subcontrols=tuple(
+            Control(f"child-{i}", f"Child {i}", "InfoOnlyAnalog", None, None, None, ())
+            for i in range(metadata_count)
+        ),
+        linked_control_uuids=tuple(f"child-{i}" for i in range(metadata_count)),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
+    access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
+
+    requested_freshness: list[bool] = []
+
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        requested_freshness.append(fresh_visibility)
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("operation-targets")
+    register_read_tools(server, None, control_enabled=True)
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert describe is not None
+    full = await describe.fn("dimmer-1")
+    compact = await describe.fn("dimmer-1", view="operation_targets")
+    assert requested_freshness == [False, True]
+    assert compact.data.view == "operation_targets"  # type: ignore[union-attr]
+    data = compact.data.model_dump(mode="json")  # type: ignore[union-attr]
+    assert data["capabilities"]["allowed_actions"] == ["on", "off", "set_level"]
+    assert data["capabilities"]["analog_range"] is None
+    assert set(data) == {"uuid", "name", "type", "visibility", "view", "capabilities"}
+    assert set(data["capabilities"]) == {
+        "allowed_actions",
+        "radio_outputs",
+        "scene_ids",
+        "analog_range",
+        "timer_modes",
+        "ventilation_modes",
+        "mood_list_state",
+        "kelvin_range",
+        "daytimer_values",
+        "climate_mode_values",
+    }
+    full_size = len(json.dumps(full.model_dump(mode="json"), separators=(",", ":")).encode())
+    compact_size = len(json.dumps(compact.model_dump(mode="json"), separators=(",", ":")).encode())
+    print(
+        f"operation-target payload metadata={metadata_count} full={full_size} bytes "
+        f"operation_targets={compact_size} bytes saving={full_size - compact_size} bytes"
+    )
+    assert compact_size < full_size
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("control", "expected_actions", "expected_target"),
+    [
+        (
+            Control(
+                "radio",
+                "Radio",
+                "Radio",
+                None,
+                None,
+                "a",
+                (),
+                radio_output_ids=("2",),
+                radio_outputs=(("2", "Kitchen"),),
+            ),
+            ["select_output"],
+            ("radio_outputs", [{"output_id": "2", "name": "Kitchen"}]),
+        ),
+        (
+            Control("scene", "Scenes", "LightsceneRGB", None, None, "a", (), scene_ids=("7",)),
+            ["on", "off", "set_scene"],
+            ("scene_ids", ["7"]),
+        ),
+        (
+            Control(
+                "analog", "Analog", "Slider", None, None, "a", (), minimum=-1, maximum=5, step=0.5
+            ),
+            ["set_value"],
+            ("analog_range", {"minimum": -1.0, "maximum": 5.0, "step": 0.5}),
+        ),
+        (
+            Control(
+                "room",
+                "Room",
+                "IRoomControllerV2",
+                None,
+                None,
+                "a",
+                (),
+                timer_modes=(NamedOption(3, "Eco"),),
+            ),
+            ["start_override", "stop_override"],
+            ("timer_modes", [{"id": 3, "name": "Eco"}]),
+        ),
+        (
+            Control(
+                "fan",
+                "Fan",
+                "Ventilation",
+                None,
+                None,
+                "a",
+                (),
+                ventilation_modes=(NamedOption(4, "Boost"),),
+            ),
+            ["start_override", "stop_override"],
+            ("ventilation_modes", [{"id": 4, "name": "Boost"}]),
+        ),
+        (
+            Control(
+                "light", "Light", "LightControllerV2", None, None, "a", (("moodList", "moods"),)
+            ),
+            ["off", "set_mood"],
+            ("mood_list_state", {"name": "moodList", "uuid": "moods"}),
+        ),
+        (
+            Control(
+                "picker",
+                "Picker",
+                "ColorPickerV2",
+                None,
+                None,
+                "a",
+                (),
+                picker_type="TunableWhite",
+                min_kelvin=2200,
+                max_kelvin=7000,
+            ),
+            ["set_color_temperature"],
+            ("kelvin_range", [2200, 7000]),
+        ),
+        (
+            Control("timer", "Timer", "Daytimer", None, None, "a", (), is_analog=False),
+            ["pulse", "start_override", "stop_override"],
+            ("daytimer_values", [0, 1]),
+        ),
+        (
+            Control(
+                "climate", "Climate", "ClimateControllerUS", None, None, "a", (), connected_inputs=0
+            ),
+            [
+                "start_fan_override",
+                "stop_fan_override",
+                "start_mode_override",
+                "stop_mode_override",
+            ],
+            ("climate_mode_values", [0, 1, 2, 3]),
+        ),
+    ],
+)
+async def test_operation_targets_publish_each_action_specific_target(
+    monkeypatch: pytest.MonkeyPatch,
+    control: Control,
+    expected_actions: list[str],
+    expected_target: tuple[str, object],
+) -> None:
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
+
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        assert fresh_visibility is True
+        return _loxberry_access(READ_SCOPE, CONTROL_SCOPE), RuntimeSnapshot(
+            "family", structure, True
+        )
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("operation-target-fields")
+    register_read_tools(server, None, control_enabled=True)
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert describe is not None
+    result = await describe.fn(control.uuid, view="operation_targets")
+    capabilities = result.data.model_dump(mode="json")["capabilities"]  # type: ignore[union-attr]
+    assert capabilities["allowed_actions"] == expected_actions
+    key, value = expected_target
+    if key == "kelvin_range":
+        assert capabilities[key] == value
+    else:
+        assert capabilities[key] == value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refresh_result", ["renamed", "removed", "unavailable"])
+async def test_operation_targets_require_current_structure(
+    monkeypatch: pytest.MonkeyPatch, refresh_result: str
+) -> None:
+    access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
+    cached_control = Control(
+        "room",
+        "Room",
+        "IRoomControllerV2",
+        None,
+        None,
+        "action",
+        (),
+        timer_modes=(NamedOption(3, "Eco"),),
+    )
+    cached = LoxoneStructure(
+        LoxoneIdentity("user", "serial"), "unchanged", (), (), (cached_control,)
+    )
+    current = replace(
+        cached,
+        controls=(
+            replace(cached_control, timer_modes=(NamedOption(3, "Boost"), NamedOption(4, "Eco"))),
+        )
+        if refresh_result == "renamed"
+        else (),
+    )
+    requested_freshness: list[bool] = []
+
+    class Runtime:
+        in_call_slot = False
+
+        @asynccontextmanager
+        async def call_slot(self, supplied_access: StoredAccessToken):
+            assert supplied_access is access
+            self.in_call_slot = True
+            try:
+                yield
+            finally:
+                self.in_call_slot = False
+
+        async def snapshot(
+            self, supplied_access: StoredAccessToken, *, fresh_visibility: bool = False
+        ) -> RuntimeSnapshot:
+            assert supplied_access is access
+            assert self.in_call_slot
+            requested_freshness.append(fresh_visibility)
+            if fresh_visibility and refresh_result == "unavailable":
+                raise runtime_module.RuntimeUnavailable("Miniserver structure refresh failed")
+            return RuntimeSnapshot("family", current if fresh_visibility else cached, True)
+
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    server = FastMCP("operation-target-freshness")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert describe is not None
+    full = await describe.fn("room")
+    assert full.data.capabilities.model.timer_modes[0].name == "Eco"  # type: ignore[union-attr]
+
+    result = await describe.fn("room", view="operation_targets")
+    assert requested_freshness == [False, True]
+    if refresh_result == "renamed":
+        assert result.ok is True
+        modes = result.data.capabilities.timer_modes  # type: ignore[union-attr]
+        assert [(mode.id, mode.name) for mode in modes] == [(3, "Boost"), (4, "Eco")]
+    else:
+        assert result.ok is False
+        assert result.data.error == (  # type: ignore[union-attr]
+            "not_found" if refresh_result == "removed" else "temporarily_unavailable"
+        )
+
+
+@pytest.mark.asyncio
 async def test_list_rooms_includes_an_unambiguous_room_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1167,7 +2869,9 @@ async def test_describe_control_resolves_window_monitor_item_references(
         ),
     )
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -1183,6 +2887,125 @@ async def test_describe_control_resolves_window_monitor_item_references(
     assert item.room.uuid == "room-1"
     assert item.control.uuid == "window-1"
     assert item.control.name == "Office window"
+    summary = result.data.capabilities.model.window_monitor_summary  # type: ignore[union-attr]
+    assert summary is not None
+    assert (summary.total, summary.returned, summary.omitted, summary.truncated) == (1, 1, 0, False)
+    assert summary.diagnostics == []
+    assert (summary.resolved, summary.partially_resolved, summary.unresolved) == (1, 0, 0)
+    assert item.diagnostics == []
+    assert item.resolution_status == "resolved"
+    assert item.room_consistency == "match"
+    for view in ("history_targets", "operation_targets"):
+        compact = await tool.fn("monitor-1", view=view)
+        assert compact.ok is True
+        assert "window_monitor" not in compact.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_describe_window_monitor_exposes_normalized_collection_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcpserver.loxone.structure import normalize_structure
+
+    access = _loxberry_access(READ_SCOPE)
+    structure = normalize_structure(
+        {
+            "msInfo": {"serialNr": "serial"},
+            "controls": {
+                "monitor": {
+                    "name": "Windows",
+                    "type": "WindowMonitor",
+                    "details": {"windows": [{}] * 101},
+                }
+            },
+        },
+        username="reader",
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("window-monitor-bound-contract")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+    result = await tool.fn("monitor")
+    model = result.data.capabilities.model  # type: ignore[union-attr]
+    assert len(model.window_monitor_items) == 100
+    assert model.window_monitor_summary.model_dump() == {
+        "total": 101,
+        "returned": 100,
+        "omitted": 1,
+        "truncated": True,
+        "diagnostics": [],
+        "resolved": 0,
+        "partially_resolved": 0,
+        "unresolved": 100,
+    }
+
+
+@pytest.mark.asyncio
+async def test_window_monitor_diagnostics_follow_only_current_visible_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monitor = Control(
+        "monitor",
+        "Windows",
+        "WindowMonitor",
+        None,
+        None,
+        None,
+        (),
+        window_monitor_items=(WindowMonitorItem(0, None, "room", "target", None),),
+    )
+    target = Control(
+        "target", "private-control-marker", "Switch", "other-room", None, None, (), is_hidden=True
+    )
+    structure = LoxoneStructure(
+        LoxoneIdentity("reader", "serial"),
+        "1",
+        (Room("room", "Room"),),
+        (),
+        (monitor,),
+        hidden_controls=(target,),
+        hidden_rooms=(Room("other-room", "private-room-marker"),),
+    )
+    access = _loxberry_access(READ_SCOPE)
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("window-monitor-visible-diagnostics")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+    result = await tool.fn("monitor")
+    assert "private-" not in result.model_dump_json()
+    item = result.data.capabilities.model.window_monitor_items[0]  # type: ignore[union-attr]
+    assert item.diagnostics == ["control_reference_unavailable"]
+    assert item.resolution_status == "partially_resolved"
+    assert item.room_consistency == "unknown"
+    structure = replace(
+        structure,
+        controls=(monitor, replace(target, name="Visible target", is_hidden=False)),
+        rooms=(Room("room", "Same name"), Room("other-room", "Same name")),
+    )
+    result = await tool.fn("monitor")
+    item = result.data.capabilities.model.window_monitor_items[0]  # type: ignore[union-attr]
+    assert item.diagnostics == ["room_reference_mismatch"]
+    assert item.resolution_status == "resolved"
+    assert item.room_consistency == "mismatch"
+    structure = replace(structure, controls=(monitor,), rooms=())
+    result = await tool.fn("monitor")
+    model = result.data.capabilities.model  # type: ignore[union-attr]
+    assert model.window_monitor_items[0].diagnostics == [
+        "control_reference_unavailable",
+        "room_reference_unavailable",
+    ]
+    assert model.window_monitor_summary.unresolved == 1
+    assert model.window_monitor_summary.resolved == 0
 
 
 @pytest.mark.asyncio
@@ -1204,7 +3027,9 @@ async def test_get_states_accepts_advertised_global_metadata_states(
             assert uuid == "state-1"
             return StateRecord(uuid, 1.0, Freshness.CURRENT, 1_700_000_000.0)
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -1270,7 +3095,9 @@ async def test_room_snapshot_matches_additive_irrigation_state_semantics(
         def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
             return records[uuid]
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -1348,6 +3175,14 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     access = _loxberry_access(READ_SCOPE)
+    formats = (
+        ("relativeHumidity", "%.0f%%"),
+        ("temperature", "%.1f °C"),
+        ("windSpeed", "%.0f km/h"),
+        ("precipitation", "%.1f mm"),
+        ("barometricPressure", "%.0f hPa"),
+        ("futureFormat", "%.2f"),
+    )
     structure = LoxoneStructure(
         identity=LoxoneIdentity("user", "serial"),
         last_modified="1",
@@ -1358,7 +3193,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
             GlobalMetadata("weather_state", "actual", "actual", state_uuid="actual-state"),
             GlobalMetadata("weather_state", "forecast", "forecast", state_uuid="forecast-state"),
         ),
-        weather=WeatherMetadata(formats=(("temperature", "%.1f °C"),), type_texts=((1, "Clear"),)),
+        weather=WeatherMetadata(formats=formats, type_texts=((1, "Clear"),)),
     )
 
     def point(timestamp: int, temperature: float) -> dict[str, object]:
@@ -1403,23 +3238,141 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     register_read_tools(server, Runtime())  # type: ignore[arg-type]
     tool = server._tool_manager.get_tool("loxone_get_weather")
     assert tool is not None
+    output_defs = tool.output_schema["$defs"]
+    weather_schema = output_defs["WeatherData"]
+    assert "received_at" in weather_schema["required"]
+    assert {item.get("type") for item in weather_schema["properties"]["received_at"]["anyOf"]} == {
+        "string",
+        "null",
+    }
+    assert "Source update time" in weather_schema["properties"]["last_updated_at"]["description"]
+    point_properties = output_defs["WeatherPointData"]["properties"]
+    numeric_fields = set(point_properties) - {"at", "weather_type_text"}
+    assert len(numeric_fields) == 10
+    assert all(point_properties[name].get("description") for name in numeric_fields)
+    assert "unverified" in point_properties["solar_radiation"]["description"]
+    assert "W/m²" in point_properties["solar_radiation"]["description"]
+    metadata_schema = output_defs["WeatherFieldMetadataMapData"]
+    assert set(metadata_schema["properties"]) == numeric_fields
+    assert set(metadata_schema["required"]) == numeric_fields
+    assert output_defs["WeatherFieldMetadataData"]["properties"]["value_semantics"]
 
     first = await tool.fn(limit=1)
     second = await tool.fn(cursor=first.data.next_cursor, limit=1)  # type: ignore[union-attr]
+    single_page = await tool.fn(limit=96)
     actual = await tool.fn("actual")
     wrong_cursor = await tool.fn("actual", cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    forecast_cursor = first.data.next_cursor  # type: ignore[union-attr]
+    assert forecast_cursor is not None
+    tampered_cursor = ("A" if forecast_cursor[0] != "A" else "B") + forecast_cursor[1:]
+    tampered = await tool.fn(cursor=tampered_cursor)
+
+    for last_update, entries in (
+        (2, [point(3600, 21.0), point(7200, 22.0)]),
+        (1, [point(7200, 22.0), point(10800, 23.0)]),
+        (1, [point(3600, 21.0), point(7200, 23.0)]),
+    ):
+        records["forecast-state"] = StateRecord(
+            "forecast-state",
+            {"last_update": last_update, "entries": entries},
+            Freshness.STALE,
+            1_700_000_000.0,
+        )
+        expired = await tool.fn(cursor=forecast_cursor, limit=1)
+        assert expired.ok is False
+        assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+        assert "restart at page one" in expired.data.message  # type: ignore[union-attr]
+
+    fresh_first = await tool.fn(limit=1)
     records["forecast-state"] = StateRecord("forecast-state", None, Freshness.UNKNOWN, None)
     unavailable = await tool.fn()
 
     assert first.data.mode == "forecast"  # type: ignore[union-attr]
+    assert first.data.received_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
     assert first.data.items[0].at == "2009-01-01T01:00:00Z"  # type: ignore[union-attr]
     assert first.data.items[0].weather_type_text == "Clear"  # type: ignore[union-attr]
-    assert first.data.formats == {"temperature": "%.1f °C"}  # type: ignore[union-attr]
+    assert first.data.formats == dict(formats)  # type: ignore[union-attr]
+    assert first.data.items[0].temperature == 21.0  # type: ignore[union-attr]
+    assert first.data.items[0].solar_radiation == 100  # type: ignore[union-attr]
+    field_metadata = first.data.field_metadata.model_dump()  # type: ignore[union-attr]
+    assert set(field_metadata) == numeric_fields
+    expected_format_keys = {
+        "relative_humidity": "relativeHumidity",
+        "temperature": "temperature",
+        "wind_speed": "windSpeed",
+        "precipitation": "precipitation",
+        "barometric_pressure": "barometricPressure",
+    }
+    for field_name, source_key in expected_format_keys.items():
+        assert field_metadata[field_name]["source_format_key"] == source_key
+        assert field_metadata[field_name]["source_format"] == dict(formats)[source_key]
+    for field_name in numeric_fields - expected_format_keys.keys():
+        assert field_metadata[field_name]["source_format_key"] is None
+        assert field_metadata[field_name]["source_format"] is None
+    assert all(metadata["unit"] is None for metadata in field_metadata.values())
+    assert field_metadata["weather_type"]["value_semantics"] == "code"
+    assert field_metadata["solar_radiation"]["value_semantics"] == "unverified_source_value"
+    assert all(
+        metadata["value_semantics"] == "raw_source_value"
+        for field_name, metadata in field_metadata.items()
+        if field_name not in {"weather_type", "solar_radiation"}
+    )
     assert first.stale is True and second.data.next_cursor is None  # type: ignore[union-attr]
+    assert single_page.data.next_cursor is None  # type: ignore[union-attr]
+    assert fresh_first.ok is True
     assert len(actual.data.items) == 1  # type: ignore[union-attr]
     assert wrong_cursor.ok is False
     assert wrong_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert tampered.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert "restart at page one" in tampered.data.message  # type: ignore[union-attr]
     assert unavailable.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+    # Cache freshness and weather source age are independent on both modes.
+    assert actual.stale is False
+    assert actual.data.last_updated_at == "2009-01-01T00:00:01Z"  # type: ignore[union-attr]
+    assert actual.data.received_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
+    assert actual.observed_at not in {
+        actual.data.last_updated_at,  # type: ignore[union-attr]
+        actual.data.received_at,  # type: ignore[union-attr]
+    }
+    records["forecast-state"] = StateRecord(
+        "forecast-state",
+        {"last_update": 1_700_000_000 - 1_230_768_000, "entries": [point(3600, 21.0)]},
+        Freshness.STALE,
+        1_600_000_000.0,
+    )
+    recent_source = await tool.fn()
+    assert recent_source.stale is True
+    assert recent_source.data.last_updated_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
+    assert recent_source.data.received_at == "2020-09-13T12:26:40Z"  # type: ignore[union-attr]
+    assert recent_source.observed_at not in {
+        recent_source.data.last_updated_at,  # type: ignore[union-attr]
+        recent_source.data.received_at,  # type: ignore[union-attr]
+    }
+    records["actual-state"] = StateRecord(
+        "actual-state",
+        {"last_update": 1, "entries": [point(0, 20.0)]},
+        Freshness.CURRENT,
+        None,
+    )
+    unknown_receipt = await tool.fn("actual")
+    assert unknown_receipt.ok is True
+    assert unknown_receipt.data.received_at is None  # type: ignore[union-attr]
+    assert "received_at" in unknown_receipt.data.model_dump()  # type: ignore[union-attr]
+
+
+def test_weather_field_metadata_keeps_missing_source_formats_explicit() -> None:
+    metadata = tools_module._weather_field_metadata({"temperature": "%.1f °C"}).model_dump()
+
+    assert metadata["temperature"]["source_format"] == "%.1f °C"
+    for field_name, source_key in (
+        ("relative_humidity", "relativeHumidity"),
+        ("wind_speed", "windSpeed"),
+        ("precipitation", "precipitation"),
+        ("barometric_pressure", "barometricPressure"),
+    ):
+        assert metadata[field_name]["source_format_key"] == source_key
+        assert metadata[field_name]["source_format"] is None
 
 
 @pytest.mark.asyncio
@@ -1470,7 +3423,9 @@ async def test_alarm_clock_model_and_semantics_remain_read_only(
         def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
             return records[uuid]
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -1565,6 +3520,31 @@ async def test_get_control_notes_returns_only_runtime_notes(
     assert result.ok is True
     assert result.data.control_uuid == "control-1"  # type: ignore[union-attr]
     assert result.data.text == "User-authored note"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_control_notes_phases_share_envelope_trace(
+    monkeypatch: pytest.MonkeyPatch, fails: bool
+) -> None:
+    class Runtime:
+        async def get_control_notes(
+            self, _access: StoredAccessToken, _control_uuid: str
+        ) -> tuple[object, str]:
+            assert runtime_module._HISTORY_TRACE_ID.get() == "notes-trace"
+            if fails:
+                raise tools_module.ControlOperationError("temporarily_unavailable", "unavailable")
+            return object(), "note"
+
+    monkeypatch.setattr(tools_module, "uuid4", lambda: "notes-trace")
+    monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(READ_SCOPE))
+    server = FastMCP("notes-trace")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    result = await server._tool_manager.call_tool(
+        "loxone_get_control_notes", {"control_uuid": "control"}
+    )
+    assert result.trace_id == "notes-trace"
+    assert result.ok is not fails
 
 
 @pytest.mark.asyncio
@@ -1700,6 +3680,11 @@ async def test_hidden_controls_require_explicit_diagnosis_flag(
     described = await describe.fn("hidden-1", include_hidden=True)
     assert described.data.visibility == "hidden"  # type: ignore[union-attr]
     assert described.data.capabilities.allowed_actions == []  # type: ignore[union-attr]
+    assert (await describe.fn("hidden-1", view="history_targets")).data.error == "not_found"  # type: ignore[union-attr]
+    compact = await describe.fn("hidden-1", include_hidden=True, view="history_targets")
+    assert compact.data.visibility == "hidden"  # type: ignore[union-attr]
+    assert compact.data.states[0].uuid == "hidden-state-1"  # type: ignore[union-attr]
+    assert "allowed_actions" not in compact.data.capabilities.model_dump()  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -1806,3 +3791,144 @@ async def test_find_controls_filters_visibility_notes_favorite_and_room_group(
         visibility="direct", has_notes=True, is_favorite=True, room_group_uuid="group-1"
     )
     assert [item.uuid for item in result.data.items] == ["matching"]  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("reason", list(tools_module.AvailabilityReason))
+def test_availability_envelope_and_sanitized_diagnostic_chain(reason, tmp_path, caplog) -> None:
+    from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
+    from mcpserver.loxone.runtime import RuntimeUnavailable
+
+    tools_module._ERROR_LAST.clear()
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    phase = tools_module.AvailabilityPhase.LOAD
+    exc = RuntimeUnavailable(
+        "secret-token@192.0.2.9/hidden-control", reason=reason, phase=phase, retry_after_seconds=12
+    )
+    result = tools_module._availability_error(SystemStatusEnvelope, exc, trace_id="trace-safe")
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"
+    assert result.data.message == "Loxone runtime is temporarily unavailable"
+    assert result.data.diagnostic_code == reason.value
+    assert result.data.availability_phase == phase
+    assert result.trace_id == "trace-safe"
+    assert result.data.retry_after_seconds == (12 if reason.value == "local_rate_limit" else None)
+    assert "secret" not in result.model_dump_json()
+    assert "secret" not in caplog.text
+    path = tmp_path / "log/plugins/mcpserver/service.log"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "2026-10-01T00:00:00Z component=mcpserver.tools severity=WARNING "
+        + caplog.records[-1].getMessage()
+        + "\n",
+        encoding="utf-8",
+    )
+    event = LoxBerryDiagnostics(tmp_path.resolve()).service_events(trace_id="trace-safe")[0]
+    assert event["diagnostic_code"] == reason.value
+    assert event["availability_phase"] == phase.value
+    assert event["code"] == "temporarily_unavailable"
+
+
+def test_availability_warning_suppression_keeps_distinct_categories(caplog) -> None:
+    from mcpserver.loxone.runtime import RuntimeUnavailable
+
+    tools_module._ERROR_LAST.clear()
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    for reason in [
+        tools_module.AvailabilityReason.REFRESH_CONNECTION,
+        tools_module.AvailabilityReason.REFRESH_CONNECTION,
+        tools_module.AvailabilityReason.REFRESH_PROTOCOL,
+    ]:
+        tools_module._availability_error(
+            SystemStatusEnvelope,
+            RuntimeUnavailable("Miniserver structure refresh failed", reason=reason),
+        )
+    assert len(caplog.records) == 2
+    assert "structure_refresh_connection" in caplog.records[0].message
+    assert "structure_refresh_protocol" in caplog.records[1].message
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        "`error`",
+        "`message`",
+        "`diagnostic_code`",
+        "`trace_id`",
+        "target association",
+        "reduce\nconcurrent fan-out",
+        "at most once",
+        "Never automatically retry uncertain writes",
+        "Unknown causes remain unknown",
+    ],
+)
+def test_skill_retains_availability_evidence_and_bounds_read_retries(required) -> None:
+    assert required in read_skill_markdown()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "request rate limit exceeded",
+        "Miniserver structure refresh failed",
+        "the service is not configured",
+        "the project service is not configured",
+    ],
+)
+def test_availability_preserves_released_fixed_messages(message) -> None:
+    result = tools_module._availability_error(
+        SystemStatusEnvelope, runtime_module.RuntimeUnavailable(message)
+    )
+    assert result.data.message == message
+    assert result.data.diagnostic_code == "availability_unknown"
+    assert result.data.availability_phase == "unknown"
+    assert result.data.retry_after_seconds is None
+
+
+@pytest.mark.parametrize("reason", list(tools_module.AvailabilityReason))
+def test_read_adapter_retains_wrapped_runtime_availability(reason) -> None:
+    try:
+        try:
+            raise runtime_module.RuntimeUnavailable(
+                "private-token",
+                reason=reason,
+                phase=tools_module.AvailabilityPhase.LOAD,
+                retry_after_seconds=8,
+            )
+        except runtime_module.RuntimeUnavailable as cause:
+            raise runtime_module.ControlOperationError(
+                "temporarily_unavailable", str(cause)
+            ) from cause
+    except runtime_module.ControlOperationError as exc:
+        result = tools_module._operation_error(SystemStatusEnvelope, exc, trace_id="wrapped-trace")
+    assert result.data.error == "temporarily_unavailable"
+    assert result.data.diagnostic_code == reason.value
+    assert result.data.availability_phase == "structure_load"
+    assert result.trace_id == "wrapped-trace"
+    assert "private-token" not in result.model_dump_json()
+    assert result.data.retry_after_seconds == (8 if reason.value == "local_rate_limit" else None)
+
+
+@pytest.mark.asyncio
+async def test_notes_budget_error_retains_released_code_and_retry(monkeypatch) -> None:
+    from collections import defaultdict, deque
+    from unittest.mock import AsyncMock
+
+    runtime = object.__new__(runtime_module.LoxoneRuntime)
+    runtime._rate = defaultdict(deque, {"family": deque([100.25])})
+    runtime._rate_limit = 1
+    runtime._parallel = asyncio.Semaphore(1)
+    runtime._prune_rate_state = lambda _now: None
+    runtime._require_access = AsyncMock()
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 140.0)
+    monkeypatch.setattr(tools_module, "get_access_token", lambda: _loxberry_access(READ_SCOPE))
+    server = FastMCP("notes-budget-contract")
+    register_read_tools(server, runtime)
+    tool = server._tool_manager.get_tool("loxone_get_control_notes")
+    result = await tool.fn("visible-control")
+    assert not result.ok
+    assert result.data.error == "rate_limited"
+    assert result.data.message == "request rate limit exceeded"
+    assert result.data.diagnostic_code == "local_rate_limit"
+    assert result.data.availability_phase == "local_budget"
+    assert result.data.retry_after_seconds == 21
+    assert result.trace_id

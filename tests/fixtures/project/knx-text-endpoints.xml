@@ -1,0 +1,22 @@
+<ControlList>
+  <C Type="Logic" U="source"><Co U="source-output"/></C>
+  <C Type="EIBtextsensor" U="text-sensor" EibAddr="7/3/10">
+    <Co K="Q" U="text-output"/>
+  </C>
+  <C Type="Logic" U="consumer">
+    <Co K="I" U="consumer-input"><In Input="text-output"/></Co>
+  </C>
+  <C Type="EIBtextactor" U="text-actor-one" EibAddr="7/3/11">
+    <Co K="I" U="text-actor-one-input"><In Input="source-output"/></Co>
+  </C>
+  <C Type="EIBtextactor" U="text-actor-two" EibAddr="7/3/12">
+    <Co K="I" U="text-actor-two-input"><In Input="source-output"/></Co>
+  </C>
+  <C Type="EIBextactor" U="ext-actor-zero" EibAddr="7/3/13:0" Extra="private-value">
+    <Co K="I" U="ext-actor-zero-input"><In Input="source-output"/></Co>
+  </C>
+  <C Type="EIBextactor" U="ext-actor-one" EibAddr="7/3/13:1">
+    <Co K="I" U="ext-actor-one-input"><In Input="source-output"/></Co>
+  </C>
+  <C Type="EIBunknown" U="unsupported" EibAddr="7/3/14"/>
+</ControlList>

@@ -29,14 +29,41 @@ def test_changed_packaging_selects_package_contract_tests() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "path", ["src/mcpserver/tools.py", "src/mcpserver/loxone/project/worker.py"]
+)
+def test_lighting_integration_paths_select_domain_regressions(path: str) -> None:
+    assert "tests/test_lighting_analysis.py" in _pytest_targets(create_plan("changed", (path,)))
+
+
 def test_changed_ui_selects_only_affected_ui_groups() -> None:
     plan = create_plan("changed", ("webfrontend/htmlauth/explorer.js",))
 
     assert plan.effective_profile == "changed"
     assert _pytest_targets(plan) == {
+        "tests/test_explorer_behavior.py",
+        "tests/test_explorer_modules.py",
         "tests/test_explorer_ui.py",
         "tests/test_oauth.py",
     }
+
+    modules = create_plan("changed", ("webfrontend/htmlauth/explorer-auth.js",))
+    assert modules.effective_profile == "changed"
+    assert _pytest_targets(modules) == _pytest_targets(plan)
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "bin/lib/MCPServer/RequestSecurity.pm",
+        "webfrontend/htmlauth/index.cgi",
+        "webfrontend/htmlauth/event_history.cgi",
+    ),
+)
+def test_changed_admin_origin_guard_selects_security_tests(path: str) -> None:
+    plan = create_plan("changed", (path,))
+    assert plan.effective_profile == "changed"
+    assert "tests/test_admin_request_security.py" in _pytest_targets(plan)
 
 
 def test_shared_language_files_select_both_ui_groups() -> None:
@@ -46,10 +73,34 @@ def test_shared_language_files_select_both_ui_groups() -> None:
     assert _pytest_targets(plan) == {
         "tests/test_admin.py",
         "tests/test_admin_ui.py",
+        "tests/test_emergency_options_cache.py",
         "tests/test_apache_config.py",
         "tests/test_explorer_ui.py",
+        "tests/test_explorer_modules.py",
+        "tests/test_explorer_behavior.py",
+        "tests/test_event_history_admin.py",
+        "tests/test_event_history_selector_cache.py",
         "tests/test_oauth.py",
     }
+
+
+@pytest.mark.parametrize(
+    "changed_file",
+    (
+        "webfrontend/htmlauth/event-history/charts.js",
+        "webfrontend/htmlauth/event-history/chart-cache.js",
+        "webfrontend/htmlauth/event-history/api.js",
+        "webfrontend/htmlauth/event-history/charts.css",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",
+        "webfrontend/htmlauth/mcp-ui.css",
+        "templates/event-history-charts.html",
+    ),
+)
+def test_changed_fixture_assets_select_chart_harness(changed_file: str) -> None:
+    plan = create_plan("changed", (changed_file,))
+    assert plan.effective_profile == "changed"
+    assert "tests/test_chart_measurement.py" in _pytest_targets(plan)
 
 
 def test_changed_documentation_uses_only_diff_check() -> None:
@@ -59,12 +110,65 @@ def test_changed_documentation_uses_only_diff_check() -> None:
     assert plan.commands == (("git", "diff", "--check"),)
 
 
+def test_changed_explorer_harness_selects_dom_flows() -> None:
+    plan = create_plan("changed", ("tests/js/explorer-harness.cjs",))
+
+    assert plan.effective_profile == "changed"
+    assert _pytest_targets(plan) == {"tests/test_explorer_behavior.py"}
+
+
+@pytest.mark.parametrize(
+    "changed_file",
+    (
+        "tests/js/explorer-harness.cjs",
+        "tools/browser/chart-probe.js",
+        "tests/test_chart_measurement.py",
+    ),
+)
+def test_changed_dom_missing_dependency_is_incomplete(
+    changed_file: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plan = create_plan("changed", (changed_file,))
+    monkeypatch.setattr(
+        test_runner, "_dom_runtime_issues", lambda: ("Explorer DOM tests require npm ci",)
+    )
+    monkeypatch.setattr(
+        test_runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("commands must not run without DOM prerequisites"),
+    )
+
+    assert test_runner._run(plan) == 2
+    assert "INCOMPLETE=Explorer DOM tests require npm ci" in capsys.readouterr().err
+
+
+def test_explorer_dom_preflight_checks_node_and_jsdom(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(test_runner.shutil, "which", lambda _name: "node")
+    results = iter(
+        (
+            subprocess.CompletedProcess(("node", "--version"), 0, "v20.0.0", ""),
+            subprocess.CompletedProcess(("node", "--version"), 0, "v24.19.0", ""),
+            subprocess.CompletedProcess(("node", "-e"), 1, "", "missing"),
+        )
+    )
+    monkeypatch.setattr(test_runner.subprocess, "run", lambda *_args, **_kwargs: next(results))
+
+    assert test_runner._dom_runtime_issues() == (
+        "Node.js 24.15 or newer is required for Explorer DOM tests",
+    )
+    assert test_runner._dom_runtime_issues() == (
+        "Explorer DOM tests require npm ci --ignore-scripts",
+    )
+
+
 def test_packaged_skill_markdown_selects_contract_tests() -> None:
     plan = create_plan("changed", ("src/mcpserver/skills/using-loxberry-mcp/SKILL.md",))
 
     assert plan.effective_profile == "changed"
     assert _pytest_targets(plan) == {
         "tests/test_plugin_package.py",
+        "tests/test_server.py",
+        "tests/test_skill_sections.py",
         "tests/test_tools.py",
     }
 
@@ -180,3 +284,10 @@ def test_documented_test_cli_starts_without_pythonpath() -> None:
     )
 
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "path", ["docs/user/analysis-support.de.md", "docs/user/analysis-support.en.md"]
+)
+def test_support_matrix_changes_select_versioned_acceptance_contract(path: str) -> None:
+    assert "tests/test_analysis_acceptance.py" in _pytest_targets(create_plan("changed", (path,)))

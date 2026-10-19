@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
-from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass, field
-from typing import Any, Final
+import ssl
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
+from functools import cached_property
+from typing import Any, Final, Protocol
 from urllib.parse import quote
 from uuid import UUID
 
@@ -19,6 +25,7 @@ from websockets.typing import Subprotocol
 
 from mcpserver.loxone.endpoint import MiniserverEndpoint as MiniserverEndpoint
 from mcpserver.loxone.events import (
+    LoxonePayloadTooLarge,
     LoxoneProtocolError,
     MessageHeader,
     MessageType,
@@ -37,11 +44,27 @@ from mcpserver.loxone.security import (
     token_hmac,
 )
 from mcpserver.loxone.structure import LoxoneStructureError, normalize_structure
+from mcpserver.loxone.uuid import normalize_loxone_uuid
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES: Final = 8 * 1024 * 1024
 _DEFAULT_TIMEOUT_SECONDS: Final = 10.0
 _APP_PERMISSION: Final = 4
+
+
+class _StructureLookup(Protocol):
+    def _find_received_structure(self, parse_identity: str) -> LoxoneStructure | None: ...
+
+    def _has_received_structure(self, username: str) -> bool: ...
+
+
+def _structure_parse_identity(payload: str, context: tuple[str | int, ...]) -> str:
+    digest = hashlib.sha256(json.dumps(context, separators=(",", ":")).encode())
+    digest.update(b"\0")
+    digest.update(payload.encode("utf-8"))
+    return digest.hexdigest()
+
+
 _PERCENT_COMMAND = r"(?:100(?:\.0+)?|(?:[0-9]|[1-9][0-9])(?:\.[0-9]+)?)"
 _CONTROL_COMMAND = re.compile(
     rf"(?:on|off|pulse|reset|FullUp|FullDown|shade|stop|auto|NoAuto|"
@@ -71,6 +94,18 @@ class LoxoneCommandRejected(LoxoneConnectionError):
         self.response_code = response_code
 
 
+class LoxoneAuthenticationRejected(LoxoneCommandRejected):
+    """A definite rejection at an authentication command boundary."""
+
+
+class LoxoneCredentialAuthenticationRejected(LoxoneAuthenticationRejected):
+    """The Miniserver rejected getjwt credentials."""
+
+
+class LoxoneTokenAuthenticationRejected(LoxoneAuthenticationRejected):
+    """The Miniserver rejected authwithtoken, rather than a later command."""
+
+
 class LoxoneSourceIpBlocked(LoxoneConnectionError):
     """The Miniserver temporarily blocked this source after failed logins."""
 
@@ -81,8 +116,7 @@ class _WebSocketIdleTimeout(TimeoutError):
 
 def _loxone_uuid(value: UUID) -> str:
     """Serialize a standard UUID using Loxone's 8-4-4-16 representation."""
-    first, second, third, fourth, fifth = str(value).split("-")
-    return f"{first}-{second}-{third}-{fourth}{fifth}"
+    return normalize_loxone_uuid(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +182,7 @@ async def _receive_websocket(
         if isinstance(payload, str):
             actual_sizes = {len(payload), len(payload.encode("utf-8"))}
             if max(actual_sizes) > max_payload_bytes:
-                raise LoxoneProtocolError("WebSocket text payload exceeds the configured limit")
+                raise LoxonePayloadTooLarge("WebSocket text payload exceeds the configured limit")
             if header.payload_length not in actual_sizes:
                 raise LoxoneProtocolError("WebSocket payload length does not match its header")
             return header, payload
@@ -162,7 +196,15 @@ async def _close_websocket(websocket: ClientConnection, timeout_seconds: float) 
     try:
         await asyncio.wait_for(websocket.close(), timeout=timeout_seconds)
     except (OSError, TimeoutError) as exc:  # pragma: no cover - transport dependent
+        transport = getattr(websocket, "transport", None)
+        if transport is not None:
+            transport.abort()
         _LOGGER.debug("WebSocket close failed: %s", type(exc).__name__)
+    except asyncio.CancelledError:
+        transport = getattr(websocket, "transport", None)
+        if transport is not None:
+            transport.abort()
+        raise
 
 
 async def _websocket_command(
@@ -191,11 +233,18 @@ async def _websocket_command(
         raise LoxoneProtocolError("Miniserver command response is not text")
     try:
         response = json.loads(payload)
-    except json.JSONDecodeError as exc:
+    except (ValueError, RecursionError) as exc:
         raise LoxoneProtocolError("Miniserver command response is not JSON") from exc
     if not isinstance(response, Mapping):
         raise LoxoneProtocolError("Miniserver command response is invalid")
     return _response_value(response)
+
+
+@dataclass(slots=True)
+class _PublicCertificateScope:
+    endpoint: MiniserverEndpoint
+    active: bool = True
+    pem: str | None = None
 
 
 class LoxoneClient:
@@ -212,6 +261,7 @@ class LoxoneClient:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
+        structure_lookup: _StructureLookup | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.client_uuid = client_uuid
@@ -221,6 +271,23 @@ class LoxoneClient:
         self.max_structure_controls = max_structure_controls
         self.max_structure_state_references = max_structure_state_references
         self.max_structure_depth = max_structure_depth
+        self._structure_lookup = structure_lookup
+        self._certificate_scope: ContextVar[_PublicCertificateScope | None] = ContextVar(
+            "loxone_public_certificate_scope", default=None
+        )
+
+    @contextmanager
+    def public_certificate_scope(self) -> Iterator[None]:
+        """Reuse only public certificate bytes within one admitted project read."""
+        scope = _PublicCertificateScope(self.endpoint)
+        token = self._certificate_scope.set(scope)
+        try:
+            yield
+        finally:
+            # Child tasks can retain the context after their parent has returned.
+            scope.active = False
+            scope.pem = None
+            self._certificate_scope.reset(token)
 
     async def _get_json(self, path: str) -> Mapping[str, Any]:
         body, _encoding = await self._get_bytes(path)
@@ -239,6 +306,11 @@ class LoxoneClient:
         except (LookupError, UnicodeDecodeError):
             raise LoxoneConnectionError("Miniserver request failed") from None
 
+    @cached_property
+    def _http_verify(self) -> ssl.SSLContext:
+        """Reuse public trust configuration, never connections or authorization."""
+        return httpx.create_ssl_context(trust_env=False)
+
     async def _get_bytes(self, path: str) -> tuple[bytes, str]:
         try:
             async with (
@@ -247,6 +319,7 @@ class LoxoneClient:
                     follow_redirects=False,
                     timeout=self.timeout_seconds,
                     trust_env=False,
+                    verify=self._http_verify,
                 ) as client,
                 client.stream("GET", path) as response,
             ):
@@ -288,6 +361,7 @@ class LoxoneClient:
                         follow_redirects=False,
                         timeout=limits.timeout_seconds,
                         trust_env=False,
+                        verify=self._http_verify,
                     ) as http,
                     http.stream("GET", path, headers={"Accept-Encoding": "identity"}) as response,
                 ):
@@ -309,6 +383,14 @@ class LoxoneClient:
             raise ProjectError("project_timeout") from None
         except Exception:
             raise ProjectError("project_transport_error") from None
+
+    async def project_marker(self, token: LoxoneToken) -> str:
+        """Check the active project's authenticated change marker."""
+        session = await self.open_session(token)
+        try:
+            return await session.structure_version()
+        finally:
+            await session.close()
 
     async def probe(self) -> ProbeResult:
         value = _response_value(await self._get_json("/jdev/cfg/apiKey"))
@@ -360,11 +442,18 @@ class LoxoneClient:
             raise LoxoneConnectionError("Miniserver returned an invalid public key") from exc
 
     async def websocket_public_key(self) -> str:
+        scope = self._certificate_scope.get()
+        endpoint = self.endpoint
+        if scope is not None and scope.active and scope.endpoint == endpoint and scope.pem:
+            return scope.pem
         value = await self._get_text("/jdev/sys/getcertificate")
         try:
-            return normalize_loxone_certificate_chain_pem(value)
+            pem = normalize_loxone_certificate_chain_pem(value)
         except LoxoneSecurityError as exc:
             raise LoxoneConnectionError("Miniserver returned an invalid certificate chain") from exc
+        if scope is not None and scope.active and scope.endpoint == endpoint:
+            scope.pem = pem
+        return pem
 
     async def _connect_websocket(self) -> ClientConnection:
         try:
@@ -375,6 +464,9 @@ class LoxoneClient:
                     max_size=self.max_response_bytes,
                     open_timeout=self.timeout_seconds,
                     close_timeout=self.timeout_seconds,
+                    # Gen. 1 can return an unrelated file after RFC transport pings.
+                    # Session owners retain their bounded Loxone application keepalive.
+                    ping_interval=None,
                     proxy=None,
                 ),
                 timeout=self.timeout_seconds,
@@ -423,14 +515,21 @@ class LoxoneClient:
                 f"jdev/sys/getjwt/{credential_hash}/{escaped_user}/{_APP_PERMISSION}/"
                 f"{_loxone_uuid(self.client_uuid)}/{info}"
             )
-            token_value = await _websocket_command(
-                websocket,
-                encryptor,
-                command,
-                encrypted=not self.endpoint.secure,
-                timeout_seconds=self.timeout_seconds,
-                max_payload_bytes=self.max_response_bytes,
-            )
+            try:
+                token_value = await _websocket_command(
+                    websocket,
+                    encryptor,
+                    command,
+                    encrypted=not self.endpoint.secure,
+                    timeout_seconds=self.timeout_seconds,
+                    max_payload_bytes=self.max_response_bytes,
+                )
+            except LoxoneCommandRejected as exc:
+                if exc.response_code != "401":
+                    raise
+                raise LoxoneCredentialAuthenticationRejected(
+                    "Miniserver rejected credential authentication", response_code="401"
+                ) from None
         finally:
             await _close_websocket(websocket, self.timeout_seconds)
         if not isinstance(token_value, Mapping):
@@ -456,13 +555,26 @@ class LoxoneClient:
             await session.close()
             token.destroy()
 
+    def _record_project_session_timing(self, phase: str, started: float) -> None:
+        scope = self._certificate_scope.get()
+        if scope is not None and scope.active and scope.endpoint == self.endpoint:
+            _LOGGER.info(
+                "component=project_load phase=%s duration_ms=%.1f",
+                phase,
+                (time.monotonic() - started) * 1000,
+            )
+
     async def open_session(self, token: LoxoneToken) -> LoxoneWebSocketSession:
         if not token.value:
             raise LoxoneConnectionError("Loxone token is no longer available")
         public_key = ""
+        started = time.monotonic()
         if not self.endpoint.secure:
             public_key = await self.websocket_public_key()
+        self._record_project_session_timing("session_certificate", started)
+        started = time.monotonic()
         websocket = await self._connect_websocket()
+        self._record_project_session_timing("session_connect", started)
         session = LoxoneWebSocketSession(
             websocket,
             public_key=public_key,
@@ -473,11 +585,26 @@ class LoxoneClient:
             max_structure_controls=self.max_structure_controls,
             max_structure_state_references=self.max_structure_state_references,
             max_structure_depth=self.max_structure_depth,
+            structure_lookup=self._structure_lookup,
+            structure_namespace=self.endpoint.origin,
         )
         try:
+            started = time.monotonic()
             await session.authenticate()
-        except Exception:
-            await session.close()
+            self._record_project_session_timing("session_authenticate", started)
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                websocket.transport.abort()
+                raise
+            try:
+                await session.close()
+            except asyncio.CancelledError:
+                # The bounded close helper already aborted the transport.
+                raise
+            except BaseException:
+                websocket.transport.abort()
+                raise
+            websocket.transport.abort()
             raise
         return session
 
@@ -497,6 +624,8 @@ class LoxoneWebSocketSession:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
+        structure_lookup: _StructureLookup | None = None,
+        structure_namespace: str = "",
     ) -> None:
         self._websocket = websocket
         self._public_key = public_key
@@ -507,6 +636,8 @@ class LoxoneWebSocketSession:
         self._max_structure_controls = max_structure_controls
         self._max_structure_state_references = max_structure_state_references
         self._max_structure_depth = max_structure_depth
+        self._structure_lookup = structure_lookup
+        self._structure_namespace = structure_namespace
         self._encryptor = CommandEncryptor.generate()
 
     async def _receive(self) -> tuple[MessageHeader, str | bytes | None]:
@@ -526,15 +657,50 @@ class LoxoneWebSocketSession:
             max_payload_bytes=self._max_payload,
         )
 
+    async def system_messages(self, center_uuid: str) -> Any:
+        """Read retained entries without changing read/acknowledgement state."""
+        from mcpserver.loxone.system_messages import identifier
+
+        if identifier(center_uuid) is None:
+            raise ValueError("invalid message center identifier")
+        return await self._command(
+            f"jdev/sps/io/{center_uuid}/getEntries/2", encrypted=not self._secure_transport
+        )
+
+    async def confirm_system_message(
+        self, center_uuid: str, entry_uuid: str, action_id: int
+    ) -> None:
+        """Execute one separately authorized, version-bound Message Center action."""
+        from mcpserver.loxone.system_messages import identifier
+
+        if (
+            identifier(center_uuid) is None
+            or identifier(entry_uuid) is None
+            or type(action_id) is not int
+            or action_id not in {1003, 1005}
+        ):
+            raise ValueError("invalid message confirmation")
+        await self._command(
+            f"jdev/sps/io/{center_uuid}/action/{entry_uuid}/{action_id}",
+            encrypted=not self._secure_transport,
+        )
+
     async def authenticate(self) -> None:
         if not self._secure_transport:
             session_key = self._encryptor.encrypted_session_key(self._public_key)
             await self._command(f"jdev/sys/keyexchange/{session_key}")
         credential = await self._token_credential()
-        await self._command(
-            f"authwithtoken/{credential}/{quote(self._token.username, safe='')}",
-            encrypted=not self._secure_transport,
-        )
+        try:
+            await self._command(
+                f"authwithtoken/{credential}/{quote(self._token.username, safe='')}",
+                encrypted=not self._secure_transport,
+            )
+        except LoxoneCommandRejected as exc:
+            if exc.response_code != "401":
+                raise
+            raise LoxoneTokenAuthenticationRejected(
+                "Miniserver rejected token authentication", response_code=exc.response_code
+            ) from None
 
     async def _token_credential(self) -> str:
         if not self._secure_transport:
@@ -549,26 +715,65 @@ class LoxoneWebSocketSession:
             raise LoxoneConnectionError("Miniserver returned an invalid token hashing key")
         return token_hmac(self._token.value, key, self._token.hash_algorithm)
 
-    async def load_structure(self) -> LoxoneStructure:
+    async def load_structure(
+        self,
+        *,
+        receive: Callable[[], Awaitable[tuple[MessageHeader, str | bytes | None]]] | None = None,
+    ) -> LoxoneStructure:
         await self._websocket.send("data/LoxAPP3.json")
-        header, payload = await self._receive()
+        header, payload = await (receive() if receive is not None else self._receive())
         if header.message_type not in {MessageType.TEXT, MessageType.BINARY_FILE} or not isinstance(
             payload, str
         ):
             raise LoxoneProtocolError("Miniserver structure response is not text")
+        parse_identity = ""
+        context = (
+            "structure-normalization-v1",
+            self._structure_namespace,
+            self._token.username,
+            self._max_payload,
+            self._max_structure_controls,
+            self._max_structure_state_references,
+            self._max_structure_depth,
+        )
+        # Only a complete independently received response may identify reuse.
+        if self._structure_lookup is not None and self._structure_lookup._has_received_structure(
+            self._token.username
+        ):
+            parse_identity = _structure_parse_identity(payload, context)
+            candidate = self._structure_lookup._find_received_structure(parse_identity)
+            if (
+                candidate is not None
+                and candidate.parse_identity == parse_identity
+                and candidate.identity.username == self._token.username
+            ):
+                _LOGGER.debug("component=structure_normalization outcome=reused")
+                return candidate
         try:
             document = json.loads(payload)
         except json.JSONDecodeError as exc:
             raise LoxoneProtocolError("Miniserver structure response is not JSON") from exc
         if not isinstance(document, Mapping):
             raise LoxoneProtocolError("Miniserver structure response is invalid")
+        identity_future = None
+        if self._structure_lookup is not None and not parse_identity:
+            # With no eligible owner there can be no hit. Hash concurrently with
+            # normalization instead of adding hashing time to the first cold load.
+            identity_future = asyncio.get_running_loop().run_in_executor(
+                None, _structure_parse_identity, payload, context
+            )
         try:
-            return normalize_structure(
+            structure = normalize_structure(
                 document,
                 username=self._token.username,
                 max_controls=self._max_structure_controls,
                 max_state_references=self._max_structure_state_references,
                 max_depth=self._max_structure_depth,
+            )
+            if identity_future is not None:
+                parse_identity = await identity_future
+            return (
+                replace(structure, parse_identity=parse_identity) if parse_identity else structure
             )
         except LoxoneStructureError as exc:
             _LOGGER.error(
@@ -576,6 +781,9 @@ class LoxoneWebSocketSession:
                 str(exc).replace(" ", "_"),
             )
             raise LoxoneProtocolError("Miniserver structure response is invalid") from exc
+        finally:
+            if identity_future is not None:
+                identity_future.cancel()
 
     async def structure_version(self) -> str:
         """Return the current LoxAPP3 modification marker without downloading it."""
@@ -627,6 +835,38 @@ class LoxoneWebSocketSession:
         await self._command(
             f"jdev/sps/io/{quote(action_uuid, safe='')}/{quote(command, safe='/')}",
             encrypted=not self._secure_transport,
+        )
+
+    async def pv_forecast(self, action_uuid: str) -> Any:
+        """Read the fixed PVPF getForecasts command (Structure File 17.1)."""
+        from mcpserver.loxone.pv_forecast_hours import MAX_BYTES
+        from mcpserver.loxone.uuid import normalize_loxone_uuid
+
+        action_uuid = normalize_loxone_uuid(action_uuid)
+        return await _websocket_command(
+            self._websocket,
+            self._encryptor,
+            f"jdev/sps/io/{action_uuid}/getForecasts",
+            encrypted=not self._secure_transport,
+            timeout_seconds=min(self._timeout, 10.0),
+            max_payload_bytes=min(self._max_payload, MAX_BYTES),
+        )
+
+    async def native_efm_result(self, action_uuid: str, view: str) -> Any:
+        """Read one fixed evidenced EFM view with strict transport bounds."""
+        from mcpserver.loxone.native_efm import MAX_OUTER_BYTES, VIEWS
+        from mcpserver.loxone.uuid import normalize_loxone_uuid
+
+        action_uuid = normalize_loxone_uuid(action_uuid)
+        if view not in VIEWS:
+            raise ValueError("invalid native EFM view")
+        return await _websocket_command(
+            self._websocket,
+            self._encryptor,
+            f"jdev/sps/io/{action_uuid}/get/{view}",
+            encrypted=not self._secure_transport,
+            timeout_seconds=min(self._timeout, 10.0),
+            max_payload_bytes=min(self._max_payload, MAX_OUTER_BYTES),
         )
 
     async def control_history(self, action_uuid: str) -> list[Mapping[str, Any]]:

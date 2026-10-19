@@ -1,0 +1,9 @@
+<P>
+  <C Type="LoxOCEANAsensor" U="00000000-0000-0000-0000-000000000001"><Co K="AQ" U="source-output"/></C>
+  <C Type="InputRef" U="reference" Ref="00000000-0000-0000-0000-000000000001"><Co K="AQ" U="reference-output"/></C>
+  <C Type="State" U="state">
+    <Co K="I2" U="state-input"><In Input="reference-output"/></Co>
+    <Co K="AQ" U="state-output"/>
+  </C>
+  <C Type="WindowsMonitor" U="monitor"><Co K="Wh" U="monitor-input"><In Input="state-output"/></Co></C>
+</P>

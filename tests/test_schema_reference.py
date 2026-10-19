@@ -4,6 +4,10 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
+from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
+
 from mcpserver.schema_reference import (
     REFERENCE_HTML_PATH,
     REFERENCE_JSON_PATH,
@@ -12,27 +16,95 @@ from mcpserver.schema_reference import (
     tool_schema_catalog,
     write_schema_reference,
 )
+from mcpserver.tools import register_observability_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit,valid", [(1, True), (50, True), (0, False), (51, False)])
+async def test_observability_published_limit_matches_validation(limit: int, valid: bool) -> None:
+    server = FastMCP("observability-contract")
+    register_observability_tools(server, None, None)
+    published = next(
+        tool for tool in await server.list_tools() if tool.name == "loxone_analyze_observability"
+    )
+    reference = next(
+        tool
+        for tool in json.loads(schema_reference_json(VERSION))["tools"]
+        if tool["name"] == published.name
+    )
+    assert reference["inputSchema"] == published.inputSchema
+    bounds = published.inputSchema["properties"]["limit"]
+    assert bounds["minimum"] == 1
+    assert bounds["maximum"] == 50
+    assert bounds["default"] == 20
+    assert bounds["type"] == "integer"
+
+    tool = server._tool_manager.get_tool(published.name)
+    assert tool is not None
+    arguments = {
+        "target_identifier": "control",
+        "target_type": "runtime_control_uuid",
+        "direction": "upstream",
+        "start": "2026-09-01T00:00:00Z",
+        "end": "2026-09-02T00:00:00Z",
+        "limit": limit,
+    }
+    if valid:
+        assert tool.fn_metadata.arg_model.model_validate(arguments).limit == limit
+    else:
+        with pytest.raises(ValidationError) as error:
+            tool.fn_metadata.arg_model.model_validate(arguments)
+        assert error.value.errors()[0]["loc"] == ("limit",)
+        assert error.value.errors()[0]["type"] == (
+            "greater_than_equal" if limit == 0 else "less_than_equal"
+        )
+
+
 EXPECTED_TOOLS = {
+    "loxberry_save_installation_profile",
+    "loxberry_delete_installation_profile",
+    "loxberry_get_knx_catalog",
+    "loxberry_get_knx_correction_drafts",
+    "loxberry_prepare_knx_corrections",
+    "loxberry_apply_knx_corrections",
+    "loxone_analyze_opening_contacts",
+    "loxone_list_event_history_sources",
     "loxberry_clear_statistics_cache",
+    "loxberry_add_event_history_source",
+    "loxberry_list_event_history_sources",
+    "loxberry_purge_event_history_source",
+    "loxberry_remove_event_history_source",
     "loxberry_get_plugin_status",
     "loxberry_get_service_health",
     "loxberry_get_system_status",
     "loxberry_list_service_events",
-    "loxberry_list_miniserver_auth_events",
+    "loxone_list_authentication_events",
     "loxone_analyze_project",
+    "loxone_analyze_observability",
     "loxone_describe_control",
     "loxone_describe_project_object",
     "loxone_find_controls",
     "loxone_find_project_objects",
     "loxone_get_control_history",
+    "loxone_get_event_history",
+    "loxone_analyze_history",
+    "loxone_plan_loads",
     "loxone_get_control_notes",
     "loxone_get_project_status",
     "loxone_get_room_snapshot",
     "loxone_get_skill_guide",
+    "loxone_get_installation_profile",
+    "loxone_get_state_semantics",
+    "loxone_get_active_alerts",
+    "loxone_get_system_messages",
+    "loxone_get_attention_overview",
+    "loxone_get_notifications",
+    "loxone_preview_system_message_confirmation",
+    "loxone_confirm_system_message",
+    "loxone_read_controls",
     "loxone_get_states",
     "loxone_get_statistics",
     "loxone_get_structure_overview",
@@ -44,6 +116,30 @@ EXPECTED_TOOLS = {
     "loxone_operate_control",
     "loxone_trace_project_logic",
 }
+
+
+@pytest.mark.asyncio
+async def test_observability_mapping_coverage_is_required_in_published_and_generated_schema():
+    server = FastMCP("observability-coverage-contract")
+    register_observability_tools(server, None, None)
+    published = next(
+        tool for tool in await server.list_tools() if tool.name == "loxone_analyze_observability"
+    )
+    reference = next(
+        tool for tool in tool_schema_catalog(VERSION)["tools"] if tool["name"] == published.name
+    )
+    assert published.outputSchema == reference["outputSchema"]
+    definitions = reference["outputSchema"]["$defs"]
+    assert "mapping_coverage" in definitions["ObservabilityData"]["required"]
+    coverage = definitions["ObservabilityMappingCoverageData"]
+    counts = {"exact_runtime_controls", "ambiguous_project_objects", "unmapped_project_objects"}
+    assert set(coverage["required"]) == counts | {"complete", "truncated"}
+    assert set(coverage["properties"]) == set(coverage["required"])
+    for field in counts:
+        assert coverage["properties"][field]["type"] == "integer"
+        assert coverage["properties"][field]["minimum"] == 0
+    for field in ("complete", "truncated"):
+        assert coverage["properties"][field]["type"] == "boolean"
 
 
 def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
@@ -59,6 +155,103 @@ def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
         assert tool["inputSchema"]["type"] == "object"
         assert tool["outputSchema"]["type"] == "object"
         assert tool["outputSchema"]["properties"]["data"]["anyOf"]
+    catalog_tool = next(tool for tool in tools if tool["name"] == "loxberry_get_knx_catalog")
+    assert catalog_tool["_meta"] == {"requiredScopes": ["loxone:read", "loxberry:knx:read"]}
+
+
+def test_window_monitor_summary_is_in_generated_description_contract() -> None:
+    tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
+    states = tools["loxone_get_states"]["outputSchema"]["$defs"]["StateData"]["properties"]
+    assert "WindowMonitor contact states" in states["semantic_value"]["description"]
+    definitions = tools["loxone_describe_control"]["outputSchema"]["$defs"]
+    assert "window_monitor_summary" in definitions["ControlModelData"]["properties"]
+    analysis = tools["loxone_analyze_opening_contacts"]["outputSchema"]["$defs"]
+    assert analysis["OpeningItemData"]["properties"]["decoded_state"]["default"] is None
+    state = analysis["OpeningStateData"]["properties"]
+    assert "unavailable" in state["freshness"]["enum"]
+    for field in ("decoding_complete", "mapping_complete", "decoding_truncated"):
+        assert state[field]["default"] is None
+    summary = definitions["WindowMonitorSummaryData"]["properties"]
+    assert set(summary) == {
+        "total",
+        "returned",
+        "omitted",
+        "truncated",
+        "diagnostics",
+        "resolved",
+        "partially_resolved",
+        "unresolved",
+    }
+    assert "malformed" in summary["returned"]["description"]
+    assert "invalid_window_monitor_collection" in str(summary["diagnostics"])
+    item = definitions["WindowMonitorItemData"]["properties"]
+    assert item["resolution_status"]["enum"] == ["resolved", "partially_resolved", "unresolved"]
+    assert item["room_consistency"]["enum"] == ["match", "mismatch", "unknown"]
+    assert set(item["diagnostics"]["items"]["enum"]) == {
+        "invalid_window_monitor_entry",
+        "invalid_name",
+        "invalid_install_place",
+        "invalid_control_reference",
+        "invalid_room_reference",
+        "missing_control_reference",
+        "control_reference_unavailable",
+        "missing_room_reference",
+        "room_reference_unavailable",
+        "room_reference_mismatch",
+    }
+
+
+def test_describe_schema_publishes_minimal_state_refs_contract() -> None:
+    describe = next(
+        tool
+        for tool in tool_schema_catalog(VERSION)["tools"]
+        if tool["name"] == "loxone_describe_control"
+    )
+    view = describe["inputSchema"]["properties"]["view"]
+    assert view["default"] == "full"
+    assert view["enum"] == [
+        "full",
+        "history_targets",
+        "operation_targets",
+        "state_refs",
+        "energy_context",
+        "lighting_context",
+    ]
+    definitions = describe["outputSchema"]["$defs"]
+    state_refs = definitions["ControlStateRefsData"]
+    fields = {"uuid", "name", "type", "visibility", "view", "states"}
+    assert set(state_refs["properties"]) == fields
+    assert set(state_refs["required"]) == fields
+    assert state_refs["properties"]["view"]["const"] == "state_refs"
+    assert state_refs["properties"]["states"]["items"]["$ref"] == "#/$defs/StateReferenceData"
+    assert {"$ref": "#/$defs/ControlStateRefsData"} in describe["outputSchema"]["properties"][
+        "data"
+    ]["anyOf"]
+
+
+def test_project_status_schema_distinguishes_model_sources_from_config_projects() -> None:
+    tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
+    status = tools["loxone_get_project_status"]
+    definitions = status["outputSchema"]["$defs"]
+    properties = definitions["ProjectStatusData"]["properties"]
+    source_properties = definitions["ProjectModelSourceData"]["properties"]
+
+    assert "model sources, not Loxone Config projects" in status["description"]
+    assert "model sources, not Loxone Config projects" in properties["project_parts"]["description"]
+    assert "project_parts" in properties["model_sources"]["description"]
+    assert "not a Loxone Config project ID" in source_properties["model_source_id"]["description"]
+    assert "parsed elements" in source_properties["element_count"]["description"]
+
+    for tool_name in ("loxone_find_project_objects", "loxone_describe_project_object"):
+        node_definitions = tools[tool_name]["outputSchema"]["$defs"]
+        node_name = (
+            "ProjectSearchNodeSummaryData"
+            if tool_name == "loxone_find_project_objects"
+            else "ProjectDescriptionData"
+        )
+        node_properties = node_definitions[node_name]["properties"]
+        assert "source occurrences" in node_properties["source_occurrence_count"]["description"]
+        assert "not Loxone Config project IDs" in node_properties["model_source_ids"]["description"]
 
 
 def test_schema_reference_formats_are_deterministic_and_equivalent() -> None:

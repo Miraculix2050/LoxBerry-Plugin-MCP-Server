@@ -1,0 +1,540 @@
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v13">
+<div class="mcp-knx-announcements">
+ <p id="knx-drafts-announcement" role="status" data-loading="<TMPL_VAR KNX.DRAFTS_LOADING ESCAPE=HTML>"></p>
+ <p id="knx-write-announcement" role="status" data-loading="<TMPL_VAR KNX.WRITE_LOADING ESCAPE=HTML>"></p>
+ <p id="knx-corrections-announcement" role="status" data-loading="<TMPL_VAR KNX.CORRECTIONS_LOADING ESCAPE=HTML>"></p>
+ <p id="knx-catalog-announcement" role="status" data-loading="<TMPL_VAR KNX.CATALOG_LOADING ESCAPE=HTML>"></p>
+ <p id="knx-read-announcement" role="status" data-loading="<TMPL_VAR KNX.READ_LOADING ESCAPE=HTML>"></p>
+ <p id="knx-project-announcement" role="status"></p>
+</div>
+<main class="mcp-page mcp-knx" id="knx-page" data-sort-by="<TMPL_VAR KNX.SORT_BY ESCAPE=HTML>" data-sort-ascending="<TMPL_VAR KNX.SORT_ASCENDING ESCAPE=HTML>" data-sort-descending="<TMPL_VAR KNX.SORT_DESCENDING ESCAPE=HTML>"
+ data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
+ data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
+ data-error-export="<TMPL_VAR KNX.ERROR_EXPORT ESCAPE=HTML>"
+ data-error-comparison="<TMPL_VAR KNX.ERROR_COMPARISON ESCAPE=HTML>"
+ data-unsaved="<TMPL_VAR KNX.UNSAVED ESCAPE=HTML>"
+ data-edit="<TMPL_VAR KNX.EDIT ESCAPE=HTML>"
+ data-delete="<TMPL_VAR KNX.DELETE ESCAPE=HTML>"
+ data-confirm="<TMPL_VAR KNX.CONFIRM_DELETE ESCAPE=HTML>"
+ data-name="<TMPL_VAR KNX.NAME ESCAPE=HTML>"
+ data-description="<TMPL_VAR KNX.DESCRIPTION ESCAPE=HTML>"
+ data-dpts="<TMPL_VAR KNX.DPTS ESCAPE=HTML>"
+ data-import-source="<TMPL_VAR KNX.IMPORT_SOURCE ESCAPE=HTML>"
+ data-unknown="<TMPL_VAR KNX.UNKNOWN ESCAPE=HTML>"
+ data-empty="<TMPL_VAR KNX.EMPTY ESCAPE=HTML>"
+ data-override="<TMPL_VAR KNX.OVERRIDE ESCAPE=HTML>"
+ data-inherited="<TMPL_VAR KNX.INHERITED ESCAPE=HTML>"
+ data-sources="<TMPL_VAR KNX.SOURCES ESCAPE=HTML>"
+ data-manual-source="<TMPL_VAR KNX.MANUAL_SOURCE ESCAPE=HTML>"
+ data-deviations="<TMPL_VAR KNX.DEVIATIONS_ONLY ESCAPE=HTML>"
+ data-dpt-valid="<TMPL_VAR KNX.DPT_VALID ESCAPE=HTML>"
+ data-dpt-invalid="<TMPL_VAR KNX.DPT_INVALID ESCAPE=HTML>"
+ data-dpt-main="<TMPL_VAR KNX.DPT_MAIN ESCAPE=HTML>"
+ data-dpt-subtype="<TMPL_VAR KNX.DPT_SUBTYPE ESCAPE=HTML>"
+ data-dpt-no-subtype="<TMPL_VAR KNX.DPT_NO_SUBTYPE ESCAPE=HTML>"
+ data-dpt-association="<TMPL_VAR KNX.DPT_ASSOCIATION ESCAPE=HTML>"
+ data-central="<TMPL_VAR KNX.CENTRAL ESCAPE=HTML>"
+ data-unfiltered="<TMPL_VAR KNX.UNFILTERED ESCAPE=HTML>"
+ data-security="<TMPL_VAR KNX.SECURITY ESCAPE=HTML>"
+ data-error-query="<TMPL_VAR KNX.ERROR_QUERY ESCAPE=HTML>"
+ data-error-format="<TMPL_VAR KNX.ERROR_FORMAT ESCAPE=HTML>"
+ data-error-hierarchy="<TMPL_VAR KNX.ERROR_HIERARCHY ESCAPE=HTML>"
+ data-error-encoding="<TMPL_VAR KNX.ERROR_ENCODING ESCAPE=HTML>"
+ data-error-file="<TMPL_VAR KNX.ERROR_FILE ESCAPE=HTML>"
+ data-error-unsafe="<TMPL_VAR KNX.ERROR_UNSAFE ESCAPE=HTML>"
+ data-error-xml="<TMPL_VAR KNX.ERROR_XML ESCAPE=HTML>"
+ data-error-csv="<TMPL_VAR KNX.ERROR_CSV ESCAPE=HTML>"
+ data-error-stale="<TMPL_VAR KNX.ERROR_STALE ESCAPE=HTML>"
+ data-error-labels="<TMPL_VAR KNX.ERROR_LABELS ESCAPE=HTML>"
+ data-error-storage="<TMPL_VAR KNX.ERROR_STORAGE ESCAPE=HTML>">
+ <div class="mcp-actions"><a class="lb-button" id="knx-back" href="index.cgi"><TMPL_VAR KNX.BACK></a></div>
+ <h1><TMPL_VAR KNX.TITLE></h1>
+ <p><TMPL_VAR KNX.SOURCE_HELP></p>
+ <p class="mcp-help"><TMPL_VAR KNX.SORT_HELP></p>
+ <p id="knx-target"></p>
+ <p id="knx-status" role="status" aria-live="polite"></p>
+ <details class="mcp-card" data-persist-collapse open id="knx-read-delegation"
+  data-enabled="<TMPL_VAR SUMMARY.ENABLED ESCAPE=HTML>"
+  data-disabled="<TMPL_VAR SUMMARY.DISABLED ESCAPE=HTML>"
+  data-unknown="<TMPL_VAR KNX.STATUS_UNKNOWN ESCAPE=HTML>"
+  data-loading="<TMPL_VAR KNX.LOADING ESCAPE=HTML>"
+  data-grant="<TMPL_VAR KNX.READ_GRANT ESCAPE=HTML>"
+  data-revoke="<TMPL_VAR KNX.READ_REVOKE ESCAPE=HTML>"
+  data-confirm-enable="<TMPL_VAR KNX.READ_CONFIRM_ENABLE ESCAPE=HTML>"
+  data-confirm-grant="<TMPL_VAR KNX.READ_CONFIRM_GRANT ESCAPE=HTML>"
+  data-confirm-revoke="<TMPL_VAR KNX.READ_CONFIRM_REVOKE ESCAPE=HTML>"
+  data-approved="<TMPL_VAR KNX.READ_APPROVED ESCAPE=HTML>"
+  data-pending="<TMPL_VAR KNX.READ_PENDING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR KNX.READ_UNAVAILABLE ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.READ_FAILED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.READ_TITLE></h2> <span id="knx-read-badge" class="mcp-service-badge"><TMPL_VAR KNX.STATUS_UNKNOWN></span> <span id="knx-read-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.READ_HELP></p>
+  <form id="knx-read-enable-form" class="mcp-form">
+   <label><input type="checkbox" id="knx-read-enabled" disabled> <TMPL_VAR KNX.READ_ENABLE></label>
+   <div class="mcp-actions"><button class="lb-button" type="submit" disabled><TMPL_VAR ACTION.SAVE></button>
+    <button class="lb-button" type="button" id="knx-read-reload"><TMPL_VAR KNX.READ_RELOAD></button></div>
+  </form>
+  <p id="knx-read-status" role="status" aria-live="polite"><TMPL_VAR KNX.LOADING></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.READ_TITLE ESCAPE=HTML>"><table class="mcp-table">
+   <thead><tr><th><TMPL_VAR KNX.READ_CLIENT></th><th><TMPL_VAR KNX.READ_BINDING></th>
+    <th><TMPL_VAR KNX.READ_STATE></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-read-bindings" data-empty-message="<TMPL_VAR KNX.NO_BINDINGS ESCAPE=HTML>"></tbody>
+  </table></div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-drafts-delegation"
+  data-enabled="<TMPL_VAR SUMMARY.ENABLED ESCAPE=HTML>"
+  data-disabled="<TMPL_VAR SUMMARY.DISABLED ESCAPE=HTML>"
+  data-unknown="<TMPL_VAR KNX.STATUS_UNKNOWN ESCAPE=HTML>"
+  data-loading="<TMPL_VAR KNX.LOADING ESCAPE=HTML>"
+  data-grant="<TMPL_VAR KNX.DRAFTS_GRANT ESCAPE=HTML>"
+  data-revoke="<TMPL_VAR KNX.DRAFTS_REVOKE ESCAPE=HTML>"
+  data-confirm-enable="<TMPL_VAR KNX.DRAFTS_CONFIRM_ENABLE ESCAPE=HTML>"
+  data-confirm-grant="<TMPL_VAR KNX.DRAFTS_CONFIRM_GRANT ESCAPE=HTML>"
+  data-confirm-revoke="<TMPL_VAR KNX.DRAFTS_CONFIRM_REVOKE ESCAPE=HTML>"
+  data-approved="<TMPL_VAR KNX.DRAFTS_APPROVED ESCAPE=HTML>"
+  data-pending="<TMPL_VAR KNX.DRAFTS_PENDING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR KNX.DRAFTS_UNAVAILABLE ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.DRAFTS_FAILED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.DRAFTS_TITLE></h2> <span id="knx-drafts-badge" class="mcp-service-badge"><TMPL_VAR KNX.STATUS_UNKNOWN></span> <span id="knx-drafts-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.DRAFTS_HELP></p>
+  <form id="knx-drafts-enable-form" class="mcp-form">
+   <label><input type="checkbox" id="knx-drafts-enabled" disabled> <TMPL_VAR KNX.DRAFTS_ENABLE></label>
+   <div class="mcp-actions"><button class="lb-button" type="submit" disabled><TMPL_VAR ACTION.SAVE></button>
+    <button class="lb-button" type="button" id="knx-drafts-reload"><TMPL_VAR KNX.DRAFTS_RELOAD></button></div>
+  </form>
+  <p id="knx-drafts-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.DRAFTS_TITLE ESCAPE=HTML>"><table class="mcp-table">
+   <thead><tr><th><TMPL_VAR KNX.DRAFTS_CLIENT></th><th><TMPL_VAR KNX.DRAFTS_BINDING></th>
+    <th><TMPL_VAR KNX.DRAFTS_STATE></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-drafts-bindings" data-empty-message="<TMPL_VAR KNX.NO_BINDINGS ESCAPE=HTML>"></tbody>
+  </table></div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-write-delegation"
+  data-enabled="<TMPL_VAR SUMMARY.ENABLED ESCAPE=HTML>"
+  data-disabled="<TMPL_VAR SUMMARY.DISABLED ESCAPE=HTML>"
+  data-unknown="<TMPL_VAR KNX.STATUS_UNKNOWN ESCAPE=HTML>"
+  data-loading="<TMPL_VAR KNX.LOADING ESCAPE=HTML>"
+  data-grant="<TMPL_VAR KNX.WRITE_GRANT ESCAPE=HTML>"
+  data-revoke="<TMPL_VAR KNX.WRITE_REVOKE ESCAPE=HTML>"
+  data-confirm-enable="<TMPL_VAR KNX.WRITE_CONFIRM_ENABLE ESCAPE=HTML>"
+  data-confirm-prefixes="<TMPL_VAR KNX.WRITE_CONFIRM_PREFIXES ESCAPE=HTML>"
+  data-confirm-grant="<TMPL_VAR KNX.WRITE_CONFIRM_GRANT ESCAPE=HTML>"
+  data-confirm-revoke="<TMPL_VAR KNX.WRITE_CONFIRM_REVOKE ESCAPE=HTML>"
+  data-approved="<TMPL_VAR KNX.WRITE_APPROVED ESCAPE=HTML>"
+  data-pending="<TMPL_VAR KNX.WRITE_PENDING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR KNX.WRITE_UNAVAILABLE ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.WRITE_FAILED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.WRITE_TITLE></h2> <span id="knx-write-badge" class="mcp-service-badge"><TMPL_VAR KNX.STATUS_UNKNOWN></span> <span id="knx-write-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.WRITE_HELP></p>
+  <form id="knx-write-enable-form" class="mcp-form">
+   <label><input type="checkbox" id="knx-write-enabled" disabled> <TMPL_VAR KNX.WRITE_ENABLE></label>
+   <label><input type="checkbox" id="knx-write-prefixes" disabled> <TMPL_VAR KNX.WRITE_PREFIXES></label>
+   <div class="mcp-actions"><button class="lb-button" type="submit" disabled><TMPL_VAR ACTION.SAVE></button>
+    <button class="lb-button" type="button" id="knx-write-reload"><TMPL_VAR KNX.WRITE_RELOAD></button></div>
+  </form>
+  <p id="knx-write-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.WRITE_TITLE ESCAPE=HTML>"><table class="mcp-table">
+   <thead><tr><th><TMPL_VAR KNX.WRITE_CLIENT></th><th><TMPL_VAR KNX.WRITE_BINDING></th>
+    <th><TMPL_VAR KNX.WRITE_STATE></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-write-bindings"></tbody>
+  </table></div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-corrections"
+  data-no-changes="<TMPL_VAR KNX.NO_CHANGES ESCAPE=HTML>"
+  data-select-draft="<TMPL_VAR KNX.SELECT_DRAFT ESCAPE=HTML>"
+  data-selection-unavailable="<TMPL_VAR KNX.CORRECTIONS_SELECTION_UNAVAILABLE ESCAPE=HTML>"
+  data-saved-refresh-failed="<TMPL_VAR KNX.CORRECTIONS_SAVED_REFRESH_FAILED ESCAPE=HTML>"
+  data-decision-unconfirmed="<TMPL_VAR KNX.CORRECTIONS_DECISION_UNCONFIRMED ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.CORRECTIONS_FAILED ESCAPE=HTML>"
+  data-inspect="<TMPL_VAR KNX.CORRECTIONS_INSPECT ESCAPE=HTML>"
+  data-missing="<TMPL_VAR KNX.CORRECTIONS_MISSING ESCAPE=HTML>"
+  data-stale="<TMPL_VAR KNX.CORRECTIONS_STALE ESCAPE=HTML>"
+  data-unchecked="<TMPL_VAR KNX.CORRECTIONS_UNCHECKED ESCAPE=HTML>"
+  data-proposed="<TMPL_VAR KNX.CORRECTIONS_PENDING ESCAPE=HTML>"
+  data-value-label="<TMPL_VAR KNX.CORRECTIONS_PROPOSED ESCAPE=HTML>"
+  data-accept="<TMPL_VAR KNX.CORRECTIONS_ACCEPT ESCAPE=HTML>"
+  data-reject="<TMPL_VAR KNX.CORRECTIONS_REJECT ESCAPE=HTML>"
+  data-reset="<TMPL_VAR KNX.CORRECTIONS_RESET ESCAPE=HTML>"
+  data-accepted="<TMPL_VAR KNX.CORRECTIONS_ACCEPTED ESCAPE=HTML>"
+  data-rejected="<TMPL_VAR KNX.CORRECTIONS_REJECTED ESCAPE=HTML>"
+  data-edit="<TMPL_VAR KNX.CORRECTIONS_EDIT ESCAPE=HTML>"
+  data-save-edit="<TMPL_VAR KNX.CORRECTIONS_SAVE_EDIT ESCAPE=HTML>"
+  data-operation="<TMPL_VAR KNX.CORRECTIONS_OPERATION ESCAPE=HTML>"
+  data-set="<TMPL_VAR KNX.CORRECTIONS_SET ESCAPE=HTML>"
+  data-remove="<TMPL_VAR KNX.CORRECTIONS_REMOVE ESCAPE=HTML>"
+  data-local-target="<TMPL_VAR KNX.LOCAL_TARGET ESCAPE=HTML>"
+  data-label-target="<TMPL_VAR KNX.LABEL_TARGET ESCAPE=HTML>"
+  data-ets-target="<TMPL_VAR KNX.ETS_TARGET ESCAPE=HTML>"
+  data-review-select="<TMPL_VAR KNX.REVIEW_SELECT ESCAPE=HTML>"
+  data-batch-confirm="<TMPL_VAR KNX.BATCH_CONFIRM ESCAPE=HTML>"
+  data-delete-confirm="<TMPL_VAR KNX.DRAFT_DELETE_CONFIRM ESCAPE=HTML>"
+  data-archived="<TMPL_VAR KNX.DRAFT_ARCHIVED ESCAPE=HTML>"
+  data-created="<TMPL_VAR KNX.DRAFT_CREATED ESCAPE=HTML>"
+  data-updated="<TMPL_VAR KNX.DRAFT_UPDATED ESCAPE=HTML>"
+  data-select-export="<TMPL_VAR KNX.CORRECTIONS_SELECT_EXPORT ESCAPE=HTML>"
+  data-apply-local="<TMPL_VAR KNX.CORRECTIONS_APPLY_LOCAL ESCAPE=HTML>"
+  data-confirm-apply="<TMPL_VAR KNX.CORRECTIONS_CONFIRM_APPLY ESCAPE=HTML>"
+  data-applied="<TMPL_VAR KNX.CORRECTIONS_APPLIED ESCAPE=HTML>"
+  data-confirm-forget="<TMPL_VAR KNX.CORRECTIONS_CONFIRM_FORGET ESCAPE=HTML>"
+  data-not-observed="<TMPL_VAR KNX.CORRECTIONS_NOT_OBSERVED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.CORRECTIONS_TITLE></h2> <span id="knx-corrections-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.CORRECTIONS_HELP></p>
+  <ol class="mcp-help"><li><TMPL_VAR KNX.FLOW_REVIEW></li><li><TMPL_VAR KNX.FLOW_CONFIRM></li><li><TMPL_VAR KNX.FLOW_APPLY></li><li><TMPL_VAR KNX.FLOW_VERIFY></li></ol>
+  <button class="lb-button" type="button" id="knx-corrections-reload"><TMPL_VAR KNX.CORRECTIONS_RELOAD></button>
+  <p id="knx-corrections-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_TITLE ESCAPE=HTML>">
+   <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.DRAFT_TITLE></th><th><TMPL_VAR KNX.CORRECTIONS_REVISION></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_EXPIRES></th><th><TMPL_VAR KNX.CORRECTIONS_COUNT></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <tbody id="knx-corrections-list" data-empty-message="<TMPL_VAR KNX.NO_DRAFTS ESCAPE=HTML>"></tbody></table>
+  </div>
+  <div id="knx-correction-context" hidden>
+   <p id="knx-correction-metadata" class="mcp-help"></p>
+   <form id="knx-correction-metadata-form" class="mcp-form">
+    <label class="mcp-field"><span><TMPL_VAR KNX.DRAFT_TITLE></span><input id="knx-draft-title" maxlength="160"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.DRAFT_SUMMARY></span><textarea id="knx-draft-summary" maxlength="1024" rows="2"></textarea></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.DRAFT_CHAT></span><input id="knx-draft-chat" maxlength="160"></label>
+    <p class="mcp-help"><TMPL_VAR KNX.DRAFT_ORIGIN_HELP></p>
+    <button class="lb-button" type="submit"><TMPL_VAR KNX.DRAFT_METADATA_SAVE></button>
+    <button class="lb-button" type="button" id="knx-draft-description-reset"><TMPL_VAR KNX.DRAFT_METADATA_RESET></button>
+   </form>
+   <div class="mcp-actions">
+    <button class="lb-button" type="button" id="knx-draft-extend"><TMPL_VAR KNX.DRAFT_EXTEND></button>
+    <button class="lb-button" type="button" id="knx-draft-archive"><TMPL_VAR KNX.DRAFT_ARCHIVE></button>
+    <button class="lb-button" type="button" id="knx-draft-restore"><TMPL_VAR KNX.DRAFT_RESTORE></button>
+    <button class="lb-button" type="button" id="knx-draft-delete"><TMPL_VAR KNX.DRAFT_DELETE></button>
+   </div>
+   <p class="mcp-help"><TMPL_VAR KNX.DRAFT_RETENTION_HELP></p>
+   <div class="mcp-actions">
+    <button class="lb-button" type="button" id="knx-draft-confirm-selected"><TMPL_VAR KNX.DRAFT_CONFIRM_SELECTED></button>
+    <button class="lb-button" type="button" id="knx-draft-confirm-all"><TMPL_VAR KNX.DRAFT_CONFIRM_ALL></button>
+   </div>
+  </div>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_VALUES ESCAPE=HTML>">
+   <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.CORRECTIONS_FIELD></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_DESTINATION></th><th><TMPL_VAR KNX.CORRECTIONS_IMPORTED></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_MANUAL></th><th><TMPL_VAR KNX.CORRECTIONS_PROPOSED></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_DECISION></th><th data-knx-unsortable><TMPL_VAR KNX.REVIEW_SELECT></th><th data-knx-unsortable><TMPL_VAR KNX.CORRECTIONS_SELECT_EXPORT></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <tbody id="knx-corrections-values" data-empty-message="<TMPL_VAR KNX.SELECT_DRAFT ESCAPE=HTML>"></tbody></table>
+  </div>
+  <button class="lb-button" type="button" id="knx-corrections-export" hidden><TMPL_VAR KNX.CORRECTIONS_EXPORT></button>
+  <button class="lb-button" type="button" id="knx-corrections-forget" hidden><TMPL_VAR KNX.CORRECTIONS_FORGET></button>
+  <button class="lb-button" type="button" id="knx-corrections-reconcile" hidden><TMPL_VAR KNX.CORRECTIONS_RECONCILE></button>
+  <button class="lb-button" type="button" id="knx-corrections-more" hidden><TMPL_VAR KNX.CORRECTIONS_MORE></button>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-label-section">
+  <summary><h2><TMPL_VAR SETUP.KNX_TAXONOMY></h2> <span id="knx-label-badge" class="mcp-service-badge" title="<TMPL_VAR KNX.LABEL_COUNT_HELP ESCAPE=HTML>" hidden></span> <span class="mcp-knx-loading" data-knx-catalog-loading aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.GROUP_ADVANCED_HELP></p>
+  <details id="knx-advanced-labels" data-persist-collapse><summary><TMPL_VAR KNX.GROUP_ADVANCED></summary>
+  <form id="knx-taxonomy-form" class="mcp-form">
+   <fieldset class="mcp-configuration-fields" disabled>
+    <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" rows="5" maxlength="16384"></textarea></label>
+    <p class="mcp-help"><TMPL_VAR SETUP.KNX_TAXONOMY_HELP></p>
+    <details><summary><TMPL_VAR KNX.IMPORTED_LABELS></summary><p class="mcp-help"><TMPL_VAR KNX.IMPORTED_LABEL_HELP></p><pre id="knx-imported-labels"></pre></details>
+    <div class="mcp-actions">
+     <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_KNX_TAXONOMY></button>
+     <button class="lb-button" type="button" id="knx-label-export"><TMPL_VAR ACTION.EXPORT_KNX_TAXONOMY></button>
+     <label class="lb-button"><TMPL_VAR ACTION.IMPORT_KNX_TAXONOMY><input id="knx-label-import" type="file" accept=".txt,text/plain"></label>
+    </div>
+   </fieldset>
+  </form>
+  </details>
+ </div></details>
+
+ <details class="mcp-card" data-persist-collapse open id="knx-address-section">
+  <summary><h2><TMPL_VAR KNX.ADDRESSES></h2> <span id="knx-address-badge" class="mcp-service-badge" title="<TMPL_VAR KNX.MATCHING_ADDRESSES ESCAPE=HTML>" hidden></span> <span class="mcp-knx-loading" data-knx-catalog-loading aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+ <details class="mcp-card" data-persist-collapse open id="knx-import-section"
+  data-target="<TMPL_VAR KNX.TARGET ESCAPE=HTML>"
+  data-summary="<TMPL_VAR KNX.IMPORT_SUMMARY ESCAPE=HTML>"
+  data-conflicts="<TMPL_VAR KNX.IMPORT_CONFLICTS ESCAPE=HTML>"
+  data-changes="<TMPL_VAR KNX.IMPORT_CHANGES ESCAPE=HTML>"
+  data-groups="<TMPL_VAR KNX.IMPORT_GROUPS ESCAPE=HTML>"
+  data-select="<TMPL_VAR KNX.SELECT_CANDIDATE ESCAPE=HTML>"
+  data-label="<TMPL_VAR KNX.ACTIVATE_LABEL ESCAPE=HTML>"
+  data-label-too-long="<TMPL_VAR KNX.LABEL_TOO_LONG ESCAPE=HTML>"
+  data-stale="<TMPL_VAR KNX.IMPORT_STALE ESCAPE=HTML>"
+  data-added="<TMPL_VAR KNX.ADDED ESCAPE=HTML>"
+  data-changed="<TMPL_VAR KNX.CHANGED ESCAPE=HTML>"
+  data-before="<TMPL_VAR KNX.BEFORE ESCAPE=HTML>"
+  data-after="<TMPL_VAR KNX.AFTER ESCAPE=HTML>"
+  data-overrides="<TMPL_VAR KNX.OVERRIDES_RETAINED ESCAPE=HTML>"
+  data-partial="<TMPL_VAR KNX.PARTIAL_EXPORT ESCAPE=HTML>"
+  data-yes="<TMPL_VAR KNX.YES ESCAPE=HTML>"
+  data-no="<TMPL_VAR KNX.NO ESCAPE=HTML>"
+  data-central="<TMPL_VAR KNX.CENTRAL ESCAPE=HTML>"
+  data-unfiltered="<TMPL_VAR KNX.UNFILTERED ESCAPE=HTML>"
+  data-security="<TMPL_VAR KNX.SECURITY ESCAPE=HTML>"
+  data-additional="<TMPL_VAR KNX.ADDITIONAL_FIELDS ESCAPE=HTML>"
+  data-review="<TMPL_VAR KNX.REVIEW_IMPORT ESCAPE=HTML>"
+  data-cleanup-pending="<TMPL_VAR KNX.CLEANUP_PENDING ESCAPE=HTML>"
+  data-discarded="<TMPL_VAR KNX.IMPORT_DISCARDED ESCAPE=HTML>"
+  data-removed="<TMPL_VAR KNX.REMOVED ESCAPE=HTML>"
+  data-preserved="<TMPL_VAR KNX.PRESERVED ESCAPE=HTML>"
+  data-complete="<TMPL_VAR KNX.COMPLETE_EXPORT ESCAPE=HTML>">
+  <summary><h3><TMPL_VAR KNX.ETS_IMPORT></h3> <span class="mcp-knx-loading" data-knx-catalog-loading aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.XML_HELP></p>
+  <p class="mcp-help"><TMPL_VAR KNX.CSV_HELP></p>
+  <fieldset class="mcp-configuration-fields" disabled>
+   <div class="mcp-grid">
+    <label class="mcp-field"><span><TMPL_VAR KNX.IMPORT_FILE></span><input id="knx-ets-file" type="file" accept=".xml,.csv,application/xml,text/xml,text/csv,text/tab-separated-values"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FILE_FORMAT></span><select id="knx-ets-file-format"><option value="auto"><TMPL_VAR KNX.FILE_FORMAT_AUTO></option><option value="xml">XML</option><option value="csv">CSV</option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.ENCODING></span><select id="knx-ets-encoding"><option value="auto"><TMPL_VAR KNX.ENCODING_AUTO></option><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select id="knx-ets-format"><option value=""><TMPL_VAR KNX.ENCODING_AUTO></option><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+   </div>
+   <label><input id="knx-ets-complete" type="checkbox"><TMPL_VAR KNX.COMPLETE_CONFIRM></label>
+   <div class="mcp-actions"><button class="lb-button" id="knx-ets-load" type="button"><TMPL_VAR KNX.PREVIEW_IMPORT></button></div>
+  </fieldset>
+  <div id="knx-ets-preview" hidden>
+   <p id="knx-ets-summary"></p>
+   <p id="knx-ets-stale" role="status"></p>
+   <fieldset class="mcp-configuration-fields">
+    <label class="mcp-field"><span><TMPL_VAR KNX.IMPORT_MODE></span><select id="knx-ets-mode"><option value="merge"><TMPL_VAR KNX.MODE_MERGE></option><option value="replace"><TMPL_VAR KNX.MODE_REPLACE></option></select></label>
+    <label class="mcp-field" id="knx-orphan-policy" hidden><span><TMPL_VAR KNX.ORPHAN_POLICY></span><select id="knx-ets-orphan-policy"><option value=""><TMPL_VAR KNX.PLEASE_SELECT></option><option value="keep_unknown"><TMPL_VAR KNX.ORPHAN_UNKNOWN></option><option value="retain_import_name"><TMPL_VAR KNX.ORPHAN_RETAIN></option></select></label>
+   </fieldset>
+   <h3><TMPL_VAR KNX.IMPORT_CONFLICTS></h3><div id="knx-ets-conflicts"></div>
+   <div class="mcp-actions"><button class="lb-button" id="knx-conflict-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-conflict-page"></span><button class="lb-button" id="knx-conflict-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+   <h3><TMPL_VAR KNX.IMPORT_CHANGES></h3><div id="knx-ets-changes"></div>
+   <h3><TMPL_VAR KNX.IMPORT_GROUPS></h3><div id="knx-ets-groups"></div>
+   <div class="mcp-actions"><button class="lb-button" id="knx-ets-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-ets-page"></span><button class="lb-button" id="knx-ets-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+   <div class="mcp-actions"><button class="lb-button" id="knx-ets-apply" type="button"><TMPL_VAR KNX.APPLY_IMPORT></button><button class="lb-button" id="knx-ets-discard" type="button"><TMPL_VAR KNX.CANCEL_IMPORT></button></div>
+  </div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse id="knx-json-section">
+  <summary><h3><TMPL_VAR KNX.JSON_EXCHANGE></h3></summary>
+  <div class="mcp-collapsible-content">
+   <p class="mcp-help"><TMPL_VAR KNX.JSON_EXCHANGE_HELP></p>
+   <p class="mcp-help"><TMPL_VAR KNX.JSON_IMPORT_HELP></p>
+   <p class="mcp-help"><TMPL_VAR KNX.JSON_LIMITS_HELP></p>
+  <button class="lb-button" id="knx-json-export" type="button"><TMPL_VAR KNX.JSON_EXPORT></button>
+  <label class="lb-button"><TMPL_VAR KNX.JSON_IMPORT><input id="knx-json-import" type="file" accept=".json,application/json"></label>
+  <p id="knx-json-preview"></p><button class="lb-button" id="knx-json-apply" type="button" hidden><TMPL_VAR KNX.JSON_APPLY></button>
+  </div>
+ </details>
+ <details id="knx-group-management" data-persist-collapse
+  data-edit="<TMPL_VAR KNX.GROUP_EDIT ESCAPE=HTML>"
+  data-remove="<TMPL_VAR KNX.GROUP_REMOVE ESCAPE=HTML>"
+  data-remove-confirm="<TMPL_VAR KNX.GROUP_REMOVE_CONFIRM ESCAPE=HTML>"
+  data-conflict="<TMPL_VAR KNX.GROUP_ADVANCED_CONFLICT ESCAPE=HTML>"
+  data-stale="<TMPL_VAR KNX.GROUP_STALE ESCAPE=HTML>"
+  data-loading="<TMPL_VAR KNX.GROUP_LOADING ESCAPE=HTML>"
+  data-saved-refresh-failed="<TMPL_VAR KNX.GROUP_SAVED_REFRESH_FAILED ESCAPE=HTML>"
+  data-main="<TMPL_VAR KNX.GROUP_MAIN ESCAPE=HTML>"
+  data-middle="<TMPL_VAR KNX.GROUP_MIDDLE ESCAPE=HTML>"
+  data-imported="<TMPL_VAR KNX.IMPORT_NAME ESCAPE=HTML>"
+  data-local="<TMPL_VAR KNX.GROUP_LOCAL_LABEL ESCAPE=HTML>">
+  <summary><h3><TMPL_VAR KNX.GROUP_MANAGEMENT></h3></summary>
+  <p class="mcp-help"><TMPL_VAR KNX.GROUP_HELP></p>
+  <form id="knx-group-search" class="mcp-form"><div class="mcp-grid">
+   <label class="mcp-field"><span><TMPL_VAR KNX.SEARCH></span><input id="knx-group-query" type="search" maxlength="128"></label>
+  </div><button class="lb-button" type="submit"><TMPL_VAR KNX.SEARCH_APPLY></button>
+  <button class="lb-button" id="knx-group-refresh" type="button"><TMPL_VAR KNX.GROUP_REFRESH></button></form>
+  <p id="knx-group-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.GROUP_MANAGEMENT ESCAPE=HTML>">
+   <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.GROUP_PREFIX></th><th><TMPL_VAR KNX.FORMAT></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.GROUP_LOCAL_LABEL></th><th><TMPL_VAR KNX.GROUP_ADDRESS_COUNT></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-group-rows" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table>
+  </div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-group-previous" type="button" disabled><TMPL_VAR KNX.PREVIOUS></button><span id="knx-group-count"></span><button class="lb-button" id="knx-group-next" type="button" disabled><TMPL_VAR KNX.NEXT></button></div>
+  <section class="mcp-knx-work-area" aria-labelledby="knx-group-editor-title">
+   <h4 id="knx-group-editor-title"><TMPL_VAR KNX.GROUP_CREATE_EDIT></h4>
+   <form id="knx-group-form" class="mcp-form"><fieldset class="mcp-configuration-fields" disabled>
+    <div class="mcp-grid">
+     <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select id="knx-group-format"><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.GROUP_PREFIX></span><input id="knx-group-prefix" required maxlength="5" pattern="(?:0|[1-9]|[12][0-9]|3[01])(?:/[0-7])?"></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.GROUP_LOCAL_LABEL></span><input id="knx-group-label" required maxlength="80"></label>
+    </div>
+    <p id="knx-group-source" class="mcp-help"></p>
+    <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.GROUP_SAVE></button><button class="lb-button" type="reset"><TMPL_VAR KNX.GROUP_NEW></button></div>
+   </fieldset></form>
+  </section>
+ </details>
+ <details id="knx-individual-addresses" data-persist-collapse open>
+  <summary><h3><TMPL_VAR KNX.INDIVIDUAL_ADDRESSES></h3></summary>
+  <p class="mcp-help"><TMPL_VAR KNX.LOCAL_SOURCE_HELP></p>
+  <section id="knx-filter-section" class="mcp-knx-work-area mcp-knx-filter" aria-labelledby="knx-filter-title">
+   <h3 id="knx-filter-title"><TMPL_VAR KNX.FILTER_TITLE></h3>
+   <p class="mcp-help"><TMPL_VAR KNX.FILTER_HELP></p>
+  <form id="knx-search-form" class="mcp-form">
+   <div class="mcp-grid">
+    <label class="mcp-field"><span><TMPL_VAR KNX.SEARCH></span><input id="knx-search-query" maxlength="128" type="search"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.SOURCE_FILTER></span><select id="knx-search-source"><option value="all"><TMPL_VAR KNX.SOURCE_ALL></option><option value="imported"><TMPL_VAR KNX.IMPORT_SOURCE></option><option value="manual"><TMPL_VAR KNX.MANUAL_SOURCE></option><option value="both"><TMPL_VAR KNX.SOURCE_BOTH></option></select></label>
+    <label><input type="checkbox" id="knx-search-deviations"><TMPL_VAR KNX.DEVIATIONS_ONLY></label>
+   </div>
+   <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SEARCH_APPLY></button><button class="lb-button" id="knx-search-clear" type="button"><TMPL_VAR KNX.SEARCH_CLEAR></button></div>
+  </form>
+  </section>
+  <section id="knx-results-section" aria-labelledby="knx-results-title">
+   <h3 id="knx-results-title"><TMPL_VAR KNX.ADDRESS_LIST></h3>
+   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.MAIN_GROUP></th><th><TMPL_VAR KNX.MIDDLE_GROUP></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th data-knx-unsortable><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses" data-empty-message="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+  </section>
+  <section id="knx-editor-section" class="mcp-knx-work-area" aria-labelledby="knx-editor-title"
+   data-new-title="<TMPL_VAR KNX.ADDRESS_CREATE ESCAPE=HTML>"
+   data-edit-title="<TMPL_VAR KNX.ADDRESS_EDIT ESCAPE=HTML>">
+   <h3 id="knx-editor-title"><TMPL_VAR KNX.ADDRESS_CREATE></h3>
+  <form id="knx-record-form" class="mcp-form">
+   <fieldset class="mcp-configuration-fields" disabled>
+    <div class="mcp-grid">
+     <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select name="address_format"><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.ADDRESS></span><input name="address" required maxlength="16"></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.NAME></span><input name="name" required maxlength="255"></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.DESCRIPTION></span><textarea name="description" maxlength="4096"></textarea></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.DPTS></span><input name="dpts" maxlength="1024"></label>
+    </div>
+    <div id="knx-editor-sources" hidden></div>
+    <div class="mcp-actions">
+     <button class="lb-button" type="button" data-knx-use-import="name" hidden><TMPL_VAR KNX.NAME_USE_IMPORT></button>
+     <button class="lb-button" type="button" data-knx-use-import="description" hidden><TMPL_VAR KNX.DESCRIPTION_USE_IMPORT></button>
+     <button class="lb-button" type="button" data-knx-use-import="dpts" hidden><TMPL_VAR KNX.DPTS_USE_IMPORT></button>
+    </div>
+    <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SAVE_RECORD></button><button class="lb-button" type="reset"><TMPL_VAR KNX.NEW_RECORD></button></div>
+   </fieldset>
+  </form>
+  </section>
+ </details>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-project-section"
+  data-not-run="<TMPL_VAR KNX.PROJECT_NOT_RUN ESCAPE=HTML>"
+  data-no-matches="<TMPL_VAR KNX.NO_MATCHES ESCAPE=HTML>"
+  data-common="<TMPL_VAR KNX.PROJECT_COMMON ESCAPE=HTML>"
+  data-import-only="<TMPL_VAR KNX.PROJECT_IMPORT_ONLY ESCAPE=HTML>"
+  data-observed-project-only="<TMPL_VAR KNX.PROJECT_LOXONE_ONLY ESCAPE=HTML>"
+  data-names-differ="<TMPL_VAR KNX.PROJECT_NAMES_DIFFER ESCAPE=HTML>"
+  data-names-same="<TMPL_VAR KNX.PROJECT_NAMES_SAME ESCAPE=HTML>"
+  data-names-unknown="<TMPL_VAR KNX.PROJECT_NAMES_UNKNOWN ESCAPE=HTML>"
+  data-ambiguous="<TMPL_VAR KNX.PROJECT_AMBIGUOUS ESCAPE=HTML>"
+  data-omitted="<TMPL_VAR KNX.PROJECT_OMITTED ESCAPE=HTML>"
+  data-limited="<TMPL_VAR KNX.PROJECT_LIMITED ESCAPE=HTML>"
+  data-source-limits="<TMPL_VAR KNX.PROJECT_SOURCE_LIMITS ESCAPE=HTML>"
+  data-latest-document="<TMPL_VAR KNX.PROJECT_LATEST_DOCUMENT ESCAPE=HTML>"
+  data-complete="<TMPL_VAR KNX.PROJECT_COMPLETE ESCAPE=HTML>"
+  data-partial="<TMPL_VAR KNX.PROJECT_PARTIAL ESCAPE=HTML>"
+  data-target-changed="<TMPL_VAR KNX.ERROR_STALE ESCAPE=HTML>"
+  data-restoring-session="<TMPL_VAR EXPLORER.RESTORING_SESSION ESCAPE=HTML>"
+  data-working="<TMPL_VAR EXPLORER.WORKING ESCAPE=HTML>"
+  data-scope-granted="<TMPL_VAR EXPLORER.SCOPE_GRANTED ESCAPE=HTML>"
+  data-scope-not-granted="<TMPL_VAR EXPLORER.SCOPE_NOT_GRANTED ESCAPE=HTML>"
+  data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
+  data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
+  data-error="<TMPL_VAR EXPLORER.ERROR ESCAPE=HTML>"
+  data-refresh-failed="<TMPL_VAR KNX.PROJECT_REFRESH_FAILED ESCAPE=HTML>"
+  data-popup-blocked="<TMPL_VAR EXPLORER.POPUP_BLOCKED ESCAPE=HTML>"
+  data-auth-cancelled="<TMPL_VAR EXPLORER.AUTH_CANCELLED ESCAPE=HTML>"
+  data-token-expired="<TMPL_VAR EXPLORER.TOKEN_EXPIRED ESCAPE=HTML>"
+  data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
+  data-origin-mismatch="<TMPL_VAR EXPLORER.ORIGIN_MISMATCH ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.PROJECT_TITLE></h2> <span id="knx-project-connection-badge" hidden class="mcp-service-badge" data-kind="inactive"><TMPL_VAR EXPLORER.DISCONNECTED></span> <span id="knx-project-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR EXPLORER.RESTORING_SESSION></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.PROJECT_HELP></p>
+  <div class="mcp-actions">
+   <button class="lb-button" id="knx-project-connect" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
+   <button class="lb-button" id="knx-project-disconnect" type="button" disabled><TMPL_VAR KNX.PROJECT_DISCONNECT></button>
+   <button class="lb-button" id="knx-project-run" type="button" disabled><TMPL_VAR KNX.PROJECT_RUN></button>
+  </div>
+  <p id="knx-project-status" class="mcp-status" data-kind="working" role="status" aria-live="polite"><TMPL_VAR EXPLORER.RESTORING_SESSION></p>
+  <p class="mcp-help"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
+  <p class="mcp-help"><TMPL_VAR KNX.PROJECT_SHARED_SESSION></p>
+  <p id="knx-project-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="knx-project-session-expiry-time"></time></p>
+  <details id="knx-project-access-scopes" hidden open>
+   <summary><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></summary>
+   <p id="knx-project-scope-unavailable" class="mcp-help" hidden><TMPL_VAR EXPLORER.SCOPE_UNAVAILABLE></p>
+   <ul id="knx-project-scope-list" class="mcp-explorer-scope-list"></ul>
+  </details>
+  <p id="knx-project-origin-warning" hidden><TMPL_VAR EXPLORER.ORIGIN_MISMATCH> <a class="lb-button" id="knx-project-origin-link" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a></p>
+  <p id="knx-project-summary"></p>
+  <details id="knx-project-coverage" hidden><summary><TMPL_VAR KNX.PROJECT_COVERAGE></summary><pre id="knx-project-coverage-data"></pre></details>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.PROJECT_TITLE ESCAPE=HTML>"><table class="mcp-table"><thead><tr>
+   <th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.PROJECT_RELATION></th><th><TMPL_VAR KNX.PROJECT_LOXONE_NAMES></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.PROJECT_OBSERVATION></th>
+  </tr></thead><tbody id="knx-project-rows" data-empty-message="<TMPL_VAR KNX.PROJECT_NOT_RUN ESCAPE=HTML>"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-project-previous" type="button" disabled><TMPL_VAR KNX.PREVIOUS></button><span id="knx-project-count"></span><button class="lb-button" id="knx-project-next" type="button" disabled><TMPL_VAR KNX.NEXT></button></div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-compare-section"
+  data-not-run="<TMPL_VAR KNX.COMPARE_NOT_RUN ESCAPE=HTML>"
+  data-summary="<TMPL_VAR KNX.COMPARE_SUMMARY ESCAPE=HTML>"
+  data-info="<TMPL_VAR KNX.COMPARE_INFO ESCAPE=HTML>"
+  data-added="<TMPL_VAR KNX.COMPARE_ADDED ESCAPE=HTML>"
+  data-removed="<TMPL_VAR KNX.COMPARE_REMOVED ESCAPE=HTML>"
+  data-changed="<TMPL_VAR KNX.CHANGED ESCAPE=HTML>"
+  data-manual="<TMPL_VAR KNX.COMPARE_MANUAL ESCAPE=HTML>"
+  data-group="<TMPL_VAR KNX.COMPARE_GROUP ESCAPE=HTML>"
+  data-address="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"
+  data-before="<TMPL_VAR KNX.BEFORE ESCAPE=HTML>"
+  data-after="<TMPL_VAR KNX.AFTER ESCAPE=HTML>"
+  data-complete="<TMPL_VAR KNX.COMPLETE_EXPORT ESCAPE=HTML>"
+  data-partial="<TMPL_VAR KNX.PARTIAL_EXPORT ESCAPE=HTML>"
+  data-catalog="<TMPL_VAR KNX.COMPARE_CATALOG_SCOPE ESCAPE=HTML>"
+  data-file-only="<TMPL_VAR KNX.COMPARE_FILE_ONLY ESCAPE=HTML>"
+  data-stale="<TMPL_VAR KNX.IMPORT_STALE ESCAPE=HTML>"
+  data-empty="<TMPL_VAR KNX.COMPARE_NO_CHANGES ESCAPE=HTML>"
+  data-cleared="<TMPL_VAR KNX.COMPARE_CLEARED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.COMPARE_TITLE></h2></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.COMPARE_HELP></p>
+  <label class="mcp-field"><span><TMPL_VAR KNX.COMPARE_EARLIER></span><select id="knx-compare-mode"><option value="current"><TMPL_VAR KNX.COMPARE_CURRENT></option><option value="file"><TMPL_VAR KNX.COMPARE_FILE></option></select></label>
+  <fieldset id="knx-compare-left-controls" hidden>
+   <legend><TMPL_VAR KNX.COMPARE_EARLIER></legend>
+   <div class="mcp-grid">
+    <label class="mcp-field"><span><TMPL_VAR KNX.IMPORT_FILE></span><input type="file" id="knx-compare-left-file" accept=".xml,.csv,.tsv,text/xml,application/xml,text/csv,text/tab-separated-values"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FILE_FORMAT></span><select id="knx-compare-left-format"><option value="auto"><TMPL_VAR KNX.FILE_FORMAT_AUTO></option><option value="xml">XML</option><option value="csv">CSV</option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.ENCODING></span><select id="knx-compare-left-encoding"><option value="auto"><TMPL_VAR KNX.ENCODING_AUTO></option><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select id="knx-compare-left-style"><option value=""><TMPL_VAR KNX.ENCODING_AUTO></option><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+   </div>
+   <label><input type="checkbox" id="knx-compare-left-complete"> <TMPL_VAR KNX.COMPLETE_CONFIRM></label>
+   <div class="mcp-actions"><button class="lb-button" type="button" id="knx-compare-left-load"><TMPL_VAR KNX.COMPARE_LOAD></button><span id="knx-compare-left-info" role="status"></span></div>
+  </fieldset>
+  <fieldset>
+   <legend><TMPL_VAR KNX.COMPARE_LATER></legend>
+   <div class="mcp-grid">
+    <label class="mcp-field"><span><TMPL_VAR KNX.IMPORT_FILE></span><input type="file" id="knx-compare-right-file" accept=".xml,.csv,.tsv,text/xml,application/xml,text/csv,text/tab-separated-values"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FILE_FORMAT></span><select id="knx-compare-right-format"><option value="auto"><TMPL_VAR KNX.FILE_FORMAT_AUTO></option><option value="xml">XML</option><option value="csv">CSV</option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.ENCODING></span><select id="knx-compare-right-encoding"><option value="auto"><TMPL_VAR KNX.ENCODING_AUTO></option><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select id="knx-compare-right-style"><option value=""><TMPL_VAR KNX.ENCODING_AUTO></option><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+   </div>
+   <label><input type="checkbox" id="knx-compare-right-complete"> <TMPL_VAR KNX.COMPLETE_CONFIRM></label>
+   <div class="mcp-actions"><button class="lb-button" type="button" id="knx-compare-right-load"><TMPL_VAR KNX.COMPARE_LOAD></button><span id="knx-compare-right-info" role="status"></span></div>
+  </fieldset>
+  <div class="mcp-actions"><button class="lb-button" type="button" id="knx-compare-run" disabled><TMPL_VAR KNX.COMPARE_RUN></button><button class="lb-button" type="button" id="knx-compare-clear" disabled><TMPL_VAR KNX.COMPARE_CLEAR></button></div>
+  <p id="knx-compare-stale" role="status"></p>
+  <p id="knx-compare-summary"></p>
+  <p id="knx-compare-scope" class="mcp-help"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.COMPARE_TITLE ESCAPE=HTML>"><table class="mcp-table"><thead><tr>
+   <th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.COMPARE_CHANGE></th><th><TMPL_VAR KNX.BEFORE></th><th><TMPL_VAR KNX.AFTER></th><th><TMPL_VAR KNX.COMPARE_MANUAL></th>
+  </tr></thead><tbody id="knx-compare-rows" data-empty-message="<TMPL_VAR KNX.COMPARE_NOT_RUN ESCAPE=HTML>"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" type="button" id="knx-compare-previous" disabled><TMPL_VAR KNX.PREVIOUS></button><span id="knx-compare-count"></span><button class="lb-button" type="button" id="knx-compare-next" disabled><TMPL_VAR KNX.NEXT></button></div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-xml-section" data-needs-comparison="<TMPL_VAR KNX.XML_NEEDS_COMPARISON ESCAPE=HTML>" data-no-entries="<TMPL_VAR KNX.XML_NO_ENTRIES ESCAPE=HTML>" data-keep="<TMPL_VAR KNX.XML_EXPORT_KEEP ESCAPE=HTML>" data-manual="<TMPL_VAR KNX.XML_EXPORT_MANUAL ESCAPE=HTML>" data-loxone="<TMPL_VAR KNX.XML_EXPORT_LOXONE ESCAPE=HTML>" data-select="<TMPL_VAR KNX.XML_EXPORT_SELECT ESCAPE=HTML>" data-metadata="<TMPL_VAR KNX.XML_EXPORT_METADATA ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.XML_EXPORT_TITLE></h2></summary>
+  <div class="mcp-collapsible-content">
+  <p><TMPL_VAR KNX.XML_EXPORT_HELP></p>
+  <p id="knx-xml-origin" class="mcp-help" data-comparison="<TMPL_VAR KNX.XML_FROM_COMPARISON ESCAPE=HTML>" data-draft="<TMPL_VAR KNX.XML_FROM_DRAFT ESCAPE=HTML>"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.XML_EXPORT_TITLE ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.XML_EXPORT_SELECT></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.XML_EXPORT_NAME></th><th><TMPL_VAR KNX.XML_EXPORT_DESCRIPTION></th></tr></thead><tbody id="knx-xml-rows" data-empty-message="<TMPL_VAR KNX.XML_NEEDS_COMPARISON ESCAPE=HTML>"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" type="button" id="knx-xml-preview" disabled><TMPL_VAR KNX.XML_EXPORT_PREVIEW></button><button class="lb-button" type="button" id="knx-xml-clear" disabled><TMPL_VAR KNX.CANCEL></button></div>
+  <div id="knx-xml-result" aria-live="polite"></div>
+  <label><input type="checkbox" id="knx-xml-confirm" disabled> <TMPL_VAR KNX.XML_EXPORT_CONFIRM></label>
+  <div class="mcp-actions"><button class="lb-button" type="button" id="knx-xml-download" disabled><TMPL_VAR KNX.XML_EXPORT_DOWNLOAD></button></div>
+ </div></details>
+</main>
+<dialog class="mcp-dialog" id="knx-confirm" aria-labelledby="knx-confirm-title" aria-describedby="knx-confirm-message">
+ <h2 id="knx-confirm-title"><TMPL_VAR KNX.CONFIRM_TITLE></h2>
+ <p id="knx-confirm-message"></p>
+ <form method="dialog" class="mcp-actions">
+  <button class="lb-button" id="knx-confirm-cancel" value="cancel" autofocus><TMPL_VAR KNX.CANCEL></button>
+  <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
+ </form>
+</dialog>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v24" defer></script>
+<script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v7" defer></script>
+<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v12" defer></script>
+<script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
+<script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1" defer></script>
+<script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
+<script src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
+<script src="knx-project.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-bridge-v9" defer></script>
+<script src="knx-compare.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-compare-v4" defer></script>
+
+<script src="knx-xml-export.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-xml-handoff-v5" defer></script>

@@ -1,0 +1,225 @@
+(() => {
+  const core = window.McpAdmin.createCore();
+  const {label, postAjax, setAjaxStatus, hideSuccess, status} = core;
+  // Keep follow-up reads serial; the initial page uses one Python helper and one
+  // independent Perl CGI request so cold process startup is paid only once.
+  const backgroundHydrationLimit = 1;
+  const backgroundHydrationQueue = [];
+  let backgroundHydrationRunning = 0;
+  let backgroundHydrationStarted = false;
+  let initialBackgroundHydrationComplete = false;
+  const drainBackgroundHydration = () => {
+    while (backgroundHydrationRunning < backgroundHydrationLimit
+        && backgroundHydrationQueue.length > 0) {
+      const task = backgroundHydrationQueue.shift();
+      backgroundHydrationRunning += 1;
+      Promise.resolve()
+        .then(task)
+        .catch(() => undefined)
+        .finally(() => {
+          backgroundHydrationRunning -= 1;
+          drainBackgroundHydration();
+        });
+    }
+  };
+  const queueBackgroundHydration = (tasks) => {
+    backgroundHydrationQueue.push(...tasks);
+    if (backgroundHydrationStarted) drainBackgroundHydration();
+  };
+  const startBackgroundHydration = () => {
+    if (backgroundHydrationStarted) return;
+    backgroundHydrationStarted = true;
+    if (window.performance && typeof window.performance.mark === 'function') {
+      window.performance.mark('mcp-admin-background-hydration-started');
+    }
+    queueBackgroundHydration([
+      loadInitialPage,
+      () => { initialBackgroundHydrationComplete = true; },
+    ]);
+  };
+  const scheduleBackgroundHydration = () => {
+    if (document.hidden) {
+      startBackgroundHydration();
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(startBackgroundHydration);
+    });
+  };
+  const certificate = window.McpAdmin.createCertificate(core, queueBackgroundHydration);
+  const sessions = window.McpAdmin.createSessions(core);
+  const service = window.McpAdmin.createService(core);
+  const configuration = window.McpAdmin.createConfiguration(
+    core, certificate, service,
+  );
+  const {loadCertificateStatus} = certificate;
+  const {pollSessions} = sessions;
+  const {pollServiceStatus} = service;
+  const {loadConfiguration, loadInitialState} = configuration;
+  const {loadLoxberryNotifications, loadPluginLogList} = core;
+  const loadInitialPage = async () => {
+    const loadSnapshot = async () => {
+      let sections;
+      try {
+        const body = new URLSearchParams();
+        body.set('action', 'page_snapshot');
+        body.set('ajax', '1');
+        // The helper performs six reads in sequence. Allow their combined
+        // budget before falling back to the individual endpoints.
+        sections = (await postAjax(body, 60000)).data;
+      } catch {
+        // An older or temporarily unavailable helper falls back to individual reads.
+      }
+      await loadConfiguration(sections?.get_config, sections?.emergency_stop_cached_options);
+      await loadInitialState(sections?.page_state);
+      await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});
+      await loadCertificateStatus(sections?.certificate_status);
+      await pollSessions({initial: true, suppliedResult: sections?.list_sessions});
+    };
+    const loadAuxiliary = async () => {
+      let sections;
+      try {
+        const body = new URLSearchParams();
+        body.set('action', 'page_auxiliary');
+        body.set('ajax', '1');
+        // Both Perl reads run in sequence and each has a 15-second fallback budget.
+        sections = (await postAjax(body, 35000)).data;
+      } catch {
+        // Preserve the existing independent fallback for either Perl view.
+      }
+      await loadLoxberryNotifications(sections?.page_notifications);
+      await loadPluginLogList(sections?.page_loglist);
+    };
+    await Promise.allSettled([loadSnapshot(), loadAuxiliary()]);
+  };
+  const accessSection = document.getElementById('access');
+  const sessionsSection = document.getElementById('sessions');
+  accessSection.addEventListener('toggle', () => {
+    if (accessSection.open && initialBackgroundHydrationComplete) {
+      queueBackgroundHydration([loadCertificateStatus]);
+    }
+  });
+  sessionsSection.addEventListener('toggle', () => {
+    if (sessionsSection.open && initialBackgroundHydrationComplete) {
+      queueBackgroundHydration([() => pollSessions()]);
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      service.stopPoll();
+      sessions.stopPoll();
+    } else {
+      service.scheduleServicePoll(0);
+      sessions.scheduleSessionPoll(0);
+    }
+  });
+  scheduleBackgroundHydration();
+  const actionTimeout = (action) => ({
+    save_mcp_config: 90000,
+    save_mqtt_config: 165000,
+    set_service_enabled: 75000,
+    set_logging: 75000,
+    revoke_session: 75000,
+    revoke_all: 75000,
+    renew_certificate: 30000,
+    service_action: 75000,
+    service_status: 7000,
+    list_sessions: 15000,
+  })[action] || 15000;
+  const downloadDiagnostic = (data) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error(label('AJAX.ERROR'));
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], {type: 'application/json'});
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    try {
+      link.href = url;
+      link.download = 'mcpserver-diagnostic.json';
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+    } finally {
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  };
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form[data-ajax]');
+    if (!form) return;
+    event.preventDefault();
+    if (!service.confirmAction(form)) return;
+    delete form.dataset.confirmed;
+    const button = event.submitter || form.querySelector('button[type="submit"]');
+    const submittedAction = form === configuration.mcpConfigForm ? button.value : form.dataset.ajax;
+    const serviceAction = form.dataset.ajax === 'service_action'
+      || form.dataset.ajax === 'set_service_enabled';
+    let keepButtonDisabled = false;
+    let sessionAction = null;
+    if (serviceAction) service.beginAction();
+    if (sessions.isSessionAction(form.dataset.ajax)) {
+      sessionAction = sessions.beginAction(form, button);
+      if (!sessionAction) return;
+    }
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    if (!sessionAction || !sessions.hasFailures) {
+      setAjaxStatus('', serviceAction ? label('STATUS.ACTION_RUNNING') : label('AJAX.WORKING'));
+    }
+    const body = new URLSearchParams(new FormData(form));
+    if (form === configuration.mcpConfigForm) body.set('action', submittedAction);
+    const requestedServiceEnabled = service.requestedEnabled(form);
+    if (requestedServiceEnabled !== null) {
+      body.set('service_enabled', requestedServiceEnabled ? '1' : '0');
+    }
+    body.set('ajax', '1');
+    try {
+      const result = await postAjax(body, actionTimeout(submittedAction));
+      service.validateEnabledResult(result, requestedServiceEnabled);
+      if (submittedAction === 'diagnostic') downloadDiagnostic(result.data);
+      if (sessionAction && sessions.hasFailures) {
+        sessions.showSessionActionFailure();
+      } else {
+        const cleanupFailed = form.dataset.ajax === 'save_mqtt_config'
+          && result.data.retained_cleanup?.status === 'failed';
+        setAjaxStatus(cleanupFailed ? 'warning' : 'success', cleanupFailed
+          ? label('AJAX.MQTT_CLEANUP_WARNING') : label('AJAX.SUCCESS'));
+        if (!cleanupFailed) hideSuccess(status, () => sessions.activeActions > 0);
+      }
+      if (result.data.service) {
+        service.renderService(result.data.service, {
+          updateEnabledSetting: form.dataset.ajax === 'set_service_enabled',
+          emergencyStopRuntime: result.data.emergency_stop_runtime,
+        });
+      }
+      if (sessionAction) sessions.actionSucceeded(form, sessionAction, result.data);
+      if (result.data.certificate) certificate.updateCertificate(result.data.certificate);
+      if (form.dataset.ajax === 'save_mqtt_config') configuration.onMqttSaved(result.data);
+      if (submittedAction === 'save_mcp_config') configuration.onMcpSaved(result.data);
+      if (form.dataset.ajax === 'set_logging') configuration.renderLogging(result.data.configuration);
+      if (form.dataset.ajax === 'renew_certificate') {
+        keepButtonDisabled = true;
+        form.querySelector('input[name="securepin"]').value = '';
+        certificate.onRenewScheduled(button);
+      }
+    } catch (error) {
+      if (core.unloading) return;
+      service.actionFailed(form);
+      const errorMessage = error instanceof DOMException && error.name === 'AbortError'
+        ? label('AJAX.TIMEOUT')
+        : error instanceof TypeError
+          ? label('AJAX.NETWORK')
+          : error instanceof Error ? error.message : label('AJAX.ERROR');
+      if (sessionAction) sessions.actionFailed(sessionAction, errorMessage);
+      else setAjaxStatus('error', errorMessage);
+    } finally {
+      if (serviceAction) service.finishAction();
+      if (sessionAction) sessions.finishAction(sessionAction);
+      if (!keepButtonDisabled) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        if (sessionAction) sessions.updateSessionActionControls();
+      }
+    }
+  });
+})();

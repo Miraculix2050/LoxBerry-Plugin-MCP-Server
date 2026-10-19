@@ -20,6 +20,8 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxone_read_enabled is True
     assert config.loxone_control_enabled is False
     assert config.loxberry_read_enabled is False
+    assert config.loxberry_knx_read_enabled is False
+    assert config.loxberry_knx_read_bindings == ()
     assert config.loxone_history_enabled is False
     assert config.loxberry_operate_enabled is False
     assert config.connection_timeout == 10
@@ -29,6 +31,10 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxberry_read_bindings == ()
     assert config.loxberry_operate_bindings == ()
     assert config.statistics_memory_max_mib == 128
+    assert config.event_history_enabled is False
+    assert config.event_history_retention_days == 90
+    assert config.event_history_maximum_mib == 128
+    assert config.event_history_sources == ()
     assert config.structure_refresh_seconds == 300
     assert config.max_structure_controls == 20_000
     assert config.max_parallel_calls == 4
@@ -69,7 +75,25 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 9
+    assert config.to_document()["schema_version"] == 12
+
+
+def test_version_ten_config_adds_empty_knx_taxonomy_without_changing_endpoint() -> None:
+    config = PluginConfig.from_document(
+        {"schema_version": 10, "loxone": {"endpoint": "http://192.168.10.20"}}
+    )
+    document = config.to_document()
+    assert document["schema_version"] == 12
+    assert document["knx_address_taxonomy"] == {"endpoint": "", "entries": []}
+    assert document["loxone"]["endpoint"] == "http://192.168.10.20"
+
+
+@pytest.mark.parametrize("value", [0, 721, 1.5, "72"])
+def test_explorer_binding_retention_is_bounded(value: object) -> None:
+    with pytest.raises(ConfigError, match="explorer_binding_retention_hours"):
+        PluginConfig.from_document(
+            {"schema_version": 10, "limits": {"explorer_binding_retention_hours": value}}
+        )
 
 
 def test_authentication_probe_limits_are_bounded_and_related() -> None:
@@ -120,6 +144,64 @@ def test_phase_four_configuration_uses_only_the_ram_cache_setting() -> None:
     assert config.history_requests_per_minute == 12
     assert config.statistics_memory_max_mib == 64
     assert config.loxberry_operate_bindings == (binding,)
+
+
+def test_event_history_requires_history_and_keeps_exact_sources() -> None:
+    control_uuid = "00000000-0000-0000-0000000000000001"
+    state_uuid = "00000000-0000-0000-0000000000000002"
+    with pytest.raises(ConfigError, match="requires loxone history"):
+        PluginConfig.from_document({"schema_version": 9, "event_history": {"enabled": True}})
+
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 9,
+            "tools": {"loxone_history_enabled": True},
+            "event_history": {
+                "enabled": True,
+                "retention_days": 90,
+                "maximum_mib": 128,
+                "sources": [{"control_uuid": control_uuid, "state_uuid": state_uuid}],
+            },
+        }
+    )
+    assert config.event_history_sources == ((control_uuid, state_uuid),)
+
+
+def test_event_history_sources_normalize_standard_uuid_input() -> None:
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 9,
+            "event_history": {
+                "sources": [
+                    {
+                        "control_uuid": "00000000-0000-0000-0000-000000000001",
+                        "state_uuid": "00000000-0000-0000-0000-000000000002",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert config.event_history_sources == (
+        ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002"),
+    )
+
+
+def test_event_history_sources_reject_non_string_uuid_input() -> None:
+    with pytest.raises(ConfigError, match="event_history.sources is unsupported"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 9,
+                "event_history": {
+                    "sources": [
+                        {
+                            "control_uuid": 12345678901234567890123456789012,
+                            "state_uuid": "00000000-0000-0000-0000000000000002",
+                        }
+                    ]
+                },
+            }
+        )
 
 
 def test_removed_hybrid_cache_key_is_not_reused() -> None:
@@ -348,3 +430,49 @@ def test_concurrent_mutations_preserve_each_binding(tmp_path: Path) -> None:
         list(executor.map(add, bindings))
 
     assert set(AtomicConfigStore(path).load().loxberry_read_bindings) == set(bindings)
+
+
+@pytest.mark.parametrize("name", ["Codex", "<img src=x onerror=alert(1)>", "ä" * 200])
+def test_binding_names_round_trip_without_changing_authorization(name: str) -> None:
+    binding = "a" * 64
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 11,
+            "policies": {
+                "loxberry_read_bindings": [binding],
+                "loxberry_binding_names": {binding: name},
+            },
+        }
+    )
+    assert config.loxberry_read_bindings == (binding,)
+    assert config.loxberry_operate_bindings == ()
+    assert PluginConfig.from_document(config.to_document()).loxberry_binding_names == (
+        (binding, name),
+    )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        [],
+        {"b" * 64: "Codex"},
+        {"a" * 64: ""},
+        {"a" * 64: 42},
+        {"a" * 64: "x" * 201},
+        {"a" * 64: " Codex "},
+        {"a" * 64: "a\nb"},
+        {"a" * 64: "a\u202eb"},
+        {"a" * 64: None},
+    ],
+)
+def test_binding_name_metadata_rejects_invalid_or_unapproved_entries(metadata: object) -> None:
+    with pytest.raises(ConfigError, match="loxberry_binding_names"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 11,
+                "policies": {
+                    "loxberry_read_bindings": ["a" * 64],
+                    "loxberry_binding_names": metadata,
+                },
+            }
+        )

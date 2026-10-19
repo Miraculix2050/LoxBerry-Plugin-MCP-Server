@@ -5,14 +5,39 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .knx_datatypes import KnxDptEvidence, knx_dpt_evidence
 from .parser import ProjectElement
+from .state_flow import (
+    STATE_RULE_ID as STATE_RULE_ID,
+)
+from .state_flow import (
+    StateFlow as StateFlow,
+)
+from .state_flow import (
+    decode_state_flow as decode_state_flow,
+)
+from .state_flow import (
+    state_connector_reason as state_connector_reason,
+)
 
 _ADDRESS = re.compile(r"^(\d{1,2})/(\d{1,4})(?:/(\d{1,3}))?$")
+_EDGE_ADDRESS = re.compile(r"^(.+):(0|1)$")
 _ENDPOINT_DIRECTIONS = {
     "EIBsensor": "bus_to_loxone",
     "EIBactor": "loxone_to_bus",
+    "EIBextsensor": "bus_to_loxone",
+    "EIBextactor": "loxone_to_bus",
+    "EIBtextsensor": "bus_to_loxone",
+    "EIBtextactor": "loxone_to_bus",
 }
+_OPTIONAL_RAW_DATATYPE_TYPES = frozenset({"EIBextactor", "EIBtextsensor", "EIBtextactor"})
 _LOGIC_TYPES = {"EIBPush", "EibDimmer", "EIBJalousie"}
+
+
+@dataclass(frozen=True, slots=True)
+class KnxAddressVariant:
+    kind: str
+    value: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,11 +48,13 @@ class KnxGroupAddress:
     canonical: str | None
     format: str | None
     segments: tuple[int, ...] | None
+    source_field: str
+    variant: KnxAddressVariant | None
 
 
 @dataclass(frozen=True, slots=True)
 class KnxDatatype:
-    """A raw project datatype code; its EIS/DPT meaning is intentionally unresolved."""
+    """Original datatype code with separately evidenced main-type normalization."""
 
     source_field: str
     source_value: str
@@ -48,6 +75,7 @@ class KnxSemantics:
     group_address: KnxGroupAddress | None
     datatype: KnxDatatype | None
     truncated_fields: tuple[str, ...]
+    normalized_dpt_evidence: KnxDptEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +96,12 @@ class SignalUseRule:
 # These rules encode only compact, independently stated connector behaviour.
 # They do not package Loxone documentation and must remain backed by fixtures.
 _SIGNAL_USE_RULES: dict[str, tuple[SignalUseRule, ...]] = {
+    # Project keys I1/I2/Q were observed in the authorized opening-contact audit.
+    # Loxone's OR documentation calls the output O; that UI label is not an XML alias.
+    "Or": (
+        SignalUseRule("or_i1_q_v1", "I1", "Q", "logical_or"),
+        SignalUseRule("or_i2_q_v1", "I2", "Q", "logical_or"),
+    ),
     "EIBPush": (
         SignalUseRule("eib_push_toggle", "Tg", "O", "rising_edge", "toggle"),
         SignalUseRule("eib_push_on", "On", "O", "rising_edge", "set_on"),
@@ -83,6 +117,12 @@ def signal_use_rules(block_type: str | None) -> tuple[SignalUseRule, ...]:
     return _SIGNAL_USE_RULES.get(block_type or "", ())
 
 
+def expects_raw_datatype(source_type: str) -> bool:
+    """Whether an absent EIBType warrants a source-gap diagnostic."""
+
+    return source_type not in _OPTIONAL_RAW_DATATYPE_TYPES
+
+
 def _bounded(value: str | None, field: str, limit: int, truncated: list[str]) -> str | None:
     if value is None:
         return None
@@ -92,15 +132,22 @@ def _bounded(value: str | None, field: str, limit: int, truncated: list[str]) ->
     return value
 
 
-def _group_address(value: str | None, truncated: list[str]) -> KnxGroupAddress | None:
+def _group_address(
+    value: str | None, source_field: str, truncated: list[str], *, allow_edge: bool = False
+) -> KnxGroupAddress | None:
     original = _bounded(value, "group_address.original", 200, truncated)
     if original is None:
         return None
     if value is not None and len(value) > 200:
-        return KnxGroupAddress(original, None, None, None)
-    match = _ADDRESS.fullmatch(original.strip())
+        return KnxGroupAddress(original, None, None, None, source_field, None)
+    address = original.strip()
+    variant = None
+    if allow_edge and (edge := _EDGE_ADDRESS.fullmatch(address)) is not None:
+        address = edge.group(1)
+        variant = KnxAddressVariant("edge", edge.group(2))
+    match = _ADDRESS.fullmatch(address)
     if match is None:
-        return KnxGroupAddress(original, None, None, None)
+        return KnxGroupAddress(original, None, None, None, source_field, None)
     parts = tuple(int(item) for item in match.groups() if item is not None)
     if len(parts) == 2:
         valid = parts[0] <= 31 and parts[1] <= 2047
@@ -109,15 +156,30 @@ def _group_address(value: str | None, truncated: list[str]) -> KnxGroupAddress |
         valid = parts[0] <= 31 and parts[1] <= 7 and parts[2] <= 255
         format_name = "three_level"
     if not valid:
-        return KnxGroupAddress(original, None, None, None)
-    return KnxGroupAddress(original, "/".join(str(item) for item in parts), format_name, parts)
+        return KnxGroupAddress(original, None, None, None, source_field, None)
+    return KnxGroupAddress(
+        original, "/".join(str(item) for item in parts), format_name, parts, source_field, variant
+    )
 
 
-def classify_knx(element: ProjectElement) -> KnxSemantics | None:
+def is_valid_group_address_filter(value: str) -> bool:
+    """Accept only modeled KNX address forms, including supported edge variants."""
+    address = _group_address(value, "EibAddr", [], allow_edge=True)
+    return address is not None and address.canonical is not None
+
+
+def classify_knx(
+    element: ProjectElement, *, dpt_mapping_verified: bool = False
+) -> KnxSemantics | None:
     """Return only semantics proven by the exact Loxone project type and attributes."""
     source_type = element.value("Type")
-    if source_type is None:
+    if (
+        source_type not in _ENDPOINT_DIRECTIONS
+        and source_type not in _LOGIC_TYPES
+        and source_type != "EIBline"
+    ):
         return None
+    evidence = knx_dpt_evidence(element, verified=dpt_mapping_verified)
     truncated: list[str] = []
     title = _bounded(element.value("Title"), "title", 200, truncated)
     description = _bounded(element.value("Desc"), "description", 500, truncated)
@@ -139,6 +201,7 @@ def classify_knx(element: ProjectElement) -> KnxSemantics | None:
             group_address,
             datatype,
             tuple(truncated),
+            evidence,
         )
 
     if source_type == "EIBline":
@@ -147,7 +210,24 @@ def classify_knx(element: ProjectElement) -> KnxSemantics | None:
     if direction is not None:
         datatype_value = _bounded(element.value("EIBType"), "datatype.source_value", 200, truncated)
         datatype = KnxDatatype("EIBType", datatype_value) if datatype_value is not None else None
-        address = _group_address(element.value("EibAddr"), truncated)
+        if datatype is not None and evidence is not None:
+            datatype = KnxDatatype(
+                "EIBType",
+                datatype.source_value,
+                "dpt_main_type",
+                str(evidence.dpt_main_types[0]) if len(evidence.dpt_main_types) == 1 else None,
+            )
+        address_field = "EibAddr"
+        address_value = element.value(address_field)
+        if source_type == "EIBextsensor" and address_value is None:
+            address_field = "EibAddrPulse"
+            address_value = element.value(address_field)
+        address = _group_address(
+            address_value,
+            address_field,
+            truncated,
+            allow_edge=source_type in {"EIBextsensor", "EIBextactor"},
+        )
         return result("endpoint", direction, address, datatype)
     if source_type in _LOGIC_TYPES:
         return result("logic_block", None, None, None)

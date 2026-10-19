@@ -15,9 +15,9 @@ import re
 import secrets
 import time
 from collections import deque
-from collections.abc import Mapping
-from contextlib import suppress
-from dataclasses import dataclass, field
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field, replace
 from typing import Final
 from urllib.parse import urlencode, urlsplit
 from uuid import NAMESPACE_URL, uuid5
@@ -40,17 +40,29 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
     normalize_scopes,
     scope_text,
 )
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
+)
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationBusy,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
     LoxoneToken,
+    LoxoneWebSocketSession,
     MiniserverEndpoint,
+    ProbeResult,
 )
 from mcpserver.loxone.events import LoxoneProtocolError
 
@@ -85,6 +97,8 @@ class LoginTransaction:
     scopes: tuple[str, ...] = (READ_SCOPE,)
     attempts: int = 0
     loxone_token: LoxoneToken | None = None
+    cleanup_pending: bool = False
+    cleanup_id: str | None = None
     identity_name: str | None = None
     identity_id: str | None = None
     miniserver_id: str | None = None
@@ -93,6 +107,12 @@ class LoginTransaction:
     loxberry_operate_locally_approved: bool = False
     phase: str = "login"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+
+@dataclass(slots=True)
+class _ExplorerLock:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
 
 
 def _callback_csp_source(uri: str) -> str:
@@ -241,7 +261,7 @@ class Phase0OAuthWeb:
         self.loxone_store = loxone_store
         self.auth_coordinator = auth_coordinator
         self.explorer_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
-        self._explorer_locks: dict[str, asyncio.Lock] = {}
+        self._explorer_locks: dict[str, _ExplorerLock] = {}
         self.transactions: dict[str, LoginTransaction] = {}
         self._client_uuid = uuid5(NAMESPACE_URL, issuer)
         self._login_slots = asyncio.Semaphore(2)
@@ -249,23 +269,89 @@ class Phase0OAuthWeb:
         self._global_login_failures: deque[int] = deque()
         self._registration_attempts: dict[str, deque[int]] = {}
 
+    @asynccontextmanager
+    async def _locked_explorer_session(self, session_id: str) -> AsyncIterator[None]:
+        entry = self._explorer_locks.setdefault(session_id, _ExplorerLock())
+        entry.users += 1  # Include waiters so they never receive a different lock.
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0 and self._explorer_locks.get(session_id) is entry:
+                self._explorer_locks.pop(session_id)
+
+    def _queue_retained_login_token(self, transaction: LoginTransaction) -> bool:
+        """Atomically encrypt an issued token together with its cleanup marker."""
+        token = transaction.loxone_token
+        if token is None:
+            return True
+        if (
+            self.loxone_store is None
+            or not transaction.miniserver_id
+            or not transaction.identity_id
+        ):
+            return False
+        try:
+            if transaction.cleanup_id is None:
+                transaction.cleanup_id = secrets.token_urlsafe(32)
+            self.loxone_store.put(
+                "login-cleanup-" + transaction.cleanup_id,
+                transaction.miniserver_id,
+                transaction.identity_id,
+                token,
+                remote_revoke_pending=True,
+            )
+        except (LoxoneTokenStoreError, OSError):
+            return False
+        token.destroy()
+        transaction.loxone_token = None
+        transaction.cleanup_pending = False
+        transaction.cleanup_id = None
+        return True
+
+    def _retain_issued_login_token(
+        self, transaction: LoginTransaction, token: LoxoneToken, probe: ProbeResult
+    ) -> None:
+        transaction.loxone_token = token
+        transaction.cleanup_pending = True
+        transaction.cleanup_id = secrets.token_urlsafe(32)
+        transaction.miniserver_id = self.provider.store.pseudonym(
+            self.endpoint.origin, probe.serial
+        )
+        transaction.identity_id = self.provider.store.pseudonym(
+            self.endpoint.origin, probe.serial, token.username
+        )
+        self._queue_retained_login_token(transaction)
+
     async def _kill(self, transaction: LoginTransaction) -> bool:
         token = transaction.loxone_token
         if token is None:
             return True
+        transaction.cleanup_pending = True
+        if self.loxone_store is not None:
+            return self._queue_retained_login_token(transaction)
+        # Keep the owned token until remote revocation is confirmed. The client
+        # destroys its argument even when authentication or transport fails.
+        cleanup_token = replace(token)
         try:
             client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
             if self.auth_coordinator is None:
-                await client.kill_token(token)
+                await client.kill_token(cleanup_token)
             else:
                 await self.auth_coordinator.attempt(
-                    lambda: client.kill_token(token),
+                    lambda: client.kill_token(cleanup_token),
                     owner="tool_request",
                     phase="token_cleanup",
                 )
         except (LoxoneConnectionError, LoxoneProtocolError):
-            token.destroy()
+            return False
+        finally:
+            cleanup_token.destroy()
+        token.destroy()
         transaction.loxone_token = None
+        transaction.cleanup_pending = False
+        transaction.cleanup_id = None
         return True
 
     async def _cleanup(self) -> None:
@@ -388,29 +474,27 @@ class Phase0OAuthWeb:
             self._explorer_cookie(response, session_id)
             return response
         session_id = request.cookies.get(_EXPLORER_COOKIE_NAME, "")
-        try:
-            session = self.loxone_store.get_explorer_session(session_id)
-        except LoxoneTokenStoreError:
-            session = None
-        if session is None or session.expires_at <= self.provider.now():
-            response = _json({"error": "invalid_session"}, status=401)
-            self._delete_explorer_cookie(response)
-            if session_id:
-                self.loxone_store.delete_explorer_session(session_id)
-            return response
-        if action == "logout" and set(payload) == {"action"}:
-            await self.provider.revoke_raw_token(session.refresh_token, session.client_id)
-            self.loxone_store.delete_explorer_session(session.session_id)
-            logout_response = Response(status_code=204, headers=_security_headers())
-            self._delete_explorer_cookie(logout_response)
-            return logout_response
-        if action != "access" or set(payload) != {"action"}:
-            return _json({"error": "invalid_request"}, status=400)
-        lock = self._explorer_locks.setdefault(session.session_id, asyncio.Lock())
-        async with lock:
-            current = self.loxone_store.get_explorer_session(session.session_id)
+        async with self._locked_explorer_session(session_id):
+            try:
+                current = self.loxone_store.get_explorer_session(session_id)
+            except LoxoneTokenStoreError:
+                current = None
             if current is None or current.expires_at <= self.provider.now():
-                return _json({"error": "invalid_session"}, status=401)
+                response = _json({"error": "invalid_session"}, status=401)
+                self._delete_explorer_cookie(response)
+                if session_id:
+                    self.loxone_store.delete_explorer_session(session_id)
+                return response
+            if action == "logout" and set(payload) == {"action"}:
+                await self.provider.revoke_raw_token(
+                    current.refresh_token, current.client_id, reason="explorer_logout"
+                )
+                self.loxone_store.delete_explorer_session(current.session_id)
+                logout_response = Response(status_code=204, headers=_security_headers())
+                self._delete_explorer_cookie(logout_response)
+                return logout_response
+            if action != "access" or set(payload) != {"action"}:
+                return _json({"error": "invalid_request"}, status=400)
             if current.access_expires_at <= self.provider.now() + 15:
                 client = await self.provider.get_client(current.client_id)
                 refresh = (
@@ -435,7 +519,8 @@ class Phase0OAuthWeb:
                     token.refresh_token or "",
                     current.expires_at,
                 )
-                self.loxone_store.put_explorer_session(current)
+                if not self.loxone_store.update_explorer_session(current):
+                    return _json({"error": "invalid_session"}, status=401)
             token = OAuthToken(
                 access_token=current.access_token,
                 token_type="Bearer",
@@ -636,6 +721,12 @@ class Phase0OAuthWeb:
             if HISTORY_SCOPE in transaction.scopes
             else ""
         )
+        message_option = (
+            """<label class="scope-option" for="grant_messages"><input id="grant_messages" type="checkbox" name="grant_messages" value="true" data-optional-scope>
+<span><strong>System Message confirmation / Systemmeldungen bestätigen</strong><small>Optional: confirm or historize exactly one previewed message after explicit approval. No deletion or bulk actions. / Optional: Genau eine angezeigte Meldung nach ausdrücklicher Freigabe bestätigen oder historisieren. Kein Löschen und keine Sammelaktionen.</small></span></label>"""
+            if MESSAGE_CONFIRM_SCOPE in transaction.scopes
+            else ""
+        )
         control_requested = CONTROL_SCOPE in transaction.scopes
         control_option = (
             """<label class="scope-option" for="grant_control"><input id="grant_control" type="checkbox" name="grant_control" value="true" data-optional-scope>
@@ -671,10 +762,39 @@ class Phase0OAuthWeb:
             if operate_requested
             else ""
         )
+        knx_read_option = (
+            """<label class="scope-option" for="grant_knx_read"><input id="grant_knx_read" type="checkbox" name="grant_knx_read" value="true" data-optional-scope>
+<span><strong>Local KNX catalog / Lokaler KNX-Katalog</strong><small>Optional: read stored ETS/manual names, descriptions, DPT declarations and prefix labels. Requires separate LoxBerry Admin approval; Loxone visibility does not authorize local metadata. / Optional: Gespeicherte ETS-/manuelle Namen, Beschreibungen, DPT-Angaben und Präfixlabels lesen. Separate LoxBerry-Admin-Freigabe erforderlich; Loxone-Sichtbarkeit berechtigt nicht zum Lesen lokaler Metadaten.</small></span></label>"""
+            if LOXBERRY_KNX_READ_SCOPE in transaction.scopes
+            else ""
+        )
+        knx_drafts_option = (
+            """<label class="scope-option" for="grant_knx_drafts"><input id="grant_knx_drafts" type="checkbox" name="grant_knx_drafts" value="true" data-optional-scope>
+<span><strong>KNX correction drafts / KNX-Korrekturentwürfe</strong><small>Optional: inspect and edit your shared correction proposals. Requires independent catalog-read and draft Admin approvals. Does not apply metadata, export XML or change ETS/Loxone. / Optional: Eigene gemeinsame Korrekturvorschläge einsehen und bearbeiten. Unabhängige Admin-Freigaben für Kataloglesen und Entwürfe erforderlich. Speichert keine Metadatenkorrekturen, exportiert kein XML und ändert weder ETS noch Loxone.</small></span></label>"""
+            if LOXBERRY_KNX_DRAFTS_SCOPE in transaction.scopes
+            else ""
+        )
+        knx_write_option = (
+            """<label class="scope-option" for="grant_knx_write"><input id="grant_knx_write" type="checkbox" name="grant_knx_write" value="true" data-optional-scope>
+<span><strong>Local KNX corrections / Lokale KNX-Korrekturen</strong><small>Optional: apply explicitly approved existing-address name/description overrides; prefix labels require additional Admin activation. Separate Admin write, draft and read approvals required. No ETS/Loxone writes. / Optional: Ausdrücklich bestätigte Namens-/Beschreibungs-Overrides vorhandener Adressen speichern; Präfixlabels benötigen eine zusätzliche Admin-Aktivierung. Separate Admin-Freigaben für Schreiben, Entwürfe und Lesen erforderlich. Keine ETS-/Loxone-Änderungen.</small></span></label>"""
+            if LOXBERRY_KNX_WRITE_SCOPE in transaction.scopes
+            else ""
+        )
         select_all_option = (
             """<label class="scope-select-all" for="grant_all"><input id="grant_all" type="checkbox">
 <span id="grant_all_label" data-select-label="Select all / Alle auswählen" data-deselect-label="Deselect all / Alle abwählen">Select all / Alle auswählen</span></label>"""
-            if any((history_option, control_option, loxberry_option, operate_option))
+            if any(
+                (
+                    history_option,
+                    control_option,
+                    message_option,
+                    loxberry_option,
+                    operate_option,
+                    knx_read_option,
+                    knx_drafts_option,
+                    knx_write_option,
+                )
+            )
             else ""
         )
         select_all_script = (
@@ -707,7 +827,7 @@ sync();
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 {select_all_option}
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{history_option}{control_option}{loxberry_option}{operate_option}</fieldset>
+{history_option}{control_option}{message_option}{loxberry_option}{operate_option}{knx_read_option}{knx_drafts_option}{knx_write_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
@@ -729,8 +849,12 @@ sync();
                 "password",
                 "grant_control",
                 "grant_history",
+                "grant_messages",
                 "grant_loxberry",
                 "grant_loxberry_operate",
+                "grant_knx_read",
+                "grant_knx_drafts",
+                "grant_knx_write",
             },
         )
         transaction_id = request.cookies.get(_COOKIE_NAME, "")
@@ -765,12 +889,36 @@ sync();
                 and transaction.identity_id
                 and transaction.miniserver_id
             ):
+                grant_messages = form.get("grant_messages")
                 grant_control = form.get("grant_control")
                 grant_history = form.get("grant_history")
                 grant_loxberry = form.get("grant_loxberry")
                 grant_loxberry_operate = form.get("grant_loxberry_operate")
+                grant_knx_read = form.get("grant_knx_read")
+                grant_knx_drafts = form.get("grant_knx_drafts")
+                grant_knx_write = form.get("grant_knx_write")
                 if (
-                    grant_control not in {None, "true"}
+                    grant_messages not in {None, "true"}
+                    or (
+                        grant_messages is not None
+                        and MESSAGE_CONFIRM_SCOPE not in transaction.scopes
+                    )
+                    or grant_knx_read not in {None, "true"}
+                    or grant_knx_drafts not in {None, "true"}
+                    or grant_knx_write not in {None, "true"}
+                    or (
+                        grant_knx_write is not None
+                        and LOXBERRY_KNX_WRITE_SCOPE not in transaction.scopes
+                    )
+                    or (
+                        grant_knx_drafts is not None
+                        and LOXBERRY_KNX_DRAFTS_SCOPE not in transaction.scopes
+                    )
+                    or (
+                        grant_knx_read is not None
+                        and LOXBERRY_KNX_READ_SCOPE not in transaction.scopes
+                    )
+                    or grant_control not in {None, "true"}
                     or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
                     or grant_loxberry not in {None, "true"}
                     or (
@@ -795,6 +943,8 @@ sync();
                     approved_scopes = (*approved_scopes, HISTORY_SCOPE)
                 if grant_control == "true":
                     approved_scopes = (*approved_scopes, CONTROL_SCOPE)
+                if grant_messages == "true":
+                    approved_scopes = (*approved_scopes, MESSAGE_CONFIRM_SCOPE)
                 pending_loxberry_read = (
                     grant_loxberry == "true" and not transaction.loxberry_read_locally_approved
                 )
@@ -813,6 +963,26 @@ sync();
                             status=400,
                         )
                     approved_scopes = (*approved_scopes, LOXBERRY_OPERATE_SCOPE)
+                if grant_knx_read == "true":
+                    approved_scopes = (*approved_scopes, LOXBERRY_KNX_READ_SCOPE)
+                if grant_knx_drafts == "true":
+                    if LOXBERRY_KNX_READ_SCOPE not in approved_scopes:
+                        return _message_page(
+                            "Invalid authorization request",
+                            "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                            "KNX drafts require independent catalog-read consent. / KNX-Entwürfe benötigen eine unabhängige Zustimmung zum Kataloglesen.",
+                            status=400,
+                        )
+                    approved_scopes = (*approved_scopes, LOXBERRY_KNX_DRAFTS_SCOPE)
+                if grant_knx_write == "true":
+                    if LOXBERRY_KNX_DRAFTS_SCOPE not in approved_scopes:
+                        return _message_page(
+                            "Invalid authorization request",
+                            "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                            "Local KNX writes require independent draft/read consent. / Lokale KNX-Änderungen benötigen unabhängige Zustimmungen für Entwürfe und Lesen.",
+                            status=400,
+                        )
+                    approved_scopes = (*approved_scopes, LOXBERRY_KNX_WRITE_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
                 if self.loxone_store is None:
@@ -913,6 +1083,13 @@ sync();
         )
 
     async def _login(self, transaction: LoginTransaction, form: Mapping[str, str]) -> Response:
+        if transaction.cleanup_pending and not await self._kill(transaction):
+            return _message_page(
+                "Sign-in temporarily unavailable",
+                "Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar",
+                "Previous sign-in cleanup is pending. / Bereinigung der vorherigen Anmeldung steht aus.",
+                status=503,
+            )
         transaction.attempts += 1
         if transaction.attempts > _MAX_LOGIN_ATTEMPTS:
             self.transactions.pop(transaction.transaction_id, None)
@@ -941,30 +1118,79 @@ sync();
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
         client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
         token: LoxoneToken | None = None
+        session: LoxoneWebSocketSession | None = None
+        probe: ProbeResult | None = None
         try:
             async with self._login_slots:
-                probe = await client.probe()
                 if self.auth_coordinator is None:
+                    probe = await client.probe()
                     token = await client.acquire_token(username, password)
                     session = await client.open_session(token)
                 else:
-                    token = await self.auth_coordinator.attempt(
-                        lambda: client.acquire_token(username, password),
-                        owner="tool_request",
-                        phase="token_acquisition",
-                    )
-                    session = await self.auth_coordinator.attempt(
-                        lambda: client.open_session(token),
+
+                    async def sign_in() -> ProbeResult:
+                        nonlocal token, probe
+                        # Suppression precedes the probe; recovery covers both
+                        # token acquisition and session authentication atomically.
+                        result = await client.probe()
+                        probe = result
+                        token = await client.acquire_token(username, password)
+                        return result
+
+                    async def authenticate_token() -> None:
+                        nonlocal session
+                        assert token is not None
+                        session = await client.open_session(token)
+
+                    probe = await self.auth_coordinator.attempt(
+                        sign_in,
                         owner="tool_request",
                         phase="session_establishment",
+                        public_login=True,
+                        token_phase=authenticate_token,
                     )
+                assert session is not None
                 try:
                     structure = await session.load_structure()
                 finally:
                     await session.close()
-        except Exception:
+        except asyncio.CancelledError:
             if token is not None:
-                with suppress(LoxoneConnectionError):
+                assert probe is not None
+                self._retain_issued_login_token(transaction, token, probe)
+            transaction.attempts -= 1
+            transaction.phase = "login"
+            raise
+        except MiniserverAuthenticationSuppressed as exc:
+            if token is not None:
+                assert probe is not None
+                self._retain_issued_login_token(transaction, token, probe)
+            transaction.attempts -= 1
+            transaction.phase = "login"
+            retry_at = (
+                self.auth_coordinator.current_status()["next_public_login_at"]
+                if self.auth_coordinator and not isinstance(exc, MiniserverAuthenticationBusy)
+                else None
+            )
+            wait = max(
+                1,
+                (retry_at if isinstance(retry_at, int) else int(time.time()) + 5)
+                - int(time.time()),
+            )
+            response = _message_page(
+                "Sign-in temporarily unavailable",
+                "Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar",
+                f"Try again in {wait} seconds. / Versuchen Sie es in {wait} Sekunden erneut.",
+                status=429,
+            )
+            response.headers["Retry-After"] = str(wait)
+            return response
+        except Exception:
+            if token is not None and self.loxone_store is not None:
+                assert probe is not None
+                self._retain_issued_login_token(transaction, token, probe)
+            elif token is not None:
+                try:
                     if self.auth_coordinator is None:
                         await client.kill_token(token)
                     else:
@@ -973,9 +1199,15 @@ sync();
                             owner="tool_request",
                             phase="token_cleanup",
                         )
+                except (LoxoneConnectionError, LoxoneProtocolError):
+                    assert probe is not None
+                    self._retain_issued_login_token(transaction, token, probe)
+                else:
+                    token.destroy()
             self._record_login_failure(rate_keys, now)
             transaction.phase = "login"
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
+        assert probe is not None
         miniserver_id = self.provider.store.pseudonym(self.endpoint.origin, probe.serial)
         identity_id = self.provider.store.pseudonym(
             self.endpoint.origin,
@@ -1165,8 +1397,12 @@ sync();
                     READ_SCOPE,
                     HISTORY_SCOPE,
                     CONTROL_SCOPE,
+                    MESSAGE_CONFIRM_SCOPE,
                     LOXBERRY_READ_SCOPE,
                     LOXBERRY_OPERATE_SCOPE,
+                    LOXBERRY_KNX_READ_SCOPE,
+                    LOXBERRY_KNX_DRAFTS_SCOPE,
+                    LOXBERRY_KNX_WRITE_SCOPE,
                 ],
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],

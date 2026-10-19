@@ -1,0 +1,8 @@
+{
+  "name": "loxberry-mcpserver-tests",
+  "private": true,
+  "description": "Development-only DOM tests for the Tool Explorer",
+  "devDependencies": {
+    "jsdom": "30.1.1"
+  }
+}

@@ -4,6 +4,7 @@ import configparser
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -13,8 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH
-from mcpserver.skill_delivery import SKILL_REVISION
+from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH, tool_schema_catalog
+from mcpserver.server import create_server
+from mcpserver.settings import ServerSettings
+from mcpserver.skill_delivery import SKILL_MODULES, SKILL_REVISION
 from tools.build_plugin import (
     _EXECUTABLES,
     _add,
@@ -28,6 +31,7 @@ from tools.build_release_candidate import main as build_release_candidate
 from tools.generate_schema_reference import main as generate_schema_reference
 from tools.prepare_wheelhouse import main as prepare_wheelhouse
 from tools.validate_release_metadata import validate as validate_release_metadata
+from tools.verify_plugin import _EXECUTABLES as VERIFIED_EXECUTABLES
 from tools.verify_plugin import (
     PackageVerificationError,
     _expected_project_version,
@@ -60,7 +64,17 @@ def _write_project_wheel(
                 wheel.writestr(name, source_bytes)
         if extra_file:
             wheel.writestr(extra_file, b"stale deleted module")
-        wheel.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill")
+        wheel.writestr(
+            "mcpserver/skills/using-loxberry-mcp/SKILL.md",
+            (ROOT / "src/mcpserver/skills/using-loxberry-mcp/SKILL.md").read_bytes(),
+        )
+        for source in (ROOT / "src/mcpserver/skills/using-loxberry-mcp").rglob("*"):
+            if source.is_file() and (
+                source.parent.name == "modules" or source.name == "frontmatter.txt"
+            ):
+                name = source.relative_to(ROOT / "src").as_posix()
+                if name != missing_file:
+                    wheel.writestr(name, b"stale" if name == stale_file else source.read_bytes())
         if include_openai_metadata:
             wheel.writestr(
                 "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
@@ -76,6 +90,18 @@ def test_agent_skill_is_declared_as_wheel_package_data() -> None:
     assert (skill / "agents" / "openai.yaml").is_file()
     assert '"skills/using-loxberry-mcp/SKILL.md"' in pyproject
     assert '"skills/using-loxberry-mcp/agents/openai.yaml"' in pyproject
+    assert '"skills/using-loxberry-mcp/modules/*.md"' in pyproject
+
+
+@pytest.mark.parametrize("variant", ["missing", "stale"])
+def test_wheel_rejects_missing_or_stale_guidance_module(tmp_path: Path, variant: str) -> None:
+    wheel = tmp_path / "project.whl"
+    module = "mcpserver/skills/using-loxberry-mcp/modules/operations.md"
+    _write_project_wheel(wheel, **{f"{variant}_file": module})
+    with pytest.raises(SystemExit):
+        verify_project_wheel_input(wheel, ROOT / "src")
+    with pytest.raises(PackageVerificationError):
+        verify_project_wheel_archive(wheel.read_bytes(), ROOT / "src")
 
 
 def test_package_contract_includes_generated_schema_reference() -> None:
@@ -115,10 +141,31 @@ def test_schema_generator_requires_explicit_output_root(monkeypatch: pytest.Monk
     assert exc_info.value.code == 2
 
 
+def test_mcp_client_smoke_required_inventory_matches_default_server() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+    inventory = re.search(r"[$]expected = @[(](.*?)[)]", script, re.DOTALL)
+    assert inventory is not None
+    expected = re.findall(r"'([^']+)'", inventory.group(1))
+    server = create_server(
+        ServerSettings(
+            host="127.0.0.1",
+            port=8765,
+            allowed_hosts=("testserver",),
+            allowed_origins=("https://client.example",),
+        )
+    )
+    actual = {tool.name for tool in server._tool_manager.list_tools()}
+    assert len(expected) == len(set(expected))
+    assert set(expected) == actual
+
+
 def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
 
     assert "skill://using-loxberry-mcp/SKILL.md" in script
+    assert "skill://using-loxberry-mcp/core.md" in script
+    assert "skill://using-loxberry-mcp/knx.md" in script
+    assert "$skillResources.Count -ne $expectedSkillUris.Count" in script
     assert "loxone_get_skill_guide" in script
     assert "method = 'resources/list'" in script
     assert "method = 'resources/read'" in script
@@ -131,7 +178,7 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "$controlAdvertised = $actual -contains 'loxone_operate_control'" in script
     assert "if ($ControlFixturePath -and -not $controlAdvertised)" in script
     assert "'loxberry_get_system_status', 'loxberry_list_service_events'," in script
-    assert "'loxberry_list_miniserver_auth_events'," in script
+    assert "'loxone_list_authentication_events'," in script
     assert "Temporary override control is outside the approved test intersection." in script
     assert "Temporary override starts must use the fixed 60-second test duration." in script
     assert "Read-only tool $Name returned error code $($envelope.data.error)." in script
@@ -139,6 +186,41 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "mcp_room_snapshot_acceptance=pass" in script
     assert "mcp_weather_acceptance=pass" in script
     assert "mcp_readonly_controller_models_acceptance=pass" in script
+
+
+def test_mcp_client_smoke_optional_inventory_covers_release_catalog() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+    inventories = [
+        re.search(r"[$]" + name + r" = @[(](.*?)[)]", script, re.DOTALL)
+        for name in ("expected", "optional")
+    ]
+    assert all(inventories)
+    names = [
+        name for inventory in inventories for name in re.findall(r"'([^']+)'", inventory.group(1))
+    ]
+    assert len(names) == len(set(names))
+    assert set(names) == {tool["name"] for tool in tool_schema_catalog("test")["tools"]}
+
+
+def test_mcp_client_smoke_checks_exact_mutation_annotations() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+    block = re.search(r"\$mutationAnnotations = @\{(.*?)\n    \}", script, re.DOTALL)
+    assert block is not None
+    declarations = re.findall(r"'([^']+)' = @\(\$(true|false), \$(true|false)\)", block.group(1))
+    contracts = {
+        name: (destructive == "true", idempotent == "true")
+        for name, destructive, idempotent in declarations
+    }
+    actual = {
+        tool["name"]: (
+            tool["annotations"]["destructiveHint"],
+            tool["annotations"]["idempotentHint"],
+        )
+        for tool in tool_schema_catalog("test")["tools"]
+        if not tool["annotations"]["readOnlyHint"]
+    }
+    assert len(declarations) == len(contracts)
+    assert contracts == actual
 
 
 @pytest.mark.parametrize("variant", ["extra", "duplicate", "missing"])
@@ -166,14 +248,48 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
     source = source_root / "mcpserver" / "module.py"
     source.parent.mkdir(parents=True)
     source.write_bytes(b'"""Module."""\r\n')
+    scopes = source_root / "mcpserver" / "auth" / "scopes.py"
+    scopes.parent.mkdir()
+    scopes.write_bytes(b'"""Scope names."""\r\n')
+    cache = source_root / "mcpserver" / "emergency_options_cache.py"
+    cache.write_bytes(b'"""Emergency options cache."""\r\n')
+    selector_cache = source_root / "mcpserver" / "event_history_selector_cache.py"
+    selector_cache.write_bytes(b'"""Event History selector cache."""\r\n')
+    prompts = source_root / "mcpserver" / "prompts.py"
+    prompts.write_bytes(b'"""Prompt registration."""\r\n')
+    analysis_prompts = source_root / "mcpserver" / "analysis_prompts.py"
+    analysis_prompts.write_bytes(b'"""Analysis prompt recipes."""\r\n')
+    knx_prompts = source_root / "mcpserver" / "knx" / "prompts.py"
+    knx_prompts.parent.mkdir()
+    knx_prompts.write_bytes(b'"""KNX prompt recipes."""\r\n')
     wheel = tmp_path / "project.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("mcpserver/module.py", b'"""Module."""\n')
+        archive.writestr("mcpserver/prompts.py", b'"""Prompt registration."""\n')
+        archive.writestr("mcpserver/analysis_prompts.py", b'"""Analysis prompt recipes."""\n')
+        archive.writestr("mcpserver/knx/prompts.py", b'"""KNX prompt recipes."""\n')
+        archive.writestr("mcpserver/auth/scopes.py", b'"""Scope names."""\n')
+        archive.writestr(
+            "mcpserver/emergency_options_cache.py", b'"""Emergency options cache."""\n'
+        )
+        archive.writestr(
+            "mcpserver/event_history_selector_cache.py",
+            b'"""Event History selector cache."""\n',
+        )
         archive.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill\n")
+        archive.writestr("mcpserver/skills/using-loxberry-mcp/frontmatter.txt", b"header")
+        for module in SKILL_MODULES:
+            archive.writestr(f"mcpserver/skills/using-loxberry-mcp/modules/{module}.md", b"module")
         archive.writestr(
             "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml", b"interface: {}\n"
         )
 
+    with zipfile.ZipFile(wheel) as archive:
+        for name in archive.namelist():
+            if name.endswith((".md", ".txt")):
+                target = source_root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(name).replace(b"\n", b"\r\n"))
     verify_project_wheel_input(wheel, source_root)
     verify_project_wheel_archive(wheel.read_bytes(), source_root)
 
@@ -206,7 +322,9 @@ def test_v4_package_manifest_is_present() -> None:
         "postupgrade.sh",
         "uninstall/uninstall.sh",
         "bin/emergency-stop-miniserver.php",
+        "bin/event-history-upgrade.py",
         "bin/healthcheck",
+        "bin/lib/MCPServer/RequestSecurity.pm",
         "bin/renew-web-certificate",
         "bin/root-lifecycle-paths.py",
         "icons/icon.svg",
@@ -214,9 +332,29 @@ def test_v4_package_manifest_is_present() -> None:
         "webfrontend/htmlauth/explorer.cgi",
         "webfrontend/htmlauth/explorer_callback.cgi",
         "webfrontend/htmlauth/explorer.js",
+        "webfrontend/htmlauth/explorer-adapters.js",
+        "webfrontend/htmlauth/explorer-core.js",
+        "webfrontend/htmlauth/explorer-state.js",
+        "webfrontend/htmlauth/explorer-auth.js",
+        "webfrontend/htmlauth/explorer-client.js",
+        "webfrontend/htmlauth/explorer-views.js",
+        "webfrontend/htmlauth/admin/core.js",
+        "webfrontend/htmlauth/admin/configuration.js",
+        "webfrontend/htmlauth/admin/service.js",
+        "webfrontend/htmlauth/admin/certificate.js",
+        "webfrontend/htmlauth/admin/sessions.js",
+        "webfrontend/htmlauth/admin/page.js",
+        "webfrontend/htmlauth/event-history/charts.js",
+        "webfrontend/htmlauth/event-history/chart-cache.js",
+        "webfrontend/htmlauth/event-history/charts.css",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",
+        "webfrontend/htmlauth/event-history/vendor/uplot/LICENSE",
+        "webfrontend/htmlauth/event-history/vendor/uplot/SHA256SUMS",
         "webfrontend/htmlauth/mcp-ui.css",
         "templates/index.html",
         "templates/explorer.html",
+        "templates/event-history-charts.html",
         "templates/lang/language_de.ini",
         "templates/lang/language_en.ini",
     ]
@@ -228,6 +366,13 @@ def test_v4_package_manifest_is_present() -> None:
     assert "actual_folder=$3" in hooks
     assert "LBPCONFIG/$actual_folder" in hooks
     assert "LBPDATA/$actual_folder" in hooks
+
+
+def test_bundled_uplot_distribution_matches_pinned_checksums() -> None:
+    directory = ROOT / "webfrontend/htmlauth/event-history/vendor/uplot"
+    for line in (directory / "SHA256SUMS").read_text(encoding="ascii").splitlines():
+        digest, filename = line.split("  ", 1)
+        assert hashlib.sha256((directory / filename).read_bytes()).hexdigest() == digest
 
 
 def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
@@ -280,12 +425,14 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     assert (
         "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in preupgrade
     )
+    assert '"$installer_root/bin/event-history-upgrade.py" backup' in preupgrade
     assert "installer_root=${6:-}" in postinstall
     assert 'upgrade_backup="$upgrade_backup_dir/mcpserver.json"' in postinstall
     assert 'install -m 600 "$upgrade_backup" "$config_file"' in postinstall
     assert (
         "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in postinstall
     )
+    assert '"$installer_root/bin/event-history-upgrade.py" restore' in postinstall
     assert 'cp "$plugin_config/default-config.json" "$config_file"' in postinstall
     assert postinstall.index('install -m 600 "$upgrade_backup" "$config_file"') < postinstall.index(
         'cp "$plugin_config/default-config.json" "$config_file"'
@@ -299,15 +446,13 @@ def test_upgrade_preserves_native_admin_ui_logs() -> None:
     assert "-delete" not in postupgrade
 
 
-def test_postinstall_creates_a_native_admin_ui_log_for_clean_installs() -> None:
+def test_postinstall_initializes_a_native_admin_ui_log_for_clean_installs_and_upgrades() -> None:
     postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
 
-    assert "is_upgrade=0" in postinstall
     assert '[ -z "${LBHOMEDIR:-}" ]' in postinstall
     assert 'loxberry_home=$(realpath -e -- "$LBHOMEDIR")' in postinstall
     assert 'perl -I"$loxberry_home/libs/perllib"' in postinstall
-    assert 'if [ -d "$upgrade_backup_dir" ]; then' in postinstall
-    assert 'if [ "$is_upgrade" -eq 0 ]; then' in postinstall
+    assert "is_upgrade" not in postinstall
     assert 'name => "admin-ui"' in postinstall
     assert "package => $folder" in postinstall
     assert "logdir => $logdir" in postinstall
@@ -358,12 +503,48 @@ def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
     assert 'document["schema_version"] = 2' in hook
     assert 'document.get("schema_version") == 5' in hook
     assert 'document["schema_version"] = 6' in hook
+    assert 'document.get("schema_version") == 9' in hook
+    assert 'limits.setdefault("explorer_binding_retention_hours", 72)' in hook
+    assert 'policies.setdefault("explorer_bindings", [])' in hook
+    assert 'document["schema_version"] = 11' in hook
+    assert 'document.get("schema_version") == 11' in hook
+    assert 'document["schema_version"] = 12' in hook
+    assert 'tools.setdefault("loxberry_knx_prefix_write_enabled", False)' in hook
     assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in hook
     assert 'python3 "$root_path_helper" statistics-cache' in postroot
     assert "os.O_NOFOLLOW" in helper
     assert "os.fchown(child_fd" in helper
     assert "os.fchmod(child_fd, 0o700)" in helper
     assert "os.lstat(path)" in helper
+
+
+def test_schema_twelve_upgrade_preserves_user_data_and_is_idempotent(tmp_path) -> None:
+    hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+    source = hook.split("python3 - \"$plugin_config/mcpserver.json\" <<'PY' || exit 2\n", 1)[1]
+    # Exercise the exact migration and atomic replacement on every platform.
+    # Native directory-sync/install evidence is covered by target acceptance.
+    source = source.split("# A retry can see the migrated schema", 1)[0]
+    path = tmp_path / "mcpserver.json"
+    original = {
+        "schema_version": 11,
+        "tools": {"loxberry_knx_write_enabled": True},
+        "knx_address_taxonomy": {
+            "endpoint": "http://192.168.99.1",
+            "entries": [{"prefix": "1/2", "address_format": "three_level", "label": "Preserved"}],
+        },
+        "unrelated": {"keep": True},
+    }
+    path.write_text(json.dumps(original), encoding="utf-8")
+    subprocess.run([sys.executable, "-c", source, str(path)], check=True, timeout=10)
+    migrated = json.loads(path.read_text(encoding="utf-8"))
+    assert migrated["schema_version"] == 12
+    assert migrated["tools"] == {**original["tools"], "loxberry_knx_prefix_write_enabled": False}
+    assert migrated["knx_prefix_apply_receipts"] == []
+    assert migrated["knx_address_taxonomy"] == original["knx_address_taxonomy"]
+    assert migrated["unrelated"] == original["unrelated"]
+    before = path.read_bytes()
+    subprocess.run([sys.executable, "-c", source, str(path)], check=True, timeout=10)
+    assert path.read_bytes() == before
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
@@ -424,6 +605,10 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert (
         "Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc" in unit
     )
+    assert (
+        "Environment=MCPSERVER_EVENT_HISTORY_STORE=@DATA_DIR@/event-history/state-events.sqlite3"
+        in unit
+    )
     assert "StandardOutput=journal" in unit
     assert "StandardError=journal" in unit
     assert "StandardOutput=append:@LOG_DIR@/service.log" not in unit
@@ -465,7 +650,7 @@ def test_perl_admin_cgi_has_valid_syntax() -> None:
     perl = shutil.which("perl")
     if perl is None:
         pytest.skip("perl is unavailable")
-    for name in ("index.cgi", "explorer.cgi", "explorer_callback.cgi"):
+    for name in ("index.cgi", "event_history.cgi", "explorer.cgi", "explorer_callback.cgi"):
         subprocess.run(
             [
                 perl,
@@ -475,6 +660,7 @@ def test_perl_admin_cgi_has_valid_syntax() -> None:
             ],
             check=True,
         )
+    subprocess.run([perl, "-c", str(ROOT / "bin/lib/MCPServer/RequestSecurity.pm")], check=True)
     subprocess.run(
         [
             perl,
@@ -525,7 +711,9 @@ def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     assert "$LoxBerry::Web::lang = $q->{lang}" in cgi
     assert "ajax-generic.php" not in cgi + template
     assert 'method="post"' in template
-    assert "fetch('index.cgi'" in template
+    assert "fetch('index.cgi'" in (ROOT / "webfrontend/htmlauth/admin/core.js").read_text(
+        encoding="utf-8"
+    )
     assert "overflow-x: auto" in stylesheet
     assert "@media (max-width: 30rem)" in stylesheet
     assert "#diagnostics .lb-table-scroll { overflow-x: visible; }" in stylesheet
@@ -561,6 +749,12 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
     source = ROOT / "bin" / "healthcheck"
     with zipfile.ZipFile(output, "w") as archive:
         _add(archive, source, "bin/healthcheck")
+        _add(archive, ROOT / "webfrontend/htmlauth/knx.cgi", "webfrontend/htmlauth/knx.cgi")
+        _add(
+            archive,
+            ROOT / "webfrontend/htmlauth/message-approval.cgi",
+            "webfrontend/htmlauth/message-approval.cgi",
+        )
         _add(archive, ROOT / "plugin.cfg", "plugin.cfg")
 
     with zipfile.ZipFile(output) as archive:
@@ -570,6 +764,14 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
         assert executable.external_attr >> 16 & 0o777 == 0o755
         assert regular.external_attr >> 16 & 0o777 == 0o644
         assert "bin/healthcheck" in _EXECUTABLES
+        assert "webfrontend/htmlauth/knx.cgi" in _EXECUTABLES
+        assert "webfrontend/htmlauth/message-approval.cgi" in _EXECUTABLES
+        assert _EXECUTABLES == VERIFIED_EXECUTABLES
+        assert archive.getinfo("webfrontend/htmlauth/knx.cgi").external_attr >> 16 & 0o777 == 0o755
+        assert (
+            archive.getinfo("webfrontend/htmlauth/message-approval.cgi").external_attr >> 16 & 0o777
+            == 0o755
+        )
 
 
 def test_package_builder_normalizes_installed_text_to_lf(tmp_path: Path) -> None:
@@ -899,8 +1101,8 @@ def test_mcp_client_probe_resolves_windows_application_aliases() -> None:
     assert "'loxone_describe_project_object'" in script
     assert "'loxone_trace_project_logic'" in script
     assert "$optional = @(" in script
-    assert "$tool.annotations.idempotentHint -ne $false" in script
-    assert "$tool.name -eq 'loxberry_clear_statistics_cache'" in script
+    assert "$tool.annotations.idempotentHint -ne $contract[1]" in script
+    assert "'loxberry_clear_statistics_cache' = @($true, $true)" in script
 
 
 def _write_claude_config(path: Path, *, configured: bool) -> None:

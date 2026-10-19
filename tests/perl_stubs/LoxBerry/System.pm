@@ -4,6 +4,7 @@ use warnings;
 use Exporter 'import';
 our @EXPORT = qw($lbhomedir $lbpplugindir $lbpconfigdir $lbpdatadir $lbpbindir $lbptemplatedir $lbplogdir);
 our ($lbhomedir, $lbpplugindir, $lbpconfigdir, $lbpdatadir, $lbpbindir, $lbptemplatedir, $lbplogdir);
+our $lang;
 BEGIN {
     $lbhomedir = $ENV{LB_TEST_HOME} // '';
     $lbpplugindir = $ENV{LB_TEST_PLUGIN_DIR} // 'mcpserver';
@@ -14,9 +15,20 @@ BEGIN {
     $lbplogdir = $ENV{LB_TEST_LOG_DIR} // '';
 }
 sub pluginversion { return 'test'; }
-sub pluginloglevel { return 3; }
+sub pluginloglevel { return $ENV{LB_TEST_PLUGIN_LOGLEVEL} // 3; }
 sub lbhostname { return 'localhost'; }
 sub get_localip { return '127.0.0.1'; }
 sub read_file { return ''; }
-sub readlanguage { return (); }
+sub readlanguage {
+    my $language = $lang // $ENV{LB_TEST_SYSTEM_LANG} // 'de';
+    return (
+        'DIAGNOSTICS.LOGLIST_EMPTY' => $ENV{LB_TEST_LOG_TEXT_BYTES}
+            ? "Keine Logeintr\xC3\xA4ge." : 'No LogManager entry is registered for this plugin.',
+        'DIAGNOSTICS.LOGLIST_UNAVAILABLE' => 'The LogManager is unavailable.',
+        'SETUP.EMERGENCY_STOP_AUTH_BUSY' => $language eq 'en'
+            ? 'Another sign-in is in progress.' : "Anmeldung l\xC3\xA4uft.",
+        'STATUS.ERROR_ACTION' => $language eq 'en'
+            ? 'The service action could not be completed.' : "Aktion f\xC3\xBCr Dienst fehlgeschlagen.",
+    );
+}
 1;

@@ -5,6 +5,983 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded authentication-event reads for the currently authorized app,
+  Loxone identity and Miniserver, including retained events from earlier logins.
+  Add explicit local Admin history and binding summaries without changing
+  authentication guards or recovery actions. Missing history remains unknown (#584).
+
+- Add Explorer lighting drafts from exact visible controller results, scope-specific
+  fields and bounded page summaries with independent naming/selection limits.
+  Synchronize the six lighting scenarios and evidence boundaries in DE/EN (#441, stage 5).
+
+- Record the owner-approved #439/#509 technical closeout: reuse real source-read
+  evidence and deterministic reference-model tests without requiring real comparison
+  days or claiming empirical plant validation; preserve runtime qualification.
+
+- Clarify base-load/solar energy percentages, Wh-to-kWh conversion and unavailable
+  denominators in MCP guidance; independently check the documented calculation
+  against synthetic base-load results without claiming measured solar supply (#485).
+
+- Qualify the exact accumulated native EFM `totalSelfConsumption` Wh/kWh statistic
+  for hourly self-consumption analysis, preserving explicit plant association and
+  native-calculation limitations. Add correlated numerical source-read, preparation,
+  calculation and response-size debug diagnostics without additional data requests
+  (#439, #509).
+- Bind native EFM Cpwr to the unchanged declared W/kW display format through
+  semantic rule v2, with documented consumed-power applicability and bounded
+  read-only comparisons; retain missing native Rest separately from meter states (#534).
+
+- Add a bounded lighting scope to the existing project analyzer with exact
+  controller/room selection, request-local scene/presence/room declarations,
+  shared profile-source resolution and fresh publication/cursor guards. Keep
+  naming candidates, configured reachability and physical claims separate (#441, stage 4).
+
+- Identify native EFM W/kW enrichment as configured display-unit metadata,
+  preserving numeric values and unknown field bindings; clarify documented
+  residual power versus native Rest mapping and avoid forced zero balances (#534).
+
+- Add documented Meter output sign conventions by normalized runtime subtype to
+  state and StatisticV2 semantics, with raw values preserved and unknown/legacy
+  types kept unqualified. Distinguish configurable physical-input polarity from
+  fixed meter outputs; native EFM aggregate unknowns remain separate (#534).
+
+- Add opt-in unmodeled internal-flow diagnostics to existing bounded project
+  traces and document evidence-backed presence/light relationship review without
+  inferring links from names, rooms or runtime-child suffixes (#441, stage 3).
+
+- Clarify current-state activity evidence, surface omitted/unsupported semantic
+  interpretations in compact reads, and document finite Dimmer positions without
+  inferring binary activity, percent units or physical operation (#485).
+
+- Add opt-in bounded runtime lighting outputs to the existing lighting context,
+  retaining exact child/parent references, structure provenance and omissions
+  without inferring physical fixtures or project connectors (#441, stage 2).
+
+- Add explicit site/weather selection and disjoint multi-PV coverage to optional
+  history context. Sum only qualified common complete hours, retain native source
+  evidence, legacy comparisons and separate forecast provenance. Keep single-PV
+  export balances and distinct statistic metrics on one control usable (#558).
+
+- Add optional request-local history associations, complete measured-cycle evidence
+  and separately declared real/hypothetical scenarios sharing one historical
+  export budget. Preserve legacy calls and profile formats; revalidate selected
+  sources, constraints and authorization before publication (#557).
+
+- Reuse one request-local source resolver for optional confirmed energy profiles;
+  reject stale or hidden references and recheck operating companions before
+  publishing results, without changing profile documents or legacy contracts (#559).
+
+- Add eight parameterized read-only MCP task starters for lighting, presence,
+  current states, temperature history and qualified solar/energy reports (#444).
+  Prompt retrieval performs no data reads or writes; recipes retain module,
+  authorization and partial-evidence boundaries. Existing KNX prompts remain.
+  Wrap long tool and prompt headings in the static schema reference on narrow screens.
+
+- Fix local Event History rejecting exact runtime subcontrol suffix IDs. Preserve
+  child/state storage identity, visibility, recording approval and plain-UUID
+  compatibility across reads and existing source selection. Deliver shared-state
+  events to every explicitly configured source pair (#553, follow-up #219).
+
+- Explain request-local energy context, real versus hypothetical loads and unresolved
+  associations in the bilingual Explorer and task-scoped skill (#556).
+
+- Add optional request-local energy planning with explicit plant coverage, up to
+  four PVPFs in one confirmed supply budget, profile or declared real cycles and
+  separately labelled hypothetical loads. Preserve legacy requests/results and
+  share one forecast transport session per planning request (#556).
+
+- Establish internal request-local energy scope and provenance contracts with
+  explicit forecast coverage and isolated native EFM membership checks (#556).
+- Reduce KNX helper startup by deferring unrelated solar analysis imports;
+  avoid unused topology indexes for single-occurrence project identities and
+  reuse the strict UUID pattern. Configured sources, local UUID conflicts and
+  all authorization checks remain fully validated (#552).
+
+- Explain conditional PVPF planning in the DE/EN Tool Explorer and summarize
+  suggested UTC windows, conditional PV coverage and additional grid energy (#510).
+
+- Add read-only conditional future load planning from native PVPF hours, confirmed
+  complete-cycle models and explicit baseload/storage scenarios; allocate one
+  shared energy budget with bounded source reads and computation (#440, #510).
+- Add a bounded read-only native PVPF hourly-production view; preserve readiness,
+  prediction age, fresh authorization and explicit model limitations (#440, #510).
+
+- Resolve verified cross-source project UUID occurrences for six bounded block
+  families while preserving conflicts as ambiguous, physical provenance and
+  complementary topology in bounded descriptions and traces (#218).
+
+- Connect explicit numerical comparable-day analysis to administrator-qualified
+  local observations and confirmed hourly energy bindings. Explain estimated
+  irradiance, fixed windows, weather-ranked peers, yield/self-consumption
+  differences and separately captured native forecasts; preserve qualitative
+  defaults and bounded source reads (#439, #509). The later owner-approved technical closeout supersedes the
+  original real-comparison-day acceptance requirement.
+
+- Add read-only native PV-production forecast semantics and optional local solar
+  observation/forecast snapshots in the shared history store. Preserve forecast
+  origin, source contracts, current caller visibility and default-off recording;
+  migrate history SQLite V8 to V9 without backfilling observations (#439, #509).
+  Validate preserved solar policies when saving the main configuration and pause
+  solar capture on metadata refresh failure without interrupting scalar coverage.
+
+
+- Represent explicit runtime subcontrols with bounded parent provenance and an
+  optional paginated mapping inventory in project status. Trace parent topology
+  separately from selected-child observability evidence; preserve exact mappings,
+  legacy mapping counts and authorization boundaries (#219).
+
+- Report target-local mapping coverage in the Observability Analyzer, including
+  ambiguous and unmapped reached blocks and conservative completeness flags;
+  include unresolved references on appended trace boundary blocks and keep exact
+  runtime controls and control pagination unchanged (#213).
+
+- Add bounded source-proven LightControllerV2 mood context to the existing control
+  description tool; retain operation validation and count guide resource reads in
+  offline workflow captures (#442, #443). Centralize all mandatory write guidance
+  in core/operations while preserving exact approvals, confirmation and uncertainty.
+
+- Add an optional compact installation-profile summary after fresh visibility and
+  reference cleanup; retain full defaults, pagination and mutation safeguards (#443).
+
+- Focus MCP read-tool routing descriptions on purpose and evidence boundaries;
+  move parameter selection and limits to field help without changing contracts (#443).
+
+- Add versioned offline #485 acceptance captures for complete-workflow UTF-8
+  bytes, calls/pages/retries/fallbacks and cold/warm MCP timings with a 50-record
+  plan limit. Make token/phase telemetry optional in v2, preserve historical v1
+  evidence and require independent quality and performance review.
+
+- Reuse checked MCP output validators per server and tool schema while retaining
+  complete validation of every structured answer, schema-change detection and
+  per-call authorization. No new performance measurements are claimed (#529).
+
+- Deliver canonical on-demand MCP workflow modules through the existing guide
+  tool and static resources, retaining the complete compatibility guide (#442).
+
+- Reduce KNX initial helper imports, duplicate authorization-store copies and
+  sequential group/selected-draft reads. Combine concurrent background grant
+  checks without retaining their results; preserve unsaved edits and revision
+  checks. Start a remembered project comparison alongside catalog hydration, validate its fresh
+  binding before display, and speed up bounded XML parsing and worker transport.
+  Reduce bounded LZ4 decoding, KNX graph attribute work and unrelated helper/worker
+  imports. Reuse verified HTTP trust setup per client and normalized public
+  certificate bytes only within one admitted project read; retain fresh sockets,
+  authentication, independent downloads and final marker checks. Add numeric
+  phase timings without project or authentication data. Attribute CGI/helper
+  overhead with numeric request timings, drain bounded helper pipes concurrently,
+  defer plugin-version lookups and unrelated async imports, and use an available
+  JSON::XS response decoder with the original JSON::PP fallback. Drop the unused
+  Perl HTTP client import. Combine part-local KNX format checks into one
+  attribute pass while preserving duplicate and version ambiguity handling.
+  Avoid loop setup for bounded short overlapping LZ4 matches; retain the existing
+  chunked path for larger copies, output limits and checksum verification.
+  Whole-page times remain workload-dependent; the five-second target is not
+  guaranteed. Measured improvements and remaining costs are documented (#522).
+
+- Add a lazy, paginated KNX main/middle-group view including empty imported
+  groups, source-preserving address counts and global header sorting. Create,
+  edit and remove local group labels using existing taxonomy conflict checks;
+  retain imported sources and individual addresses. Keep bulk label input as
+  advanced editing and persist separate group/address view states (#525).
+
+- KNX correction workflow (#524): distinguish proposal confirmation, local apply
+  and experimental ETS export; add explicit batch confirmation and export columns.
+  New drafts remain for 30 days with bounded descriptive origin metadata and
+  Admin extension/archive/reopen/delete; freshness and authorization stay separate.
+
+- Add accessible, persistent KNX table-header sorting across paginated datasets.
+  Preserve record/action identities and the exact sorted JSON-export page. Add
+  Previous navigation and bounded, session-bound reuse of read comparison pages;
+  reload the selected project-comparison view freshly after page reload. Keep
+  failed views visible but unavailable as export evidence. Use the authenticated
+  private Admin bridge without changing public MCP schemas (#523).
+
+- Restore the selected KNX correction draft/page after reload using fresh server
+  data. Keep views visible but block stale actions after uncertain decisions or
+  failed refreshes; distinguish confirmed saves from lost responses. Avoid the
+  redundant post-decision list request, reuse complete editor values and defer
+  project-analysis imports until project-backed proposal planning is required.
+
+- Separate KNX address filters, saved-address results and editing into labeled
+  areas; identify the selected address in the editor heading. Move JSON exchange
+  directly below ETS import in a collapsed, persistent subsection and explain
+  page/filter scope, upsert behavior and excluded labels/groups/XML provenance
+  without changing the exchange format (#518).
+
+- Add paired, version-gated Miniserver KNX datatype evidence to live MCP Describe.
+  Preserve raw EIBType, implicit DPT1 defaults and explicit EIS7/DPT1 provenance;
+  keep DPT main types separate from ETS/manual subtypes and compatibility unknown.
+  Bump project model to 14, KNX analysis to 13 and guide revision to 90.
+
+- Show imported KNX main/middle groups with prefix and name in the address table.
+  Extend the existing read-only MCP catalog with all stored imported groups,
+  independent of active prefix labels, and matching address group context.
+  Preserve imported format across local address spelling changes, source
+  distinctions, authorization and bounded continuation; update guide revision
+  to 91 (#411).
+
+- Reduce ETS/project comparison work with a batched common-address name projection
+  and bounded numeric output keys. Preserve exact source-name semantics, full
+  counts, revision checks and paginated metadata hydration (#458).
+
+- Apply accepted project-bound KNX proposals from the Admin page with independent
+  Admin and fresh Loxone authorization. Hand selected accepted ETS name/description
+  proposals into the existing session-bound experimental XML preview; revalidate
+  their decisions, expiry and revisions at download. No new MCP tool or ETS/Loxone
+  write, and no confirmed ETS import compatibility (#458/#419).
+- Apply individually accepted local-only KNX corrections from the authenticated
+  Admin page with full-value HTML confirmation and exact uncertain-outcome
+  reconciliation. Keep project-bound drafts blocked without fresh server-side
+  project authorization; preserve imported sources and delegated MCP ownership (#458).
+
+- Apply explicitly accepted style-bound KNX prefix labels through the existing
+  correction tool after additional default-off Admin prefix activation. Keep
+  address and prefix selections separate; atomically save prefix effects and
+  bounded receipts in configuration schema 12. Preserve ETS and inactive target
+  labels, fresh consent and uncertain-outcome reconciliation (#458).
+
+- Apply explicitly accepted existing-address KNX name/description overrides with a
+  separate default-off local-write delegation. Commit bounded operation receipts
+  with field effects; preserve other metadata and reconcile uncertain outcomes
+  without automatic retries. No prefix, ETS or Loxone writes in this delivery (#458).
+
+- Add opt-in qualified local Weather4Lox VisualCrossing point irradiance discovery
+  and sampled future solar windows to the existing weather tool. Require independent
+  LoxBerry read approval, administrator source association, publication-age limits
+  and fresh source/access checks. Retain bounded invalid-value diagnostics and
+  correlated warnings. W/m² point guidance does not establish PV yield, surplus,
+  admissible load schedules or savings; full PV planning remains open (#440).
+
+- Add conditional retrospective load-shift examples to the existing historical
+  analysis: complete confirmed cycles, native hourly energy, declared windows
+  and one measured export budget shared across loads. Preserve state gaps,
+  profile changes, final-access checks and explicit output/search bounds.
+  Unknown historical native locks block admissibility; examples do not establish
+  measured self-consumption, solar attribution, net/financial savings or device
+  operation permission (#440).
+
+- Add optional owner-confirmed load constraints to the installation profile and
+  DE/EN Admin form: explicit weekly windows, deadlines, duration, interruption,
+  minimum run/off times, operating-state association and energy provenance.
+  Validate profile v1/v2 before read-only conversion to v3; preserve original
+  files/revisions on read and write v3 only on an authorized mutation.
+  Hide inaccessible companion identifiers and prevent implicit retargeting.
+  Extend existing operating-phase analysis with bounded observed activity episodes
+  and complete interval-energy profiles, preserving gaps, restarts, uncertainty
+  and profile-revision changes. Do not infer native program identity, cleared
+  native locks, shiftability, operation permission or savings (#440).
+  Keep native day/month/year difference aggregates unqualified for hourly energy
+  analysis rather than treating their values as one-hour energy; preserve explicitly
+  requested raw values with the interval limitation.
+
+- Add bounded qualitative comparable-day selection to `loxone_analyze_history`
+  from configured actual weather source points. Match fixed completed-hour class
+  sequences under an explicitly owner-assumed 0-3 mapping; retain unexpected
+  values as bounded AI-visible diagnostics and emit correlated sanitized warnings.
+  Exclude forecasts, incomplete positions and changed sources. Do not claim radiation
+  energy, temperature matching, normalized yield or self-consumption (#439).
+
+- Load the initial KNX catalog, delegation policies and correction drafts in
+  one authenticated Admin request instead of four competing CGI/Python starts.
+  Restore the shared OAuth session in parallel while keeping user actions
+  blocked until their prerequisites are ready. Preserve independent refreshes,
+  fresh authorization reads and explicit section errors.
+  Keep project-analysis imports out of the correction-draft list read path.
+
+- Preserve expanded/collapsed KNX section cards, including nested ETS import,
+  across browser reloads, independently of Admin page preferences.
+
+- Show persisted KNX read/draft enablement and unique label counts in section
+  badges. Refresh delegation state in visible tabs without replacing unsaved
+  edits; fix shared Explorer login/logout and provide prerequisite-aware
+  comparison/export controls and clear empty-table presentation (#497). Preserve
+  foreground actions queued during polling and allow discarding retained XML
+  previews after the comparison becomes invalid, including potentially persisted
+  comparison/XML drafts after lost or malformed responses. Keep the full MCP
+  server stack out of KNX Admin reader imports to avoid long configuration-lock
+  holds during frequent status refreshes. Use one fresh authorization snapshot
+  per delegation-page request and omit successful polling reads from INFO logs
+  while retaining failures and mutation audit records. Bound mobile form grids,
+  file inputs and buttons to their cards, including at 400 px width.
+
+- Organize Admin help links with localized explanations for every destination;
+  add KNX, installation-profile and individual-message approval navigation,
+  and reuse the KNX/profile explanations under MCP configuration. Keep links
+  close to their descriptions within each help block and preserve the active
+  page language when opening individual-message approval from Help.
+
+- Add independently opt-in structured weather recording in the existing history
+  database and subscription, with selected fields, distinct reception/source
+  times, bounded pages and explicit coverage gaps. Extend `loxone_get_weather`
+  with freshly authorized local history; forecasts and unknown units retain
+  their provenance. Shared SQLite v8 requires a consistent v7 backup before
+  rollback to older code; no earlier weather is backfilled. Admin source changes
+  wait for discovery and service restart before reporting completion, record
+  sanitized audit outcomes and report temporary discovery failures. Loading
+  source options safely migrates retained v7 archives with a stopped service (#439).
+
+- Extend confirmed installation profiles with exact structured weather bindings
+  and optional user-declared PV parameters. Read-migrate profile v1 without
+  persistence, retain separate source visibility, confirmation and unknown units;
+  v2 writes require a prior profile backup for rollback to older code (#439).
+
+- Add an opt-in, freshly administrator-authorized Energy Manager context view,
+  generation-specific native load decoding and explicit capability gaps. Keep
+  source metadata separate from cached observations and legacy descriptions (#436).
+
+- Show localized KNX loading hints in the affected section headings on initial
+  page load and data refresh, including collapsed cards. Distinguish pending
+  OAuth session restoration from disconnected state and clear loading hints
+  after success or failure while retaining error messages (#490).
+
+- Add versioned partial native EFM power semantics and report applicability.
+  Bind only Gpwr/Ppwr/Spwr W/kW units to unchanged evidenced EFM metadata;
+  preserve unknown signs, boundaries and historical components without extra reads.
+
+- Review shared KNX correction drafts with explicit per-change acceptance/rejection
+  and authenticated Admin value edits. Editing resets the affected decision;
+  sources, absolute expiry and ownership are preserved. Draft decisions apply no
+  metadata changes and authorize no XML download or Loxone write (#458).
+
+- Add an opt-in native EFM result view to `loxone_read_controls` for freshly
+  verified Loxone administrators on firmware 17.2.8.28. Preserve caller-session
+  authorization, activated history gates, unknown units/period boundaries and
+  existing cached-state reads; no balance calculations or native result cache (#436).
+
+- Publish the 25-question DE/EN analysis support matrix and execute original
+  numeric references against the delivered core. Mark unavailable independent
+  AI/token and matched performance measurements incomplete (#445).
+
+- Extend bounded history analysis with individual consumer ranking, whole-hour
+  PV/load windows, mixed operating-phase associations and a labelled nighttime
+  hourly-mean-power estimate. Preserve declared boundary assumptions, gaps,
+  undefined attribution and existing source/budget/cursor contracts (#438).
+
+- Add separately approved, default-off MCP preparation and inspection of bounded
+  KNX correction proposals. Persistent owner/target/revision-bound drafts share
+  the KNX Admin view and expire after 24 hours; request reconciliation preserves
+  uncertain results. This stage does not apply metadata, download XML or write
+  Loxone (#458).
+
+- Add bounded read-only historical temperature summaries, verified energy and
+  observed state durations through `loxone_analyze_history`. Reuse one fresh
+  caller context, preserve unknown gaps/units/resets, and make raw pages opt-in
+  (#437, #438).
+
+- Add two optional read-only KNX task prompts for inventory review and exact
+  address explanation. Retrieval validates bounded selectors without data
+  access or permission grants; canonical references and DE/EN guidance retain
+  coverage, source and uncertainty rules (#457).
+
+- Add shared bounded history time/coverage evidence to existing statistic and
+  local Event History reads. Persist observed initial values for new capture
+  phases; preserve legacy gaps, invalidate pruned boundary evidence and keep
+  inclusive public read/cursor contracts (#437).
+
+- Add bounded per-series meaning, source-declared Meter units, aggregation and
+  timestamp evidence to existing statistic/description surfaces. Preserve unknown
+  direction, boundary, measurement method and reset correction; installation
+  bindings reference resolver rules and require review when those rules change (#434, #435).
+
+- Clarify alert status triage, defect and optimization workflows, including
+  inactive sources and explicit project-parameter evidence gaps (#478).
+
+- Add a canonical alerts skill section with concrete evidence-linked follow-up
+  tasks, preserving full-guide defaults and read-only alarm boundaries.
+
+- Add documented actual/target temperature and numeric binary-state semantics
+  through the existing resolver. Keep ambiguous temperature units, unsupported
+  codes, physical roles and historical coverage explicit (#435).
+
+- Add independently approved MCP installation-profile save/delete operations,
+  expected revisions, explicit confirmation assertions and masked audit records.
+  Restrict whole-profile deletion to current visibility; preserve uncertain-write
+  outcomes without automatic retries (#434).
+- Bind explicit EFM participant UUID state references only for the evidenced
+  17.2.8.28 firmware, preserving aliases, conflicts and uncertainty without values (#364).
+
+- Expose bounded EFM participant occurrences and fresh visible control references
+  in full Describe, with independent completeness and unknown role interpretation (#363).
+- Add a bounded read-only local KNX catalog with sparse ETS/manual sources,
+  independent prefix-label inventory, revision-bound continuation and separate
+  default-off, target-bound Admin delegation. Preserve Loxone name precedence
+  and keep corrections and exports outside this tool (#458).
+
+- Add versioned installation profiles with Admin drafts/confirmation, atomic
+  target-bound persistence and a read-only MCP projection using fresh caller
+  visibility. Use HTML dialogs with distinct binding/profile deletion scope.
+  Keep user-declared roles separate from technical semantics (#434).
+- Add default-disabled, separately consented single-message confirmation with an
+  expiring preview, fresh authorization, action allowlist and audit. Distinguish
+  native acknowledgement from verified manual-warning Okay historization; require
+  independent native Admin approval of each staged preview before dispatch; never
+  replay uncertain writes or infer repairs from cleared messages (#366, #367).
+
+- Establish the 25-question analysis acceptance catalog, synthetic numeric
+  references, DE/EN baseline support matrix and value-free offline workflow
+  measurement validation. Missing telemetry remains incomplete (#445).
+
+- Add opt-in compact ETS summary/findings/detail views and revision-bound
+  relation/name/address filters to project analysis. Retain default full output,
+  source uncertainty and counts; summary avoids address detail hydration (#456).
+
+- Add a bounded source-separated attention overview, preserving Active Alerts,
+  System Messages and latest-notification contracts. Guide concrete evidence-linked
+  diagnosis/repair tasks and explicit future-writer handoffs (#366, #367).
+
+- Offer canonical core/KNX guidance sections through the existing guide tool and
+  resources while retaining full-guide defaults. Explain ETS/manual search,
+  source comparisons, DPT uncertainty and UI-only export boundaries (#455).
+
+- Add bounded local MCP discovery comparison and reconnect guidance, detecting
+  additive schema changes without printing schema payloads or changing transport.
+  Unexposed client fields remain incomplete, not a confirmed defect (#454).
+- Read the latest observed authorized notification text event as context (#367).
+  Explicitly report unavailable events and unavailable upstream history; never send
+  notifications, mark them read, infer alarm severity or claim delivery.
+
+- Read current and retained historical System Messages with fresh source permissions,
+  independent lifecycle/severity fields and bounded identity-bound pagination (#366).
+  Experimental source verified on firmware 17.2.8.28; reads never confirm or mark entries read.
+
+- Clarify the active-alert agent workflow for current status, focused state reads
+  and project follow-up. Distinguish coverage gaps, static wiring, causal
+  hypotheses and optimization candidates; retain read-only alarm semantics (#459).
+
+- Add an experimental, explicitly selected ETS XML name/description correction download on the KNX page, with source reconstruction and fresh project checks. Actual ETS import compatibility remains unconfirmed (#419).
+
+- Compare two selected ETS files or a file against the current imported KNX
+  catalog on the shared page (#418). Show bounded source changes, completeness
+  limits and separate manual information without applying data or keeping history.
+  Preserve import previews in a separate draft slot.
+
+- Add an explicit read-only ETS/Loxone address comparison to KNX administration
+  and project analysis (#417). Keep primary Loxone names, imported values and
+  manual metadata separate; show multiple names, source gaps, freshness and
+  bounded results without inferring bus usage or configuration defects.
+  Keep wide KNX tables scrollable on mobile and bound expanded coverage details.
+
+- Retain sanitized, correlated Admin discovery failure phases, categories and
+  timing/session metadata without logging private payloads or changing retries (#449).
+
+- Add SmokeAlarm pre/main alarm activity with independent test context to shared
+  state semantics and Active Alerts. Level zero uses the explicit owner-approved
+  inactive assumption with separate provenance; unavailable values remain gaps (#347).
+
+- Support burglar-alarm `Alarm.level` in shared state semantics and active alerts:
+  use the owner-approved assumption that 0 means no running alarm, alongside
+  documented stages 1â€“6. Retain explicit provenance and unknown test,
+  acknowledgement and signal-suppression context; invalid or stale observations
+  cannot establish inactivity (#346).
+
+- Enrich authorized project search and descriptions with separately sourced ETS/manual
+  KNX metadata. Preserve Loxone names and raw EIBType; retain multiple DPT declarations.
+  Show sources in Explorer and selected imported hierarchy labels below manual labels.
+  Bind result/cursor identity to KNX revisions and use bounded batched metadata reads.
+  Maintain a transactional derived Unicode search document during schema migration and
+  source changes, avoiding per-row Python processing on project and local searches.
+
+- Automatically check the project change marker before displaying Admin
+  emergency-stop names and options from the private identity-bound display cache.
+  Refresh on marker change, missing marker or stale cache; retain
+  explicit full refresh and preserve the selected signal on failures (#431).
+
+- Search local KNX names, descriptions and address representations with bounded,
+  revision-checked pagination and source filters. Show separate source values,
+  overrides and DPT identifier status without choosing types or changing Loxone names.
+
+- Fixed the masked Admin diagnostic download through same-origin AJAX when browser HTML submissions carry Origin null (#428).
+
+- Preserve first OAuth revocation causes and correlate sanitized client, approval,
+  runtime and remote-cleanup lifecycle events; expose bounded retained causes in
+  local Admin diagnostics without transferring authorization (#425).
+
+- Reuse a dedicated service-owned discovery connection for Admin selectors,
+  downloading a complete current structure for each request while keeping MCP
+  client authorization and recorder sockets separate. Bound session lifetime,
+  frame dispatch and failures; document the accepted partial-permission-change
+  uncertainty on uninterrupted sessions (#239, #297).
+- Retain application display names for inactive LoxBerry read and operate approvals.
+  Enrich old approvals only through exact retained session matches; keep client-bound
+  authorization and unnamed fallbacks unchanged (#421).
+
+- Pause new Miniserver authentication after three definite rejections in five
+  minutes, with persisted 60-second to 60-minute backoff. Isolate public OAuth
+  password failures from the shared service/token budget. Keep network
+  failures, contention, project permissions and actual source-IP blocks distinct;
+  allow explicit local Admin probes at least 60 seconds apart (#408).
+- Add a dedicated KNX administration page with target-bound manual address metadata and JSON exchange; retain existing prefix-label text transfer.
+  Confirm local deletion and form changes with accessible HTML dialogs.
+- Add bounded modern ETS XML import with revision-bound preview, explicit duplicate
+  decisions, selected group metadata, field overrides and transactional reimport.
+  Complete replacement preserves manual records and explicitly reviewed overrides;
+  native upgrades retain the KNX database through an integrity-checked SQLite snapshot.
+  Loxone names remain primary. Project metadata integration follows separately.
+- Import modern ETS CSV 3/1 and 3/3 with tab separator and positional headers through
+  the same reviewed KNX import flow. Show detected format and encoding; preserve
+  quoted multiline text and ordered comma-separated DPT declarations across adapters.
+  Empty CSV cells remain unknown; source information never changes Loxone names.
+  Complete replacement defaults to preserving the previous additional ETS name for
+  retained overrides without a manual name, with preview before explicit saving.
+
+- Unify configured service-identity credentials and connection ownership for
+  emergency-stop and Event History consumers. Keep separate connections, fresh
+  visibility, existing authentication budgets and client OAuth authorization;
+  always destroy owned tokens even when session cleanup fails (#406).
+
+- Reuse immutable runtime mappings between independently authorized families of
+  the same identity and Miniserver, with the exact shared snapshot and complete
+  visible mapping inputs. Preserve private queries, fresh downloads and existing
+  bounded view ownership without adding a cache pool (#404).
+
+- Reuse immutable structure normalization after each own authenticated complete
+  response, keyed by exact text, Miniserver/user and parser limits. Existing bounded
+  connections own shared values; preserve private state, refresh ownership and
+  authorization without another cache or retained raw document (#401).
+
+- Reuse identical authorized project searches across families with complete visible
+  mapping/filter keys, independent downloads and final permission checks. Keep
+  bounded search results separate from private cursor generations and use the same
+  cache owner for project analysis without changing its bounds (#399).
+
+- Share read-only project query topology indexes across independently authorized
+  views of the same graph. Keep visible mappings and names separate, reuse graph
+  topology when a family's visible structure changes, and count shared index
+  containers once within the existing bounded view cache (#398).
+
+- Reuse authorized project-analysis results across OAuth families with identical
+  inputs. Keep KNX visibility/taxonomy inputs and family cursor leases separate;
+  retain independent downloads, fresh visibility and final authorization on every
+  cache hit and continuation. Bound shared results and invalidate expired cursors
+  across result recreation (#396).
+
+- Share identical parsed project content across OAuth families only after each
+  caller's own authorized download. Recheck project-read permission through a
+  download on warm calls and continuations too; retain separate visible mappings,
+  queries and cursors. Bound family references and account shared graphs once.
+  Warm requests incur additional download/verification cost (#379).
+  Admit one project-backed call at a time without a waiting queue, with a shared
+  twelve-per-minute budget, before acquiring general read slots.
+  Charge that budget only after family/history limits and current access admit
+  the call, so rejected or cancelled admission cannot throttle other families.
+
+- Resolve exact, unique cross-model `OutputRef` references to `VirtualOutCmd`
+  within the same authorized project bundle. Preserve local-target precedence,
+  ambiguity and unsupported reference gaps. Project model version 13 distinguishes
+  the new graph interpretation; KNX analysis remains version 12 (#374).
+
+- Disable automatic WebSocket transport pings for Loxone sockets, retaining
+  bounded application keepalive and strict rejection of unexpected structure
+  files. Fix the transport-ping/gzip HTML finding on the observed Gen. 1 target
+  without decoding or skipping unrelated files (#384).
+
+- Represent explicit Loxone API-connector wiring as bounded block communication
+  dependencies in project describe/trace, with port/block metadata and no scalar
+  values or inferred signal semantics. Preserve unresolved links and expose
+  metadata for exact OutputAPI/API ports. Model/KNX analysis version 12, Opening
+  connector rules 5 and canonical skill revision 54 invalidate prior projections.
+
+
+- Support sparse State condition slots and optional bounded table inspection for
+  exactly mapped visible controls, preserving literal templates and output gaps.
+
+- Extend version-bound State AQ evidence to I1â€“I8 and all demonstrated fixed-operand operators, with first-match/AND semantics and conservative numeric independence. Preserve gaps for empty results and unsupported contracts; synchronize generic and opening traces.
+
+- Recover a full Chart View cache per source, keeping existing plots visible while
+  bounded replacement data loads. Preserve other sources and distinguish reduced
+  detail from actual history changes (#371).
+
+- Validate Admin and Event History POST origins against the request scheme, host
+  and effective port; reject cross-scheme requests and ignore forwarding headers
+  unless the webserver supplies trusted CGI metadata (#372).
+
+- Decode bounded WindowMonitor contact bitmasks and original configured positions
+  through shared state readers and opening-contact analysis. Preserve observation
+  quality, malformed/missing values and mapping/truncation gaps; history remains
+  source-dependent and contact conditions are not alarms (#349).
+- Expose allowlisted raw analog Modbus actor configuration in project search/describe,
+  preserving unresolved encodings and the sensor-only analysis boundary (#381).
+
+- Derive configuration-bound State I2-to-AQ signal flow for the verified source
+  version and equality/default table; retain connector-specific gaps for unknown
+  State contracts and expose bounded provenance (#335).
+
+- Preserve actual raw field/status evidence in Modbus mapping and polling
+  comparison exclusions; reject reversed or contradictory containment as a
+  grouping identity (#359).
+
+- Reduce Chart View transfer and tab-local snapshot data by omitting previous
+  event values that the charts do not display. Existing history storage and
+  general history reads retain those values.
+
+- Complete Modbus V1 static project analysis with configured mapping, direct
+  consumer and raw polling checks, and expose all five checks through MCP and
+  Explorer (#358â€“#360). Preserve KNX defaults, explicit coverage and evidence
+  gaps; configuration establishes neither bus activity nor device validity.
+
+- Let administrators export and load KNX prefix labels as a local UTF-8 text file.
+  Loading is a draft until saved; clarify two- versus three-level address formats
+  in the Admin help (#370, follow-up to #199).
+
+- Expose bounded StatusMonitor configured tuples and position-stable current-state
+  mapping through existing readers, with count semantics and explicit coverage (#348).
+  State batch reads now require fresh visibility rather than cached visibility.
+
+- Prepare an internal, typed Modbus V1 inventory/evidence-gap foundation with
+  occurrence coverage, bounded construction, scoped cache/cursors and full-envelope
+  byte fitting (#358). Public analysis remains KNX-only until #359/#360 complete
+  all five checks; no Modbus traffic, device semantics or live compatibility claim.
+
+- Sync parent directories for configuration and MQTT credential updates/deletion
+  and configuration upgrades. Report visible changes with unconfirmed durability
+  without automatic Admin compensation or service changes (#161).
+
+- Add read-only, allowlisted raw `ModbusASensor` project evidence with explicit,
+  absent, ambiguous and invalid values, bounded source occurrences and observed
+  device/transport ancestry. Preserve authorization and KNX contracts; datatype,
+  unit-ID, actor and runtime semantics remain unproven (#352, investigation #350).
+
+- Show `source_type` in Tool Explorer array item previews before timestamp fallback.
+
+- Clarify structure overview definition counts versus synthetic unassigned buckets
+  in the public schema, examples and agent guide without changing response values (#212).
+
+- Extend active visible alerts with documented AalSmartAlarm and AlarmChain rules,
+  source context and acknowledgement without hiding active alarm bits. Preserve
+  explicit coverage gaps for unsupported families and unknown context (#344).
+
+- Add bounded, sanitized internal-flow gap evidence to opening-contact traces,
+  preserving warnings, conservative completeness and existing connector rules (#335).
+- Edit bounded object-list inputs as individual Tool Explorer entries and transfer
+  response UUIDs into nested fields such as targets[].control_uuid. Preserve the
+  existing JSON editor, draft parameters and explicit call confirmation.
+
+- Add read-only `loxone_get_active_alerts` with evidence-backed AalEmergency
+  activity, fresh visibility, bounded cached reads and explicit evaluation/delivery
+  gaps. Other known monitor/alarm families remain unsupported; no guessed severity,
+  acknowledgement or simultaneous-measurement claim (#167).
+
+- Add read-only `loxone_read_controls` for known visible control UUIDs with compact
+  identity and named cached values, atomic fresh visibility, fixed request/response
+  limits and explicit delivery completeness. Optionally reuse the existing state
+  semantics evidence model without relationship expansion (#168).
+
+- Add read-only `loxone_get_state_semantics` for one freshly authorized visible
+  control, with bounded state selection/pagination, per-claim provenance and
+  explicit interpretation gaps independent of cached observation quality.
+  Preserve existing Irrigation/AlarmClock read results; expose exact-state
+  format/range and position-bound StatusMonitor metadata without guessed units,
+  hidden-control expansion or a documentation-content pipeline (#166).
+
+- Split Event History chart selector diagnostics into numeric-only coordination,
+  token acquisition, session establishment and structure-load subphases while
+  preserving existing timing fields and fresh discovery behavior (#297).
+
+- Wait for runtime authentication coordination within the existing connection
+  budget instead of immediately rejecting fresh MCP reads; preserve cancellation,
+  fresh visibility and source-IP protection, and distinguish local contention
+  from source-IP suppression with fixed value-safe diagnostics (#332).
+
+- Let Event History Admin discovery wait within one bounded authentication budget
+  when another plugin consumer holds the shared sign-in lock, instead of failing
+  immediately; fresh visibility and source-IP suppression remain required (#331).
+
+- Treat additional connected inputs or outputs outside reviewed block rules as
+  incomplete opening-contact evidence, preventing false absent-connection findings.
+
+- Preserve compatible temporary-unavailability errors while adding fixed runtime
+  reason/phase diagnostics and bounded retry hints only for the caller's local
+  rate budget. Distinguish structure-refresh connection, protocol, token, timeout
+  and unknown failures; retain sanitized diagnostic correlation and update the
+  canonical skill to preserve failure evidence and bound read retries (#328).
+
+- Fail closed and drain the state-stream session when the initial state batch
+  times out; ready subscriptions no longer wait for the full timeout.
+- Serialize runtime session admission across families to enforce capacity during
+  concurrent connects, and drain pending admission before shutdown completes.
+- Discard structure-refresh results from disconnected or replaced runtime records
+  so cleanup and reconnect cannot resurrect or overwrite per-family state cache.
+- Mark cached runtime states stale on every state-stream termination, including
+  normal iterator exhaustion and cancellation before websocket teardown.
+
+- Extend the canonical skill with evidence-safe WindowMonitor coverage and
+  bidirectional contact/consumer review, preserving intermediate logic and
+  distinguishing configured wiring from unassessable physical completeness.
+
+- Add the read-only opening-contact analyzer for bounded WindowMonitor references,
+  duplicates, optional state alignment and exact bidirectional AutoJalousie.Window
+  paths. Preserve reviewed InputRef/Or evidence, separate incomplete analysis from
+  absent connections, and report assignment candidates without physical verdicts.
+
+- Add value-safe WindowMonitor item diagnostics, visible-reference resolution
+  counts and explicit UUID-based room consistency. Keep malformed positions and
+  distinguish omitted evidence from unresolved retained entries without exposing
+  hidden target details.
+
+- Preserve the first 100 WindowMonitor positions instead of discarding larger
+  collections. Expose collection counts, truncation and invalid-shape diagnostics;
+  apply the same prefix to explicit read-only reference exposure.
+  Preserve independently linked control authorization when monitor references overlap.
+
+- Add `loxone_describe_control(view="state_refs")` for complete normalized state-name/UUID references without history, statistics, or other control metadata. Refresh user-filtered visibility before returning references, fail without cached fallback, and mark a disconnected event stream as stale.
+
+- Release per-family Loxone runtime locks after their last holder or waiter and
+  sweep expired rate-limit family keys without resetting live rate windows.
+  Serialize disconnect with in-flight connection establishment.
+  Recheck OAuth authorization for queued calls and before publishing a new
+  connection while preserving token material needed for remote revocation.
+  Report ended OAuth authorization as `permission_denied` for queued operations.
+
+- Reduce analysis-worker graph pickle overhead while retaining all model fields
+  and process isolation; add opt-in, numeric-only private worker phase diagnostics.
+
+- Measure Event History chart CGI delivery through stdout flush and distinguish
+  completed preparations from slow or failed requests in operational logs.
+
+- Add `loxone_describe_control(view="operation_targets")` for compact control
+  identity, visible allowed actions, and action-specific targets or ranges needed
+  to prepare control operations.
+  Refresh this view from the current user-filtered structure before selecting
+  targets, and reject the description if that refresh fails.
+
+- Explain raw project graph outliers with separate signal, reference, and derived-edge
+  evidence. Report reference-only KNX endpoints separately from directly configured
+  consumers and bound connector details in connectivity findings.
+
+- Add paginated KNX address-prefix facts and local review candidates to project
+  analysis. Allow administrators to configure Miniserver-scoped prefix labels
+  with explicit provenance; labels never change project counts or imply bus semantics.
+
+- Wake Chart View and recorded-source windows after recorder commits through a value-free local update signal. Append new chart points with cursor queries, refresh source totals from a fresh visibility-bound local overview, and keep charts visible across concurrent selector refreshes and routine coverage changes.
+
+- Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost. Reuse a bounded, tab-local Chart View snapshot after fresh visibility and history checks so reloads fetch only missing or newer values.
+
+- Place each Chart View source's name, context, coverage details, and individual status beside its plot on wide screens; use the available Admin content width and show the shared capture warning only once above the charts.
+- Expose bounded KNX coverage by source type in project status and analysis,
+  distinguishing raw source occurrences, logical objects, unsupported types,
+  ambiguous candidates and duplicate model-source occurrences. Identify raw
+  Config datatype evidence separately from unavailable normalized DPT evidence.
+
+- Add `loxone_list_event_history_sources` for currently visible control/state pairs; page both source lists with active/removed status and known recording end time. Allow the complete `loxberry_list_event_history_sources` with either exact local read or operate approval, and show its alternative requirements in the Tool Explorer.
+- Zoom the Chart View time axis around the pointer with Ctrl+mouse wheel over a plot, while ordinary wheel scrolling remains available.
+- Model `EIBextactor`, `EIBtextactor`, and `EIBtextsensor` as KNX endpoints.
+  Preserve external-actor address variants and expose bounded connector wiring
+  in project object descriptions without inferring text or bus semantics.
+
+- Reject malformed or out-of-range KNX group-address search filters as
+  `invalid_input` before loading the project. Valid absent addresses still
+  return an empty result; exact original and canonical variant matching remains.
+
+- Expose the local Weather-State cache processing time as nullable
+  `received_at` in successful weather responses, separate from the Loxone
+  source update time and MCP response time. Clarify that `stale` reflects cache
+  availability rather than weather source age.
+
+- Add locally bundled, read-only Event History charts for up to four visible sources in a separate Admin tab. Show independent scales, synchronized time and cursor, coverage gaps, bounded range queries, and incremental updates; require fresh profile-bound visibility proof and clear values on access loss. Upgrade the local store to schema v6 for chart invalidation and indexed append queries.
+- Distinguish chart query failures, correlate them with sanitized Admin logs, and recover from history changes without dropping the retry.
+- Keep chart zoom local within loaded periods, fetch missing intervals on navigation, append new points to existing plots, and reserve the event list for text changes.
+- Reduce repeated configuration and visibility reads and reuse one local history store per bounded multi-source chart query.
+- Preserve the local Event History SQLite database across native LoxBerry plugin upgrades with a consistent snapshot.
+- Add field-aligned source formats and explicit value semantics to weather
+  responses. Keep raw formats and weather values unchanged, and mark units and
+  solar radiation semantics as unverified where the source does not establish them.
+
+- Bind weather forecast cursors to the source update time and bounded forecast
+  contents. A changed forecast rejects continuation with guidance to restart at
+  page one; cursors issued before this change may also require a restart.
+- Model `EIBextsensor` with validated `:0` and `:1` KNX address variants and
+  `EibAddrPulse` fallback. Preserve the address source field and distinguish
+  variants in search, trace, diagnostics, and KNX analysis without inferring
+  physical edge behavior.
+
+- Name the local event-history query `loxone_get_event_history`.
+
+- Release process-local Tool Explorer session locks after the last active or
+  waiting request, and prevent concurrent refresh from restoring a removed
+  encrypted session.
+
+- Show currently authorized room, category, and type context for Event History
+  sources with local room, category, type, and status filters, sortable list
+  columns, and estimated logical JSON value sizes. Upgrade existing SQLite
+  history stores to schema v5 without scanning events during
+  overview reads; measure legacy values in bounded background batches even when
+  recording is disabled and refresh displayed sizes when backfill finishes.
+  Keep physical SQLite and WAL sizes separate from these per-source estimates.
+
+- Add deterministic DOM and mocked OAuth/MCP flow tests for the Tool Explorer,
+  backed by a development-only pinned jsdom dependency. CI installs the test
+  dependency without changing shipped JavaScript or plugin assets.
+- Keep request-local Admin language previews in AJAX feedback, including
+  emergency-stop discovery errors, without changing the LoxBerry system language.
+- Reuse the bounded Project Intelligence graph and mapped query after an authenticated
+  project-marker check, and reuse bounded search and analysis results across
+  continuation pages. Expired or changed-context cursors require a new first page.
+  Add sanitized History phase timings. Native History and statistics load the
+  current user-filtered structure for each call, including cache hits; a project
+  marker alone is insufficient proof of current visibility. Avoid repeated local
+  authorization reads during a warm
+  Project Intelligence query while retaining a fresh visibility check and one
+  authorization check for each request.
+
+- Add an opt-in compact `loxone_describe_control` history-target view with state
+  UUIDs and advertised native statistic series, preserving the full default
+  response. Mark StatisticV2 series omitted beyond the normalized 128-series
+  limit without implying recording or historical coverage.
+- Add a dedicated local Event History administration view for exact visible
+  control/state selection, bounded evidence and storage status, retention settings,
+  and separate confirmed source and whole-store deletion. Keep only enablement,
+  a lightweight summary, and a link on the main Admin page.
+- Load the Event History control list automatically after local status, checking
+  visibility afresh on every page. Filter a bounded list by name, UUID, room,
+  category, and type; load states on control selection and offer explicit refresh.
+  Refresh open tabs after source changes and whole-history deletion without
+  polling the event table. Migrate existing history stores for this change on
+  the first local Admin read even when recording is disabled. Retry failed
+  visibility refreshes, retain unchanged selector generations across tabs, and
+  recover stale selections through a fresh authorization check. Share concurrent
+  refreshes even when the catalog is unchanged, and preserve unsaved retention
+  edits during background updates. Retry selector verification even when the
+  local source list is empty or its store snapshot fails (including after an
+  unchanged add), preserve selection on a stale catalog response, and avoid
+  parallel decoding of large cache files.
+
+- Make the Tool Explorer's selected-tool and result cards collapsible, with history
+  arguments in a separate disclosure. Label array objects using available names,
+  descriptions, identifiers, or relationship endpoints; use timestamps only as a
+  final fallback and show null as `-` in the result tree.
+
+- Keep Tool Explorer-specific presentation hints and workflows in a static registry.
+  Unknown tools appear under Other tools and remain callable from their MCP schemas.
+
+- Keep retained local event history readable after source removal when the caller
+  can still see the state. Report recording status separately from period coverage,
+  preserve re-addition gaps, and add a confirmed per-source purge for inactive
+  sources without changing global retention limits. An enabled recorder with no
+  configured sources no longer opens idle Miniserver connections. If removal
+  metadata cannot be confirmed after recording stops, report an unknown outcome;
+  a later manual remove can repair the marker without guessing its end time.
+  Post-commit purge maintenance failures also report an unknown outcome.
+
+- Show local timestamps and redacted argument summaries in Tool Explorer call
+  history, keep MCP protocol details in a separate debug panel, and report each
+  call's progress and outcome next to Run. Expanded protocol entries show the
+  local date and time in compact metadata rows; history summaries prioritize
+  changed arguments.
+
+- Cache the last loaded emergency-stop signal options across Admin requests and
+  share one explicit Miniserver refresh among concurrent administrators. Page
+  reloads read only the local cache, including the server-rendered fallback. The
+  initial Admin snapshot includes the cached list without a second CGI request.
+  Explicit signal loads wait briefly for another Miniserver sign-in before
+  reporting that authentication is busy.
+
+- Keep the Admin emergency-stop retry button visible after a failed signal load
+  and offer another refresh after a successful load, while honoring a supplied
+  Miniserver retry time.
+
+- Show required OAuth scopes beside each selected Tool Explorer tool and compact
+  the tool summary, with expandable long descriptions and a smaller arguments heading.
+
+- Show localized MCP tool hints and the conservative read/write classification
+  in the Tool Explorer, with complete annotations in a technical disclosure.
+
+- Show factual Admin summary badges for saved MCP/MQTT settings, sessions and pending approvals, and HTTPS certificate checks; keep session counts current while the page is visible.
+
+- Allow slow read-only Admin certificate and emergency-stop discovery requests to finish instead of aborting before the target responds.
+
+- Add local name and description search and scope filters to the Tool Explorer,
+  with a compact multi-select group dropdown while retaining tool grouping,
+  selection, and unsent drafts.
+
+- Make Tool Explorer results and call history expandable, load large branches in
+  batches, and keep complete raw JSON available on demand.
+
+- Run expired Tool Explorer binding cleanup after releasing the OAuth store lock,
+  so a stored expired session cannot block service startup or Admin data loading.
+
+- Correct UTF-8 encoding of localized Admin AJAX error messages, including
+  emergency-stop option loading warnings.
+
+- Register actual Admin UI events with the native LoxBerry LogManager and show
+  distinct empty-list and unavailable-service messages without logging on reads.
+
+- Stack client sessions and LoxBerry approval bindings before their columns
+  become cramped on narrow screens; show Loxone permission details as stacked
+  records at intermediate widths. Keep a deliberately closed Admin section
+  closed after reloading its hash URL while newly followed section links open it.
+  Remove empty placeholders above the Admin section menu after notifications load.
+  Dim the affected session or approval row while its revocation is running.
+
+- Consolidate the existing MCP skill's diagnostic workflow: separate current
+  observations, verified historical coverage, structural paths, and causal
+  hypotheses; disclose gaps and uncertain transition times.
+
+- Group service operation and autostart controls with service status, and move
+  technical MCP tuning into Advanced settings. The connection test now uses the
+  current unsaved Miniserver selection without saving the configuration.
+
+- Recognize documented analog `value` states without an `analog` detail and
+  preserve uncertainty when an explicit flag contradicts the control type.
+
+- Match native statistic outputs to their states before recommending reuse, ignore
+  disabled statistic groups, and classify documented digital states individually.
+  Restrict the `Daytimer` analog flag to its value state.
+
+- Recognize documented `InfoOnlyDigital` 0/1 states as discrete for observability
+  recommendations when `is_analog` is absent; retain uncertainty for conflicting
+  metadata or values.
+
+- Extend `loxone_analyze_observability` with bounded per-state history-source
+  recommendations based on observable value and control metadata. Reuse
+  advertised native statistics, disclose unknown state mapping and period
+  coverage, and avoid fixed sampling rates or automatic configuration changes.
+
+- Preserve Loxone's canonical UUID representation when managing local event-history
+  sources, so discovered control and state identifiers work unchanged across add,
+  list, remove, and history reads.
+
+- Initialize the native `admin-ui` LoxBerry Log Manager entry during both fresh
+  installations and upgrades, preserving existing retention. The Admin UI now
+  shows a localized empty state when no native plugin logs are available while
+  keeping the mandatory `service.log` separate.
+
+- Let Administrators revoke distinct local LoxBerry bindings concurrently in the
+  Clients and sessions UI, including one `loxberry:read` and one
+  `loxberry:operate` binding. Duplicate, same-binding, session-conflicting, and
+  global revocations remain serialized.
+
+- Deduplicate identical KNX blocks from separate internal model sources for
+  Project Intelligence search, runtime mapping, and analysis. Project status
+  now distinguishes opaque model sources from `project_parts`; logical KNX
+  objects and analysis coverage disclose bounded source-occurrence provenance.
+
+- Show the idle web-certificate reissue status as "Not started" instead of
+  incorrectly reporting a failed reissue when no attempt was recorded.
+
+- Bound remote Loxone token cleanup after local OAuth revocation to five network
+  attempts per token and a persisted profile-wide cooldown. Cleanup no longer
+  probes an open Miniserver authentication breaker. The Admin UI shows sanitized
+  aggregate cleanup warnings and distinguishes emergency-stop discovery failures,
+  with a manually initiated retry after the breaker's earliest retry time.
+
+- Align the Admin UI navigation and page order around status, configuration,
+  MCP access and HTTPS, clients, MQTT health, diagnostics, and help. Connection
+  URLs and certificate actions now share the MCP access section; Help keeps the
+  Tool Explorer, schema reference, and project guides. The section navigation
+  renders independently of the LoxBerry header's JavaScript.
+
+- Add `loxone_analyze_observability`, a bounded read-only assessment of current
+  state availability, configured native statistic series and local event-history
+  coverage for exact UUID-mapped controls structurally reachable from one project
+  target. It reports gaps and uncertainty explicitly; graph reachability and
+  configured statistics do not claim a historical cause or data coverage.
+
+- Keep local LoxBerry approvals reusable for the same validated Tool Explorer,
+  Loxone identity and Miniserver across ordinary OAuth re-login. OAuth families
+  and credentials retain their short lifetimes; inactive Explorer approvals use
+  a separately configurable 72-hour retention period and remain explicitly
+  revocable in the Admin UI.
+
 - Add a bounded, persisted shared Miniserver authentication breaker. Confirmed
   source-IP blocks suppress further service login attempts, while configured
   15-minute initial and 24-hour maximum lazy recovery delays can be adjusted
@@ -17,6 +994,11 @@ extracted from the matching version heading.
 - Add fixed value-free diagnostic categories to project-tool source-processing
   failures, so invalid or unsupported input is distinguishable from limits,
   timeouts and other processing failures.
+- Add opt-in, bounded local event history for explicitly selected Loxone state
+  sources. The recorder uses the LoxBerry-managed Miniserver identity, preserves
+  short-lived state changes, reports coverage evidence, and is queried through
+  `loxone_get_event_history`. Approved existing `loxberry:operate` clients can
+  list, add, and remove sources without a new OAuth scope.
 
 - Show the running service's emergency-stop signal and MQTT-compatible state in
   the Admin UI, including a clear indication when the current form selection
@@ -79,6 +1061,12 @@ extracted from the matching version heading.
 - Add four bounded, read-only Project Intelligence tools for project status, object search,
   object descriptions, and upstream/downstream signal or reference traces. They use
   `loxone:read`, never return raw project XML, and keep ambiguous mappings explicit.
+
+- Add an offline, read-only KNX datatype report for the evidenced Loxone Config
+  XML version. Treat omitted EIBType on ordinary sensors/actors as the agreed
+  implicit DPT1 Config default without an EIS type; keep explicit EIBType=6 as
+  EIS7/DPT1 with separate provenance. Preserve empty/unknown codes and multiple
+  candidate DPT main types; keep Miniserver datatype interpretation unchanged.
 
 ## 0.4.0-beta.3 - 2026-08-15
 

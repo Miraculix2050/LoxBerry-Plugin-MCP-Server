@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -9,28 +10,34 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from mcpserver import admin
 from mcpserver.admin import (
     AdminError,
     _allow_loxberry_operate,
     _allow_loxberry_read,
+    _clear_event_history,
     _emergency_stop_runtime_status,
+    _event_history_runtime_status,
     _loxberry_bindings,
     _loxberry_operate_bindings,
+    _remote_cleanup_status,
     _renew_certificate,
     _revoke,
     _revoke_loxberry_operate,
     _revoke_loxberry_read,
     _save,
+    _save_knx_taxonomy,
     _save_mcp,
     _save_mqtt,
     _service_status,
     _set_logging,
     dispatch,
 )
-from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     HISTORY_SCOPE,
@@ -38,12 +45,14 @@ from mcpserver.auth.provider import (
     LOXBERRY_READ_SCOPE,
     READ_SCOPE,
 )
+from mcpserver.auth.remote_revocation import RemoteRevocationState
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.emergency_stop import VirtualStatusOptions
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from tools.benchmark_admin_page_state import measure
 
 
@@ -62,6 +71,108 @@ def test_admin_import_defers_mqtt_and_loxone_clients() -> None:
     )
 
     assert json.loads(result.stdout) == [False, False]
+
+
+def test_page_state_does_not_import_emergency_stop_runtime() -> None:
+    script = """
+import json
+import os
+import sys
+from mcpserver import admin
+
+os.environ.pop("LBHOMEDIR", None)
+os.environ.pop("MCPSERVER_MQTT_CREDENTIALS", None)
+result = admin.dispatch({"action": "page_state"})
+print(json.dumps({
+    "mqtt_loaded": "mcpserver.mqtt_health" in sys.modules,
+    "emergency_stop_loaded": "mcpserver.emergency_stop" in sys.modules,
+    "gateway_configured": result["mqtt_gateway"]["gateway_configured"],
+    "password_configured": result["mqtt_password_configured"],
+}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "mqtt_loaded": True,
+        "emergency_stop_loaded": False,
+        "gateway_configured": False,
+        "password_configured": False,
+    }
+
+
+def test_list_sessions_does_not_import_oauth_provider() -> None:
+    script = """
+import json
+import sys
+from mcpserver import admin
+from mcpserver.config import PluginConfig
+
+document = {
+    "clients": {},
+    "families": {
+        "family": {
+            "scope": "loxone:read loxberry:read",
+            "expires_at": 2_000_000_000,
+            "pending_loxberry_read": True,
+            "revoked": False,
+        },
+    },
+}
+snapshot = admin._AdminReadSnapshot(PluginConfig.defaults(), document, None, 1_000_000_000)
+admin._admin_read_snapshot = lambda: snapshot
+result = admin.dispatch({"action": "list_sessions"})
+print(json.dumps({
+    "provider_loaded": "mcpserver.auth.provider" in sys.modules,
+    "session_count": len(result["sessions"]),
+    "read_eligible": result["sessions"][0]["loxberry_read_eligible"],
+    "read_bindings": result["loxberry_bindings"],
+    "operate_bindings": result["loxberry_operate_bindings"],
+}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "provider_loaded": False,
+        "session_count": 1,
+        "read_eligible": True,
+        "read_bindings": [],
+        "operate_bindings": [],
+    }
+
+
+def test_clear_event_history_stops_the_recorder_before_deleting_its_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = PluginConfig(event_history_enabled=True, loxone_history_enabled=True)
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(config)
+    path = (tmp_path / "data" / "event-history.sqlite3").resolve()
+    calls: list[str] = []
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._stop_service", lambda: calls.append("stop"))
+    monkeypatch.setattr("mcpserver.admin._start_service", lambda: calls.append("start"))
+    monkeypatch.setenv("MCPSERVER_EVENT_HISTORY_STORE", str(path))
+
+    result = _clear_event_history({"confirm": True})
+
+    assert calls == ["stop", "start"]
+    assert result == {
+        "event_history_entries_removed": 0,
+        "weather_history_deliveries_removed": 0,
+        "weather_history_points_removed": 0,
+    }
 
 
 def test_diagnostic_contains_no_paths_endpoint_or_identity(
@@ -98,6 +209,55 @@ def test_diagnostic_contains_no_paths_endpoint_or_identity(
 def test_admin_rejects_unknown_actions() -> None:
     with pytest.raises(Exception, match="not supported"):
         dispatch({"action": "delete_everything"})
+
+
+def test_page_snapshot_reuses_one_dispatch_and_keeps_section_failures_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcpserver import admin
+
+    original_dispatch = admin.dispatch
+    calls: list[str] = []
+
+    def section_dispatch(
+        request: object, *, timing: dict[str, float] | None = None
+    ) -> dict[str, object]:
+        assert isinstance(request, dict)
+        action = request["action"]
+        assert isinstance(action, str)
+        if action == "page_snapshot":
+            return original_dispatch(request, timing=timing)
+        calls.append(action)
+        if action == "page_state":
+            raise AdminError("MQTT unavailable", code="mqtt_unavailable")
+        return {"section": action}
+
+    monkeypatch.setattr(admin, "dispatch", section_dispatch)
+    timing: dict[str, float] = {}
+    result = admin.dispatch({"action": "page_snapshot"}, timing=timing)
+
+    assert calls == [
+        "get_config",
+        "emergency_stop_cached_options",
+        "page_state",
+        "service_status",
+        "certificate_status",
+        "list_sessions",
+    ]
+    assert result["get_config"] == {"ok": True, "data": {"section": "get_config"}}
+    assert result["emergency_stop_cached_options"] == {
+        "ok": True,
+        "data": {"section": "emergency_stop_cached_options"},
+    }
+    assert result["page_state"] == {
+        "ok": False,
+        "error": {"code": "mqtt_unavailable", "message": "MQTT unavailable"},
+    }
+    assert result["list_sessions"] == {
+        "ok": True,
+        "data": {"section": "list_sessions"},
+    }
+    assert set(timing) == {f"{action}_ms" for action in calls}
 
 
 def test_loxberry_approval_accepts_pending_control_scoped_session(
@@ -153,6 +313,52 @@ def test_loxberry_approval_rejects_expired_session(
 
     with pytest.raises(AdminError, match="pending diagnostic session"):
         _allow_loxberry_read({"session_id": "expired-family"})
+
+
+def test_explorer_approval_is_application_bound_and_individually_revocable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    AtomicConfigStore(config_path).save(PluginConfig.defaults())
+    auth_store = AtomicJsonAuthStore(auth_path)
+    auth_store.mutate(
+        lambda document: document["families"].update(
+            {
+                "explorer-family": {
+                    "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+                    "client_id": "dynamic-client-a",
+                    "client_kind": "tool_explorer",
+                    "explorer_origin": "https://public.example",
+                    "identity_id": "identity",
+                    "miniserver_id": "miniserver",
+                    "created_at": 1_900_000_000,
+                    "expires_at": 2_000_000_000,
+                    "pending_loxberry_read": True,
+                    "revoked": False,
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    response = _allow_loxberry_read({"session_id": "explorer-family"})
+    config = AtomicConfigStore(config_path).load()
+
+    assert config.loxberry_read_bindings == ()
+    assert len(config.explorer_bindings) == 1
+    assert response["loxberry_bindings"][0]["active"] is True
+    binding_id = config.explorer_bindings[0].binding_id
+
+    revoked: list[str] = []
+    monkeypatch.setattr(
+        "mcpserver.admin._revoke_many", lambda family_ids, **_kwargs: revoked.extend(family_ids)
+    )
+    _revoke_loxberry_read({"binding_id": binding_id})
+
+    assert AtomicConfigStore(config_path).load().explorer_bindings == ()
+    assert revoked == ["explorer-family"]
 
 
 def test_loxberry_operate_approval_uses_separate_exact_binding(
@@ -448,10 +654,88 @@ def test_emergency_stop_options_distinguishes_empty_available_results(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", empty_available)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "available",
         "options": [],
     }
+
+
+def test_cached_emergency_stop_options_never_discover_from_miniserver(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    cache = EmergencyOptionsCache(tmp_path / "auth.json", "profile")
+    option = {"uuid": "00000000-0000-0000-0000-000000000123", "name": "Signal"}
+    cache.refresh(lambda: {"status": "available", "options": [option]})
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.admin._emergency_stop_cache", lambda _config: cache)
+
+    async def forbidden(*_args: object, **_kwargs: object) -> VirtualStatusOptions:
+        raise AssertionError("cached page load must not contact the Miniserver")
+
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", forbidden)
+    assert dispatch({"action": "emergency_stop_cached_options"}) == {
+        "status": "available",
+        "options": [option],
+        "cached": True,
+        "stale": False,
+    }
+
+
+@pytest.mark.parametrize("failure", [TimeoutError(), OSError(), ValueError()])
+def test_emergency_stop_cache_failure_marks_retained_options_stale(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: Exception
+) -> None:
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    cache = EmergencyOptionsCache(tmp_path / "auth.json", "profile")
+    option = {"uuid": "control-1", "name": "Signal"}
+    cache.refresh(lambda: {"status": "available", "options": [option]})
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.admin._emergency_stop_cache", lambda _config: cache)
+
+    def fail(_discover: object, **_kwargs: object) -> dict[str, object]:
+        raise failure
+
+    monkeypatch.setattr(cache, "refresh", fail)
+    response = dispatch({"action": "emergency_stop_options"})
+    assert response["status"] == "unavailable"
+    assert response["options"] == [option]
+    assert response["cached"] is True
+    assert response["stale"] is True
+    if isinstance(failure, TimeoutError):
+        assert response["discovery_failure_code"] == "authentication_busy"
+
+
+def test_emergency_stop_cache_changes_with_configured_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcpserver.admin import _emergency_stop_cache
+
+    credentials = ["admin", "first-password"]
+
+    async def configured_credentials(_self: LoxBerryServiceCredentials) -> tuple[str, str]:
+        return credentials[0], credentials[1]
+
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", configured_credentials)
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth.json").resolve()))
+    config = PluginConfig(loxone_endpoint="http://miniserver.test")
+    first = _emergency_stop_cache(config)
+    assert first is not None
+    first.refresh(lambda: {"status": "available", "options": []})
+    credentials[1] = "second-password"
+    second = _emergency_stop_cache(config)
+    assert second is not None
+    assert second.read() is None
 
 
 def test_emergency_stop_options_uses_the_shared_authentication_breaker(
@@ -474,7 +758,7 @@ def test_emergency_stop_options_uses_the_shared_authentication_breaker(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", available)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "available",
         "options": [],
     }
@@ -498,11 +782,60 @@ def test_emergency_stop_options_returns_a_fixed_internal_failure_code(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", unavailable)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "unavailable",
         "options": [],
         "discovery_failure_code": "credentials_helper_missing",
     }
+
+
+def test_emergency_stop_discovery_deadline_cancels_and_returns_fixed_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    cancelled = False
+
+    async def slow_discovery(_config: PluginConfig) -> VirtualStatusOptions:
+        nonlocal cancelled
+        try:
+            await asyncio.sleep(1)
+        finally:
+            cancelled = True
+        return VirtualStatusOptions(status="available", options=())
+
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.admin._EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS", 0.001)
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", slow_discovery)
+
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
+        "status": "unavailable",
+        "options": [],
+        "discovery_failure_code": "connection_failed",
+    }
+    assert cancelled
+
+
+def test_admin_manual_emergency_stop_retry_is_explicit(monkeypatch, tmp_path):
+    from mcpserver import admin
+
+    config = PluginConfig(loxone_endpoint="http://192.168.1.10")
+    seen = []
+
+    def project(_config, _store, kind, *, manual_retry):
+        assert kind == "emergency_stop"
+        seen.append(manual_retry)
+        return {"status": "available", "options": []}
+
+    monkeypatch.setattr(admin, "_config_store", lambda: SimpleNamespace(load=lambda: config))
+    monkeypatch.setattr(admin, "_auth_store", lambda: object())
+    monkeypatch.setattr(admin, "_emergency_stop_cache", lambda _config: None)
+    monkeypatch.setattr("mcpserver.service_discovery.request_projection", project)
+    dispatch({"action": "emergency_stop_options"})
+    dispatch({"action": "emergency_stop_retry"})
+    assert seen == [False, True]
 
 
 @pytest.mark.parametrize("session_count", [0, 10, 100])
@@ -643,10 +976,6 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
         "status": "not_configured",
     }
     monkeypatch.setattr("mcpserver.admin._emergency_stop_runtime_status", lambda _service: runtime)
-    monkeypatch.setattr(
-        "mcpserver.admin._miniserver_auth_runtime_status",
-        lambda _service: {"availability": "unavailable"},
-    )
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: sessions)
     monkeypatch.setattr("mcpserver.admin._certificate_status", lambda: certificate)
 
@@ -657,7 +986,6 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
         "service_active": True,
         "service": service,
         "emergency_stop_runtime": runtime,
-        "miniserver_auth_runtime": {"availability": "unavailable"},
         "sessions": sessions,
         "certificate": certificate,
     }
@@ -779,7 +1107,7 @@ def test_emergency_stop_runtime_status_reads_only_the_validated_loopback_snapsho
         captured["timeout"] = timeout
         return _RuntimeResponse(json.dumps(payload).encode())
 
-    monkeypatch.setattr("mcpserver.admin.urlopen", open_runtime)
+    monkeypatch.setattr("urllib.request.urlopen", open_runtime)
 
     assert _emergency_stop_runtime_status({"active": True}) == {
         "availability": "available",
@@ -797,7 +1125,7 @@ def test_emergency_stop_runtime_status_never_invents_unknown_for_an_invalid_resp
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "mcpserver.admin.urlopen",
+        "urllib.request.urlopen",
         lambda *_args, **_kwargs: _RuntimeResponse(
             b'{"ok":true,"emergency_stop":{"signal_uuid":null,"signal_name":null,"status":"active"}}'
         ),
@@ -805,6 +1133,38 @@ def test_emergency_stop_runtime_status_never_invents_unknown_for_an_invalid_resp
 
     assert _emergency_stop_runtime_status({"active": True}) == {"availability": "unavailable"}
     assert _emergency_stop_runtime_status({"active": False}) == {"availability": "service_inactive"}
+
+
+def test_event_history_runtime_status_accepts_only_bounded_loopback_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    payload = {
+        "event_history": {
+            "status": "unavailable",
+            "reason": "subscription_unavailable",
+            "observed_at": 100.0,
+            "capture_started_at": None,
+        }
+    }
+
+    def open_runtime(request: object, *, timeout: float) -> _RuntimeResponse:
+        captured["url"] = request.full_url  # type: ignore[attr-defined]
+        captured["timeout"] = timeout
+        return _RuntimeResponse(json.dumps(payload).encode())
+
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("urllib.request.urlopen", open_runtime)
+    assert _event_history_runtime_status() == {
+        "availability": "available",
+        **payload["event_history"],
+    }
+    assert captured == {"url": "http://127.0.0.1:8765/internal/event-history-status", "timeout": 1}
+
+    payload["event_history"]["reason"] = "private_message"
+    assert _event_history_runtime_status() == {"availability": "unavailable"}
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    assert _event_history_runtime_status() == {"availability": "service_inactive"}
 
 
 @pytest.mark.parametrize("command", ["start", "stop", "restart"])
@@ -831,10 +1191,6 @@ def test_service_action_uses_only_the_fixed_unit(
         "mcpserver.admin._emergency_stop_runtime_status",
         lambda _service: {"availability": "unavailable"},
     )
-    monkeypatch.setattr(
-        "mcpserver.admin._miniserver_auth_runtime_status",
-        lambda _service: {"availability": "unavailable"},
-    )
     monkeypatch.setattr("mcpserver.admin.request_service_restart", lambda: None)
 
     result = dispatch({"action": "service_action", "payload": {"command": command}})
@@ -847,7 +1203,6 @@ def test_service_action_uses_only_the_fixed_unit(
         "service_active": True,
         "service": service,
         "emergency_stop_runtime": {"availability": "unavailable"},
-        "miniserver_auth_runtime": {"availability": "unavailable"},
     }
 
 
@@ -995,6 +1350,38 @@ def test_first_complete_configuration_does_not_enable_mcp_access(
     assert result["configuration"]["server"]["enabled"] is False
 
 
+def test_partial_config_save_preserves_explorer_approvals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.config import ExplorerBindingApproval
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    approval = ExplorerBindingApproval(
+        binding_id="a" * 64,
+        capability="loxberry:read",
+        application_id="tool-explorer-v1",
+        version=1,
+        created_at=100,
+        last_active_at=100,
+        last_active_until=200,
+    )
+    store.save(replace(PluginConfig.defaults(), explorer_bindings=(approval,)))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+        }
+    )
+
+    assert store.load().explorer_bindings == (approval,)
+
+
 def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1009,14 +1396,18 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
     monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
 
-    _save_mcp(
+    saved_mcp = _save_mcp(
         {
             "schema_version": 5,
             "server": {"enabled": False, "public_origin": "https://loxberry.example"},
             "loxone": {"endpoint": "http://192.168.10.20"},
+            "tools": {"loxone_history_enabled": True},
+            "event_history": {"enabled": True},
         }
     )
     after_mcp = store.load()
+    assert saved_mcp["event_history_brief"]["enabled"] is True
+    assert saved_mcp["event_history_brief"]["active_source_count"] == 0
     assert after_mcp.mqtt_enabled is True
     assert after_mcp.mqtt_root_topic == "existing"
 
@@ -1030,6 +1421,249 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     assert after_mqtt.public_origin == "https://loxberry.example"
     assert after_mqtt.loxone_endpoint == "http://192.168.10.20"
     assert after_mqtt.mqtt_enabled is False
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_mcp_section_save_persists_message_confirmation_permission(
+    enabled: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(loxone_message_confirmation_enabled=not enabled, mqtt_enabled=True))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+
+    result = dispatch(
+        {
+            "action": "save_mcp_config",
+            "payload": {
+                "schema_version": 5,
+                "tools": {"loxone_message_confirmation_enabled": enabled},
+            },
+        }
+    )
+
+    assert store.load().loxone_message_confirmation_enabled is enabled
+    assert result["configuration"]["tools"]["loxone_message_confirmation_enabled"] is enabled
+    assert store.load().mqtt_enabled is True
+
+
+def test_knx_taxonomy_save_is_endpoint_scoped_and_preserves_other_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(loxone_endpoint="http://192.168.10.20", mqtt_enabled=True))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    saved = _save_knx_taxonomy(
+        {"entries": [{"address_format": "three_level", "prefix": "6/2", "label": "Test floor"}]}
+    )
+    assert saved["applied"] is True
+    assert store.load().knx_address_taxonomy_endpoint == "http://192.168.10.20"
+    assert store.load().knx_address_taxonomy[0].label == "Test floor"
+    assert store.load().mqtt_enabled is True
+    with pytest.raises(AdminError):
+        _save_knx_taxonomy(
+            {"entries": [{"address_format": "three_level", "prefix": "6/8/0", "label": "Invalid"}]}
+        )
+    assert store.load().knx_address_taxonomy[0].label == "Test floor"
+
+
+def test_legacy_full_config_save_retains_separately_managed_knx_taxonomy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(
+        loxone_endpoint="http://192.168.10.20",
+        knx_address_taxonomy_endpoint="http://192.168.10.20",
+        knx_address_taxonomy=(AddressTaxonomyEntry("6/2", "Existing label", "three_level"),),
+    )
+    store.save(previous)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False},
+            "loxone": {"endpoint": "http://192.168.10.21"},
+        }
+    )
+
+    saved = store.load()
+    assert saved.loxone_endpoint == "http://192.168.10.21"
+    assert saved.knx_address_taxonomy_endpoint == previous.knx_address_taxonomy_endpoint
+    assert saved.knx_address_taxonomy == previous.knx_address_taxonomy
+
+
+@pytest.mark.parametrize("restart_failure", [False, True])
+@pytest.mark.parametrize("policies", [None, {"loxberry_read_bindings": []}])
+def test_full_config_save_preserves_concurrently_revoked_profile_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, restart_failure: bool, policies
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(
+        PluginConfig(
+            installation_profile_write_enabled=True, installation_profile_write_bindings=("a" * 64,)
+        )
+    )
+    original_mutate = store.mutate
+    calls = 0
+
+    def mutate(operation):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            original_mutate(
+                lambda current: replace(
+                    current,
+                    installation_profile_write_enabled=False,
+                    installation_profile_write_bindings=(),
+                )
+            )
+        return original_mutate(operation)
+
+    restarts = 0
+
+    def restart():
+        nonlocal restarts
+        restarts += 1
+        if restart_failure and restarts == 1:
+            raise AdminError("synthetic restart failure")
+
+    monkeypatch.setattr(store, "mutate", mutate)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    payload = {"schema_version": 10, "server": {"enabled": False}}
+    if policies is not None:
+        payload["policies"] = policies
+    if restart_failure:
+        with pytest.raises(AdminError, match="previous configuration restored"):
+            _save(payload)
+    else:
+        _save(payload)
+    current = store.load()
+    assert current.installation_profile_write_enabled is False
+    assert current.installation_profile_write_bindings == ()
+
+
+@pytest.mark.parametrize("restart_failure", [False, True])
+def test_legacy_save_cannot_restore_concurrently_revoked_knx_read(
+    tmp_path, monkeypatch, restart_failure
+):
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(loxberry_knx_read_enabled=True, loxberry_knx_read_bindings=("a" * 64,)))
+    original_mutate = store.mutate
+    calls = 0
+
+    def mutate(operation):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            original_mutate(
+                lambda current: replace(
+                    current, loxberry_knx_read_enabled=False, loxberry_knx_read_bindings=()
+                )
+            )
+        return original_mutate(operation)
+
+    restarts = 0
+
+    def restart():
+        nonlocal restarts
+        restarts += 1
+        if restart_failure and restarts == 1:
+            raise AdminError("synthetic restart failure")
+
+    monkeypatch.setattr(store, "mutate", mutate)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    payload = {"schema_version": 10, "server": {"enabled": False}}
+    if restart_failure:
+        with pytest.raises(AdminError, match="previous configuration restored"):
+            _save(payload)
+    else:
+        _save(payload)
+    assert store.load().loxberry_knx_read_enabled is False
+    assert store.load().loxberry_knx_read_bindings == ()
+
+
+@pytest.mark.parametrize("restart_failure", [False, True])
+def test_full_save_cannot_erase_prefix_receipt_or_restore_old_activation(
+    tmp_path, monkeypatch, restart_failure
+):
+    from mcpserver.knx.prefix_receipts import PrefixReceipt
+    from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+
+    store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    store.save(PluginConfig.defaults())
+    stale_payload = store.load().to_document()
+    original_mutate = store.mutate
+    record = PrefixReceipt("a" * 64, "b" * 64, "c" * 64, 1, 1, 1, 2_000_000_000)
+    calls = 0
+
+    def mutate(operation):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            original_mutate(
+                lambda config: replace(
+                    config,
+                    knx_prefix_apply_receipts=(record,),
+                    loxberry_knx_prefix_write_enabled=True,
+                    knx_address_taxonomy_endpoint="http://192.168.99.1",
+                    knx_address_taxonomy=(
+                        AddressTaxonomyEntry("1/2", "New effect", "three_level"),
+                    ),
+                )
+            )
+        return original_mutate(operation)
+
+    restarts = 0
+
+    def restart():
+        nonlocal restarts
+        restarts += 1
+        if restart_failure and restarts == 1:
+            raise AdminError("synthetic restart failure")
+
+    monkeypatch.setattr(store, "mutate", mutate)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    payload = stale_payload
+    if restart_failure:
+        with pytest.raises(AdminError, match="previous configuration restored"):
+            _save(payload)
+    else:
+        _save(payload)
+    assert store.load().knx_prefix_apply_receipts == (record,)
+    assert store.load().loxberry_knx_prefix_write_enabled
+    assert store.load().knx_address_taxonomy[0].label == "New effect"
+    assert dict(store.load().knx_taxonomy_targets)["http://192.168.99.1"][0].label == "New effect"
+
+
+def test_partial_legacy_policies_preserve_profile_approval(tmp_path, monkeypatch):
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(
+        PluginConfig(
+            installation_profile_write_enabled=True, installation_profile_write_bindings=("a" * 64,)
+        )
+    )
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    _save({"schema_version": 10, "policies": {"loxberry_read_bindings": []}})
+    assert store.load().installation_profile_write_bindings == ("a" * 64,)
 
 
 def test_failed_mcp_section_apply_restores_running_service(
@@ -1842,7 +2476,9 @@ def test_disabling_control_revokes_control_sessions_after_successful_restart(
         *,
         endpoint: str | None = None,
         timeout_seconds: float | None = None,
+        reason: str = "admin_session",
     ) -> int:
+        assert reason == "scope_disabled"
         events.append(f"revoke:{','.join(family_ids)}")
         revocations.append((family_ids, endpoint, timeout_seconds))
         return len(family_ids)
@@ -1890,6 +2526,40 @@ def test_session_list_excludes_revoked_families(
     assert [session["id"] for session in result["sessions"]] == ["active-family"]
     assert result["sessions"][0]["client_name"] == "Claude Desktop"
     assert result["sessions"][0]["client"] == "active-clien"
+
+
+def test_remote_cleanup_admin_status_is_aggregate_and_value_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore(tmp_path / "tokens.enc", key)
+    token_store.put(
+        "private-family",
+        "private-miniserver",
+        "private-identity",
+        LoxoneToken("private-jwt", "private-user", "private-key", "SHA256", 2_000_000_000),
+    )
+    token_store.schedule_remote_revoke("private-family")
+    sidecar = RemoteRevocationState(token_store.path)
+    value = sidecar.read()
+    value["last_failure_category"] = "transport_failed"
+    value["last_failure_at"] = 123
+    sidecar.write(value)
+
+    class Config:
+        def load(self) -> PluginConfig:
+            return PluginConfig.defaults()
+
+    monkeypatch.setattr("mcpserver.admin._token_store", lambda: token_store)
+    monkeypatch.setattr("mcpserver.admin._config_store", Config)
+    status = _remote_cleanup_status()
+    assert status["available"] is True
+    assert status["pending"] == 1
+    assert status["last_failure_category"] == "transport_failed"
+    rendered = json.dumps(status)
+    for secret in ("private-family", "private-miniserver", "private-identity", "private-jwt"):
+        assert secret not in rendered
 
 
 def test_admin_can_confirm_a_faulty_loxone_token_once(
@@ -2135,3 +2805,271 @@ def test_revoke_queues_remote_tokens_without_waiting_for_miniserver(
 
     assert _revoke(None) == 2
     assert sorted(queued) == ["family-0", "family-1"]
+
+
+@pytest.mark.parametrize("capability", ["read", "operate"])
+def test_approval_retains_original_name_after_family_and_client_are_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str, caplog
+) -> None:
+    config_path = (tmp_path / "config.json").resolve()
+    auth_path = (tmp_path / "auth.json").resolve()
+    config_store = AtomicConfigStore(config_path)
+    config_store.save(PluginConfig.defaults())
+    auth = AtomicJsonAuthStore(auth_path)
+    auth.mutate(
+        lambda doc: (
+            doc["clients"].update({"client": {"client_name": "<Codex> Original"}}),
+            doc["families"].update(
+                {
+                    "family": {
+                        "scope": (
+                            f"{READ_SCOPE} {HISTORY_SCOPE} "
+                            f"{LOXBERRY_READ_SCOPE} {LOXBERRY_OPERATE_SCOPE}"
+                        ),
+                        "client_id": "client",
+                        "identity_id": "identity",
+                        "miniserver_id": "miniserver",
+                        "expires_at": 2_000_000_000,
+                        "revoked": False,
+                        "pending_loxberry_read": True,
+                        "pending_loxberry_operate": True,
+                    }
+                }
+            ),
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+    allow = _allow_loxberry_read if capability == "read" else _allow_loxberry_operate
+    rows = _loxberry_bindings if capability == "read" else _loxberry_operate_bindings
+    revoke = _revoke_loxberry_read if capability == "read" else _revoke_loxberry_operate
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    caplog.clear()
+    allow({"session_id": "family"})
+    assert caplog.text.count("event=approval_granted") == 1
+    binding = rows()[0]["id"]
+    assert dict(config_store.load().loxberry_binding_names) == {binding: "<Codex> Original"}
+    auth.mutate(lambda doc: doc["clients"]["client"].update(client_name="Renamed"))
+    caplog.clear()
+    allow({"session_id": "family"})
+    assert "event=approval_granted" not in caplog.text
+    assert dict(config_store.load().loxberry_binding_names)[binding] == "<Codex> Original"
+    auth.mutate(lambda doc: (doc["families"].clear(), doc["clients"].clear()))
+    inactive = rows()[0]["rows"][0]
+    assert inactive["inactive"] is True
+    assert inactive["client_name"] == "<Codex> Original"
+    revoke({"binding_id": binding})
+    assert config_store.load().loxberry_binding_names == ()
+
+
+@pytest.mark.parametrize("capability", ["read", "operate"])
+def test_legacy_name_enrichment_requires_exact_retained_binding_and_never_activates_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+) -> None:
+    config_path = (tmp_path / "config.json").resolve()
+    auth_path = (tmp_path / "auth.json").resolve()
+    auth = AtomicJsonAuthStore(auth_path)
+    namespace = f"loxberry-{capability}-binding-v1"
+    binding = auth.pseudonym(namespace, "old-client", "identity", "miniserver")
+    config_store = AtomicConfigStore(config_path)
+    config_store.save(
+        PluginConfig.from_document(
+            {"schema_version": 11, "policies": {f"loxberry_{capability}_bindings": [binding]}}
+        )
+    )
+    auth.mutate(
+        lambda doc: (
+            doc["clients"].update(
+                {"old-client": {"client_name": "Codex"}, "new-client": {"client_name": "Codex"}}
+            ),
+            doc["families"].update(
+                {
+                    "old": {
+                        "client_id": "old-client",
+                        "identity_id": "identity",
+                        "miniserver_id": "miniserver",
+                        "expires_at": 1,
+                        "revoked": True,
+                    },
+                    "new": {
+                        "client_id": "new-client",
+                        "identity_id": "identity",
+                        "miniserver_id": "miniserver",
+                        "expires_at": 2_000_000_000,
+                        "revoked": False,
+                        "scope": (
+                            f"{READ_SCOPE} {HISTORY_SCOPE} "
+                            f"{LOXBERRY_READ_SCOPE} {LOXBERRY_OPERATE_SCOPE}"
+                        ),
+                        "pending_loxberry_read": True,
+                        "pending_loxberry_operate": True,
+                    },
+                }
+            ),
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+    rows = _loxberry_bindings if capability == "read" else _loxberry_operate_bindings
+    config_before = config_path.read_bytes()
+    auth_before = auth_path.read_bytes()
+    old = rows()[0]
+    assert old["active"] is False and old["sessions"] == []
+    assert old["rows"][0]["client_name"] == "Codex"
+    assert config_path.read_bytes() == config_before and auth_path.read_bytes() == auth_before
+    allow = _allow_loxberry_read if capability == "read" else _allow_loxberry_operate
+    allow({"session_id": "new"})
+    assert dict(config_store.load().loxberry_binding_names)[binding] == "Codex"
+    auth.mutate(lambda doc: doc["families"].pop("old"))
+    assert rows()[0]["rows"][0]["client_name"] == "Codex"
+    assert rows()[0]["active"] is False
+    assert rows()[1]["active"] is True
+
+
+@pytest.mark.parametrize(
+    "target,reason", [("family", "admin_session"), (None, "admin_all_sessions")]
+)
+def test_admin_revocation_retains_first_cause_and_exports_safe_diagnostics(
+    tmp_path, monkeypatch, target, reason
+):
+    from types import SimpleNamespace
+
+    from mcpserver.auth.store import lifecycle_reference
+
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    config = AtomicConfigStore(tmp_path / "config.json")
+    config.save(PluginConfig())
+    auth.mutate(
+        lambda doc: doc["families"].update(
+            {
+                "family": {
+                    "client_id": "private-client",
+                    "identity_id": "private-identity",
+                    "miniserver_id": "private-miniserver",
+                    "revoked": False,
+                    "expires_at": 2000000000,
+                }
+            }
+        )
+    )
+    monkeypatch.setattr("mcpserver.admin._auth_store", lambda: auth)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: config)
+    monkeypatch.setattr(
+        "mcpserver.admin._token_store",
+        lambda: SimpleNamespace(schedule_remote_revoke=lambda family: True),
+    )
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    assert _revoke(target) == 1
+    family = auth.snapshot()["families"]["family"]
+    assert (family["revocation_reason"], family["revocation_source"]) == (reason, "admin")
+    _revoke("family")
+    assert auth.snapshot()["families"]["family"] == family
+    summary = dispatch({"action": "diagnostic"})["auth_lifecycle"]
+    assert summary["reason_counts"] == {reason: 1}
+    assert summary["recent_revocations"][0]["family_ref"] == lifecycle_reference("family", "family")
+    for raw in ("private-client", "private-identity", "private-miniserver"):
+        assert raw not in json.dumps(summary)
+
+
+@pytest.mark.parametrize("capability", ["read", "drafts", "write"])
+def test_legacy_save_with_partial_policies_preserves_each_knx_explorer_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+) -> None:
+    from mcpserver.config import ExplorerBindingApproval
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    approval = ExplorerBindingApproval(
+        binding_id="a" * 64,
+        capability=f"loxberry:knx:{capability}",
+        application_id="tool-explorer-v1",
+        version=1,
+        created_at=100,
+        last_active_at=100,
+        last_active_until=200,
+    )
+    previous = replace(PluginConfig.defaults(), explorer_bindings=(approval,))
+    store.save(previous)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+            "policies": {},
+        }
+    )
+    assert store.load().explorer_bindings == (approval,)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {"path": "elsewhere"},
+        {"session_id": ""},
+        {"session_id": None},
+        {"session_id": 4},
+        {"session_id": "x" * 129},
+    ],
+)
+def test_authentication_history_rejects_invalid_admin_requests(payload):
+    with pytest.raises(AdminError):
+        dispatch({"action": "list_authentication_events", "payload": payload})
+
+
+def test_authentication_history_groups_verified_binding_and_reads_on_demand(tmp_path, monkeypatch):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator, authentication_binding
+
+    auth = AtomicJsonAuthStore((tmp_path / "auth" / "sessions.json").resolve())
+    config = PluginConfig(loxone_endpoint="http://192.168.10.20")
+    families = {
+        "first": {"client_id": "app", "identity_id": "identity", "miniserver_id": "server"},
+        "renewed": {"client_id": "app", "identity_id": "identity", "miniserver_id": "server"},
+        "other": {"client_id": "other-app", "identity_id": "identity", "miniserver_id": "server"},
+    }
+    auth.mutate(lambda document: document["families"].update(families))
+    monkeypatch.setattr(admin, "_auth_store", lambda: auth)
+    monkeypatch.setattr(admin, "_config_store", lambda: SimpleNamespace(load=lambda: config))
+    calls = []
+
+    def read(self, binding_id=None):
+        calls.append(binding_id)
+        return {"events": [], "history_status": "bounded", "shared_status": {}}
+
+    monkeypatch.setattr(MiniserverAuthCoordinator, "diagnostic_snapshot", read)
+    monkeypatch.setattr(
+        admin,
+        "_sessions",
+        lambda snapshot: [
+            {
+                "id": family,
+                "client": record["client_id"],
+                "client_name": "Same display name",
+                "identity": record["identity_id"],
+            }
+            for family, record in families.items()
+        ],
+    )
+    global_history = dispatch({"action": "list_authentication_events"})
+    assert len(global_history["bindings"]) == 2
+    assert calls[0] is None
+    own = authentication_binding(auth, "app", "identity", "server")
+    calls.clear()
+    for family in ("first", "renewed"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": family}})
+    assert calls == [own, own]
+    assert "binding_id" not in json.dumps(global_history)
+    assert "subject_key" not in json.dumps(global_history)
+    with pytest.raises(AdminError, match="unavailable"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": "unknown"}})
+
+
+def test_removed_signed_authentication_recovery_action_is_rejected():
+    with pytest.raises(AdminError):
+        dispatch(
+            {"action": "request_miniserver_auth_recovery", "payload": {"session_id": "family"}}
+        )

@@ -3,39 +3,31 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
-import re
-import subprocess
+import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import partial
-from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from mcpserver.config import PluginConfig
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
-from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationCooldown,
+    MiniserverAuthenticationSuppressed,
+)
+from mcpserver.loxone.client import (
+    LoxoneClient,
+    LoxoneConnectionError,
+)
+from mcpserver.loxone.service_access import (
+    LoxBerryServiceCredentials,
+    ServiceCredentialsUnavailable,
+    ServiceMiniserverConnection,
+)
 
 _LOGGER = logging.getLogger("mcpserver.emergency_stop")
-
-
-async def _acquire_token(client: LoxoneClient, username: str, password: str) -> LoxoneToken:
-    return await client.acquire_token(username, password)
-
-
-async def _open_session(client: LoxoneClient, token: LoxoneToken) -> LoxoneWebSocketSession:
-    return await client.open_session(token)
-
-
-class _ProviderUnavailable(RuntimeError):
-    """Identify one fixed provider failure without exposing provider output."""
-
-    def __init__(self, reason: str) -> None:
-        super().__init__("provider unavailable")
-        self.reason = reason
+_ADMIN_AUTH_BUSY_WAIT_SECONDS = 15
 
 
 def _sorted_virtual_status_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -61,6 +53,7 @@ class VirtualStatusOptions:
     status: str
     options: tuple[dict[str, str], ...]
     failure_code: str | None = None
+    retry_not_before: int | None = None
 
 
 @dataclass(slots=True)
@@ -123,63 +116,15 @@ class EmergencyStopMonitor:
         if self.config.emergency_stop_virtual_status_uuid:
             self._task = asyncio.create_task(self._run())
 
-    async def _credentials(self) -> tuple[str, str]:
-        directory = Path(os.getenv("MCPSERVER_BIN_DIR", ""))
-        if not directory.is_absolute():
-            config_path = Path(os.getenv("MCPSERVER_CONFIG", ""))
-            plugin_folder = config_path.parent.name if config_path.is_absolute() else ""
-            home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
-            if re.fullmatch(r"[A-Za-z0-9_-]+", plugin_folder) and home.is_absolute():
-                directory = home / "bin" / "plugins" / plugin_folder
-        helper = directory / "emergency-stop-miniserver.php"
-        if not directory.is_absolute() or not helper.is_file():
-            raise _ProviderUnavailable("helper_missing")
-        home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
-        perl_library = home / "libs" / "perllib"
-        if not home.is_absolute() or not perl_library.is_dir():
-            raise _ProviderUnavailable("perl_runtime_missing")
-        provider_environment = os.environ.copy()
-        provider_environment["LBHOMEDIR"] = str(home)
-        provider_environment["PERL5LIB"] = str(perl_library)
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["perl", "-I", str(perl_library), str(helper), self.config.loxone_endpoint],
-            check=False,
-            capture_output=True,
-            env=provider_environment,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            reason = {
-                2: "request_rejected",
-                3: "credentials_missing",
-                4: "endpoint_not_found",
-            }.get(result.returncode, "helper_failed")
-            raise _ProviderUnavailable(reason)
-        if len(result.stdout) > 4096:
-            raise _ProviderUnavailable("response_oversized")
-        try:
-            value = json.loads(result.stdout)
-        except (json.JSONDecodeError, TypeError) as exc:
-            raise _ProviderUnavailable("response_invalid") from exc
-        if (
-            not isinstance(value, dict)
-            or not isinstance(value.get("username"), str)
-            or not isinstance(value.get("password"), str)
-        ):
-            raise _ProviderUnavailable("response_invalid")
-        return value["username"], value["password"]
-
     async def _run(self) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
 
         while True:
-            token = None
+            connection = None
             session = None
             stage = "credentials"
             try:
-                username, password = await self._credentials()
+                username, password = await LoxBerryServiceCredentials(self.config).load()
                 client = LoxoneClient(
                     MiniserverEndpoint.parse(self.config.loxone_endpoint),
                     client_uuid=uuid5(
@@ -188,20 +133,10 @@ class EmergencyStopMonitor:
                     timeout_seconds=self.config.connection_timeout,
                 )
                 stage = "token"
-                if self.auth_coordinator is None:
-                    token = await client.acquire_token(username, password)
-                    session = await client.open_session(token)
-                else:
-                    token = await self.auth_coordinator.attempt(
-                        partial(_acquire_token, client, username, password),
-                        owner="runtime_event_stream",
-                        phase="token_acquisition",
-                    )
-                    session = await self.auth_coordinator.attempt(
-                        partial(_open_session, client, token),
-                        owner="runtime_event_stream",
-                        phase="session_establishment",
-                    )
+                connection = ServiceMiniserverConnection(
+                    client, self.auth_coordinator, owner="runtime_event_stream", manual_retry=True
+                )
+                session = await connection.connect(username, password)
                 stage = "session"
                 assert session is not None
                 stage = "structure"
@@ -231,7 +166,9 @@ class EmergencyStopMonitor:
             except Exception as exc:
                 self.unavailable()
                 failure_code = (
-                    f"{stage}_{exc.reason}" if isinstance(exc, _ProviderUnavailable) else stage
+                    f"{stage}_{exc.reason}"
+                    if isinstance(exc, ServiceCredentialsUnavailable)
+                    else stage
                 )
                 _LOGGER.warning(
                     "component=emergency_stop outcome=monitor_unavailable code=%s error_type=%s",
@@ -240,10 +177,8 @@ class EmergencyStopMonitor:
                 )
                 await asyncio.sleep(5)
             finally:
-                if session is not None:
-                    await session.close()
-                if token is not None:
-                    token.destroy()
+                if connection is not None:
+                    await connection.close()
 
     async def close(self) -> None:
         if self._task is not None:
@@ -253,17 +188,21 @@ class EmergencyStopMonitor:
 
 
 async def virtual_status_options(
-    config: PluginConfig, auth_coordinator: MiniserverAuthCoordinator | None = None
+    config: PluginConfig,
+    auth_coordinator: MiniserverAuthCoordinator | None = None,
+    *,
+    manual_retry: bool = False,
+    early_probe: bool = False,
 ) -> VirtualStatusOptions:
     """Return selectable visible digital statuses without retaining credentials."""
     if not config.loxone_endpoint:
         return VirtualStatusOptions(status="not_configured", options=())
-    monitor = EmergencyStopMonitor(config)
-    token = None
+    credentials = LoxBerryServiceCredentials(config)
+    connection = None
     session = None
     stage = "credentials"
     try:
-        username, password = await monitor._credentials()
+        username, password = await credentials.load()
         from mcpserver.loxone.client import MiniserverEndpoint
 
         stage = "endpoint"
@@ -275,25 +214,15 @@ async def virtual_status_options(
             timeout_seconds=config.connection_timeout,
         )
         stage = "token"
-        if auth_coordinator is None:
-            token = await client.acquire_token(username, password)
-        else:
-            token = await auth_coordinator.attempt(
-                partial(_acquire_token, client, username, password),
-                owner="local_admin",
-                phase="token_acquisition",
-                allow_cooldown_probe=False,
-            )
-        stage = "session"
-        if auth_coordinator is None:
-            session = await client.open_session(token)
-        else:
-            session = await auth_coordinator.attempt(
-                partial(_open_session, client, token),
-                owner="local_admin",
-                phase="session_establishment",
-                allow_cooldown_probe=False,
-            )
+        connection = ServiceMiniserverConnection(
+            client,
+            auth_coordinator,
+            owner="local_admin",
+            busy_wait_seconds=_ADMIN_AUTH_BUSY_WAIT_SECONDS,
+            manual_retry=manual_retry,
+            early_probe=early_probe,
+        )
+        session = await connection.connect(username, password)
         stage = "structure"
         structure = await session.load_structure()
         return VirtualStatusOptions(
@@ -310,10 +239,39 @@ async def virtual_status_options(
             ),
         )
     except Exception as exc:
-        reason = f"{stage}_{exc.reason}" if isinstance(exc, _ProviderUnavailable) else stage
-        return VirtualStatusOptions(status="unavailable", options=(), failure_code=reason)
+        if connection is not None and stage == "token":
+            stage = connection.stage
+        breaker = auth_coordinator.current_status() if auth_coordinator is not None else None
+        if isinstance(exc, MiniserverAuthenticationCooldown):
+            reason = "authentication_cooldown"
+        elif isinstance(exc, MiniserverAuthenticationSuppressed):
+            reason = (
+                "authentication_suppressed"
+                if breaker is not None and breaker.get("breaker_state") != "closed"
+                else "authentication_busy"
+            )
+        elif stage == "credentials" or isinstance(exc, ServiceCredentialsUnavailable):
+            reason = "credentials_unavailable"
+        elif stage == "structure":
+            reason = "structure_failed"
+        elif isinstance(exc, LoxoneConnectionError | TimeoutError | OSError):
+            reason = "connection_failed"
+        else:
+            reason = "structure_failed" if stage == "structure" else "connection_failed"
+        retry_at = (
+            breaker.get("next_auth_attempt_at")
+            if breaker is not None
+            and (breaker.get("breaker_state") != "closed" or reason == "authentication_cooldown")
+            else int(time.time()) + 5
+            if reason == "authentication_busy"
+            else None
+        )
+        return VirtualStatusOptions(
+            status="unavailable",
+            options=(),
+            failure_code=reason,
+            retry_not_before=retry_at if isinstance(retry_at, int) else None,
+        )
     finally:
-        if session is not None:
-            await session.close()
-        if token is not None:
-            token.destroy()
+        if connection is not None:
+            await connection.close()

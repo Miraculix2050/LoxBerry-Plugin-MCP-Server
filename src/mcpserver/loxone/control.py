@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import math
-import re
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
+from mcpserver.loxone.lighting import MOOD_ID_PATTERN as _MOOD_ID
+from mcpserver.loxone.lighting import visible_mood_ids as visible_mood_ids
 from mcpserver.loxone.models import Control
 
 SUPPORTED_CONTROL_TYPES = frozenset(
@@ -34,36 +33,12 @@ SUPPORTED_CONTROL_TYPES = frozenset(
         "ClimateControllerUS",
     }
 )
-_MOOD_ID = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedControlCommand:
     command: str
     expected_states: tuple[tuple[str, float | str], ...] = ()
-
-
-def visible_mood_ids(value: object) -> frozenset[str] | None:
-    """Return bounded decimal IDs from one visible LightControllerV2 moodList state."""
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.JSONDecodeError:
-            return None
-    if not isinstance(value, list) or len(value) > 1000:
-        return None
-    result: set[str] = set()
-    for item in value:
-        if not isinstance(item, Mapping):
-            return None
-        mood_id = item.get("id")
-        if isinstance(mood_id, bool):
-            return None
-        normalized = str(mood_id) if isinstance(mood_id, int | str) else ""
-        if not _MOOD_ID.fullmatch(normalized):
-            return None
-        result.add(normalized)
-    return frozenset(result)
 
 
 def allowed_actions(control: Control) -> list[str]:

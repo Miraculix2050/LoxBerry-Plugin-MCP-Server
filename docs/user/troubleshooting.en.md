@@ -1,5 +1,124 @@
 # Troubleshooting
 
+## MCP tools missing after an upgrade
+
+An installed skill or the static schema reference can describe capabilities that
+an existing connector connection has not rediscovered. Use the Tool Explorer's
+fresh `tools/list` response to check the installed surface, then refresh/reconnect
+the affected client and inspect its tool definitions again. Do not guess arguments
+absent from the client's current schema or bypass discovery through raw requests.
+Reconnect behavior must be verified for the particular client; the plugin cannot
+invalidate an external connector's cached schema.
+
+The server uses stateless HTTP with JSON responses. It does not advertise
+unsolicited tool-list change notifications. No full discovery or project load is
+added before each read; reconnecting does not confer project or Admin permission.
+
+For a local comparison, privately save two captures as UTF-8 JSON containing
+`tools` (or a JSON-RPC `result.tools` response), then run in the developer environment:
+
+```text
+python tools/check_mcp_discovery.py --reference server.json --observed client.json
+```
+
+Compare the same enabled installation and capture time. The release's complete
+static reference can include disabled tools; that difference does not prove a
+stale connector. Each file is limited to 16 MiB and 512 tools. The report contains
+tool names, schema identities and changed field names, not schema text or
+credentials. Exit 0 means equal exposed contracts, 1 means different or incomplete,
+and 2 means invalid input. Client fields that are not exposed are explicitly
+incomplete, not a confirmed defect. Additive enum/output changes are detected even
+when tool names are unchanged. Keep captures private and record client/version,
+upgrade/reconnect steps and skill revision with sanitized evidence.
+
+## OAuth session and approval lifecycle
+
+Use the local Admin diagnostic download when a session disappears or an approval
+stays inactive. `auth_lifecycle` reports retained revoked-family counts by cause
+and at most 20 recent revocations with time, source and masked references. This
+is local LoxBerry-admin diagnostics; Loxone authorization does not grant access.
+
+The first revocation stores `revoked_at`, `revocation_reason` and
+`revocation_source` on the existing family. Repeated revocations preserve that
+first cause. Historical records without a cause remain `unknown`; no later
+Admin action is attributed as their original trigger. Metadata follows existing
+family retention and disappears when that family is collected.
+
+| Cause | Recorded initiating path |
+| --- | --- |
+| `oauth_revocation` / `explorer_logout` | Explicit OAuth revocation / Explorer logout |
+| `refresh_reuse` / `refresh_invalid_state` | Reuse of a consumed refresh token / invalid refresh state causing revocation |
+| `admin_session` / `admin_all_sessions` | Local Admin revoked one / all sessions |
+| `approval_read_removed` / `approval_operate_removed` | Local Admin removed the matching LoxBerry approval |
+| `scope_disabled` | Configuration disabled an authorized capability |
+| `unknown` | Original cause was not recorded or is unsupported |
+
+Plugin logs use `component=auth_lifecycle` with fixed event, reason, source,
+capability, outcome and correlation fields. `family_ref` is a domain-separated
+hash of a randomly issued opaque family ID and correlates OAuth, runtime and
+remote-cleanup events. `client_ref` is keyed per installation; `binding_ref`
+is a separate hash of the existing opaque binding. References grant no rights
+and do not imply that two differently registered clients are interchangeable.
+Source labels identify the initiating path, not a verified human operator.
+
+At normal INFO logging, rare events cover registration, family creation and
+revocation, expiry/removal, approval changes, connection opening/termination,
+service start/stop and remote cleanup outcomes. DEBUG adds successful token
+issuance/rotation, exact approval matching per capability, rejected refreshes,
+close requests and cleanup attempts/suppression. Ordinary store reads produce
+no lifecycle entries. Existing log-level controls and rotation remain in effect;
+a process crash cannot emit a graceful stop, and missing logs are not proof of
+an absent event.
+
+Admin helper events are forwarded to the native LoxBerry Admin log through a
+strict fixed-field filter, following the native plugin log level. Each helper
+forwards at most six detailed entries plus a count summary to bound pipe output.
+
+Store transition events are emitted after a successful durable commit. A bulk
+mutation emits at most 32 detailed entries plus a count summary; persisted
+first causes remain available independently of log rotation. Remote cleanup
+queueing, confirmed kill, already invalid, nominal expiry and unconfirmed
+outcomes remain distinct. A connection ending is not an OAuth-family revocation.
+No tokens, raw client/family IDs, names, endpoints, credentials or arbitrary
+exception messages are added to these diagnostics.
+
+A startup that never receives its first state batch closes with
+`initial_state_timeout`; cancellation does not turn that failure into a normal
+local disconnect. OAuth expiry and refresh revocation causes are forwarded to
+the corresponding runtime close.
+
+The browser diagnostic download requires JavaScript. It uses the same-origin
+AJAX path and downloads the masked JSON locally; strict Origin checks and the
+no-referrer policy remain active.
+
+## Repeated Miniserver authentication rejection
+
+Three definite authentication rejections in five minutes pause new sign-ins
+for 60 seconds. Public OAuth password failures have their own budget and pause
+only public sign-ins. Service and token rejections share a second budget; its
+pause also covers the token phase of public sign-ins. A public password pause
+does not block service connections or token revocations. Actual IP blocks remain
+global. Rejected recovery probes double that pause
+up to 60 minutes. Network errors, timeouts, busy coordination and denied project
+permissions do not consume this budget. Existing authenticated connections stay
+open. This is plugin policy, not a guaranteed Miniserver IP-block threshold.
+
+The Sessions section shows the protection reason and remaining wait. A local
+administrator can explicitly try one sign-in with the LoxBerry-configured
+credentials, at least 60 seconds after the previous attempt. Confirm the warning:
+another rejection can extend the pause or cause an IP block. Automatic retries and
+MCP clients cannot bypass the pause; a confirmed Miniserver IP block takes priority.
+
+If protection persistence is unavailable, new sign-ins stop. Restore access to the
+private plugin state file and restart the service after resolving the cause; do
+not delete an active protection record merely to retry. An interrupted process
+leaves a conservative reservation of at most one hour. This also protects other
+processes if an authentication outcome could not be saved. No credentials or token values appear in status.
+An existing source-IP recovery policy can require a longer reservation and takes priority.
+Token-wide cleanup is not offered; its effects are under separate investigation.
+
+An authentication outcome that is still unknown additionally reserves the existing global IP recovery interval. After a crash or an outcome write failure, this protection can temporarily defer all new authentication; normal persisted password rejections do not activate it. Tokens already issued when sign-in completion is suppressed are encrypted for coordinated revocation. If that write also fails, the transaction retains the token and blocks new issuance until cleanup is queued.
+
 [Deutsch](troubleshooting.de.md)
 
 | Symptom | Safe check |
@@ -12,3 +131,76 @@
 | An update failed | Wait for terminal Plugin Manager status and retain the earlier package. |
 
 Do not export or share credentials, tokens, private addresses or complete state data. Use only masked plugin diagnostics.
+
+## Temporary read unavailability
+
+For `temporarily_unavailable`, retain `error`, `message`, `diagnostic_code`, and
+`trace_id` with the tool and authorized target context. Also retain
+`availability_phase` and `retry_after_seconds`. `local_rate_limit` identifies the
+caller's local request budget; only this cause supplies a rounded-up delay of
+1–60 seconds. Wait at least this delay and retry a read at most once. Capacity is
+not reserved. Reuse successful descriptions and reduce concurrent fan-out.
+Never automatically retry uncertain writes.
+
+Runtime session establishment waits for local authentication coordination within
+the configured connection timeout; waiting and login share that budget. Cancellation
+stops waiting. Fresh MCP visibility still requires the caller's authenticated
+structure; the Admin identity or an old cached structure cannot replace it.
+`structure_refresh_auth_busy` means local coordination exhausted its wait before
+login. `structure_refresh_auth_cooldown` means the preventive rejection pause or
+uncertain protection persistence prevented network access.
+`structure_refresh_source_ip_suppressed` means source-IP blocking or the
+persistent breaker prevented access. Neither identifies the caller's rate budget.
+Transport failures and remote session limits remain separate; a connection-category
+error alone does not establish a Miniserver session limit. These diagnostics cannot
+attribute older failures whose underlying exception was not retained (#332).
+
+`structure_refresh_connection`, `structure_refresh_protocol`,
+`structure_refresh_token`, and `structure_refresh_timeout` distinguish established
+refresh exception categories. Token errors include missing tokens and token-store
+failures. The phase identifies token lookup, session establishment, version check,
+structure load, or session close. `structure_refresh_unknown` and
+`availability_unknown` explicitly leave the cause unknown. No retry time is given
+for these failures; do not invent one or infer it from a healthy service.
+
+Use authorized, sanitized service diagnostics with the response's trace ID for
+support. Warnings are suppressed for 60 seconds per category and phase; event
+counts do not count failed calls, and missing events do not identify a cause.
+
+### Admin discovery connection
+
+Event History and emergency-stop selectors reuse a dedicated connection with the
+LoxBerry-configured Miniserver identity. The emergency-stop list first checks the
+`LoxAPPversion3` project change marker in the background, as the project cache does.
+Only then are matching cached names displayed. Changed/missing markers and missing/stale caches require
+a complete structure load. A visible open page checks again after the configured
+structure-refresh interval (at least 60 seconds). “Load/refresh emergency-stop signals”
+always forces a complete download. A failure stops automatic attempts, preserving
+the selection and previously verified list and marking it stale when necessary. The marker does
+not prove access rights. Event History selector requests still download the complete
+structure; captured history and normal MCP clients keep their existing
+authorization boundaries. If the service is stopped or discovery fails, no fresh
+login is started in the CGI helper. Keep the saved selection and retry explicitly
+after correcting the cause. Retained emergency options are marked stale and do not
+authorize operations.
+
+The connection expires after 60 seconds of inactivity or five minutes of reuse.
+Credential/configuration changes and connection failures discard it. An accepted
+limitation remains: partial rights changes may not affect a still-open Miniserver
+session until it disconnects or is replaced. A fresh structure download is not a
+universal proof of immediate permission revocation. MCP clients never receive this
+service identity's access through the selector endpoint.
+
+### Admin discovery failures
+
+When emergency-stop options cannot be refreshed, correlate the Admin CGI log's
+`request_id` with `component=admin_discovery` in the service log. Failure-only
+warnings retain a fixed `phase` and `code`, total duration, discovery/coordinator
+wait, token/session setup timings, pending discovery count, and new/held session
+mode and age. A missing request ID is shown as `-`. Pending counts describe local
+Admin discovery requests only; they do not measure total Miniserver traffic.
+`connection_failed` in the UI remains a generic error. Use the correlated service
+category to distinguish timeout, disconnect, protocol, authentication and identity
+or lifecycle invalidation; `unknown` remains unresolved. No exception messages,
+payloads, credentials, tokens, signal names or object identities are logged.
+These diagnostics do not retry requests or change authorization behavior.

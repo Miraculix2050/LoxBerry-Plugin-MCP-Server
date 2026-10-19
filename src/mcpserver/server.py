@@ -7,18 +7,20 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.routes import create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
+from mcp.types import GetPromptResult
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -34,29 +36,36 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
     StoredAccessToken,
 )
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
-from mcpserver.auth.store import AtomicJsonAuthStore
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
+)
+from mcpserver.auth.store import AtomicJsonAuthStore, lifecycle_event
 from mcpserver.auth.web import Phase0OAuthWeb
-from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
+from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
-from mcpserver.loxone.auth_diagnostics import (
-    MiniserverAuthCoordinator,
-    recovery_request_key,
-    recovery_request_signature,
-)
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator, authentication_binding
 from mcpserver.loxone.client import MiniserverEndpoint
+from mcpserver.loxone.event_history import EventHistoryMonitor, EventHistoryStore
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.statistics import StatisticsCache
 from mcpserver.mqtt_health import MqttHealthPublisher
+from mcpserver.output_validation import OutputValidatedFastMCP
+from mcpserver.prompts import register_prompt_surface
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
 from mcpserver.tools import (
+    EventHistoryRuntime,
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     register_tool_surface,
@@ -68,8 +77,8 @@ LOG_BACKUP_COUNT: Final = 2
 LOG_MAX_RECORD_BYTES: Final = 8 * 1024
 LOG_TRUNCATION_SUFFIX: Final = " ... [truncated]"
 _INTERNAL_EMERGENCY_STOP_STATUS_PATH: Final = "/internal/emergency-stop-status"
-_INTERNAL_MINISERVER_AUTH_STATUS_PATH: Final = "/internal/miniserver-auth-status"
-_INTERNAL_MINISERVER_AUTH_RECOVERY_PATH: Final = "/internal/miniserver-auth-recovery"
+_INTERNAL_EVENT_HISTORY_STATUS_PATH: Final = "/internal/event-history-status"
+_INTERNAL_EVENT_HISTORY_UPDATES_PATH: Final = "/internal/event-history-updates"
 _LOG_LEVELS: Final = {
     "off": None,
     "error": logging.ERROR,
@@ -223,8 +232,7 @@ class _DisabledServiceMiddleware(BaseHTTPMiddleware):
         if request.url.path not in {
             "/healthz",
             _INTERNAL_EMERGENCY_STOP_STATUS_PATH,
-            _INTERNAL_MINISERVER_AUTH_STATUS_PATH,
-            _INTERNAL_MINISERVER_AUTH_RECOVERY_PATH,
+            _INTERNAL_EVENT_HISTORY_STATUS_PATH,
         }:
             return JSONResponse(
                 {"ok": False, "error": "service_disabled"},
@@ -267,8 +275,16 @@ class _EmergencyStopMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class _ForwardedHostFastMCP(FastMCP):
+class _ForwardedHostFastMCP(OutputValidatedFastMCP):
     """FastMCP application that also validates Apache's original Host header."""
+
+    async def get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> GetPromptResult:
+        """Reject unknown names without the SDK logging caller-supplied name text."""
+        if self._prompt_manager.get_prompt(name) is None:
+            raise ValueError("prompt_unavailable")
+        return await super().get_prompt(name, arguments)
 
     async def run_streamable_http_async(self) -> None:  # pragma: no cover - process boundary
         """Run Uvicorn through the bounded root logger without request access logs."""
@@ -297,6 +313,7 @@ class _ForwardedHostFastMCP(FastMCP):
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
+    event_history: EventHistoryMonitor | None = None
     live_runtime: LoxoneRuntime | None = None
     remote_revocation: (
         tuple[
@@ -304,6 +321,9 @@ class _ForwardedHostFastMCP(FastMCP):
         ]
         | None
     ) = None
+    explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None
+
+    admin_discovery: Any = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -316,6 +336,9 @@ class _ForwardedHostFastMCP(FastMCP):
                     self.live_runtime,
                     self.emergency_stop,
                     self.remote_revocation,
+                    self.event_history,
+                    self.explorer_binding_maintenance,
+                    self.admin_discovery,
                 ),
                 session_lifespan(starlette_app),
             ):
@@ -356,7 +379,7 @@ class _Phase0TokenVerifier(TokenVerifier):
         self._provider = provider
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        return await self._provider.load_access_token(token)
+        return await self._provider.load_access_token_readonly(token)
 
 
 @asynccontextmanager
@@ -367,6 +390,9 @@ async def _runtime_lifespan(
         MiniserverEndpoint, EncryptedLoxoneTokenStore, float, MiniserverAuthCoordinator | None
     ]
     | None = None,
+    event_history: EventHistoryMonitor | None = None,
+    explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None,
+    admin_discovery: Any = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -374,19 +400,76 @@ async def _runtime_lifespan(
         if remote_revocation is not None
         else None
     )
+    binding_worker: asyncio.Task[None] | None = None
+    if explorer_binding_maintenance is not None:
+        from mcpserver.explorer_bindings import maintain_explorer_bindings
+
+        async def maintain() -> None:
+            while True:
+                try:
+                    maintain_explorer_bindings(*explorer_binding_maintenance)
+                except Exception as exc:
+                    logging.getLogger("mcpserver.explorer_binding").warning(
+                        "component=explorer_binding severity=WARNING "
+                        "outcome=maintenance_failed error_type=%s",
+                        type(exc).__name__,
+                    )
+                await asyncio.sleep(60)
+
+        binding_worker = asyncio.create_task(maintain())
     try:
         if emergency_stop is not None:
             await emergency_stop.start()
+        if event_history is not None:
+            await event_history.start()
+        lifecycle_event("service_started", source="runtime", outcome="opened")
         yield
     finally:
+        lifecycle_event("service_stopped", source="runtime", reason="shutdown", outcome="pending")
+        if admin_discovery is not None:
+            await admin_discovery.close()
         if worker is not None:
             worker.cancel()
             with suppress(asyncio.CancelledError):
                 await worker
+        if binding_worker is not None:
+            binding_worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await binding_worker
         if runtime is not None:
             await runtime.close()
         if emergency_stop is not None:
             await emergency_stop.close()
+        if event_history is not None:
+            await event_history.close()
+        lifecycle_event("service_stopped", source="runtime", reason="shutdown", outcome="closed")
+
+
+def _miniserver_auth_coordinator(
+    auth_store: AtomicJsonAuthStore,
+    endpoint: MiniserverEndpoint,
+    config: PluginConfig | None,
+) -> MiniserverAuthCoordinator:
+    """Build the endpoint-bound shared breaker from the installation auth store."""
+    return MiniserverAuthCoordinator(
+        auth_store.path.parent / "miniserver-auth-diagnostics.json",
+        initial_probe_seconds=(
+            config.miniserver_auth_probe_initial_seconds if config is not None else 900
+        ),
+        maximum_probe_seconds=(
+            config.miniserver_auth_probe_max_seconds if config is not None else 86_400
+        ),
+        profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+    )
+
+
+def _configured_auth_store() -> AtomicJsonAuthStore | None:
+    """Open the fixed installation auth store when it is available to this service."""
+    value = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
+    path = Path(value)
+    if not value or not path.is_absolute() or path.suffix.lower() != ".json":
+        return None
+    return AtomicJsonAuthStore(path)
 
 
 def create_server(settings: ServerSettings) -> FastMCP:
@@ -403,13 +486,51 @@ def create_server(settings: ServerSettings) -> FastMCP:
     runtime: LoxoneRuntime | None = None
     loxberry_runtime: LoxBerryReadRuntime | None = None
     loxberry_operate_runtime: LoxBerryOperateRuntime | None = None
+    event_history_runtime: EventHistoryRuntime | None = None
     statistics_cache: StatisticsCache | None = None
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    event_history: EventHistoryMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
-    recovery_key: bytes | None = None
+    auth_store: AtomicJsonAuthStore | None = None
+    admission_config = (
+        settings.phase0_auth.plugin_config if settings.phase0_auth is not None else None
+    ) or settings.plugin_config
+    call_admission = asyncio.Semaphore(
+        admission_config.max_parallel_calls if admission_config is not None else 4
+    )
+    explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None
     if settings.plugin_config is not None:
         emergency_stop = EmergencyStopMonitor(settings.plugin_config)
+        if (
+            emergency_stop.config.emergency_stop_virtual_status_uuid
+            and emergency_stop.config.loxone_endpoint
+        ):
+            auth_store = _configured_auth_store()
+            if auth_store is not None:
+                auth_coordinator = _miniserver_auth_coordinator(
+                    auth_store,
+                    MiniserverEndpoint.parse(emergency_stop.config.loxone_endpoint),
+                    emergency_stop.config,
+                )
+                emergency_stop.auth_coordinator = auth_coordinator
+        event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+        if event_history_path.is_absolute() and (
+            settings.plugin_config.event_history_enabled
+            or settings.plugin_config.weather_history_enabled
+            or settings.plugin_config.solar_history_enabled
+            or event_history_path.is_file()
+        ):
+            event_history = EventHistoryMonitor(
+                settings.plugin_config,
+                EventHistoryStore(
+                    event_history_path,
+                    retention_days=settings.plugin_config.event_history_retention_days,
+                    maximum_mib=settings.plugin_config.event_history_maximum_mib,
+                ),
+                LoxBerryServiceCredentials(settings.plugin_config),
+                auth_coordinator,
+            )
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
         home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
         if home.is_absolute():
@@ -421,7 +542,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 ),
             )
     if settings.phase0_auth is not None:
-        auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
+        auth_store = auth_store or AtomicJsonAuthStore(settings.phase0_auth.store_path)
         loxone_store: EncryptedLoxoneTokenStore | None = None
         if (
             settings.phase0_auth.loxone_store_path is not None
@@ -432,27 +553,38 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 settings.phase0_auth.install_key_path,
             )
         config = settings.phase0_auth.plugin_config
-        auth_coordinator = MiniserverAuthCoordinator(
-            settings.phase0_auth.store_path.parent / "miniserver-auth-diagnostics.json",
-            initial_probe_seconds=(
-                config.miniserver_auth_probe_initial_seconds if config is not None else 900
-            ),
-            maximum_probe_seconds=(
-                config.miniserver_auth_probe_max_seconds if config is not None else 86_400
-            ),
-            profile_id=auth_store.pseudonym(
-                "miniserver-auth-profile-v1", settings.phase0_auth.loxone_endpoint.origin
-            ),
+        auth_coordinator = auth_coordinator or _miniserver_auth_coordinator(
+            auth_store,
+            settings.phase0_auth.loxone_endpoint,
+            config,
         )
-        if settings.phase0_auth.install_key_path is not None:
-            try:
-                recovery_key = recovery_request_key(
-                    settings.phase0_auth.install_key_path.read_bytes()
-                )
-            except OSError:
-                recovery_key = None
         if emergency_stop is not None:
             emergency_stop.auth_coordinator = auth_coordinator
+        if event_history is not None:
+            event_history.auth_coordinator = auth_coordinator
+
+        def explorer_read_binding_allowed(
+            explorer_origin: str, identity_id: str, miniserver_id: str
+        ) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                from mcpserver.explorer_bindings import active_explorer_binding
+
+                return current.loxberry_read_enabled and (
+                    active_explorer_binding(
+                        current,
+                        auth_store,
+                        "loxberry:read",
+                        identity_id,
+                        miniserver_id,
+                        explorer_origin,
+                    )
+                    is not None
+                )
+            except Exception:
+                return False
 
         def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
             if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
@@ -463,6 +595,32 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     "loxberry-read-binding-v1", client_id, identity_id, miniserver_id
                 )
                 return current.loxberry_read_enabled and binding in current.loxberry_read_bindings
+            except Exception:
+                return False
+
+        def explorer_operate_binding_allowed(
+            explorer_origin: str, identity_id: str, miniserver_id: str
+        ) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                from mcpserver.explorer_bindings import active_explorer_binding
+
+                allowed = (
+                    active_explorer_binding(
+                        current,
+                        auth_store,
+                        "loxberry:operate",
+                        identity_id,
+                        miniserver_id,
+                        explorer_origin,
+                    )
+                    is not None
+                )
+                return (
+                    current.loxone_history_enabled and current.loxberry_operate_enabled and allowed
+                )
             except Exception:
                 return False
 
@@ -487,14 +645,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
         runtime_ref: dict[str, LoxoneRuntime] = {}
 
         def miniserver_auth_binding(access: StoredAccessToken) -> str:
-            return auth_store.pseudonym(
-                "miniserver-auth-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
+            return authentication_binding(
+                auth_store, access.client_id, access.identity_id, access.miniserver_id
             )
 
-        def on_family_revoked(family_id: str) -> None:
+        def on_family_ended(family_id: str, reason: str) -> None:
             if loxone_store is not None:
                 loxone_store.schedule_remote_revoke(family_id)
                 loxone_store.delete_explorer_family(family_id)
@@ -502,23 +657,83 @@ def create_server(settings: ServerSettings) -> FastMCP:
             if runtime_value is None:
                 return
             try:
-                asyncio.get_running_loop().create_task(runtime_value.revoke(family_id))
+                asyncio.get_running_loop().create_task(
+                    runtime_value.revoke(family_id, reason=reason)
+                )
             except RuntimeError:
                 # Startup cleanup has no running event loop; the token was still removed.
                 return
+
+        def on_family_started(family: dict[str, Any]) -> None:
+            if (
+                family.get("client_kind") != "tool_explorer"
+                or settings.phase0_auth is None
+                or settings.phase0_auth.config_path is None
+            ):
+                return
+            from mcpserver.explorer_bindings import (
+                active_explorer_binding,
+                record_explorer_approval,
+            )
+
+            config_store = AtomicConfigStore(settings.phase0_auth.config_path)
+            config = config_store.load()
+            for capability in (
+                "loxberry:read",
+                "loxberry:operate",
+                LOXBERRY_KNX_READ_SCOPE,
+                LOXBERRY_KNX_DRAFTS_SCOPE,
+                LOXBERRY_KNX_WRITE_SCOPE,
+            ):
+                if capability not in str(family.get("scope", "")).split():
+                    continue
+                identity_id = str(family.get("identity_id", ""))
+                miniserver_id = str(family.get("miniserver_id", ""))
+                if (
+                    active_explorer_binding(
+                        config,
+                        auth_store,
+                        capability,
+                        identity_id,
+                        miniserver_id,
+                        str(family.get("explorer_origin", "")),
+                    )
+                    is not None
+                ):
+                    record_explorer_approval(
+                        config_store, auth_store, capability, family, now=int(time.time())
+                    )
+
+        def on_family_expired(family: dict[str, Any]) -> None:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return
+            from mcpserver.explorer_bindings import record_explorer_family_end
+
+            record_explorer_family_end(
+                AtomicConfigStore(settings.phase0_auth.config_path), auth_store, family
+            )
 
         provider = Phase0OAuthProvider(
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
-            on_family_revoked=on_family_revoked,
+            on_family_ended=on_family_ended,
+            on_family_started=on_family_started,
+            on_family_expired=on_family_expired,
             control_enabled=bool(config and config.loxone_control_enabled),
             loxberry_read_enabled=bool(config and config.loxberry_read_enabled),
             loxberry_read_allowed=loxberry_binding_allowed,
+            explorer_loxberry_read_allowed=explorer_read_binding_allowed,
             history_enabled=bool(config and config.loxone_history_enabled),
             loxberry_operate_enabled=bool(config and config.loxberry_operate_enabled),
             loxberry_operate_allowed=loxberry_operate_binding_allowed,
+            explorer_loxberry_operate_allowed=explorer_operate_binding_allowed,
             explorer_origins=settings.allowed_origins,
+        )
+        explorer_binding_maintenance = (
+            (AtomicConfigStore(settings.phase0_auth.config_path), auth_store)
+            if settings.phase0_auth.config_path is not None
+            else None
         )
         oauth_web = Phase0OAuthWeb(
             provider,
@@ -542,6 +757,64 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     else 128 * 1024 * 1024
                 ),
             )
+
+            async def validate_project_access(access: StoredAccessToken) -> bool:
+                current = await provider.load_access_token(access.token)
+                return bool(
+                    current is not None
+                    and current.family_id == access.family_id
+                    and current.identity_id == access.identity_id
+                    and current.miniserver_id == access.miniserver_id
+                    and READ_SCOPE in current.scopes
+                )
+
+            async def validate_authentication_diagnostics_access(access: StoredAccessToken) -> bool:
+                """Recheck the exact current binding without OAuth cleanup or network I/O."""
+                current = await provider.load_access_token_readonly(access.token)
+                if (
+                    current is None
+                    or any(
+                        getattr(current, key) != getattr(access, key)
+                        for key in (
+                            "client_id",
+                            "family_id",
+                            "identity_id",
+                            "miniserver_id",
+                            "resource",
+                        )
+                    )
+                    or READ_SCOPE not in current.scopes
+                ):
+                    return False
+                if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                    return bool(config is not None and config.loxone_read_enabled)
+                try:
+                    return (
+                        AtomicConfigStore(settings.phase0_auth.config_path)
+                        .load()
+                        .loxone_read_enabled
+                    )
+                except Exception:
+                    return False
+
+            async def validate_message_confirmation(access: StoredAccessToken) -> bool:
+                if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                    return False
+                try:
+                    current_config = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                    current_access = await provider.load_access_token(access.token)
+                    return bool(
+                        current_config.loxone_message_confirmation_enabled
+                        and current_access is not None
+                        and current_access.family_id == access.family_id
+                        and current_access.identity_id == access.identity_id
+                        and current_access.miniserver_id == access.miniserver_id
+                        and MESSAGE_CONFIRM_SCOPE in current_access.scopes
+                        and READ_SCOPE in current_access.scopes
+                    )
+                except Exception:
+                    return False
+
             runtime = LoxoneRuntime(
                 settings.phase0_auth.loxone_endpoint,
                 loxone_store,
@@ -549,6 +822,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 timeout_seconds=config.connection_timeout if config is not None else 10.0,
                 requests_per_minute=config.requests_per_minute if config is not None else 60,
                 max_parallel_calls=config.max_parallel_calls if config is not None else 4,
+                call_admission=call_admission,
                 control_requests_per_minute=(
                     config.control_requests_per_minute if config is not None else 10
                 ),
@@ -579,16 +853,24 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
                 auth_coordinator=auth_coordinator,
                 auth_binding=miniserver_auth_binding,
+                validate_access=validate_project_access,
             )
+            event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+            runtime.validate_message_confirmation = validate_message_confirmation
+            runtime.validate_authentication_diagnostics_access = (
+                validate_authentication_diagnostics_access
+            )
+            if settings.phase0_auth.config_path is not None:
+                from mcpserver.message_approval import MessageApprovalStore
 
-            async def validate_project_access(access: StoredAccessToken) -> bool:
-                current = await provider.load_access_token(access.token)
-                return bool(
-                    current is not None
-                    and current.family_id == access.family_id
-                    and current.identity_id == access.identity_id
-                    and current.miniserver_id == access.miniserver_id
-                    and READ_SCOPE in current.scopes
+                runtime.message_approval_store = MessageApprovalStore(
+                    settings.phase0_auth.config_path
+                )
+            if settings.phase0_auth.config_path is not None and event_history_path.is_absolute():
+                event_history_runtime = EventHistoryRuntime(
+                    runtime,
+                    AtomicConfigStore(settings.phase0_auth.config_path),
+                    event_history_path,
                 )
 
             runtime.projects = ProjectService(
@@ -596,6 +878,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 loxone_store,
                 LoxoneTokenHealthStore(auth_store),
                 validate_project_access,
+                marker_reader=runtime.project_marker,
             )
             runtime_ref["runtime"] = runtime
         if config and settings.phase0_auth.config_path is not None:
@@ -605,13 +888,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     LoxBerryDiagnostics(home),
                     AtomicConfigStore(settings.phase0_auth.config_path),
                     auth_store,
-                    auth_coordinator,
                 )
         if config and settings.phase0_auth.config_path is not None and statistics_cache is not None:
             loxberry_operate_runtime = LoxBerryOperateRuntime(
                 statistics_cache,
                 AtomicConfigStore(settings.phase0_auth.config_path),
                 auth_store,
+                event_history=event_history,
+                loxone_runtime=runtime,
             )
 
     remote_revocation = (
@@ -636,12 +920,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
         auth=oauth_auth,
         transport_security=transport_security,
     )
+    server.explorer_binding_maintenance = explorer_binding_maintenance
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled
     server.mqtt_health = mqtt_health
     server.emergency_stop = emergency_stop
     server.auth_coordinator = auth_coordinator
+    server.event_history = event_history
     server.live_runtime = runtime
     server.remote_revocation = remote_revocation
     control_enabled = bool(
@@ -653,17 +939,62 @@ def create_server(settings: ServerSettings) -> FastMCP:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        LOXBERRY_KNX_READ_SCOPE,
+        LOXBERRY_KNX_DRAFTS_SCOPE,
+        LOXBERRY_KNX_WRITE_SCOPE,
     )
     register_skill_resource(server)
+    register_prompt_surface(server)
+    from mcpserver.knx.catalog_runtime import CatalogRuntime
+
+    knx_catalog_runtime = (
+        CatalogRuntime(
+            settings.knx_store_path,
+            AtomicConfigStore(settings.phase0_auth.config_path),
+            auth_store,
+            call_admission,
+        )
+        if auth_store is not None
+        and settings.knx_store_path is not None
+        and settings.phase0_auth is not None
+        and settings.phase0_auth.config_path is not None
+        else None
+    )
     register_tool_surface(
         server,
         runtime=runtime,
         loxberry_runtime=loxberry_runtime,
         loxberry_operate_runtime=loxberry_operate_runtime,
+        event_history_runtime=event_history_runtime,
         control_enabled=control_enabled,
+        knx_store_path=settings.knx_store_path,
+        profile_auth_store=auth_store,
+        knx_catalog_runtime=knx_catalog_runtime,
+        project_config_store=(
+            AtomicConfigStore(settings.phase0_auth.config_path)
+            if settings.phase0_auth is not None and settings.phase0_auth.config_path is not None
+            else None
+        ),
     )
+
+    if knx_catalog_runtime is not None and runtime is not None and token_verifier is not None:
+        from mcpserver.knx.admin_bridge import PATH as knx_admin_path
+        from mcpserver.knx.admin_bridge import AdminProjectBridge
+
+        knx_admin_bridge = AdminProjectBridge(
+            knx_catalog_runtime.auth_store,
+            knx_catalog_runtime.config_store,
+            token_verifier._provider,
+            runtime,
+            knx_catalog_runtime.store.path,
+            call_admission,
+        )
+        server.custom_route(knx_admin_path, methods=["POST"], include_in_schema=False)(
+            knx_admin_bridge.handle
+        )
 
     if oauth_web is not None:
         server.custom_route("/authorize", methods=["GET", "POST"], include_in_schema=False)(
@@ -682,6 +1013,122 @@ def create_server(settings: ServerSettings) -> FastMCP:
             methods=["GET"],
             include_in_schema=False,
         )(oauth_web.authorization_metadata)
+
+    from mcpserver.service_discovery import (
+        MAX_RESPONSE_BYTES,
+        AdminDiscovery,
+        admin_key,
+        configured_loader,
+    )
+    from mcpserver.service_discovery import (
+        PATH as discovery_path,
+    )
+
+    discovery_store = auth_store or _configured_auth_store()
+    if settings.plugin_config is not None and discovery_store is not None:
+        server.admin_discovery = AdminDiscovery(
+            discovery_store,
+            configured_loader,
+            lambda config: _miniserver_auth_coordinator(
+                discovery_store, MiniserverEndpoint.parse(config.loxone_endpoint), config
+            ),
+        )
+
+    @server.custom_route(discovery_path, methods=["POST"], include_in_schema=False)  # type: ignore[misc]
+    async def admin_discovery_projection(request: Request) -> Response:
+        if (
+            request.client is None
+            or request.client.host not in {"127.0.0.1", "::1"}
+            or discovery_store is None
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", request.headers.get("X-LoxBerry-Admin-Discovery", "")
+            )
+            or not hmac.compare_digest(
+                request.headers.get("X-LoxBerry-Admin-Discovery", ""), admin_key(discovery_store)
+            )
+        ):
+            return JSONResponse({"ok": False}, status_code=403)
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 1024:
+                return JSONResponse({"ok": False}, status_code=413)
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            return JSONResponse({"ok": False}, status_code=400)
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"projection", "binding", "manual_retry", "early_probe"}
+            or not isinstance(value["projection"], str)
+            or value["projection"]
+            not in {"event_history", "emergency_stop", "emergency_stop_display"}
+            or not isinstance(value["binding"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", value["binding"])
+            or type(value["manual_retry"]) is not bool
+            or type(value["early_probe"]) is not bool
+            or (value["early_probe"] and not value["manual_retry"])
+        ):
+            return JSONResponse({"ok": False}, status_code=400)
+        if server.admin_discovery is None:
+            return JSONResponse({"ok": False, "error": "temporarily_unavailable"})
+        task = asyncio.create_task(
+            server.admin_discovery.project(
+                value["projection"],
+                value["binding"],
+                manual_retry=value["manual_retry"],
+                early_probe=value["early_probe"],
+                request_id=request.headers.get("X-LoxBerry-Admin-Request", "-"),
+            )
+        )
+
+        async def disconnected() -> None:
+            # Body is fully consumed; this is now the only ASGI request reader.
+            # is_disconnected() uses a cancellation scope that can swallow the
+            # watcher's cancellation on some middleware stacks.
+            while True:
+                message = await request.receive()
+                if message["type"] == "http.disconnect":
+                    return
+
+        watcher = asyncio.create_task(disconnected())
+        try:
+            done, _ = await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+            if watcher in done:
+                task.cancel()
+                return JSONResponse({"ok": False}, status_code=499)
+            result = {"ok": True, **await task}
+            if len(json.dumps(result).encode()) > MAX_RESPONSE_BYTES:
+                return JSONResponse({"ok": False, "error": "temporarily_unavailable"})
+            return JSONResponse(result)
+        except Exception as exc:
+            from mcpserver.loxone.auth_diagnostics import (
+                MiniserverAuthenticationCooldown,
+                MiniserverAuthenticationSuppressed,
+            )
+            from mcpserver.loxone.client import LoxoneSourceIpBlocked
+
+            code = (
+                "source_ip_blocked"
+                if isinstance(exc, LoxoneSourceIpBlocked)
+                else (
+                    "authentication_cooldown"
+                    if isinstance(exc, MiniserverAuthenticationCooldown)
+                    else "authentication_busy"
+                    if isinstance(exc, MiniserverAuthenticationSuppressed)
+                    else "temporarily_unavailable"
+                )
+            )
+            retry = server.admin_discovery.retry_not_before()
+            if code == "authentication_busy":
+                retry = int(time.time()) + 5
+            return JSONResponse({"ok": False, "error": code, "retry_not_before": retry})
+        finally:
+            task.cancel()
+            watcher.cancel()
+            for pending in (task, watcher):
+                with suppress(asyncio.CancelledError, Exception):
+                    await pending
 
     @server.custom_route(  # type: ignore[misc]
         "/healthz", methods=["GET"], include_in_schema=False
@@ -711,61 +1158,45 @@ def create_server(settings: ServerSettings) -> FastMCP:
         return JSONResponse({"ok": True, "emergency_stop": status})
 
     @server.custom_route(  # type: ignore[misc]
-        _INTERNAL_MINISERVER_AUTH_STATUS_PATH, methods=["GET"], include_in_schema=False
+        _INTERNAL_EVENT_HISTORY_STATUS_PATH,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    async def event_history_runtime_status(request: Request) -> Response:
+        """Return only the recorder's bounded status to the local admin helper."""
+        del request
+        status = (
+            event_history.runtime_status()
+            if event_history is not None
+            else {"status": "disabled", "observed_at": time.time(), "capture_started_at": None}
+        )
+        return JSONResponse({"ok": True, "event_history": status})
+
+    @server.custom_route(  # type: ignore[misc]
+        _INTERNAL_EVENT_HISTORY_UPDATES_PATH,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    async def event_history_updates(request: Request) -> Response:
+        """Wake authenticated Admin CGI listeners without exposing event data."""
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            return JSONResponse({"ok": False}, status_code=403)
+        token = request.query_params.get("token", "")
+        if not re.fullmatch(r"[0-9a-f]{0,16}", token):
+            return JSONResponse({"ok": False}, status_code=400)
+        if event_history is None:
+            return JSONResponse({"ok": False}, status_code=503)
+        return JSONResponse(await event_history.wait_for_update(token))
+
+    @server.custom_route(  # type: ignore[misc]
+        "/internal/miniserver-auth-status", methods=["GET"], include_in_schema=False
     )
     async def miniserver_auth_status(request: Request) -> Response:
         """Return the service-owned, value-free shared breaker status."""
         del request
         return JSONResponse(
-            {
-                "ok": True,
-                "miniserver_auth": auth_coordinator.status() if auth_coordinator else None,
-                "events": auth_coordinator.admin_events() if auth_coordinator else [],
-            }
+            {"ok": True, "miniserver_auth": auth_coordinator.status() if auth_coordinator else None}
         )
-
-    @server.custom_route(  # type: ignore[misc]
-        _INTERNAL_MINISERVER_AUTH_RECOVERY_PATH, methods=["POST"], include_in_schema=False
-    )
-    async def miniserver_auth_recovery(request: Request) -> Response:
-        """Accept one authenticated local-admin grant for a selected OAuth binding."""
-        client = request.client
-        if client is None or client.host not in {"127.0.0.1", "::1"} or recovery_key is None:
-            return JSONResponse({"ok": False, "error": "not_authorized"}, status_code=403)
-        if request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
-            return JSONResponse({"ok": False, "error": "invalid_request"}, status_code=400)
-        raw = await request.body()
-        if len(raw) > 1024:
-            return JSONResponse({"ok": False, "error": "invalid_request"}, status_code=400)
-        try:
-            payload = json.loads(raw)
-            binding = payload.get("binding_id")
-            expires_at = payload.get("expires_at")
-            nonce = payload.get("nonce")
-            signature = request.headers.get("x-mcpserver-recovery-signature", "")
-            valid = (
-                isinstance(binding, str)
-                and len(binding) == 64
-                and isinstance(expires_at, int)
-                and isinstance(nonce, str)
-                and 16 <= len(nonce) <= 128
-                and abs(int(time.time()) - expires_at) <= 60
-                and hmac.compare_digest(
-                    signature,
-                    recovery_request_signature(
-                        recovery_key, binding_id=binding, expires_at=expires_at, nonce=nonce
-                    ),
-                )
-            )
-        except (TypeError, ValueError, json.JSONDecodeError):
-            valid = False
-        if (
-            not valid
-            or auth_coordinator is None
-            or not auth_coordinator.grant_recovery(binding, nonce)
-        ):
-            return JSONResponse({"ok": False, "error": "recovery_unavailable"}, status_code=409)
-        return JSONResponse({"ok": True, "miniserver_auth": auth_coordinator.status()})
 
     return server
 

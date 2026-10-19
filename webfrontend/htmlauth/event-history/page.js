@@ -1,0 +1,1013 @@
+(() => {
+  const root = document.querySelector('.mcp-event-history');
+  if (!root) return;
+  const api = window.McpEventHistoryApi;
+  const $ = (id) => document.getElementById(id);
+  const message = $('history-message');
+  const refreshButton = $('history-refresh');
+  const refreshButtonText = refreshButton.textContent;
+  const rows = $('history-source-rows');
+  const controlList = $('history-control-list');
+  const stateSelect = $('history-state');
+  const stateSearch = $('history-state-search');
+  const stateSearchWrap = $('history-state-search-wrap');
+  const addButton = $('history-add');
+  const addStatus = $('history-add-status');
+  let controls = [];
+  let selectedControl = '';
+  let selectorGeneration = '';
+  let catalogMode = 'loading';
+  let visibleCount = 0;
+  let pageOffset = 0;
+  let querySequence = 0;
+  const stateCache = new Map();
+  let discoveryGeneration = 0;
+  let stateGeneration = 0;
+  let loadedStateCount = 0;
+  let activeCount = 0;
+  let overviewLoaded = false;
+  let busy = false;
+  let controlsLoading = false;
+  let controlsLoadPromise = null;
+  let staleRecoveryScheduled = false;
+  let sourceRevisionChecking = false;
+  let sourceRevisionQueued = false;
+  let sourceRevisionQueueTotals = false;
+  let totalsRefreshPending = false;
+  let nextTotalsFallbackAt = 0;
+  let knownSourceRevision = '';
+  let knownPayloadPending = null;
+  let selectorVerificationPending = false;
+  let nextRevisionRefreshAt = 0;
+  let revisionRefreshFailures = 0;
+  let messageVersion = 0;
+  let actionMessagePinned = false;
+  let savedPolicy = null;
+  let sourceItems = [];
+  const selectedCharts = new Set();
+  const chartKey = (source) => `${source.control_uuid}|${source.state_uuid}`;
+  const updateChartSelection = () => {
+    $('history-open-charts').disabled = selectedCharts.size === 0;
+    $('history-chart-count').textContent = `${selectedCharts.size}/4`;
+  };
+  $('history-open-charts').addEventListener('click', () => {
+    const sources = sourceItems.filter((item) => selectedCharts.has(chartKey(item)))
+      .map(({control_uuid, state_uuid}) => ({control_uuid, state_uuid}));
+    if (!sources.length || sources.length > 4) return;
+    const url = new URL('event_history.cgi', window.location.href);
+    url.searchParams.set('view', 'charts');
+    url.searchParams.set('sources', JSON.stringify(sources));
+    window.open(url.href, '_blank', 'noopener');
+  });
+  let unverifiedItems = [];
+  let sourceVisibility = 'unavailable';
+  const sourceFilters = {room: new Set(), category: new Set(), type: new Set(), status: new Set()};
+  const sourceSort = {field: '', direction: 'ascending'};
+  const sourceSortFields = ['control', 'state', 'status', 'events', 'size', 'period', 'actions'];
+  const sourceCollator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+  const label = (name) => root.dataset[name] || name;
+  const sections = ['sources', 'add', 'policy', 'clear'];
+  for (const name of sections) {
+    const section = $(`history-${name}-section`);
+    const storageKey = `mcpserver.event-history.section.${name}.v1`;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === 'true' || stored === 'false') section.open = stored === 'true';
+    } catch { /* The default remains usable without browser storage. */ }
+    section.addEventListener('toggle', () => {
+      try { window.localStorage.setItem(storageKey, String(section.open)); }
+      catch { /* Disclosure remains usable for this visit. */ }
+    });
+  }
+  const errorLabel = (error) => ({
+    outcome_unknown: label('uncertain'),
+    temporarily_unavailable: label('unavailable'),
+    not_found: label('errorNotFound'),
+    feature_disabled: label('errorDisabled'),
+    confirmation_required: label('errorConfirmation'),
+    apply_failed: label('errorApply'),
+    stale_configuration: label('errorStaleConfiguration'),
+    authentication_busy: label('authenticationBusy'),
+    source_ip_blocked: label('sourceIpBlocked'),
+    rate_limited: label('sourceLimit'),
+  })[error?.code] || label('error');
+  const setMessage = (value, kind = 'info', pin = false) => {
+    if (actionMessagePinned && !pin) return;
+    actionMessagePinned = pin;
+    messageVersion += 1;
+    message.textContent = value;
+    message.dataset.kind = kind;
+  };
+  const date = (value) => Number.isFinite(value)
+    ? new Date(value * 1000).toLocaleString() : label('unknown');
+  const cell = (name, content) => {
+    const td = document.createElement('td');
+    td.dataset.label = name;
+    if (content instanceof Node) td.append(content);
+    else td.textContent = content;
+    return td;
+  };
+  const text = (tag, value, className) => {
+    const item = document.createElement(tag);
+    item.textContent = value;
+    if (className) item.className = className;
+    return item;
+  };
+  const namedSource = (name, type, uuid) => {
+    const wrap = text('div', '');
+    wrap.append(text('strong', name));
+    if (type) wrap.append(text('small', type, 'mcp-event-history-subtext'));
+    const details = document.createElement('details');
+    details.className = 'mcp-event-history-uuid';
+    details.append(text('summary', 'UUID'), text('code', uuid));
+    wrap.append(details);
+    return wrap;
+  };
+  const sourceAction = (source, recording) => {
+    const button = text('button', label(recording ? 'stop' : 'purge'));
+    button.type = 'button';
+    button.className = 'lb-button';
+    button.addEventListener('click', async () => {
+      const action = recording ? 'event_history_remove_source' : 'event_history_purge_source';
+      if (!window.confirm(label(recording ? 'confirmRemove' : 'confirmPurge'))) return;
+      await mutate(action, {control_uuid: source.control_uuid, state_uuid: source.state_uuid,
+        confirm: '1'});
+    });
+    return button;
+  };
+  const sourceFacetId = (source, field) => {
+    if (field === 'type') return source.control_type || '';
+    if (field === 'status') return source.recording_status || '';
+    return source[field] && source[`${field}_id`] ? source[`${field}_id`] : '';
+  };
+  const sourceSize = (bytes) => {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) return label('unavailable');
+    const unit = bytes >= 1048576 ? 'MiB' : 'KiB';
+    const value = bytes / (unit === 'MiB' ? 1048576 : 1024);
+    return `${value.toLocaleString(undefined, {
+      maximumFractionDigits: bytes && value < 0.1 ? 3 : (bytes ? 1 : 0),
+    })} ${unit}`;
+  };
+  const sourceSortValue = (source, field) => {
+    if (field === 'control') return source.control_name || null;
+    if (field === 'state') return source.state_name || null;
+    if (field === 'status') return source.recording_status === 'active' ? 0
+      : (source.recording_status === 'removed' ? 1 : null);
+    if (field === 'events') return Number.isSafeInteger(source.event_count)
+      ? source.event_count : null;
+    if (field === 'size') return Number.isSafeInteger(source.logical_value_bytes)
+      ? source.logical_value_bytes : null;
+    if (field === 'period') return Number.isFinite(source.newest_event_at)
+      ? source.newest_event_at : null;
+    if (field === 'actions') return source.recording_status === 'active' ? label('stop')
+      : (source.recording_status === 'removed' ? label('purge') : null);
+    return null;
+  };
+  const sortedSourceItems = (items) => {
+    if (!sourceSort.field) return items;
+    const direction = sourceSort.direction === 'ascending' ? 1 : -1;
+    return [...items].sort((left, right) => {
+      const a = sourceSortValue(left, sourceSort.field);
+      const b = sourceSortValue(right, sourceSort.field);
+      if (a == null) return b == null ? 0 : 1;
+      if (b == null) return -1;
+      return direction * (typeof a === 'number' && typeof b === 'number'
+        ? a - b : sourceCollator.compare(String(a), String(b)));
+    });
+  };
+  const syncSourceSortControls = () => {
+    for (const button of root.querySelectorAll('[data-source-sort]')) {
+      const active = button.dataset.sourceSort === sourceSort.field;
+      const heading = button.closest('th');
+      if (active) heading.setAttribute('aria-sort', sourceSort.direction);
+      else heading.removeAttribute('aria-sort');
+      const nextDirection = active && sourceSort.direction === 'ascending'
+        ? 'sortDescending' : 'sortAscending';
+      button.setAttribute('aria-label', `${label('sortBy')} ${button.textContent.trim()}, ${label(nextDirection)}`);
+    }
+    $('history-source-sort-mobile').value = sourceSort.field;
+    const direction = $('history-source-sort-direction');
+    direction.disabled = !sourceSort.field;
+    direction.textContent = label(sourceSort.direction === 'ascending'
+      ? 'sortAscending' : 'sortDescending');
+    direction.setAttribute('aria-label', label(sourceSort.direction === 'ascending'
+      ? 'sortDescending' : 'sortAscending'));
+  };
+  const selectSourceSort = (field) => {
+    if (!sourceSortFields.includes(field)) {
+      sourceSort.field = '';
+      sourceSort.direction = 'ascending';
+    } else if (sourceSort.field === field) {
+      sourceSort.direction = sourceSort.direction === 'ascending' ? 'descending' : 'ascending';
+    } else {
+      sourceSort.field = field;
+      sourceSort.direction = 'ascending';
+    }
+    syncSourceSortControls();
+    applySourceFilters();
+  };
+  for (const button of root.querySelectorAll('[data-source-sort]')) {
+    button.addEventListener('click', () => { selectSourceSort(button.dataset.sourceSort); });
+  }
+  $('history-source-sort-mobile').addEventListener('change', (event) => {
+    if (event.target.value === sourceSort.field) return;
+    selectSourceSort(event.target.value);
+  });
+  $('history-source-sort-direction').addEventListener('click', () => {
+    if (sourceSort.field) selectSourceSort(sourceSort.field);
+  });
+  syncSourceSortControls();
+  const applySourceFilters = () => {
+    const matches = sourceItems.filter((source) => ['room', 'category', 'type', 'status'].every(
+      (field) => !sourceFilters[field].size || sourceFilters[field].has(sourceFacetId(source, field))));
+    $('history-source-clear-filters').disabled = !Object.values(sourceFilters)
+      .some((selected) => selected.size);
+    $('history-source-match-count').textContent = sourceVisibility === 'available'
+      ? `${matches.length} / ${sourceItems.length} ${label('sourceMatches')}` : label('unknown');
+    $('history-source-no-matches').hidden = !sourceItems.length || matches.length > 0;
+    renderRows(sortedSourceItems(matches), unverifiedItems, sourceVisibility);
+  };
+  const renderSourceFacets = () => {
+    for (const field of ['room', 'category', 'type', 'status']) {
+      const panel = root.querySelector(`[data-source-facet="${field}"]`);
+      const list = panel.querySelector('.mcp-event-history-facet-options');
+      const options = new Map();
+      for (const source of sourceItems) {
+        const id = sourceFacetId(source, field);
+        const name = field === 'type' ? (source.control_type || label('filterUnknown'))
+          : (field === 'status' ? label(id === 'active' || id === 'removed'
+            ? id : 'unknown') : (source[field] || label('filterUnknown')));
+        options.set(id, name);
+      }
+      for (const id of sourceFilters[field]) {
+        if (!options.has(id)) sourceFilters[field].delete(id);
+      }
+      list.replaceChildren();
+      for (const [id, name] of [...options].sort((left, right) =>
+        left[1].localeCompare(right[1]))) {
+        const row = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = sourceFilters[field].has(id);
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) sourceFilters[field].add(id);
+          else sourceFilters[field].delete(id);
+          applySourceFilters();
+        });
+        row.append(checkbox, text('span', name));
+        list.append(row);
+      }
+      panel.hidden = options.size === 0;
+    }
+    applySourceFilters();
+  };
+  $('history-source-clear-filters').addEventListener('click', () => {
+    for (const selected of Object.values(sourceFilters)) selected.clear();
+    for (const checkbox of root.querySelectorAll('[data-source-facet] input:checked')) {
+      checkbox.checked = false;
+    }
+    applySourceFilters();
+  });
+  const renderRows = (sources, unverified, visibilityStatus) => {
+    rows.replaceChildren();
+    $('history-empty').hidden = sourceItems.length + unverified.length > 0;
+    for (const source of sources) {
+      const tr = document.createElement('tr');
+      const recording = source.recording_status === 'active';
+      const badge = text('span', label(recording ? 'active' : 'removed'), 'mcp-event-history-badge');
+      badge.dataset.kind = recording ? 'active' : 'removed';
+      const period = document.createElement('div');
+      if (source.event_count) {
+        period.append(text('span', `${label('from')} ${date(source.oldest_event_at)}`));
+        period.append(text('span', `${label('to')} ${date(source.newest_event_at)}`));
+      } else period.append(text('span', label('noEvents')));
+      const coverage = document.createElement('details');
+      coverage.append(text('summary', label('coverage')));
+      if (!(source.recent_coverage || []).length) coverage.append(text('small', label('noCoverage')));
+      for (const item of source.recent_coverage || []) {
+        coverage.append(text('small', `${date(item.started_at)} – ${item.ended_at == null
+          ? label('openInterval') : date(item.ended_at)}`,
+          'mcp-event-history-subtext'));
+      }
+      if (source.capture_started_at != null) coverage.append(text('small',
+        `${label('captureStart')}: ${date(source.capture_started_at)}`, 'mcp-event-history-subtext'));
+      if (source.recording_ended_at != null) coverage.append(text('small',
+        `${label('recordingEnd')}: ${date(source.recording_ended_at)}`, 'mcp-event-history-subtext'));
+      period.append(coverage);
+      const actions = document.createElement('div');
+      actions.className = 'mcp-actions';
+      const select = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selectedCharts.has(chartKey(source));
+      checkbox.setAttribute('aria-label', `${label('chartSelect')}: ${source.control_name}, ${source.state_name}`);
+      checkbox.addEventListener('change', () => {
+        const key = chartKey(source);
+        if (checkbox.checked && selectedCharts.size >= 4) {
+          checkbox.checked = false;
+          setMessage(label('chartLimit'), 'warning', true);
+          return;
+        }
+        if (checkbox.checked) selectedCharts.add(key);
+        else selectedCharts.delete(key);
+        updateChartSelection();
+      });
+      select.append(checkbox, text('span', label('chartSelect')));
+      actions.append(select);
+      actions.append(sourceAction(source, recording));
+      const control = namedSource(source.control_name, source.control_type, source.control_uuid);
+      control.append(text('small', `${label('room')}: ${source.room || label('filterUnknown')}`,
+        'mcp-event-history-subtext'));
+      control.append(text('small', `${label('category')}: ${source.category || label('filterUnknown')}`,
+        'mcp-event-history-subtext'));
+      tr.append(
+        cell(root.querySelector('th:nth-child(1)').textContent,
+          control),
+        cell(root.querySelector('th:nth-child(2)').textContent,
+          namedSource(source.state_name, '', source.state_uuid)),
+        cell(root.querySelector('th:nth-child(3)').textContent, badge),
+        cell(label('events'), String(source.event_count)),
+        cell(label('sourceSizeEstimated'), sourceSize(source.logical_value_bytes)),
+        cell(root.querySelector('th:nth-child(6)').textContent, period),
+        cell(root.querySelector('th:nth-child(7)').textContent, actions),
+      );
+      rows.append(tr);
+    }
+    for (const source of unverified) {
+      const tr = document.createElement('tr');
+      const name = visibilityStatus === 'available'
+        ? label('sourceNotVisible') : label('sourceUnverified');
+      tr.append(
+        cell(root.querySelector('th:nth-child(1)').textContent,
+          namedSource(name, '', source.control_uuid)),
+        cell(root.querySelector('th:nth-child(2)').textContent,
+          namedSource(label('unknown'), '', source.state_uuid)),
+        cell(root.querySelector('th:nth-child(3)').textContent, label('selected')),
+        cell(label('events'), label('unknown')),
+        cell(label('sourceSizeEstimated'), label('unknown')),
+        cell(root.querySelector('th:nth-child(6)').textContent, label('unknown')),
+        cell(root.querySelector('th:nth-child(7)').textContent, sourceAction(source, true)),
+      );
+      rows.append(tr);
+    }
+  };
+  const renderPolicy = (data) => {
+    const retention = $('history-retention');
+    const maximum = $('history-maximum');
+    const retentionDirty = savedPolicy !== null
+      && retention.value !== String(savedPolicy.retention_days);
+    const maximumDirty = savedPolicy !== null
+      && maximum.value !== String(savedPolicy.maximum_mib);
+    if (!retentionDirty) retention.value = String(data.retention_days);
+    if (!maximumDirty) maximum.value = String(data.maximum_mib);
+    savedPolicy = {retention_days: data.retention_days, maximum_mib: data.maximum_mib};
+    $('history-policy').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
+    $('history-policy-summary').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
+  };
+  const renderOverview = (data) => {
+      overviewLoaded = true;
+      if (data.store_status === 'available' && typeof data.source_revision === 'string') {
+        knownSourceRevision = data.source_revision;
+        knownPayloadPending = typeof data.payload_pending === 'boolean'
+          ? data.payload_pending : null;
+        selectorVerificationPending = data.visibility_status !== 'available';
+        if (!selectorVerificationPending) {
+          nextRevisionRefreshAt = 0;
+          revisionRefreshFailures = 0;
+        }
+      } else {
+        selectorVerificationPending = true;
+      }
+      activeCount = data.active_source_count;
+      renderPolicy(data);
+      $('history-measured').textContent = date(data.measured_at);
+      $('history-storage').textContent = data.store_status === 'available'
+        ? `${((data.database_bytes + data.wal_bytes) / 1048576).toLocaleString(undefined,
+          {maximumFractionDigits: 2})} MiB` : label('unavailable');
+      $('history-source-count').textContent = data.visibility_status === 'available'
+        ? `${data.sources_truncated ? `${label('listed')}: ` : ''}${data.visible_active_count} ${label('active')} · ${data.visible_removed_count} ${label('removed')}`
+        : `${data.active_source_count} ${label('unknown')}`;
+      $('history-sources-summary').textContent = data.visibility_status === 'available'
+        ? `${data.sources_truncated ? `${label('listed')}: ` : ''}${data.visible_active_count} ${label('active')} · ${data.visible_removed_count} ${label('removed')}`
+        : label('unavailable');
+      $('history-events').textContent = data.visibility_status === 'available'
+        ? `${data.visible_event_count} ${label('visibleEvents')}` : label('unknown');
+      $('history-visibility-warning').hidden = data.visibility_status === 'available';
+      const sourceWarning = $('history-source-warning');
+      sourceWarning.hidden = !data.hidden_sources_present && !data.sources_truncated;
+      sourceWarning.textContent = [
+        data.hidden_sources_present ? label('hiddenSources') : '',
+        data.sources_truncated ? label('sourcesTruncated') : '',
+      ].filter(Boolean).join(' ');
+      sourceItems = Array.isArray(data.sources) ? data.sources : [];
+      const visibleKeys = new Set(sourceItems.map(chartKey));
+      for (const key of selectedCharts) if (!visibleKeys.has(key)) selectedCharts.delete(key);
+      updateChartSelection();
+      unverifiedItems = Array.isArray(data.unverified_sources) ? data.unverified_sources : [];
+      sourceVisibility = data.visibility_status;
+      renderSourceFacets();
+      const complete = data.store_status === 'available' && data.visibility_status === 'available';
+      setMessage(label(complete ? 'loaded' : 'unavailable'), complete ? 'success' : 'warning');
+  };
+  const loadQuickSummary = async () => {
+    try {
+      const data = await api.request('event_history_quick_summary', {}, 5000);
+      if (overviewLoaded) return;
+      activeCount = data.active_source_count;
+      renderPolicy(data);
+      $('history-measured').textContent = date(data.measured_at);
+      $('history-storage').textContent = data.size_bytes == null ? label('unavailable')
+        : `${(data.size_bytes / 1048576).toLocaleString(undefined,
+          {maximumFractionDigits: 2})} MiB`;
+      $('history-source-count').textContent = `${data.active_source_count} ${label('active')}`;
+    } catch {
+      // The full overview reports a localized failure if the quick path is unavailable.
+    }
+  };
+  const loadStatus = async () => {
+    if (document.hidden) return;
+    try {
+      const data = await api.request('event_history_runtime_status', {}, 5000);
+      const reasons = {
+        store_unavailable: 'statusStoreUnavailable',
+        no_sources: 'statusNoSources',
+        no_visible_sources: 'statusNoVisibleSources',
+        unsupported_value: 'statusUnsupportedValue',
+        subscription_unavailable: 'statusSubscriptionUnavailable',
+        size_enforcement_failed: 'statusSizeEnforcementFailed',
+      };
+      $('history-recorder').textContent = data.availability === 'available'
+        ? (data.status === 'recording' ? label('recording')
+          : data.status === 'disabled' ? label('disabled')
+            : data.reason && reasons[data.reason] ? label(reasons[data.reason]) : label('unknown'))
+        : label('unknown');
+      $('history-recorder-time').textContent = data.availability === 'available'
+        ? date(data.observed_at) : '';
+    } catch {
+      $('history-recorder').textContent = label('unknown');
+      $('history-recorder-time').textContent = '';
+    }
+  };
+  const mutate = async (action, fields) => {
+    if (busy) return;
+    busy = true;
+    refreshButton.disabled = true;
+    actionMessagePinned = false;
+    setMessage(label('loading'));
+    let feedback = label('saved');
+    let feedbackKind = 'success';
+    try {
+      const result = await api.request(action, fields, 240000);
+      if (result.changed === false) feedback = label('unchanged');
+    } catch (error) {
+      feedback = errorLabel(error);
+      feedbackKind = 'error';
+    } finally {
+      if (controlsLoadPromise) await controlsLoadPromise;
+      await loadControls();
+      await loadStatus();
+      busy = false;
+      drainSourceRevision();
+      refreshButton.disabled = false;
+      addButton.disabled = stateSelect.disabled || !selectedControl || !stateSelect.value;
+      stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
+      setMessage(feedback, feedbackKind, true);
+    }
+  };
+  const facetSelection = Object.fromEntries(['room', 'category', 'type']
+    .map((field) => [field, new Set()]));
+  const selectedFilters = () => Object.fromEntries(['room', 'category', 'type']
+    .map((field) => [field, Array.from(facetSelection[field])]));
+  const controlMatches = (control, needle, filters) =>
+    (!needle || control.name.toLocaleLowerCase().includes(needle)
+      || control.uuid.toLocaleLowerCase().includes(needle))
+    && ['room', 'category', 'type'].every((field) =>
+      !filters[field].length || filters[field].includes(
+        control[{room: 'room_id', category: 'category_id', type: 'type'}[field]] || ''));
+  const renderControls = (items) => {
+    controlList.replaceChildren();
+    for (const control of items) {
+      const row = document.createElement('label');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'history-control';
+      radio.value = control.uuid;
+      radio.checked = selectedControl === control.uuid;
+      radio.addEventListener('change', () => {
+        selectedControl = radio.value;
+        stateSearch.value = '';
+        addStatus.textContent = '';
+        addStatus.hidden = true;
+        void loadStates();
+      });
+      const title = document.createElement('span');
+      title.append(text('strong', control.name));
+      title.append(text('small', [control.type, control.room, control.category]
+        .filter(Boolean).join(' · ')));
+      title.append(text('small', control.uuid));
+      row.append(radio, title);
+      controlList.append(row);
+    }
+  };
+  const updateControlCount = (total) => {
+    $('history-search-status').textContent =
+      `${total} ${label('selectorFiltered')} · ${total ? pageOffset + 1 : 0}–${visibleCount}`
+      + (selectedControl && !controlList.querySelector('input:checked')
+        ? ` · ${label('selectedHidden')}` : '');
+    $('history-more-controls').hidden = visibleCount >= total;
+    $('history-prev-controls').hidden = pageOffset === 0;
+    $('history-clear-filters').disabled = false;
+  };
+  const invalidateSelector = () => {
+    selectorGeneration = '';
+    controls = [];
+    selectedControl = '';
+    stateCache.clear();
+    controlList.replaceChildren();
+    stateSelect.replaceChildren(new Option(label('selectState'), ''));
+    stateSelect.disabled = true;
+    stateSearch.value = '';
+    stateSearch.disabled = true;
+    stateSearchWrap.hidden = true;
+    $('history-search').disabled = true;
+    $('history-state-search-status').textContent = '';
+    addButton.disabled = true;
+    for (const field of ['room', 'category', 'type']) {
+      facetSelection[field].clear();
+      const panel = root.querySelector(`[data-facet="${field}"]`);
+      panel.open = false;
+      const search = panel.querySelector('input[type="search"]');
+      search.value = '';
+      search.disabled = true;
+      search.oninput = null;
+      panel.querySelector('.mcp-event-history-facet-options').replaceChildren();
+    }
+    $('history-clear-filters').disabled = true;
+    $('history-more-controls').hidden = true;
+    $('history-prev-controls').hidden = true;
+    $('history-more-states').hidden = true;
+  };
+  const applyFilters = async (offset = 0) => {
+    if (!selectorGeneration) return;
+    const request = ++querySequence;
+    const needle = $('history-search').value.trim().toLocaleLowerCase();
+    const filters = selectedFilters();
+    if (catalogMode === 'local') {
+      const matches = controls.filter((control) => controlMatches(control, needle, filters));
+      pageOffset = offset;
+      const page = matches.slice(offset, offset + 50);
+      renderControls(page);
+      visibleCount = offset + page.length;
+      updateControlCount(matches.length);
+      if (!matches.length) $('history-search-status').textContent = label('noControls');
+      return;
+    }
+    $('history-search-status').textContent = label('loading');
+    try {
+      const data = await api.request('event_history_selector_query', {
+        generation: selectorGeneration, query: $('history-search').value,
+        offset,
+        room: JSON.stringify(filters.room), category: JSON.stringify(filters.category),
+        type: JSON.stringify(filters.type),
+      });
+      if (request !== querySequence) return;
+      pageOffset = offset;
+      renderControls(data.controls || []);
+      visibleCount = offset + (data.controls?.length || 0);
+      updateControlCount(data.total);
+      if (!data.total) $('history-search-status').textContent = label('noControls');
+    } catch (error) {
+      if (error.code === 'stale_configuration') recoverStaleSelector();
+      if (request === querySequence) $('history-search-status').textContent = errorLabel(error);
+    }
+  };
+  const renderFacets = (facets) => {
+    for (const field of ['room', 'category', 'type']) {
+      const panel = root.querySelector(`[data-facet="${field}"]`);
+      const list = panel.querySelector('.mcp-event-history-facet-options');
+      const search = panel.querySelector('input[type="search"]');
+      search.disabled = false;
+      const options = facets[field] || [];
+      const available = new Set(options.map((option) => option.id));
+      for (const value of facetSelection[field]) {
+        if (!available.has(value)) facetSelection[field].delete(value);
+      }
+      const renderOptions = () => {
+        const needle = search.value.trim().toLocaleLowerCase();
+        const matches = options.filter((option) =>
+          (option.name || option.id || label('filterUnknown'))
+            .toLocaleLowerCase().includes(needle));
+        list.replaceChildren();
+        for (const option of matches.slice(0, 100)) {
+          const row = document.createElement('label');
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = option.id;
+          checkbox.checked = facetSelection[field].has(option.id);
+          checkbox.addEventListener('change', () => {
+            if (checkbox.checked && facetSelection[field].size >= 100) {
+              checkbox.checked = false;
+              $('history-search-status').textContent = label('filterLimit');
+              return;
+            }
+            if (checkbox.checked) facetSelection[field].add(option.id);
+            else facetSelection[field].delete(option.id);
+            void applyFilters();
+          });
+          row.append(checkbox, text('span', option.name || option.id || label('filterUnknown')));
+          list.append(row);
+        }
+        const count = text('small', `${Math.min(matches.length, 100)} / ${matches.length}`);
+        list.append(count);
+      };
+      search.oninput = renderOptions;
+      renderOptions();
+    }
+  };
+  const performLoadControls = async (restore = null) => {
+    controlsLoading = true;
+    refreshButton.disabled = true;
+    refreshButton.textContent = label('refreshWorking');
+    const request = ++discoveryGeneration;
+    const previousControl = restore?.control ?? selectedControl;
+    const previousState = restore?.state ?? stateSelect.value;
+    const previousFilters = restore?.filters ?? selectedFilters();
+    invalidateSelector();
+    ++querySequence;
+    catalogMode = 'loading';
+    $('history-add-summary').textContent = label('loading');
+    ++stateGeneration;
+    $('history-search').disabled = true;
+    $('history-search-status').textContent = label('loading');
+    try {
+      const data = await api.request('event_history_prepare_selector', {}, 120000);
+      if (request !== discoveryGeneration) return;
+      selectorGeneration = data.generation;
+      renderOverview(data.overview);
+      $('history-search').disabled = false;
+      $('history-search-status').textContent =
+        `${data.total} ${label('selectorCount')} · ${label('selectorVerified')}: ${date(data.verified_at)}`;
+      renderControls(data.controls || []);
+      pageOffset = 0;
+      visibleCount = data.controls?.length || 0;
+      $('history-more-controls').hidden = visibleCount >= data.total;
+      // Both helpers decode the private projection; avoid overlapping peak memory use.
+      const catalog = await api.request('event_history_selector_catalog',
+        {generation: selectorGeneration});
+      const facets = await api.request('event_history_selector_facets',
+        {generation: selectorGeneration});
+      if (request !== discoveryGeneration) return;
+      catalogMode = catalog.mode;
+      controls = catalog.controls || [];
+      for (const field of ['room', 'category', 'type']) {
+        for (const value of previousFilters[field]) facetSelection[field].add(value);
+      }
+      renderFacets(facets);
+      if (previousControl) {
+        const found = catalogMode === 'local'
+          ? controls.find((item) => item.uuid === previousControl)
+          : (await api.request('event_history_selector_query', {
+            generation: selectorGeneration, query: previousControl, offset: 0,
+            room: '[]', category: '[]', type: '[]',
+          })).controls?.find((item) => item.uuid === previousControl);
+        if (request !== discoveryGeneration) return;
+        if (found) {
+          selectedControl = previousControl;
+          await applyFilters();
+          await loadStates(previousState);
+        }
+      }
+      if (!selectedControl) await applyFilters();
+      $('history-add-summary').textContent = label('loaded');
+      return data.overview?.store_status === 'available'
+        && data.overview?.visibility_status === 'available';
+    } catch (error) {
+      if (request === discoveryGeneration) {
+        invalidateSelector();
+        $('history-search-status').textContent = errorLabel(error);
+        $('history-add-summary').textContent = errorLabel(error);
+        try {
+          const local = await api.request('event_history_local_overview', {}, 10000);
+          if (request === discoveryGeneration) renderOverview(local);
+        } catch {
+          if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
+        }
+        if (request === discoveryGeneration) selectorVerificationPending = true;
+        if (error.code === 'stale_configuration') recoverStaleSelector({
+          control: previousControl, state: previousState, filters: previousFilters,
+        });
+      }
+      return false;
+    } finally {
+      controlsLoading = false;
+      drainSourceRevision();
+      refreshButton.disabled = busy;
+      refreshButton.textContent = refreshButtonText;
+    }
+  };
+  const loadControls = (restore = null) => {
+    if (controlsLoadPromise) return controlsLoadPromise;
+    controlsLoadPromise = performLoadControls(restore).finally(() => { controlsLoadPromise = null; });
+    return controlsLoadPromise;
+  };
+  const recoverStaleSelector = (selection = null) => {
+    if (staleRecoveryScheduled) return;
+    staleRecoveryScheduled = true;
+    const restore = selection || {control: selectedControl, state: stateSelect.value,
+      filters: selectedFilters()};
+    const ongoing = controlsLoadPromise;
+    if (ongoing) {
+      ++discoveryGeneration;
+      invalidateSelector();
+    }
+    void (async () => {
+      try {
+        if (ongoing) await ongoing;
+        await loadControls(restore);
+      } catch {
+        setMessage(label('unavailable'), 'warning');
+      } finally {
+        staleRecoveryScheduled = false;
+      }
+    })();
+  };
+  const checkSourceRevision = async (refreshTotals = false) => {
+    totalsRefreshPending ||= refreshTotals;
+    if (sourceRevisionChecking) {
+      sourceRevisionQueued = true;
+      sourceRevisionQueueTotals ||= refreshTotals;
+      return;
+    }
+    if (document.hidden) return;
+    if (!knownSourceRevision && !selectorVerificationPending) {
+      if (controlsLoading || busy) {
+        sourceRevisionQueued = true;
+        sourceRevisionQueueTotals ||= refreshTotals;
+      }
+      return;
+    }
+    if (busy || controlsLoading) {
+      sourceRevisionQueued = true;
+      sourceRevisionQueueTotals ||= refreshTotals;
+      return;
+    }
+    sourceRevisionChecking = true;
+    try {
+      const data = await api.request('event_history_source_revision', {}, 15000);
+      if (data.availability === 'available'
+        && (totalsRefreshPending || data.revision !== knownSourceRevision
+          || selectorVerificationPending
+          || (typeof data.payload_pending === 'boolean'
+            && data.payload_pending !== knownPayloadPending))
+        && Date.now() >= nextRevisionRefreshAt) {
+        let verified = false;
+        if (!selectorVerificationPending && (totalsRefreshPending
+          || data.revision !== knownSourceRevision)) {
+          try {
+            const overview = await api.request('event_history_visible_overview', {}, 15000);
+            if (overview.store_status === 'available'
+              && overview.visibility_status === 'available'
+              && overview.source_revision === data.revision) {
+              renderOverview(overview);
+              totalsRefreshPending = false;
+              verified = true;
+            }
+          } catch { /* Refresh visibility through full discovery below. */ }
+        }
+        if (!verified) verified = await loadControls();
+        if (verified && !selectorVerificationPending
+          && knownSourceRevision === data.revision) totalsRefreshPending = false;
+        if (!verified || knownSourceRevision !== data.revision) {
+          selectorVerificationPending = true;
+          revisionRefreshFailures += 1;
+          nextRevisionRefreshAt = Date.now()
+            + Math.min(300000, 30000 * (2 ** revisionRefreshFailures));
+        }
+      }
+    } catch {
+      // Keep the last verified view; the next visible poll can retry this local check.
+    } finally {
+      sourceRevisionChecking = false;
+      drainSourceRevision();
+    }
+  };
+  const drainSourceRevision = () => {
+    if (!sourceRevisionQueued) return;
+    const nextTotals = sourceRevisionQueueTotals;
+    sourceRevisionQueued = false;
+    sourceRevisionQueueTotals = false;
+    void checkSourceRevision(nextTotals);
+  };
+  const loadStates = async (restoreState = '', append = false) => {
+    const request = ++stateGeneration;
+    const control = selectedControl;
+    const status = $('history-state-search-status');
+    const priorState = append ? stateSelect.value : restoreState;
+    const priorSelectEnabled = append && !stateSelect.disabled;
+    const priorAddEnabled = append && !addButton.disabled;
+    if (!append) {
+      stateSelect.replaceChildren(new Option(label('statesLoading'), ''));
+      loadedStateCount = 0;
+      if (!stateSearch.value.trim()) stateSearchWrap.hidden = true;
+    }
+    if (!append) $('history-more-states').hidden = true;
+    stateSelect.disabled = true;
+    stateSearch.disabled = true;
+    addButton.disabled = true;
+    if (!control || !selectorGeneration) { status.textContent = ''; return; }
+    status.textContent = label('statesLoading');
+    try {
+      const query = stateSearch.value.trim().toLocaleLowerCase();
+      const cached = stateCache.get(`${selectorGeneration}:${control}`);
+      const data = cached
+        ? {states: cached.states.filter((state) => !query
+          || state.name.toLocaleLowerCase().includes(query)
+          || state.uuid.toLocaleLowerCase().includes(query)),
+        total: cached.states.filter((state) => !query
+          || state.name.toLocaleLowerCase().includes(query)
+          || state.uuid.toLocaleLowerCase().includes(query)).length}
+        : await api.request('event_history_selector_states',
+          {generation: selectorGeneration, control_uuid: control, query,
+            offset: append ? loadedStateCount : 0});
+      if (request !== stateGeneration || control !== selectedControl) return;
+      if (!query && data.total <= 200) stateCache.set(`${selectorGeneration}:${control}`, data);
+      if (!append) stateSelect.replaceChildren(new Option(label('selectState'), ''));
+      const displayedStates = new Set(Array.from(stateSelect.options, (option) => option.value));
+      for (const state of data.states || []) {
+        if (!displayedStates.has(state.uuid)) {
+          stateSelect.add(new Option(`${state.name} · ${state.uuid}`, state.uuid));
+          displayedStates.add(state.uuid);
+        }
+      }
+      loadedStateCount += data.states?.length || 0;
+      if (restoreState && !query && !Array.from(stateSelect.options)
+        .some((state) => state.value === restoreState)) {
+        const exact = await api.request('event_history_selector_states',
+          {generation: selectorGeneration, control_uuid: control, query: restoreState, offset: 0});
+        if (request !== stateGeneration || control !== selectedControl) return;
+        const restored = exact.states?.find((state) => state.uuid === restoreState);
+        if (restored) stateSelect.add(new Option(`${restored.name} · ${restored.uuid}`,
+          restored.uuid));
+      }
+      stateSelect.disabled = stateSelect.options.length <= 1;
+      if (priorState && Array.from(stateSelect.options).some((state) => state.value === priorState)) {
+        stateSelect.value = priorState;
+        addButton.disabled = busy;
+      }
+      $('history-more-states').hidden =
+        loadedStateCount >= Math.min(data.total, 2000);
+      status.textContent = !data.total ? label('noStates')
+        : data.total > loadedStateCount ? label('moreStates') : '';
+      stateSearchWrap.hidden = data.total <= 10 && !query;
+      stateSearch.disabled = busy;
+    } catch (error) {
+      if (error.code === 'stale_configuration') recoverStaleSelector({
+        control: selectedControl, state: priorState, filters: selectedFilters(),
+      });
+      if (request === stateGeneration) {
+        if (append && error.code !== 'stale_configuration') {
+          stateSelect.disabled = !priorSelectEnabled;
+          addButton.disabled = busy || !priorAddEnabled;
+        }
+        if (!append && error.code !== 'stale_configuration') {
+          stateSelect.replaceChildren(new Option(label('selectState'), ''));
+          stateSearchWrap.hidden = false;
+        }
+        stateSearch.disabled = busy || error.code === 'stale_configuration';
+        status.textContent = errorLabel(error);
+      }
+    }
+  };
+  stateSelect.addEventListener('change', () => {
+    addButton.disabled = busy || !stateSelect.value;
+    if (!busy) {
+      addStatus.textContent = '';
+      addStatus.hidden = true;
+    }
+  });
+  $('history-more-states').addEventListener('click', () => { void loadStates('', true); });
+  $('history-search-button').addEventListener('click', loadControls);
+  $('history-more-controls').addEventListener('click', () => { void applyFilters(visibleCount); });
+  $('history-prev-controls').addEventListener('click', () => {
+    void applyFilters(Math.max(0, pageOffset - 50));
+  });
+  $('history-clear-filters').addEventListener('click', () => {
+    $('history-search').value = '';
+    for (const field of ['room', 'category', 'type']) {
+      facetSelection[field].clear();
+      for (const checkbox of root.querySelectorAll(`[data-facet="${field}"] input:checked`)) {
+        checkbox.checked = false;
+      }
+    }
+    void applyFilters();
+  });
+  let controlFilterTimer;
+  let stateFilterTimer;
+  $('history-search').addEventListener('input', () => {
+    window.clearTimeout(controlFilterTimer);
+    controlFilterTimer = window.setTimeout(() => { void applyFilters(); }, 180);
+  });
+  stateSearch.addEventListener('input', () => {
+    window.clearTimeout(stateFilterTimer);
+    stateFilterTimer = window.setTimeout(() => { void loadStates(); }, 180);
+  });
+  stateSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') event.preventDefault();
+  });
+  const startRecording = async () => {
+    if (busy || !selectedControl || !stateSelect.value) return;
+    const source = {control_uuid: selectedControl, state_uuid: stateSelect.value};
+    busy = true;
+    actionMessagePinned = false;
+    setMessage(label('addWorking'), 'working');
+    const locked = Array.from(root.querySelectorAll(
+      '#history-add-form input, #history-add-form select, #history-add-form button, '
+      + '#history-search, #history-search-button, #history-clear-filters, #history-refresh, '
+      + '.mcp-event-history-filters input, #history-source-rows button'));
+    const wasDisabled = new Map(locked.map((control) => [control, control.disabled]));
+    for (const control of locked) control.disabled = true;
+    addButton.disabled = true;
+    addButton.textContent = label('addWorking');
+    addStatus.textContent = label('addWorking');
+    addStatus.dataset.kind = 'working';
+    addStatus.hidden = false;
+    let applied = false;
+    let unchanged = false;
+    try {
+      const result = await api.request('event_history_add_source', source, 240000);
+      applied = true;
+      unchanged = result.changed === false;
+      stateSelect.value = '';
+      const refreshed = result.overview?.store_status === 'available'
+        && result.overview?.visibility_status === 'available';
+      if (result.overview) renderOverview(result.overview);
+      void loadStatus();
+      addStatus.textContent = refreshed
+        ? label(unchanged ? 'unchanged' : 'addApplied') : label('addRefreshFailed');
+      addStatus.dataset.kind = refreshed ? 'success' : 'warning';
+    } catch (error) {
+      addStatus.textContent = applied ? label('addRefreshFailed') : errorLabel(error);
+      addStatus.dataset.kind = applied ? 'warning' : 'error';
+    } finally {
+      busy = false;
+      drainSourceRevision();
+      for (const control of locked) {
+        if (control.isConnected) control.disabled = wasDisabled.get(control);
+      }
+      addButton.textContent = label('add');
+      addButton.disabled = applied || !stateSelect.value;
+      stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
+      setMessage(addStatus.textContent, addStatus.dataset.kind, true);
+    }
+  };
+  $('history-add-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (activeCount >= 64) { setMessage(label('sourceLimit'), 'warning', true); return; }
+    void startRecording();
+  });
+  $('history-policy-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    void mutate('event_history_save_policy', {retention_days: $('history-retention').value,
+      maximum_mib: $('history-maximum').value});
+  });
+  $('history-clear').addEventListener('click', () => {
+    if (window.confirm(label('confirmClear'))) void mutate('clear_event_history', {confirm: '1'});
+  });
+  refreshButton.addEventListener('click', () => {
+    if (busy || controlsLoading) return;
+    actionMessagePinned = false;
+    setMessage(label('refreshWorking'), 'working');
+    void (async () => {
+      const refreshed = await loadControls();
+      void loadStatus();
+      setMessage(label(refreshed ? 'refreshed' : 'refreshFailed'),
+        refreshed ? 'success' : 'warning', true);
+      if (refreshed) {
+        const shownVersion = messageVersion;
+        window.setTimeout(() => {
+          if (messageVersion === shownVersion) {
+            actionMessagePinned = false;
+            setMessage(label('loaded'), 'success');
+          }
+        }, 5000);
+      }
+    })();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { void loadStatus(); void checkSourceRevision(true); }
+  });
+  window.setInterval(() => { void loadStatus(); }, 30000);
+  if (typeof api.subscribeUpdates === 'function') {
+    api.subscribeUpdates(() => { void checkSourceRevision(true); },
+      () => {
+        if (Date.now() >= nextTotalsFallbackAt) {
+          nextTotalsFallbackAt = Date.now() + 60000;
+          void checkSourceRevision(true);
+        }
+      });
+  }
+  window.setInterval(() => { void checkSourceRevision(); }, 60000);
+  void loadQuickSummary();
+  void loadStatus();
+  void loadControls();
+})();

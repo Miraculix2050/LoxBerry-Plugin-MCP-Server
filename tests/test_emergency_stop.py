@@ -14,8 +14,12 @@ from mcpserver.emergency_stop import (
     mqtt_emergency_stop_status,
     virtual_status_options,
 )
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import LoxoneSourceIpBlocked
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 
 
 def test_virtual_status_options_are_sorted_case_insensitively_with_a_stable_tie_breaker() -> None:
@@ -42,7 +46,7 @@ def test_virtual_status_options_reports_unavailable_without_provider_details(mon
     async def unavailable(_self: EmergencyStopMonitor) -> tuple[str, str]:
         raise RuntimeError("private provider failure")
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", unavailable)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", unavailable)
 
     result = asyncio.run(
         virtual_status_options(PluginConfig(loxone_endpoint="http://miniserver.test"))
@@ -50,7 +54,7 @@ def test_virtual_status_options_reports_unavailable_without_provider_details(mon
 
     assert result.status == "unavailable"
     assert result.options == ()
-    assert result.failure_code == "credentials"
+    assert result.failure_code == "credentials_unavailable"
 
 
 def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
@@ -79,7 +83,7 @@ def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
             nonlocal calls
             calls += 1
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
     monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", RecordingLoxoneClient)
 
     result = asyncio.run(
@@ -87,8 +91,126 @@ def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
     )
 
     assert result.status == "unavailable"
-    assert result.failure_code == "token"
+    assert result.failure_code == "authentication_suppressed"
+    assert isinstance(result.retry_not_before, int)
     assert calls == 0
+
+    manual = asyncio.run(
+        virtual_status_options(
+            PluginConfig(loxone_endpoint="http://192.168.1.10"),
+            coordinator,
+            manual_retry=True,
+        )
+    )
+    assert manual.failure_code == "authentication_suppressed"
+    assert calls == 0
+
+
+def test_failed_manual_probe_keeps_new_breaker_retry_visible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(
+        (tmp_path / "auth-diagnostics.json").resolve(), initial_probe_seconds=300
+    )
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        asyncio.run(coordinator.attempt(blocked, owner="local_admin", phase="token_acquisition"))
+    first_retry = coordinator.status()["retry_not_before"]
+    assert isinstance(first_retry, int)
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: first_retry)
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    class FailingClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def acquire_token(self, username: str, password: str) -> None:
+            raise TimeoutError()
+
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
+    monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", FailingClient)
+    result = asyncio.run(
+        virtual_status_options(
+            PluginConfig(loxone_endpoint="http://192.168.1.10"),
+            coordinator,
+            manual_retry=True,
+        )
+    )
+    assert result.failure_code == "connection_failed"
+    assert isinstance(result.retry_not_before, int)
+    assert result.retry_not_before > first_retry
+
+
+def test_busy_coordinator_offers_short_manual_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    async def busy(*_args: object, **_kwargs: object) -> None:
+        raise MiniserverAuthenticationSuppressed("busy")
+
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
+    monkeypatch.setattr(coordinator, "attempt", busy)
+    result = asyncio.run(
+        virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
+    )
+    assert result.failure_code == "authentication_busy"
+    assert isinstance(result.retry_not_before, int)
+
+
+def test_admin_signal_discovery_waits_once_for_atomic_sign_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
+    waits: list[float] = []
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    class Token:
+        def destroy(self) -> None:
+            pass
+
+    class Session:
+        async def load_structure(self) -> SimpleNamespace:
+            return SimpleNamespace(controls=[])
+
+        async def close(self) -> None:
+            pass
+
+    class Client:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def acquire_token(self, _username: str, _password: str) -> Token:
+            await asyncio.sleep(0.05)
+            return Token()
+
+        async def open_session(self, _token: Token) -> Session:
+            return Session()
+
+    async def record_attempt(operation, **kwargs):
+        waits.append(kwargs["busy_wait_seconds"])
+        return await operation()
+
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
+    monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", Client)
+    monkeypatch.setattr("mcpserver.emergency_stop._ADMIN_AUTH_BUSY_WAIT_SECONDS", 0.2)
+    monkeypatch.setattr(coordinator, "attempt", record_attempt)
+    result = asyncio.run(
+        virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
+    )
+    assert result.status == "available"
+    assert len(waits) == 1
+    assert 0.15 < waits[0] <= 0.2
 
 
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:
@@ -145,10 +267,13 @@ def test_emergency_stop_provider_receives_the_loxberry_perl_runtime(monkeypatch,
             stdout=json.dumps({"username": "provider-user", "password": "provider-password"}),
         )
 
-    monkeypatch.setattr("mcpserver.emergency_stop.subprocess.run", run)
+    monkeypatch.setattr("mcpserver.loxone.service_access.subprocess.run", run)
     monitor = EmergencyStopMonitor(PluginConfig(loxone_endpoint="http://miniserver.test"))
 
-    assert asyncio.run(monitor._credentials()) == ("provider-user", "provider-password")
+    assert asyncio.run(LoxBerryServiceCredentials(monitor.config).load()) == (
+        "provider-user",
+        "provider-password",
+    )
     assert captured["argv"] == [
         "perl",
         "-I",
@@ -181,7 +306,10 @@ def test_emergency_stop_provider_recovers_from_an_unexpanded_service_bin_path(
             stdout=json.dumps({"username": "provider-user", "password": "provider-password"}),
         )
 
-    monkeypatch.setattr("mcpserver.emergency_stop.subprocess.run", run)
+    monkeypatch.setattr("mcpserver.loxone.service_access.subprocess.run", run)
     monitor = EmergencyStopMonitor(PluginConfig(loxone_endpoint="http://miniserver.test"))
 
-    assert asyncio.run(monitor._credentials()) == ("provider-user", "provider-password")
+    assert asyncio.run(LoxBerryServiceCredentials(monitor.config).load()) == (
+        "provider-user",
+        "provider-password",
+    )

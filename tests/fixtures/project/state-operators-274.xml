@@ -1,0 +1,8 @@
+<ControlList Version="274"><C Type="Document" ConfigVersion="17020828"/><C Type="State" V="178" U="state"><Co K="I1" U="i1"/><Co K="I2" U="i2"/><Co K="I3" U="i3"/><Co K="I4" U="i4"/><Co K="I5" U="i5"/><Co K="I6" U="i6"/><Co K="I7" U="i7"/><Co K="I8" U="i8"/><Co K="AQ" U="aq"/><Co K="TQ" U="tq"/><Co K="OutputAPI" U="api"/><StateTexts Num="5">
+						<StateText Valid="true" ValidV="true" Text="" TextV="5" Input0="2" CondV0="5" CondT0="5" />
+						<StateText Valid="true" ValidV="true" Text="" TextV="10" Input0="1" Cond0="1" CondV0="2" Input1="2" Cond1="2" CondV1="3" Input2="4" Cond2="3" CondV2="4" Input3="5" Cond3="4" CondV3="5" />
+						<StateText Valid="true" ValidV="true" Text="" TextV="20" Input0="6" Cond0="5" CondV0="6" CondT0="6" Input1="7" Cond1="7" CondV1="7" CondT1="7" Input2="8" Cond2="8" CondV2="8" CondT2="8" Input3="1" Cond3="9" CondV3="9" CondT3="9" />
+						<StateText Valid="true" ValidV="true" Text="" TextV="100" Input0="2" Cond0="6" CondV0="4" CondT0="4" />
+						<StateText Valid="true" ValidV="true" Text="" TextV="" />
+					</StateTexts>
+				</C></ControlList>

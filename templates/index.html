@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -9,8 +9,18 @@
   <TMPL_UNLESS SERVER_RENDERED_FALLBACK><noscript><meta http-equiv="refresh" content="0;url=<TMPL_VAR FALLBACK_URL ESCAPE=HTML>"></noscript></TMPL_UNLESS>
   <TMPL_IF NOTICE><div id="page-notice" class="mcp-status" role="status" data-kind="<TMPL_VAR NOTICE_KIND ESCAPE=HTML>"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
-  <p><a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden><TMPL_VAR AJAX.CONFIGURATION_FALLBACK></a></p>
-  <div id="loxberry-notifications" aria-busy="true" aria-live="polite"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR NOTIFICATIONS_HTML><TMPL_ELSE><span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING></span></TMPL_IF></div>
+  <a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden><TMPL_VAR AJAX.CONFIGURATION_FALLBACK></a>
+  <div id="loxberry-notifications" aria-busy="true" aria-live="polite" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_UNLESS NOTIFICATIONS_HTML>hidden</TMPL_UNLESS></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR NOTIFICATIONS_HTML><TMPL_ELSE><span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING></span></TMPL_IF></div>
+
+  <nav class="mcp-section-nav" aria-label="<TMPL_VAR NAV.SECTIONS ESCAPE=HTML>">
+    <a href="#status"><TMPL_VAR STATUS.TITLE ESCAPE=HTML></a>
+    <a href="#configuration"><TMPL_VAR SETUP.TITLE ESCAPE=HTML></a>
+    <a href="#access"><TMPL_VAR ACCESS.TITLE ESCAPE=HTML></a>
+    <a href="#sessions"><TMPL_VAR SESSIONS.TITLE ESCAPE=HTML></a>
+    <a href="#mqtt"><TMPL_VAR MQTT.TITLE ESCAPE=HTML></a>
+    <a href="#diagnostics"><TMPL_VAR DIAGNOSTICS.TITLE ESCAPE=HTML></a>
+    <a href="#help"><TMPL_VAR HELP.TITLE ESCAPE=HTML></a>
+  </nav>
 
   <details id="status" class="mcp-card" data-persist-collapse open
     data-state-active="<TMPL_VAR STATUS.ACTIVE ESCAPE=HTML>"
@@ -36,6 +46,12 @@
         <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong></p>
         <p><TMPL_VAR STATUS.ENABLED>: <strong id="service-enabled"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
+      <form id="service-enable-form" class="mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>" aria-busy="true">
+        <input type="hidden" name="action" value="set_service_enabled">
+        <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED_SETTING> <span id="service-enabled-setting-status" class="mcp-inline-status" role="status" aria-live="polite"><TMPL_VAR AJAX.WORKING></span></label>
+        <button class="lb-button" type="submit" <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
+        <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
+      </form>
       <div class="mcp-actions" id="service-actions">
         <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
         <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
@@ -45,39 +61,30 @@
     </div>
   </details>
 
-  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>" aria-busy="true">
-    <input type="hidden" name="action" value="set_service_enabled">
-    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED> <span id="service-enabled-setting-status" class="mcp-inline-status" role="status" aria-live="polite"><TMPL_VAR AJAX.WORKING></span></label>
-    <button class="lb-button" type="submit" <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
-    <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
-  </form>
-
-  <details id="setup" class="mcp-card" data-persist-collapse open>
-    <summary><TMPL_VAR SETUP.TITLE></summary>
+  <details id="configuration" class="mcp-card" data-persist-collapse open>
+    <summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE></span><span id="configuration-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
-      <input type="hidden" name="action" value="save_mcp_config">
       <fieldset id="mcp-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
+      <input type="submit" name="action" value="save_mcp_config" hidden aria-hidden="true" tabindex="-1">
+      <h3><TMPL_VAR SETUP.CONNECTION></h3>
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
-      <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help" <TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>></label>
+      <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS></TMPL_UNLESS>>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help" <TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF></TMPL_UNLESS>></label>
         <p id="endpoint-help" class="mcp-help"><TMPL_VAR SETUP.ENDPOINT_HELP></p>
       </div>
-      <div class="mcp-grid">
-        <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.LOXBERRY_RATE></span><input name="loxberry_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR LOXBERRY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.HISTORY_RATE></span><input name="history_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR HISTORY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.OPERATE_RATE></span><input name="loxberry_operate_requests_per_minute" type="number" min="1" max="30" value="<TMPL_VAR LOXBERRY_OPERATE_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
+      <div class="mcp-actions">
+        <button class="lb-button" type="submit" name="action" value="test_connection" formnovalidate><TMPL_VAR ACTION.TEST></button>
       </div>
+      <h3><TMPL_VAR SETUP.ACCESS_SAFETY></h3>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
       <TMPL_UNLESS SERVER_RENDERED_FALLBACK><input id="emergency-stop-value" name="emergency_stop_virtual_status_uuid" type="hidden" value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>"></TMPL_UNLESS>
-      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name ESCAPE=HTML></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name_html></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
-      <p id="emergency-stop-status" class="mcp-status" data-kind="info"><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></p>
+      <p id="emergency-stop-status" class="mcp-status" data-kind="<TMPL_VAR EMERGENCY_STOP_STATUS_KIND ESCAPE=HTML>" <TMPL_UNLESS EMERGENCY_STOP_STATUS_VISIBLE>hidden</TMPL_UNLESS>><TMPL_VAR EMERGENCY_STOP_STATUS_TEXT ESCAPE=HTML></p>
+      <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF EMERGENCY_STOP_RETRY_VISIBLE><div class="mcp-actions"><button class="lb-button" type="submit" form="fallback-emergency-stop-retry-form" <TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>><TMPL_VAR EMERGENCY_STOP_BUTTON_LABEL ESCAPE=HTML></button><TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED><a href="index.cgi?fallback=1"><TMPL_VAR SETUP.EMERGENCY_STOP_RELOAD></a></TMPL_UNLESS></div></TMPL_IF></TMPL_IF>
+      <button id="emergency-stop-retry" class="lb-button" type="button" hidden disabled><TMPL_VAR SETUP.EMERGENCY_STOP_LOAD></button>
       <div id="emergency-stop-runtime" class="mcp-field-stack" aria-live="polite" aria-busy="<TMPL_IF EMERGENCY_STOP_RUNTIME_BUSY>true<TMPL_ELSE>false</TMPL_IF>"
         data-signal-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL_UNAVAILABLE ESCAPE=HTML>"
         data-not-configured="<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=HTML>"
@@ -87,6 +94,46 @@
         <p class="mcp-help"><strong><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_STATE></strong> <code id="emergency-stop-runtime-state"><TMPL_VAR EMERGENCY_STOP_RUNTIME_STATE_VALUE ESCAPE=HTML></code></p>
         <p id="emergency-stop-runtime-mismatch" class="mcp-status" data-kind="warning" hidden><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_MISMATCH></p>
       </div>
+      <h3><TMPL_VAR SETUP.PERMISSIONS></h3>
+      <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1" <TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
+      <p id="event-history-brief" class="mcp-help" data-enabled="<TMPL_VAR SETUP.EVENT_HISTORY_ON ESCAPE=HTML>" data-disabled="<TMPL_VAR SETUP.EVENT_HISTORY_OFF ESCAPE=HTML>" data-sources="<TMPL_VAR SETUP.EVENT_HISTORY_SOURCES ESCAPE=HTML>" data-size-unknown="<TMPL_VAR SETUP.EVENT_HISTORY_SIZE_UNKNOWN ESCAPE=HTML>"><TMPL_IF EVENT_HISTORY_ENABLED><TMPL_VAR SETUP.EVENT_HISTORY_ON><TMPL_ELSE><TMPL_VAR SETUP.EVENT_HISTORY_OFF></TMPL_IF> · <TMPL_VAR EVENT_HISTORY_SOURCE_COUNT> <TMPL_VAR SETUP.EVENT_HISTORY_SOURCES> · <TMPL_VAR SETUP.EVENT_HISTORY_SIZE_UNKNOWN></p>
+      <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP> <a href="event_history.cgi"><TMPL_VAR SETUP.EVENT_HISTORY_OPEN></a></p>
+      <label class="mcp-check"><input id="weather-history-enabled" name="weather_history_enabled" type="checkbox" value="1" <TMPL_IF WEATHER_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.WEATHER_HISTORY_ENABLED></span></label>
+      <p class="mcp-help"><TMPL_VAR SETUP.WEATHER_HISTORY_HELP></p>
+      <fieldset id="local-solar-forecast-settings">
+        <legend><TMPL_VAR SETUP.SOLAR_FORECAST_TITLE></legend>
+        <label class="mcp-check"><input name="solar_forecast_enabled" type="checkbox" value="1" <TMPL_IF SOLAR_FORECAST_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.SOLAR_FORECAST_ENABLED></span></label>
+        <p class="mcp-help"><TMPL_VAR SETUP.SOLAR_FORECAST_HELP></p>
+        <label for="solar-forecast-maximum-age"><TMPL_VAR SETUP.SOLAR_FORECAST_AGE></label>
+        <input id="solar-forecast-maximum-age" name="solar_forecast_maximum_age_minutes" type="number" min="1" max="1440" value="<TMPL_VAR SOLAR_FORECAST_MAXIMUM_AGE>">
+        <label class="mcp-check"><input name="confirm_solar_forecast_source" type="checkbox" value="1"> <span><TMPL_VAR SETUP.SOLAR_FORECAST_CONFIRM></span></label>
+        <a href="../weather4lox/" target="_blank" rel="noopener noreferrer"><TMPL_VAR SETUP.SOLAR_FORECAST_REVIEW></a>
+      </fieldset>
+      <details id="solar-recorder-settings">
+        <summary><TMPL_VAR SETUP.SOLAR_HISTORY_TITLE></summary>
+        <p class="mcp-help"><TMPL_VAR SETUP.SOLAR_HISTORY_HELP></p>
+        <button id="solar-recorder-load" type="button" class="lb-button"><TMPL_VAR SETUP.SOLAR_HISTORY_LOAD></button>
+        <label for="solar-recorder-source"><TMPL_VAR SETUP.SOLAR_HISTORY_SOURCE></label>
+        <select id="solar-recorder-source" disabled></select>
+        <label for="solar-recorder-reference"><TMPL_VAR SETUP.SOLAR_HISTORY_REFERENCE></label>
+        <input id="solar-recorder-reference" type="text" maxlength="256" disabled>
+        <label class="mcp-check"><input id="solar-recorder-confirm" type="checkbox" disabled><span><TMPL_VAR SETUP.SOLAR_HISTORY_CONFIRM></span></label>
+        <button id="solar-recorder-add" type="button" class="lb-button" disabled><TMPL_VAR SETUP.SOLAR_HISTORY_ADD></button>
+        <ul id="solar-recorder-configured"></ul>
+        <label class="mcp-check"><input id="solar-recorder-enabled" type="checkbox" disabled><span><TMPL_VAR SETUP.SOLAR_HISTORY_ENABLED></span></label>
+        <button id="solar-recorder-save" type="button" class="lb-button" disabled><TMPL_VAR SETUP.SOLAR_HISTORY_SAVE></button>
+        <p id="solar-recorder-status" role="status" class="mcp-help"></p>
+      </details>
+      <details id="weather-recorder-settings">
+        <summary><TMPL_VAR SETUP.WEATHER_HISTORY_SOURCES></summary>
+        <button id="weather-recorder-load" type="button" class="lb-button"><TMPL_VAR SETUP.WEATHER_HISTORY_LOAD></button>
+        <label for="weather-recorder-source"><TMPL_VAR SETUP.WEATHER_HISTORY_SOURCE></label>
+        <select id="weather-recorder-source" disabled></select>
+        <fieldset id="weather-recorder-fields" disabled><legend><TMPL_VAR SETUP.WEATHER_HISTORY_FIELDS></legend></fieldset>
+        <button id="weather-recorder-add" type="button" class="lb-button" disabled><TMPL_VAR SETUP.WEATHER_HISTORY_ADD></button>
+        <ul id="weather-recorder-configured"></ul>
+        <p id="weather-recorder-status" role="status" class="mcp-help"></p>
+      </details>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -96,6 +143,7 @@
               <tbody>
                 <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><span class="mcp-permission-always"><TMPL_VAR SETUP.PERMISSIONS_ALWAYS></span></td><td data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.READ_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:read</code></td><td data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.READ_DESCRIPTION></td></tr>
                 <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxone-history-enabled" name="loxone_history_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_HISTORY_ENABLED>checked</TMPL_IF> aria-labelledby="history-option" aria-describedby="history-description"></td><td id="history-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.HISTORY_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:history</code></td><td id="history-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.HISTORY_DESCRIPTION></td></tr>
+                <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxone-message-confirmation-enabled" name="loxone_message_confirmation_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_MESSAGE_CONFIRMATION_ENABLED>checked</TMPL_IF> aria-labelledby="messages-option" aria-describedby="messages-description"></td><td id="messages-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.MESSAGES_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:messages:confirm</code></td><td id="messages-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.MESSAGES_DESCRIPTION> <a href="message-approval.cgi"><TMPL_VAR SETUP.MESSAGES_APPROVAL></a></td></tr>
                 <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxone-control-enabled" name="loxone_control_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>checked</TMPL_IF> aria-labelledby="control-option" aria-describedby="control-description"></td><td id="control-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.CONTROL_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:control</code></td><td id="control-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.CONTROL_DESCRIPTION></td></tr>
               </tbody>
             </table>
@@ -116,38 +164,163 @@
       </div>
       <p id="permission-policy-hint" class="mcp-help"><TMPL_VAR SETUP.PERMISSIONS_HINT></p>
       <details class="mcp-persistent-section">
-        <summary><TMPL_VAR SETUP.ADVANCED_LIMITS></summary>
+        <summary><TMPL_VAR SETUP.ADVANCED_SETTINGS></summary>
+        <h4><TMPL_VAR SETUP.ADVANCED_CONNECTION></h4>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
+        </div>
+        <h4><TMPL_VAR SETUP.ADVANCED_RATES></h4>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.LOXBERRY_RATE></span><input name="loxberry_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR LOXBERRY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.HISTORY_RATE></span><input name="history_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR HISTORY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.OPERATE_RATE></span><input name="loxberry_operate_requests_per_minute" type="number" min="1" max="30" value="<TMPL_VAR LOXBERRY_OPERATE_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+        </div>
+        <h4><TMPL_VAR SETUP.ADVANCED_LIMITS></h4>
         <div class="mcp-grid">
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_REFRESH></span><input name="structure_refresh_seconds" type="number" min="60" max="3600" value="<TMPL_VAR STRUCTURE_REFRESH_SECONDS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_SESSIONS></span><input name="max_active_runtime_sessions" type="number" min="1" max="128" value="<TMPL_VAR MAX_ACTIVE_RUNTIME_SESSIONS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_IDLE></span><input name="runtime_session_idle_seconds" type="number" min="60" max="86400" value="<TMPL_VAR RUNTIME_SESSION_IDLE_SECONDS ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_INITIAL></span><input name="miniserver_auth_probe_initial_minutes" type="number" min="5" max="1440" value="<TMPL_VAR MINISERVER_AUTH_PROBE_INITIAL_MINUTES ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_MAX></span><input name="miniserver_auth_probe_max_minutes" type="number" min="15" max="10080" value="<TMPL_VAR MINISERVER_AUTH_PROBE_MAX_MINUTES ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_INITIAL></span><input name="miniserver_auth_probe_initial_seconds" type="number" min="300" max="86400" value="<TMPL_VAR MINISERVER_AUTH_PROBE_INITIAL_SECONDS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_MAX></span><input name="miniserver_auth_probe_max_seconds" type="number" min="900" max="604800" value="<TMPL_VAR MINISERVER_AUTH_PROBE_MAX_SECONDS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_CONTROLS></span><input name="max_structure_controls" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STRUCTURE_CONTROLS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_STATES></span><input name="max_structure_state_references" type="number" min="10000" max="500000" value="<TMPL_VAR MAX_STRUCTURE_STATE_REFERENCES ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_DEPTH></span><input name="max_structure_depth" type="number" min="4" max="128" value="<TMPL_VAR MAX_STRUCTURE_DEPTH ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION></span><input name="explorer_binding_retention_hours" type="number" min="1" max="720" value="<TMPL_VAR EXPLORER_BINDING_RETENTION_HOURS ESCAPE=HTML>"></label>
         </div>
-        <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
+         <p class="mcp-help"><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION_HELP></p>
+         <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
       </details>
       <div class="mcp-actions">
-        <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MCP></button>
+        <button class="lb-button" type="submit" name="action" value="save_mcp_config"><TMPL_VAR ACTION.SAVE_MCP></button>
       </div>
       </fieldset>
     </form>
-    <form class="mcp-actions" method="post" action="index.cgi" data-ajax="test_connection">
-      <fieldset id="test-connection-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
-        <input type="hidden" name="action" value="test_connection">
-        <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
-        <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
-      </fieldset>
-    </form>
+    <p><a class="lb-button" href="knx.cgi"><TMPL_VAR KNX.TITLE></a></p>
+    <p class="mcp-help"><TMPL_VAR HELP.KNX_HELP></p>
+    <p><a class="lb-button" href="profile.cgi"><TMPL_VAR PROFILE.TITLE></a></p>
+    <p class="mcp-help"><TMPL_VAR HELP.PROFILE_HELP></p>
+    <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
+    </div>
+  </details>
+
+  <details id="access" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
+    <summary id="certificate"><span class="mcp-service-summary"><span><TMPL_VAR ACCESS.TITLE></span><span id="certificate-summary-badge" class="mcp-service-badge"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR SUMMARY.UNKNOWN><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
+    <div class="mcp-collapsible-content">
+      <div class="mcp-field-stack">
+        <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
+        <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
+      </div>
+      <p class="mcp-help"><TMPL_VAR ACCESS.MCP_CERTIFICATE_HINT></p>
+      <section id="certificate-panel" aria-labelledby="certificate-heading" aria-busy="true"
+        data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"
+        data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
+        data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
+        data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
+        data-state-error="<TMPL_VAR CERTIFICATE.STATE_ERROR ESCAPE=HTML>"
+        data-yes="<TMPL_VAR CERTIFICATE.YES ESCAPE=HTML>"
+        data-no="<TMPL_VAR CERTIFICATE.NO ESCAPE=HTML>"
+        data-not-configured="<TMPL_VAR CERTIFICATE.NOT_CONFIGURED ESCAPE=HTML>">
+      <h3 id="certificate-heading"><TMPL_VAR CERTIFICATE.TITLE></h3>
+      <p><TMPL_VAR CERTIFICATE.TEXT></p>
+      <div id="certificate-details" class="mcp-grid">
+        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time></p>
+        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_VAR AJAX.WORKING></strong></p>
+      </div>
+      <p id="certificate-warning" class="mcp-warning" hidden><TMPL_VAR CERTIFICATE.WARNING></p>
+      <p id="certificate-renewal-info" hidden><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"></strong></p>
+        <form id="certificate-renewal-form" class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal hidden>
+          <input type="hidden" name="action" value="renew_certificate">
+          <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
+          <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
+          <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
+          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button><a class="lb-button" href="/admin/system/services.php"><TMPL_VAR ACTION.DOWNLOAD_CA_CERTIFICATE></a></div>
+        </form>
+      <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
+      <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
+      </section>
+    </div>
+  </details>
+
+  <details id="sessions" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF> aria-busy="true"
+    data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
+    data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR SESSIONS.TITLE></span><span id="sessions-summary-badge" class="mcp-service-badge"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_SESSIONS_LOADED><TMPL_VAR SUMMARY.SESSIONS>: <TMPL_VAR FALLBACK_SESSION_COUNT><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span><span id="approvals-summary-badge" class="mcp-service-badge" <TMPL_UNLESS FALLBACK_HAS_APPROVALS>hidden</TMPL_UNLESS> <TMPL_IF FALLBACK_HAS_APPROVALS>data-kind="error"</TMPL_IF>><TMPL_IF FALLBACK_HAS_APPROVALS><TMPL_VAR SUMMARY.APPROVALS>: <TMPL_VAR FALLBACK_APPROVAL_COUNT></TMPL_IF></span></span></summary>
+    <div class="mcp-collapsible-content">
+    <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" <TMPL_UNLESS REMOTE_CLEANUP_WARNING_VISIBLE>hidden</TMPL_UNLESS>
+      data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
+      data-cooldown-label="<TMPL_VAR SESSIONS.AUTH_COOLDOWN ESCAPE=HTML>"
+      data-public-cooldown-label="<TMPL_VAR SESSIONS.AUTH_PUBLIC_COOLDOWN ESCAPE=HTML>"
+      data-recovery-label="<TMPL_VAR SESSIONS.AUTH_RECOVERY ESCAPE=HTML>"
+      data-uncertain-label="<TMPL_VAR SESSIONS.AUTH_UNCERTAIN ESCAPE=HTML>"
+      data-pending-label="<TMPL_VAR SESSIONS.REMOTE_PENDING_WARNING ESCAPE=HTML>"
+      data-retryable-label="<TMPL_VAR SESSIONS.REMOTE_RETRYABLE_WARNING ESCAPE=HTML>"
+      data-unconfirmed-label="<TMPL_VAR SESSIONS.REMOTE_UNCONFIRMED_WARNING ESCAPE=HTML>"
+      data-failure-label="<TMPL_VAR SESSIONS.REMOTE_LAST_FAILURE ESCAPE=HTML>"
+      data-rejected-label="<TMPL_VAR SESSIONS.REMOTE_REJECTED ESCAPE=HTML>"
+      data-blocked-label="<TMPL_VAR SESSIONS.REMOTE_BLOCKED ESCAPE=HTML>"
+      data-transport-label="<TMPL_VAR SESSIONS.REMOTE_TRANSPORT ESCAPE=HTML>"
+      data-command-label="<TMPL_VAR SESSIONS.REMOTE_COMMAND ESCAPE=HTML>"
+      data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"><TMPL_VAR REMOTE_CLEANUP_WARNING ESCAPE=HTML></p>
+    <button id="miniserver-auth-probe" type="button" class="lb-button" hidden
+      data-confirm="<TMPL_VAR SESSIONS.AUTH_PROBE_CONFIRM ESCAPE=HTML>"><TMPL_VAR SESSIONS.AUTH_PROBE></button>
+    <details id="authentication-history" class="mcp-nested-card"
+      data-event-attempt-started="<TMPL_VAR SESSIONS.AUTH_EVENT_ATTEMPT_STARTED ESCAPE=HTML>"
+      data-event-attempt-suppressed="<TMPL_VAR SESSIONS.AUTH_EVENT_ATTEMPT_SUPPRESSED ESCAPE=HTML>"
+      data-event-source-ip-blocked="<TMPL_VAR SESSIONS.AUTH_EVENT_SOURCE_IP_BLOCKED ESCAPE=HTML>"
+      data-event-authenticated="<TMPL_VAR SESSIONS.AUTH_EVENT_AUTHENTICATED ESCAPE=HTML>"
+      data-event-authentication-rejected="<TMPL_VAR SESSIONS.AUTH_EVENT_AUTHENTICATION_REJECTED ESCAPE=HTML>"
+      data-event-token-rejected="<TMPL_VAR SESSIONS.AUTH_EVENT_TOKEN_REJECTED ESCAPE=HTML>"
+      data-event-recovery-confirmed="<TMPL_VAR SESSIONS.AUTH_EVENT_RECOVERY_CONFIRMED ESCAPE=HTML>"
+      data-event-attempt-cancelled="<TMPL_VAR SESSIONS.AUTH_EVENT_ATTEMPT_CANCELLED ESCAPE=HTML>"
+      data-event-transport-failed="<TMPL_VAR SESSIONS.AUTH_EVENT_TRANSPORT_FAILED ESCAPE=HTML>"
+      data-shared-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_SHARED ESCAPE=HTML>"
+      data-next-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_NEXT ESCAPE=HTML>"
+      data-bounded-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_BOUNDED ESCAPE=HTML>"
+      data-unavailable-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_UNAVAILABLE ESCAPE=HTML>"
+      data-incomplete-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_INCOMPLETE ESCAPE=HTML>"
+      data-empty-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_EMPTY ESCAPE=HTML>"
+      data-details-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_DETAILS ESCAPE=HTML>"
+      data-unknown-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_UNKNOWN ESCAPE=HTML>">
+      <summary><TMPL_VAR SESSIONS.AUTH_HISTORY></summary>
+      <p class="mcp-help"><TMPL_VAR SESSIONS.AUTH_HISTORY_HINT></p>
+      <button id="authentication-history-refresh" type="button" class="lb-button"><TMPL_VAR SESSIONS.AUTH_HISTORY_REFRESH></button>
+      <div id="authentication-history-content" aria-live="polite"></div>
+    </details>
+    <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
+    <TMPL_IF HAS_SESSIONS>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td data-label="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"><code><TMPL_VAR client ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.TOKEN ESCAPE=HTML>" data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.SCOPES ESCAPE=HTML>"><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.EXPIRES ESCAPE=HTML>"><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td data-label="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      </tbody></table></div>
+      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
+    <TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF></TMPL_IF>
+    </div>
+    <template id="session-table-template">
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
+      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
+    </template>
+    <section id="loxberry-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
+      <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td data-label="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"><TMPL_IF inactive><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF><div class="mcp-help"><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF></div><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"><code><TMPL_VAR client ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.BINDING_ID ESCAPE=HTML>"><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
+      <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
+    </section>
+    <section id="loxberry-operate-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_OPERATE_BINDINGS>hidden</TMPL_UNLESS>>
+      <h3><TMPL_VAR SESSIONS.LOXBERRY_OPERATE_APPROVALS></h3>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td data-label="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"><TMPL_IF inactive><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF><div class="mcp-help"><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF></div><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"><code><TMPL_VAR client ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.BINDING_ID ESCAPE=HTML>"><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
+    </section>
     </div>
   </details>
 
   <details id="mqtt" class="mcp-card" data-persist-collapse open>
-    <summary><TMPL_VAR MQTT.TITLE></summary>
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR MQTT.TITLE></span><span id="mqtt-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF MQTT_ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF MQTT_ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
       <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mqtt_config">
         <input type="hidden" name="action" value="save_mqtt_config">
@@ -175,90 +348,11 @@
     </div>
   </details>
 
-  <details id="help" class="mcp-card" data-persist-collapse>
-    <summary><TMPL_VAR HELP.TITLE></summary>
-    <div class="mcp-collapsible-content">
-      <p><TMPL_VAR HELP.TOOL_ACCESS></p>
-      <div class="mcp-field-stack">
-        <label class="mcp-field"><span><TMPL_VAR HELP.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
-        <label class="mcp-field"><span><TMPL_VAR HELP.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
-      </div>
-      <p class="mcp-help"><TMPL_VAR HELP.MCP_CERTIFICATE_HINT></p>
-      <p class="mcp-actions">
-        <a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a>
-        <a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
-      </p>
-      <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
-    </div>
-  </details>
-
-  <details id="certificate" class="mcp-card" data-persist-collapse aria-busy="true"
-    data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
-    data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
-    data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
-    data-state-error="<TMPL_VAR CERTIFICATE.STATE_ERROR ESCAPE=HTML>"
-    data-yes="<TMPL_VAR CERTIFICATE.YES ESCAPE=HTML>"
-    data-no="<TMPL_VAR CERTIFICATE.NO ESCAPE=HTML>"
-    data-not-configured="<TMPL_VAR CERTIFICATE.NOT_CONFIGURED ESCAPE=HTML>">
-    <summary><TMPL_VAR CERTIFICATE.TITLE></summary>
-    <div class="mcp-collapsible-content">
-    <p><TMPL_VAR CERTIFICATE.TEXT></p>
-      <div id="certificate-details" class="mcp-grid">
-        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time></p>
-        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_VAR AJAX.WORKING></strong></p>
-      </div>
-      <p id="certificate-warning" class="mcp-warning" hidden><TMPL_VAR CERTIFICATE.WARNING></p>
-      <p id="certificate-renewal-info" hidden><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"></strong></p>
-        <form id="certificate-renewal-form" class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal hidden>
-          <input type="hidden" name="action" value="renew_certificate">
-          <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
-          <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
-          <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
-          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button><a class="lb-button" href="/admin/system/services.php"><TMPL_VAR ACTION.DOWNLOAD_CA_CERTIFICATE></a></div>
-        </form>
-      <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
-      <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
-    </div>
-  </details>
-
-  <details id="sessions" class="mcp-card" data-persist-collapse aria-busy="true"
-    data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
-    data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
-    <summary><TMPL_VAR SESSIONS.TITLE></summary>
-    <div class="mcp-collapsible-content">
-    <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
-    <TMPL_IF HAS_SESSIONS>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
-      </tbody></table></div>
-      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
-    <TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF></TMPL_IF>
-    </div>
-    <template id="session-table-template">
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
-      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
-    </template>
-    <section id="loxberry-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
-      <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_ACTIVE_SESSION><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
-      <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
-    </section>
-    <section id="loxberry-operate-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_OPERATE_BINDINGS>hidden</TMPL_UNLESS>>
-      <h3><TMPL_VAR SESSIONS.LOXBERRY_OPERATE_APPROVALS></h3>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_ACTIVE_SESSION><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
-    </section>
-    </div>
-  </details>
-
-  <details id="diagnostics" class="mcp-card" data-persist-collapse>
+  <details id="diagnostics" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
     <summary><TMPL_VAR DIAGNOSTICS.TITLE></summary>
     <div class="mcp-collapsible-content mcp-form">
     <p><TMPL_VAR DIAGNOSTICS.TEXT></p>
-    <form method="post" action="index.cgi"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
+    <form method="post" action="index.cgi" data-ajax="diagnostic"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
     <section class="mcp-log-section" aria-labelledby="service-log-heading">
     <h3 id="service-log-heading"><TMPL_VAR DIAGNOSTICS.SERVICE_SECTION></h3>
     <p class="mcp-help"><TMPL_VAR DIAGNOSTICS.SERVICE_LOG_FILES></p>
@@ -285,6 +379,40 @@
     </section>
     </div>
   </details>
+
+  <details id="help" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
+    <summary><TMPL_VAR HELP.TITLE></summary>
+    <div class="mcp-collapsible-content">
+      <div class="mcp-help-link">
+        <p><a id="project-help-link" class="lb-button" href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener" aria-describedby="project-help-link-description"><TMPL_VAR HELP.PROJECT></a></p>
+        <p id="project-help-link-description" class="mcp-help"><TMPL_VAR HELP.PROJECT_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener" aria-describedby="explorer-link-description"><TMPL_VAR ACTION.EXPLORER></a></p>
+        <p id="explorer-link-description" class="mcp-help"><TMPL_VAR HELP.EXPLORER_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener" aria-describedby="schema-reference-link-description"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a></p>
+        <p id="schema-reference-link-description" class="mcp-help"><TMPL_VAR HELP.SCHEMA_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="event-history-help-link" class="lb-button" href="event_history.cgi" aria-describedby="event-history-help-link-description"><TMPL_VAR HELP.HISTORY></a></p>
+        <p id="event-history-help-link-description" class="mcp-help"><TMPL_VAR HELP.HISTORY_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="knx-help-link" class="lb-button" href="knx.cgi" aria-describedby="knx-help-link-description"><TMPL_VAR KNX.TITLE></a></p>
+        <p id="knx-help-link-description" class="mcp-help"><TMPL_VAR HELP.KNX_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="profile-help-link" class="lb-button" href="profile.cgi" aria-describedby="profile-help-link-description"><TMPL_VAR PROFILE.TITLE></a></p>
+        <p id="profile-help-link-description" class="mcp-help"><TMPL_VAR HELP.PROFILE_HELP></p>
+      </div>
+      <div class="mcp-help-link">
+        <p><a id="message-approval-help-link" class="lb-button" href="<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>" aria-describedby="message-approval-help-link-description"><TMPL_VAR HELP.MESSAGES></a></p>
+        <p id="message-approval-help-link-description" class="mcp-help"><TMPL_VAR HELP.MESSAGES_HELP></p>
+      </div>
+    </div>
+  </details>
 </main>
 
 <dialog id="service-confirm" class="mcp-dialog" aria-labelledby="service-confirm-title">
@@ -298,1398 +426,90 @@
   </form>
 </dialog>
 
-<script>
-(() => {
-  if (<TMPL_IF SERVER_RENDERED_FALLBACK>true<TMPL_ELSE>false</TMPL_IF>) return;
-  const status = document.getElementById('ajax-status');
-  const configurationFallbackLink = document.getElementById('configuration-fallback-link');
-  const loxberryNotifications = document.getElementById('loxberry-notifications');
-  const pluginLogList = document.getElementById('plugin-log-list');
-  const collapseStorageKey = 'mcpserver.admin.sections.v1';
-  const collapsibles = [...document.querySelectorAll('details[data-persist-collapse]')];
-  let storedCollapseState = {};
-  try {
-    storedCollapseState = JSON.parse(window.localStorage.getItem(collapseStorageKey) || '{}');
-  } catch {
-    storedCollapseState = {};
-  }
-  const persistCollapsibles = () => {
-    const state = Object.fromEntries(collapsibles.map((element) => [element.id, element.open]));
-    try { window.localStorage.setItem(collapseStorageKey, JSON.stringify(state)); } catch { /* Defaults remain usable. */ }
-  };
-  for (const element of collapsibles) {
-    if (typeof storedCollapseState[element.id] === 'boolean') element.open = storedCollapseState[element.id];
-    element.addEventListener('toggle', persistCollapsibles);
-  }
-  const openHashSection = () => {
-    const target = document.getElementById(window.location.hash.slice(1));
-    if (target instanceof HTMLDetailsElement && !target.open) {
-      target.open = true;
-      persistCollapsibles();
-    }
-  };
-  window.addEventListener('hashchange', openHashSection);
-  openHashSection();
-  const miniserverSelect = document.getElementById('miniserver-select');
-  const manualEndpointFields = document.getElementById('manual-endpoint-fields');
-  const miniserverEndpoint = document.getElementById('miniserver-endpoint');
-  const mcpConfigForm = document.getElementById('mcp-config-form');
-  const mqttConfigForm = document.querySelector('form[data-ajax="save_mqtt_config"]');
-  const configurationFieldsets = [
-    document.getElementById('mcp-config-fields'),
-    document.getElementById('test-connection-fields'),
-    document.getElementById('mqtt-config-fields'),
-    document.getElementById('logging-config-fields'),
-  ];
-  const historyEnabled = document.getElementById('loxone-history-enabled');
-  const operateEnabled = document.getElementById('loxberry-operate-enabled');
-  const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
-  const explorerLink = document.getElementById('explorer-link');
-  const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
-  explorerLink.href = `${window.location.origin}${explorerPath}`;
-  const certificateSection = document.getElementById('certificate');
-  const certificateDetails = document.getElementById('certificate-details');
-  const certificateSource = document.getElementById('certificate-source');
-  const certificateUnavailable = document.getElementById('certificate-unavailable');
-  const certificateUnsupported = document.getElementById('certificate-unsupported');
-  const certificateRenewalInfo = document.getElementById('certificate-renewal-info');
-  const certificateRenewalForm = document.getElementById('certificate-renewal-form');
-  const certificateRenewalState = document.getElementById('certificate-renewal-state');
-  const certificateExpiry = document.getElementById('certificate-expiry');
-  const certificateDnsCount = document.getElementById('certificate-dns-count');
-  const certificateIpCount = document.getElementById('certificate-ip-count');
-  const certificateOriginMatch = document.getElementById('certificate-origin-match');
-  const certificateHostnameMatch = document.getElementById('certificate-hostname-match');
-  const certificateWarning = document.getElementById('certificate-warning');
-  const sessionsSection = document.getElementById('sessions');
-  const sessionList = document.getElementById('session-list');
-  const sessionTableTemplate = document.getElementById('session-table-template');
-  const loxberryBindingSection = document.getElementById('loxberry-binding-section');
-  const loxberryBindingList = document.getElementById('loxberry-binding-list');
-  const loxberryOperateBindingSection = document.getElementById('loxberry-operate-binding-section');
-  const loxberryOperateBindingList = document.getElementById('loxberry-operate-binding-list');
-  const serviceSection = document.getElementById('status');
-  const serviceState = document.getElementById('service-state');
-  const serviceActiveState = document.getElementById('service-active-state');
-  const serviceSubState = document.getElementById('service-sub-state');
-  const servicePid = document.getElementById('service-pid');
-  const serviceName = document.getElementById('service-name');
-  const serviceInstalled = document.getElementById('service-installed');
-  const serviceEnabled = document.getElementById('service-enabled');
-  const serviceEnableForm = document.getElementById('service-enable-form');
-  const serviceEnabledInput = document.getElementById('service-enabled-input');
-  const serviceEnabledApplyButton = serviceEnableForm.querySelector('button[type="submit"]');
-  const serviceEnabledSettingStatus = document.getElementById('service-enabled-setting-status');
-  const emergencyStopSelect = document.getElementById('emergency-stop-select');
-  const emergencyStopValue = document.getElementById('emergency-stop-value');
-  const emergencyStopStatus = document.getElementById('emergency-stop-status');
-  const emergencyStopRuntime = document.getElementById('emergency-stop-runtime');
-  const emergencyStopRuntimeSignal = document.getElementById('emergency-stop-runtime-signal');
-  const emergencyStopRuntimeUuid = document.getElementById('emergency-stop-runtime-uuid');
-  const emergencyStopRuntimeState = document.getElementById('emergency-stop-runtime-state');
-  const emergencyStopRuntimeMismatch = document.getElementById('emergency-stop-runtime-mismatch');
-  const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
-  const mqttHost = document.getElementById('mqtt-host');
-  const mqttPort = document.getElementById('mqtt-port');
-  const mqttUsername = document.getElementById('mqtt-username');
-  const mqttPassword = document.getElementById('mqtt-password');
-  const mqttClearPassword = document.getElementById('mqtt-clear-password');
-  let mqttGateway = null;
-  let mqttCustomBroker = {
-    host: mqttHost.value,
-    port: mqttPort.value,
-    username: mqttUsername.value,
-  };
-  const mqttPasswordStatus = document.getElementById('mqtt-password-status');
-  const mqttPageStateStatus = document.getElementById('mqtt-page-state-status');
-  const serviceConfirm = document.getElementById('service-confirm');
-  const serviceConfirmMessage = document.getElementById('service-confirm-message');
-  const loggingControls = document.getElementById('logging-controls');
-  const loggingCurrent = document.getElementById('logging-current');
-  const loggingLevel = document.getElementById('logging-level');
-  let pendingServiceForm = null;
-  let serviceActionRunning = false;
-  let servicePollInFlight = false;
-  let servicePollTimer = null;
-  let serviceEnabledSetting = serviceEnabledInput.checked;
-  let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
-  let serviceLoaded = false;
-  let emergencyStopDiscoveryGeneration = 0;
-  let sessionDataVersion = 0;
-  let sessionsLoaded = false;
-  let nextSessionActionToken = 0;
-  const activeSessionActions = new Map();
-  const sessionActionFailures = new Map();
-  let sessionPollInFlight = false;
-  let sessionPollTimer = null;
-  let certificateLoaded = false;
-  let certificateLoadInFlight = false;
-  let configurationLoaded = false;
-  let configurationLoadInFlight = false;
-  let lastService = null;
-  let lastEmergencyStopRuntime = null;
-  let pageIsUnloading = false;
-  const markPageUnloading = () => { pageIsUnloading = true; };
-  window.addEventListener('beforeunload', markPageUnloading);
-  window.addEventListener('pagehide', markPageUnloading);
-  window.addEventListener('pageshow', () => { pageIsUnloading = false; });
-  const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null;
-  const renderLogging = (configuration) => {
-    const configured = configuration && configuration.logging ? configuration.logging : {};
-    const level = ['off', 'error', 'warning', 'info', 'debug'].includes(configured.level)
-      ? configured.level : 'warning';
-    loggingLevel.value = level;
-    loggingCurrent.textContent = loggingControls.dataset[
-      `level${level[0].toUpperCase()}${level.slice(1)}`
-    ];
-  };
-  const setConfigurationFieldsDisabled = (disabled) => {
-    for (const fieldset of configurationFieldsets) fieldset.disabled = disabled;
-    mcpConfigForm.setAttribute('aria-busy', String(disabled));
-    mqttConfigForm.setAttribute('aria-busy', String(disabled));
-  };
-  const setFormValue = (form, name, value) => {
-    const field = form.elements.namedItem(name);
-    if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) {
-      field.value = String(value ?? '');
-    }
-  };
-  const setFormChecked = (form, name, checked) => {
-    const field = form.elements.namedItem(name);
-    if (field instanceof HTMLInputElement) field.checked = Boolean(checked);
-  };
-  const renderConfiguration = (configuration) => {
-    const server = configuration?.server || {};
-    const loxone = configuration?.loxone || {};
-    const tools = configuration?.tools || {};
-    const limits = configuration?.limits || {};
-    const cache = configuration?.cache || {};
-    const mqtt = configuration?.mqtt || {};
-    const emergencyStop = configuration?.emergency_stop || {};
-    const publicOrigin = String(server.public_origin || '')
-      || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
-    setFormValue(mcpConfigForm, 'public_origin', publicOrigin);
-    setFormChecked(mcpConfigForm, 'enabled', server.enabled);
-    setFormValue(mcpConfigForm, 'connection_timeout', loxone.connection_timeout);
-    const endpoint = String(loxone.endpoint || miniserverEndpoint.value || '');
-    miniserverEndpoint.value = endpoint;
-    miniserverSelect.value = [...miniserverSelect.options].some((option) => option.value === endpoint)
-      ? endpoint : '';
-    setFormChecked(mcpConfigForm, 'loxone_history_enabled', tools.loxone_history_enabled);
-    setFormChecked(mcpConfigForm, 'loxone_control_enabled', tools.loxone_control_enabled);
-    setFormChecked(mcpConfigForm, 'loxberry_read_enabled', tools.loxberry_read_enabled);
-    setFormChecked(mcpConfigForm, 'loxberry_operate_enabled', tools.loxberry_operate_enabled);
-    for (const name of [
-      'requests_per_minute', 'control_requests_per_minute', 'loxberry_requests_per_minute',
-      'history_requests_per_minute', 'loxberry_operate_requests_per_minute', 'max_parallel_calls',
-      'structure_refresh_seconds', 'max_active_runtime_sessions', 'runtime_session_idle_seconds',
-      'miniserver_auth_probe_initial_minutes', 'miniserver_auth_probe_max_minutes',
-      'max_structure_controls', 'max_structure_state_references', 'max_structure_depth',
-      'max_states_per_identity',
-    ]) setFormValue(mcpConfigForm, name, limits[name]);
-    setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
-    emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
-    updateEmergencyStopRuntimeMismatch();
-    setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
-    setFormChecked(mqttConfigForm, 'mqtt_use_loxberry_gateway', mqtt.use_loxberry_gateway);
-    setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);
-    setFormValue(mqttConfigForm, 'mqtt_port', mqtt.port);
-    setFormValue(mqttConfigForm, 'mqtt_username', mqtt.username);
-    setFormValue(mqttConfigForm, 'mqtt_root_topic', mqtt.root_topic);
-    setFormValue(mqttConfigForm, 'mqtt_heartbeat_seconds', mqtt.heartbeat_seconds);
-    mqttCustomBroker = {host: mqttHost.value, port: mqttPort.value, username: mqttUsername.value};
-    syncMiniserverSelection();
-    syncOperateDependency();
-    resetEmergencyStopOptions({loading: true});
-    updateMqttBrokerFields();
-    renderLogging(configuration);
-  };
-  const loadConfiguration = async () => {
-    if (configurationLoaded || configurationLoadInFlight) return;
-    configurationLoadInFlight = true;
-    setAjaxStatus('', '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
-    try {
-      const body = new URLSearchParams();
-      body.set('action', 'get_config');
-      body.set('ajax', '1');
-      const result = await postAjax(body, 7000);
-      renderConfiguration(result.data.configuration);
-      configurationLoaded = true;
-      setConfigurationFieldsDisabled(false);
-      configurationFallbackLink.hidden = true;
-      status.hidden = true;
-      const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
-      queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);
-    } catch {
-      if (pageIsUnloading) return;
-      setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
-      configurationFallbackLink.hidden = false;
-    } finally {
-      configurationLoadInFlight = false;
-    }
-  };
-  const updateMqttGateway = (gateway) => {
-    mqttGateway = gateway?.gateway_configured ? gateway : null;
-    updateMqttBrokerFields();
-  };
-  const updateMqttBrokerFields = () => {
-    const useGateway = mqttUseLoxberryGateway.checked;
-    if (useGateway && !mqttHost.disabled) {
-      mqttCustomBroker = {
-        host: mqttHost.value,
-        port: mqttPort.value,
-        username: mqttUsername.value,
-      };
-    }
-    if (useGateway && mqttGateway) {
-      mqttHost.value = String(mqttGateway.host || '');
-      mqttPort.value = String(mqttGateway.port || '');
-      mqttUsername.value = String(mqttGateway.username || '');
-      mqttPassword.value = '';
-    } else if (!useGateway) {
-      mqttHost.value = mqttCustomBroker.host;
-      mqttPort.value = mqttCustomBroker.port;
-      mqttUsername.value = mqttCustomBroker.username;
-    }
-    for (const field of [mqttHost, mqttPort, mqttUsername, mqttPassword, mqttClearPassword]) {
-      field.disabled = useGateway;
-    }
-  };
-  const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
-  const syncOperateDependency = () => {
-    operateEnabled.disabled = !historyEnabled.checked;
-    if (operateEnabled.disabled) operateEnabled.checked = false;
-  };
-  const syncMiniserverSelection = () => {
-    const selectedEndpoint = miniserverSelect.value;
-    if (selectedEndpoint) miniserverEndpoint.value = selectedEndpoint;
-    miniserverEndpoint.readOnly = Boolean(selectedEndpoint);
-    miniserverEndpoint.required = !selectedEndpoint;
-    manualEndpointFields.hidden = Boolean(selectedEndpoint);
-    syncTestEndpoint();
-  };
-  miniserverSelect.addEventListener('change', syncMiniserverSelection);
-  miniserverEndpoint.addEventListener('input', syncTestEndpoint);
-  historyEnabled.addEventListener('change', syncOperateDependency);
-  syncMiniserverSelection();
-  syncOperateDependency();
-  const expiryFormatter = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  });
-  const MAX_EXPIRY_EPOCH = 4102444799;
-  const parseExpiry = (raw) => {
-    if (!/^(?:0|[1-9][0-9]*)$/.test(raw) || raw.length > 10) return null;
-    const value = Number(raw);
-    return Number.isSafeInteger(value) && value <= MAX_EXPIRY_EPOCH ? value : null;
-  };
-  const updateExpiry = (element, raw) => {
-    element.dataset.expiresAt = String(raw ?? '');
-    const expiresAt = parseExpiry(element.dataset.expiresAt);
-    if (expiresAt !== null) {
-      const date = new Date(expiresAt * 1000);
-      element.dateTime = date.toISOString();
-      element.textContent = expiryFormatter.format(date);
-    } else {
-      element.removeAttribute('datetime');
-      element.textContent = String(raw ?? '');
-    }
-  };
-  for (const element of document.querySelectorAll('time.mcp-expiry')) {
-    if (element.dataset.expiresAt) updateExpiry(element, element.dataset.expiresAt);
-  }
-  const hideStatusTimers = new WeakMap();
-  const hideSuccess = (element, defer = () => false) => {
-    window.clearTimeout(hideStatusTimers.get(element));
-    const hide = () => {
-      if (defer()) {
-        hideStatusTimers.set(element, window.setTimeout(hide, 4000));
-        return;
-      }
-      if (element.dataset.kind === 'success') element.hidden = true;
-    };
-    hideStatusTimers.set(element, window.setTimeout(hide, 4000));
-  };
-  const setAjaxStatus = (kind, message) => {
-    window.clearTimeout(hideStatusTimers.get(status));
-    status.hidden = false;
-    status.dataset.kind = kind;
-    status.textContent = message;
-  };
-  const pageNotice = document.getElementById('page-notice');
-  if (pageNotice) {
-    const url = new URL(window.location.href);
-    url.searchParams.delete('notice');
-    window.history.replaceState(null, '', url);
-    if (pageNotice.dataset.kind === 'success') hideSuccess(pageNotice);
-  }
-  for (const button of document.querySelectorAll('button[data-copy-target]')) {
-    button.addEventListener('click', async () => {
-      const input = document.getElementById(button.dataset.copyTarget);
-      if (!input) return;
-      try {
-        await navigator.clipboard.writeText(input.value);
-      } catch {
-        input.focus();
-        input.select();
-        document.execCommand('copy');
-      }
-      const previous = button.textContent;
-      button.textContent = '<TMPL_VAR ACTION.COPIED ESCAPE=JS>';
-      window.setTimeout(() => { button.textContent = previous; }, 2000);
-    });
-  }
-  const certificateStateLabels = certificateSection ? {
-    scheduled: certificateSection.dataset.stateScheduled,
-    running: certificateSection.dataset.stateRunning,
-    success: certificateSection.dataset.stateSuccess,
-    error: certificateSection.dataset.stateError,
-  } : {};
-  const updateCertificate = (certificate) => {
-    const available = Boolean(certificate?.available);
-    certificateSection.setAttribute('aria-busy', 'false');
-    certificateDetails.hidden = !available;
-    certificateUnavailable.hidden = available;
-    if (!available) {
-      certificateUnavailable.textContent = '<TMPL_VAR CERTIFICATE.UNAVAILABLE ESCAPE=JS>';
-      certificateUnsupported.hidden = true;
-      certificateRenewalInfo.hidden = true;
-      certificateRenewalForm.hidden = true;
-      return;
-    }
-    certificateSource.textContent = certificate.source === 'loxberry_ca'
-      ? '<TMPL_VAR CERTIFICATE.SOURCE_LOXBERRY ESCAPE=JS>'
-      : '<TMPL_VAR CERTIFICATE.SOURCE_EXTERNAL ESCAPE=JS>';
-    if (certificateDnsCount) certificateDnsCount.textContent = String(certificate.dns_san_count);
-    if (certificateIpCount) certificateIpCount.textContent = String(certificate.ip_san_count);
-    if (certificateOriginMatch) certificateOriginMatch.textContent = certificate.origin_configured
-      ? (certificate.origin_matches ? certificateSection.dataset.yes : certificateSection.dataset.no)
-      : certificateSection.dataset.notConfigured;
-    if (certificateHostnameMatch) certificateHostnameMatch.textContent = certificate.hostname_matches
-      ? certificateSection.dataset.yes : certificateSection.dataset.no;
-    if (certificateWarning) certificateWarning.hidden = certificate.origin_matches && certificate.hostname_matches;
-    const expiresAt = parseExpiry(String(certificate.expires_at));
-    if (certificateExpiry && expiresAt !== null) {
-      const date = new Date(expiresAt * 1000);
-      certificateExpiry.dataset.expiresAt = String(expiresAt);
-      certificateExpiry.dateTime = date.toISOString();
-      certificateExpiry.textContent = expiryFormatter.format(date);
-    }
-    const renewalState = certificate.renewal?.state || 'idle';
-    certificateRenewalInfo.hidden = false;
-    certificateRenewalState.textContent = certificateStateLabels[renewalState] || certificateStateLabels.error;
-    certificateRenewalForm.hidden = !certificate.renewal_supported;
-    certificateUnsupported.hidden = Boolean(certificate.renewal_supported);
-  };
-  const postAjax = async (body, timeoutMs) => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch('index.cgi', {
-        method: 'POST',
-        body,
-        signal: controller.signal,
-        headers: {'X-Requested-With': 'XMLHttpRequest'},
-      });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error?.message || '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
-      return result;
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  };
-  const updatePageAuxiliaryContent = (element, markup) => {
-    // This value is generated by a LoxBerry server-side helper and was
-    // previously inserted verbatim during the initial CGI render.
-    element.innerHTML = typeof markup === 'string' ? markup : '';
-    element.setAttribute('aria-busy', 'false');
-  };
-  const showPageAuxiliaryError = (element, message) => {
-    element.textContent = message;
-    element.classList.add('mcp-status');
-    element.dataset.kind = 'error';
-    element.setAttribute('aria-busy', 'false');
-  };
-  const loadLoxberryNotifications = async () => {
-    const body = new URLSearchParams();
-    body.set('action', 'page_notifications');
-    body.set('ajax', '1');
-    try {
-      const result = await postAjax(body, 15000);
-      if (pageIsUnloading) return;
-      updatePageAuxiliaryContent(loxberryNotifications, result.data.notifications_html);
-    } catch {
-      if (pageIsUnloading) return;
-      showPageAuxiliaryError(loxberryNotifications, '<TMPL_VAR AJAX.NOTIFICATIONS_ERROR ESCAPE=JS>');
-    }
-  };
-  const loadPluginLogList = async () => {
-    const body = new URLSearchParams();
-    body.set('action', 'page_loglist');
-    body.set('ajax', '1');
-    try {
-      const result = await postAjax(body, 15000);
-      if (pageIsUnloading) return;
-      updatePageAuxiliaryContent(pluginLogList, result.data.loglist_html);
-    } catch {
-      if (pageIsUnloading) return;
-      showPageAuxiliaryError(pluginLogList, '<TMPL_VAR DIAGNOSTICS.LOGLIST_ERROR ESCAPE=JS>');
-    }
-  };
-  const loadCertificateStatus = async () => {
-    if (certificateLoaded || certificateLoadInFlight) return;
-    certificateLoadInFlight = true;
-    certificateSection.setAttribute('aria-busy', 'true');
-    try {
-      const body = new URLSearchParams();
-      body.set('action', 'certificate_status');
-      body.set('ajax', '1');
-      const result = await postAjax(body, 5000);
-      updateCertificate(result.data.certificate);
-      certificateLoaded = true;
-    } catch {
-      if (pageIsUnloading) return;
-      updateCertificate(null);
-      certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-    } finally {
-      certificateLoadInFlight = false;
-    }
-  };
-  const updateEmergencyStopRuntimeMismatch = () => {
-    const runtime = lastEmergencyStopRuntime;
-    emergencyStopRuntimeMismatch.hidden = !(
-      runtime?.availability === 'available'
-      && String(emergencyStopValue.value || '') !== String(runtime.signal_uuid || '')
-    );
-  };
-  const renderEmergencyStopRuntime = (runtime) => {
-    lastEmergencyStopRuntime = runtime && typeof runtime === 'object' ? runtime : null;
-    const available = runtime?.availability === 'available';
-    emergencyStopRuntime.setAttribute('aria-busy', 'false');
-    if (!available) {
-      const availability = runtime?.availability;
-      emergencyStopRuntimeSignal.textContent = availability === 'service_inactive'
-        ? emergencyStopRuntime.dataset.serviceInactive : emergencyStopRuntime.dataset.unavailable;
-      emergencyStopRuntimeUuid.hidden = true;
-      emergencyStopRuntimeState.textContent = 'unknown';
-      emergencyStopRuntimeState.dataset.kind = 'inactive';
-      updateEmergencyStopRuntimeMismatch();
-      return;
-    }
-    const signalUuid = typeof runtime.signal_uuid === 'string' ? runtime.signal_uuid : '';
-    const signalName = typeof runtime.signal_name === 'string' ? runtime.signal_name : '';
-    const state = ['not_configured', 'clear', 'active', 'unknown'].includes(runtime.status)
-      ? runtime.status : 'unknown';
-    emergencyStopRuntimeSignal.textContent = state === 'not_configured'
-      ? emergencyStopRuntime.dataset.notConfigured
-      : signalName || signalUuid || emergencyStopRuntime.dataset.signalUnavailable;
-    emergencyStopRuntimeUuid.textContent = signalUuid;
-    emergencyStopRuntimeUuid.hidden = signalUuid === '';
-    emergencyStopRuntimeState.textContent = state;
-    emergencyStopRuntimeState.dataset.kind = ({clear: 'success', active: 'error', unknown: 'warning'})[state]
-      || 'inactive';
-    updateEmergencyStopRuntimeMismatch();
-  };
-  const renderService = (service, {updateEnabledSetting = false, emergencyStopRuntime: runtime} = {}) => {
-    if (!service || typeof service !== 'object') return;
-    lastService = service;
-    serviceLoaded = true;
-    const installed = Boolean(service.installed);
-    const active = Boolean(service.active);
-    const activeState = String(service.active_state || 'unknown');
-    const subState = String(service.sub_state || 'unknown');
-    const pid = Number.isInteger(service.pid) && service.pid > 0 ? String(service.pid) : '-';
-    let label = serviceSection.dataset.stateUnknown;
-    let kind = '';
-    if (installed && active) {
-      label = serviceSection.dataset.stateActive;
-      kind = 'success';
-    } else if (installed && activeState === 'failed') {
-      label = serviceSection.dataset.stateFailed;
-      kind = 'error';
-    } else if (installed && ['inactive', 'activating', 'deactivating'].includes(activeState)) {
-      label = serviceSection.dataset.stateInactive;
-      kind = 'inactive';
-    }
-    serviceState.textContent = label;
-    serviceState.dataset.kind = kind;
-    serviceActiveState.textContent = activeState;
-    serviceSubState.textContent = subState;
-    servicePid.textContent = pid;
-    serviceName.textContent = String(service.name || 'loxberry-mcpserver.service');
-    serviceInstalled.textContent = installed ? serviceSection.dataset.yes : serviceSection.dataset.no;
-    const enabled = Boolean(service.enabled);
-    serviceEnabled.textContent = enabled ? serviceSection.dataset.yes : serviceSection.dataset.no;
-    if (updateEnabledSetting || !serviceEnabledSettingLoaded) {
-      serviceEnabledSetting = enabled;
-      serviceEnabledSettingLoaded = true;
-      serviceEnabledInput.checked = enabled;
-    }
-    serviceEnableForm.setAttribute('aria-busy', 'false');
-    serviceEnabledSettingStatus.hidden = true;
-    serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded;
-    serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded;
-    if (serviceActionRunning) {
-      serviceEnabledInput.setAttribute('aria-busy', 'true');
-    } else {
-      serviceEnabledInput.removeAttribute('aria-busy');
-    }
-    for (const form of document.querySelectorAll('form[data-service-command]')) {
-      const command = form.dataset.serviceCommand;
-      const visible = installed && (
-        command === 'restart'
-        || (command === 'start' && !active)
-        || (command === 'stop' && active)
-      );
-      const commandReady = command === 'start' ? !active : active;
-      const available = visible && commandReady && serviceEnabledSetting;
-      form.hidden = !visible;
-      const button = form.querySelector('button[type="submit"]');
-      button.disabled = serviceActionRunning || !available;
-      if (serviceActionRunning) button.setAttribute('aria-busy', 'true');
-      else button.removeAttribute('aria-busy');
-    }
-    if (runtime !== undefined) renderEmergencyStopRuntime(runtime);
-    else updateEmergencyStopRuntimeMismatch();
-  };
-  const addEmergencyStopOption = (value, label, selected = false) => {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    option.selected = selected;
-    emergencyStopSelect.append(option);
-  };
-  const resetEmergencyStopOptions = ({loading = false} = {}) => {
-    emergencyStopDiscoveryGeneration += 1;
-    const selectedValue = emergencyStopValue.value;
-    emergencyStopSelect.replaceChildren();
-    if (loading) {
-      emergencyStopSelect.disabled = true;
-      emergencyStopSelect.setAttribute('aria-busy', 'true');
-      addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>', true);
-      emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>';
-      emergencyStopStatus.dataset.kind = 'info';
-      emergencyStopStatus.hidden = false;
-      return;
-    }
-    emergencyStopSelect.disabled = false;
-    emergencyStopSelect.setAttribute('aria-busy', 'false');
-    addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
-    if (selectedValue !== '') {
-      addEmergencyStopOption(
-        selectedValue,
-        '<TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=JS> (' + selectedValue + ')',
-        true,
-      );
-    }
-    emergencyStopStatus.hidden = true;
-  };
-  const loadEmergencyStopOptions = async (expectedGeneration = emergencyStopDiscoveryGeneration) => {
-    if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;
-    const generation = expectedGeneration;
-    const selectedValue = emergencyStopValue.value;
-    const body = new URLSearchParams();
-    body.set('action', 'emergency_stop_options');
-    body.set('ajax', '1');
-    emergencyStopSelect.disabled = true;
-    emergencyStopSelect.setAttribute('aria-busy', 'true');
-    emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>';
-    emergencyStopStatus.dataset.kind = 'info';
-    emergencyStopStatus.hidden = false;
-    try {
-      const result = await postAjax(body, 15000);
-      if (generation !== emergencyStopDiscoveryGeneration) return;
-      const options = Array.isArray(result.data.options) ? result.data.options : [];
-      const status = result.data.status;
-      emergencyStopSelect.replaceChildren();
-      addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
-      let selectedAvailable = selectedValue === '';
-      for (const option of options) {
-        if (!option || typeof option.uuid !== 'string' || typeof option.name !== 'string') continue;
-        const selected = option.uuid === selectedValue;
-        addEmergencyStopOption(option.uuid, option.name, selected);
-        selectedAvailable = selectedAvailable || selected;
-      }
-      if (!selectedAvailable) {
-        addEmergencyStopOption(
-          selectedValue,
-          '<TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=JS> (' + selectedValue + ')',
-          true,
-        );
-      }
-      if (status === 'available' && options.length === 0) {
-        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_NO_OPTIONS ESCAPE=JS>';
-        emergencyStopStatus.dataset.kind = 'info';
-        emergencyStopStatus.hidden = false;
-      } else if (status === 'not_configured') {
-        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_NOT_CONFIGURED ESCAPE=JS>';
-        emergencyStopStatus.dataset.kind = 'error';
-        emergencyStopStatus.hidden = false;
-      } else if (status !== 'available') {
-        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
-        emergencyStopStatus.dataset.kind = 'error';
-        emergencyStopStatus.hidden = false;
-      } else {
-        emergencyStopStatus.hidden = true;
-      }
-    } catch {
-      if (pageIsUnloading) return;
-      if (generation !== emergencyStopDiscoveryGeneration) return;
-      resetEmergencyStopOptions();
-      emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
-      emergencyStopStatus.dataset.kind = 'error';
-      emergencyStopStatus.hidden = false;
-    } finally {
-      if (generation !== emergencyStopDiscoveryGeneration) return;
-      emergencyStopSelect.disabled = false;
-      emergencyStopSelect.setAttribute('aria-busy', 'false');
-    }
-  };
-  emergencyStopSelect.addEventListener('change', () => {
-    emergencyStopValue.value = emergencyStopSelect.value;
-    updateEmergencyStopRuntimeMismatch();
-  });
-  const loadInitialState = async () => {
-    const body = new URLSearchParams();
-    body.set('action', 'page_state');
-    body.set('ajax', '1');
-    mqttPageStateStatus.textContent = '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
-    mqttPageStateStatus.dataset.kind = 'info';
-    mqttPageStateStatus.hidden = false;
-    try {
-      const result = await postAjax(body, 15000);
-      mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
-      updateMqttGateway(result.data.mqtt_gateway);
-      updateMqttBrokerFields();
-      mqttPageStateStatus.hidden = true;
-    } catch {
-      if (pageIsUnloading) return;
-      mqttPageStateStatus.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-      mqttPageStateStatus.dataset.kind = 'error';
-    }
-  };
-  const serviceConfirmMessages = {
-    stop: '<TMPL_VAR STATUS.CONFIRM_STOP ESCAPE=JS>',
-    disable: '<TMPL_VAR STATUS.CONFIRM_DISABLE ESCAPE=JS>',
-    restart: '<TMPL_VAR STATUS.CONFIRM_RESTART ESCAPE=JS>',
-  };
-  serviceConfirm.addEventListener('close', () => {
-    const form = pendingServiceForm;
-    pendingServiceForm = null;
-    if (serviceConfirm.returnValue !== 'confirm' || !form) {
-      if (form?.dataset.ajax === 'set_service_enabled') {
-        serviceEnabledInput.checked = serviceEnabledSetting;
-      }
-      scheduleServicePoll(0);
-      return;
-    }
-    form.dataset.confirmed = 'true';
-    form.requestSubmit();
-  });
-  const scheduleServicePoll = (delay = 10000) => {
-    window.clearTimeout(servicePollTimer);
-    servicePollTimer = null;
-    if (!document.hidden && !serviceInteractionActive()) {
-      servicePollTimer = window.setTimeout(pollServiceStatus, delay);
-    }
-  };
-  const pollServiceStatus = async ({initial = false} = {}) => {
-    if ((!initial && document.hidden) || serviceInteractionActive() || servicePollInFlight) {
-      scheduleServicePoll();
-      return;
-    }
-    servicePollInFlight = true;
-    try {
-    const body = new URLSearchParams();
-      body.set('action', 'service_status');
-      body.set('ajax', '1');
-      const result = await postAjax(body, 7000);
-      if (serviceInteractionActive()) return;
-      renderService(result.data.service, {
-        updateEnabledSetting: !serviceEnabledSettingLoaded,
-        emergencyStopRuntime: result.data.emergency_stop_runtime,
-      });
-    } catch {
-      if (pageIsUnloading) return;
-      if (!serviceLoaded) {
-        serviceSection.setAttribute('aria-busy', 'false');
-        serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        serviceState.dataset.kind = 'error';
-        serviceActiveState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        serviceSubState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        serviceInstalled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        serviceEnabled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        serviceEnableForm.setAttribute('aria-busy', 'false');
-        serviceEnabledSettingStatus.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        serviceEnabledSettingStatus.hidden = false;
-      }
-    } finally {
-      servicePollInFlight = false;
-      serviceSection.setAttribute('aria-busy', 'false');
-      scheduleServicePoll();
-    }
-  };
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      window.clearTimeout(servicePollTimer);
-      servicePollTimer = null;
-      window.clearTimeout(sessionPollTimer);
-      sessionPollTimer = null;
-    } else {
-      scheduleServicePoll(0);
-      scheduleSessionPoll(0);
-    }
-  });
-  const pollCertificateRenewal = async (button) => {
-    const deadline = Date.now() + 75000;
-    try {
-      while (certificateRenewalState && Date.now() < deadline) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        try {
-          const body = new URLSearchParams();
-          body.set('action', 'certificate_status');
-          body.set('ajax', '1');
-          const result = await postAjax(body, 5000);
-          const state = result.data.certificate?.renewal?.state || 'error';
-          certificateRenewalState.textContent = certificateStateLabels[state] || certificateStateLabels.error;
-          if (state === 'success') updateCertificate(result.data.certificate);
-          if (state === 'success' || state === 'error' || state === 'idle') return;
-        } catch {
-          // Apache restarts while the LoxBerry Core installs the new certificate.
-        }
-      }
-      if (certificateRenewalState) certificateRenewalState.textContent = certificateStateLabels.error;
-    } finally {
-      button.disabled = false;
-      button.removeAttribute('aria-busy');
-    }
-  };
-  const sessionFingerprint = (session) => JSON.stringify([
-    session.client_name || '', session.client || '', session.identity || '',
-    session.scopes || '', String(session.expires_at ?? ''),
-    Boolean(session.loxberry_read_eligible), Boolean(session.loxberry_read_approved),
-    Boolean(session.loxberry_operate_eligible), Boolean(session.loxberry_operate_approved),
-    Boolean(session.loxone_token_confirmation_required),
-  ]);
-  const createSessionRow = (session) => {
-    const row = document.createElement('tr');
-    row.dataset.sessionId = String(session.id);
-    row.dataset.fingerprint = sessionFingerprint(session);
-    const values = [session.client_name || sessionsSection.dataset.unnamedLabel, session.client, session.identity];
-    values.forEach((value, index) => {
-      const cell = document.createElement('td');
-      const content = index === 0 ? document.createTextNode(String(value ?? '')) : document.createElement('code');
-      if (index !== 0) content.textContent = String(value ?? '');
-      cell.append(content);
-      row.append(cell);
-    });
-    const tokenCell = document.createElement('td');
-    tokenCell.dataset.sessionTokenState = '';
-    tokenCell.textContent = session.loxone_token_confirmation_required
-      ? '<TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED ESCAPE=JS>'
-      : '<TMPL_VAR SESSIONS.TOKEN_ACTIVE ESCAPE=JS>';
-    row.append(tokenCell);
-    const scopesCell = document.createElement('td');
-    const scopes = document.createElement('code');
-    scopes.textContent = String(session.scopes || '');
-    scopesCell.append(scopes);
-    row.append(scopesCell);
-    const expiryCell = document.createElement('td');
-    const expiry = document.createElement('time');
-    expiry.className = 'mcp-expiry';
-    updateExpiry(expiry, session.expires_at);
-    expiryCell.append(expiry);
-    row.append(expiryCell);
-    const actionCell = document.createElement('td');
-    if (session.loxone_token_confirmation_required) {
-      const confirmForm = document.createElement('form');
-      confirmForm.method = 'post';
-      confirmForm.action = 'index.cgi';
-      confirmForm.dataset.ajax = 'confirm_loxone_token';
-      for (const [name, value] of [['action', 'confirm_loxone_token'], ['session_id', session.id]]) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = String(value || '');
-        confirmForm.append(input);
-      }
-      const confirmButton = document.createElement('button');
-      confirmButton.className = 'lb-button';
-      confirmButton.type = 'submit';
-      confirmButton.textContent = '<TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN ESCAPE=JS>';
-      confirmForm.append(confirmButton);
-      actionCell.append(confirmForm);
-    }
-    const recoveryForm = document.createElement('form');
-    recoveryForm.method = 'post';
-    recoveryForm.action = 'index.cgi';
-    recoveryForm.dataset.ajax = 'request_miniserver_auth_recovery';
-    for (const [name, value] of [['action', 'request_miniserver_auth_recovery'], ['session_id', session.id]]) {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = String(value || '');
-      recoveryForm.append(input);
-    }
-    const recoveryButton = document.createElement('button');
-    recoveryButton.className = 'lb-button';
-    recoveryButton.type = 'submit';
-    recoveryButton.textContent = '<TMPL_VAR ACTION.AUTH_RECOVERY ESCAPE=JS>';
-    recoveryForm.append(recoveryButton);
-    actionCell.append(recoveryForm);
-    if (session.loxberry_read_eligible && !session.loxberry_read_approved) {
-      const allowForm = document.createElement('form');
-      allowForm.method = 'post';
-      allowForm.action = 'index.cgi';
-      allowForm.dataset.ajax = 'allow_loxberry_read';
-      const allowAction = document.createElement('input');
-      allowAction.type = 'hidden';
-      allowAction.name = 'action';
-      allowAction.value = 'allow_loxberry_read';
-      const allowId = document.createElement('input');
-      allowId.type = 'hidden';
-      allowId.name = 'session_id';
-      allowId.value = String(session.id);
-      const allowButton = document.createElement('button');
-      allowButton.className = 'lb-button';
-      allowButton.type = 'submit';
-      allowButton.textContent = '<TMPL_VAR ACTION.ALLOW_LOXBERRY_READ ESCAPE=JS>';
-      allowForm.append(allowAction, allowId, allowButton);
-      actionCell.append(allowForm);
-    }
-    if (session.loxberry_operate_eligible && !session.loxberry_operate_approved) {
-      const allowForm = document.createElement('form');
-      allowForm.method = 'post';
-      allowForm.action = 'index.cgi';
-      allowForm.dataset.ajax = 'allow_loxberry_operate';
-      const allowAction = document.createElement('input');
-      allowAction.type = 'hidden';
-      allowAction.name = 'action';
-      allowAction.value = 'allow_loxberry_operate';
-      const allowId = document.createElement('input');
-      allowId.type = 'hidden';
-      allowId.name = 'session_id';
-      allowId.value = String(session.id);
-      const allowButton = document.createElement('button');
-      allowButton.className = 'lb-button';
-      allowButton.type = 'submit';
-      allowButton.textContent = '<TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE ESCAPE=JS>';
-      allowForm.append(allowAction, allowId, allowButton);
-      actionCell.append(allowForm);
-    }
-    const revokeForm = document.createElement('form');
-    revokeForm.method = 'post';
-    revokeForm.action = 'index.cgi';
-    revokeForm.dataset.ajax = 'revoke_session';
-    const action = document.createElement('input');
-    action.type = 'hidden';
-    action.name = 'action';
-    action.value = 'revoke_session';
-    const id = document.createElement('input');
-    id.type = 'hidden';
-    id.name = 'id';
-    id.value = String(session.id);
-    const button = document.createElement('button');
-    button.className = 'lb-button';
-    button.type = 'submit';
-    button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
-    revokeForm.append(action, id, button);
-    actionCell.append(revokeForm);
-    row.append(actionCell);
-    return row;
-  };
-  const updateSessions = (sessions) => {
-    if (!sessions.length) {
-      const empty = document.createElement('p');
-      empty.textContent = sessionsSection.dataset.emptyLabel;
-      sessionList.replaceChildren(empty);
-      return;
-    }
-    let body = sessionList.querySelector('tbody');
-    if (!body) {
-      const fragment = sessionTableTemplate.content.cloneNode(true);
-      sessionList.replaceChildren(fragment);
-      body = sessionList.querySelector('tbody');
-    }
-    const existing = new Map([...body.querySelectorAll('tr[data-session-id]')]
-      .map((row) => [row.dataset.sessionId, row]));
-    for (const session of sessions) {
-      const key = String(session.id);
-      let row = existing.get(key);
-      if (!row || row.dataset.fingerprint !== sessionFingerprint(session)) {
-        const replacement = createSessionRow(session);
-        if (row) row.replaceWith(replacement);
-        row = replacement;
-      }
-      body.append(row);
-      existing.delete(key);
-    }
-    for (const row of existing.values()) row.remove();
-  };
-  const loxberryBindingRows = (bindings, section, actionName) => {
-    const rows = [];
-    for (const binding of bindings) {
-      const related = Array.isArray(binding.rows) ? binding.rows : [];
-      for (const bindingRow of related) {
-        const row = document.createElement('tr');
-        row.dataset.bindingId = String(bindingRow.binding_id || '');
-        const clientName = document.createElement('td');
-        clientName.textContent = bindingRow.inactive
-          ? section.dataset.noActiveLabel
-          : String(bindingRow.client_name || section.dataset.unnamedLabel);
-        const client = document.createElement('td');
-        const clientCode = document.createElement('code');
-        clientCode.textContent = String(bindingRow.client || '');
-        client.append(clientCode);
-        const identity = document.createElement('td');
-        if (bindingRow.inactive) identity.textContent = section.dataset.noIdentityLabel;
-        else {
-          const identityCode = document.createElement('code');
-          identityCode.textContent = String(bindingRow.identity || '');
-          identity.append(identityCode);
-        }
-        const fingerprint = document.createElement('td');
-        const fingerprintCode = document.createElement('code');
-        fingerprintCode.textContent = String(bindingRow.fingerprint || '');
-        fingerprint.append(fingerprintCode);
-        const actionCell = document.createElement('td');
-        const revokeForm = document.createElement('form');
-        revokeForm.method = 'post';
-        revokeForm.action = 'index.cgi';
-        revokeForm.dataset.ajax = actionName;
-        for (const [name, value] of [['action', actionName], ['binding_id', bindingRow.binding_id]]) {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = name;
-          input.value = String(value || '');
-          revokeForm.append(input);
-        }
-        const button = document.createElement('button');
-        button.className = 'lb-button';
-        button.type = 'submit';
-        button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
-        revokeForm.append(button);
-        actionCell.append(revokeForm);
-        row.append(clientName, client, identity, fingerprint, actionCell);
-        rows.push(row);
-      }
-    }
-    return rows;
-  };
-  const updateLoxberryBindingTable = (bindings, section, body, actionName) => {
-    const rows = loxberryBindingRows(bindings, section, actionName);
-    section.hidden = rows.length === 0;
-    body.replaceChildren(...rows);
-  };
-  const mergeLoxberryBindingTable = (bindings, section, body, actionName) => {
-    const rows = loxberryBindingRows(bindings, section, actionName);
-    const bindingIds = new Set(rows.map((row) => row.dataset.bindingId));
-    for (const row of [...body.querySelectorAll('tr[data-binding-id]')]) {
-      if (bindingIds.has(row.dataset.bindingId)) row.remove();
-    }
-    body.append(...rows);
-    section.hidden = !body.querySelector('tr');
-  };
-  const updateLoxberryBindings = (bindings) => {
-    updateLoxberryBindingTable(
-      bindings, loxberryBindingSection, loxberryBindingList, 'revoke_loxberry_read',
-    );
-  };
-  const updateLoxberryOperateBindings = (bindings) => {
-    updateLoxberryBindingTable(
-      bindings, loxberryOperateBindingSection, loxberryOperateBindingList,
-      'revoke_loxberry_operate',
-    );
-  };
-  const mergeLoxberryBindings = (bindings) => {
-    mergeLoxberryBindingTable(
-      bindings, loxberryBindingSection, loxberryBindingList, 'revoke_loxberry_read',
-    );
-  };
-  const mergeLoxberryOperateBindings = (bindings) => {
-    mergeLoxberryBindingTable(
-      bindings, loxberryOperateBindingSection, loxberryOperateBindingList,
-      'revoke_loxberry_operate',
-    );
-  };
-  // session-action-coordinator-start
-  const sessionActionTypes = new Set([
-    'revoke_session', 'revoke_all', 'confirm_loxone_token', 'request_miniserver_auth_recovery', 'allow_loxberry_read',
-    'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate',
-  ]);
-  const isSessionAction = (action) => sessionActionTypes.has(action);
-  const sessionActionKey = (action, sessionId = '', bindingId = '') => {
-    if (action === 'revoke_all') return 'global:revoke_all';
-    if (action === 'revoke_session' || action === 'confirm_loxone_token' || action === 'request_miniserver_auth_recovery'
-        || action === 'allow_loxberry_read' || action === 'allow_loxberry_operate') {
-      return `session:${action}:${sessionId}`;
-    }
-    return `binding:${action}:${bindingId}`;
-  };
-  const sessionActionsConflict = (left, right) => {
-    if (left.action === 'revoke_all' || right.action === 'revoke_all') return true;
-    if (left.key === right.key) return true;
-    const leftIsBindingRevocation = left.action === 'revoke_loxberry_read'
-      || left.action === 'revoke_loxberry_operate';
-    const rightIsBindingRevocation = right.action === 'revoke_loxberry_read'
-      || right.action === 'revoke_loxberry_operate';
-    if (leftIsBindingRevocation && rightIsBindingRevocation) return true;
-    if (leftIsBindingRevocation !== rightIsBindingRevocation) return true;
-    return left.sessionId !== '' && left.sessionId === right.sessionId
-      && (left.action === 'revoke_session' || right.action === 'revoke_session');
-  };
-  const sessionActionDescriptor = (form) => {
-    const action = form.dataset.ajax || '';
-    if (!isSessionAction(action)) return null;
-    const sessionId = action === 'revoke_session'
-      ? form.querySelector('input[name="id"]')?.value || ''
-      : form.querySelector('input[name="session_id"]')?.value || '';
-    const bindingId = form.querySelector('input[name="binding_id"]')?.value || '';
-    return {action, sessionId, bindingId, key: sessionActionKey(action, sessionId, bindingId)};
-  };
-  const beginSessionAction = (descriptor, button) => {
-    if ([...activeSessionActions.values()].some(({descriptor: active}) => (
-      sessionActionsConflict(descriptor, active)
-    ))) return null;
-    if (activeSessionActions.size === 0) sessionActionFailures.clear();
-    const token = `session-action-${++nextSessionActionToken}`;
-    activeSessionActions.set(token, {descriptor, button});
-    sessionDataVersion += 1;
-    return token;
-  };
-  const showSessionActionFailure = () => {
-    const failures = [...sessionActionFailures.values()];
-    const failure = failures[failures.length - 1];
-    if (failure) setAjaxStatus('error', failure);
-  };
-  const finishSessionAction = (token) => {
-    activeSessionActions.delete(token);
-    return activeSessionActions.size === 0;
-  };
-  const updateSessionActionControls = () => {
-    for (const form of document.querySelectorAll('form[data-ajax]')) {
-      const descriptor = sessionActionDescriptor(form);
-      if (!descriptor) continue;
-      const button = form.querySelector('button[type="submit"]');
-      if (!button) continue;
-      const active = [...activeSessionActions.values()];
-      const ownAction = active.some((entry) => entry.button === button);
-      button.disabled = active.some((entry) => sessionActionsConflict(descriptor, entry.descriptor));
-      if (ownAction) button.setAttribute('aria-busy', 'true');
-      else button.removeAttribute('aria-busy');
-    }
-  };
-  // session-action-coordinator-end
-  const removeBindingRows = (descriptor) => {
-    for (const form of document.querySelectorAll(`form[data-ajax="${descriptor.action}"]`)) {
-      const candidate = sessionActionDescriptor(form);
-      if (candidate?.bindingId === descriptor.bindingId) form.closest('tr')?.remove();
-    }
-    const section = descriptor.action === 'revoke_loxberry_read'
-      ? loxberryBindingSection : loxberryOperateBindingSection;
-    if (!section.querySelector('tbody tr')) section.hidden = true;
-  };
-  const applySuccessfulSessionAction = (form, descriptor, data) => {
-    const row = form.closest('tr[data-session-id]');
-    if (descriptor.action === 'confirm_loxone_token') {
-      const tokenState = row?.querySelector('[data-session-token-state]');
-      if (tokenState) tokenState.textContent = '<TMPL_VAR SESSIONS.TOKEN_ACTIVE ESCAPE=JS>';
-      form.remove();
-      return;
-    }
-    if (descriptor.action === 'allow_loxberry_read') {
-      form.remove();
-      if (Array.isArray(data.loxberry_bindings)) mergeLoxberryBindings(data.loxberry_bindings);
-      return;
-    }
-    if (descriptor.action === 'allow_loxberry_operate') {
-      form.remove();
-      if (Array.isArray(data.loxberry_operate_bindings)) {
-        mergeLoxberryOperateBindings(data.loxberry_operate_bindings);
-      }
-      return;
-    }
-    if (descriptor.action === 'revoke_session') {
-      row?.remove();
-      if (!sessionList.querySelector('tr[data-session-id]')) updateSessions([]);
-      return;
-    }
-    if (descriptor.action === 'revoke_all') {
-      updateSessions([]);
-      return;
-    }
-    removeBindingRows(descriptor);
-    if (Array.isArray(data.sessions)) updateSessions(data.sessions);
-  };
-  const scheduleSessionPoll = (delay = 10000) => {
-    window.clearTimeout(sessionPollTimer);
-    sessionPollTimer = null;
-    if (!document.hidden && sessionsSection.open && activeSessionActions.size === 0) {
-      sessionPollTimer = window.setTimeout(pollSessions, delay);
-    }
-  };
-  const pollSessions = async ({initial = false} = {}) => {
-    if ((!initial && (document.hidden || !sessionsSection.open))
-        || activeSessionActions.size > 0 || sessionPollInFlight) {
-      scheduleSessionPoll();
-      return;
-    }
-    sessionPollInFlight = true;
-    const expectedSessionDataVersion = sessionDataVersion;
-    try {
-      const body = new URLSearchParams();
-      body.set('action', 'list_sessions');
-      body.set('ajax', '1');
-      const result = await postAjax(body, 15000);
-      if (expectedSessionDataVersion !== sessionDataVersion) return;
-      if (Array.isArray(result.data.sessions)) {
-        updateSessions(result.data.sessions);
-        sessionsLoaded = true;
-      }
-      if (Array.isArray(result.data.loxberry_bindings)) {
-        updateLoxberryBindings(result.data.loxberry_bindings);
-      }
-      if (Array.isArray(result.data.loxberry_operate_bindings)) {
-        updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
-      }
-    } catch {
-      if (pageIsUnloading) return;
-      if (!sessionsLoaded) {
-        sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
-      }
-      // Keep the last known table after a successful hydration; the next visible and open-section poll retries.
-    } finally {
-      sessionPollInFlight = false;
-      sessionsSection.setAttribute('aria-busy', 'false');
-      scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);
-    }
-  };
-  certificateSection.addEventListener('toggle', () => {
-    if (certificateSection.open && initialBackgroundHydrationComplete) {
-      queueBackgroundHydration([loadCertificateStatus]);
-    }
-  });
-  sessionsSection.addEventListener('toggle', () => {
-    if (sessionsSection.open && initialBackgroundHydrationComplete) {
-      queueBackgroundHydration([() => pollSessions()]);
-    }
-  });
-  // The target runs each AJAX action in its own CGI helper. Serial hydration avoids
-  // transient request failures during the resource-constrained initial page load.
-  const backgroundHydrationLimit = 1;
-  const backgroundHydrationQueue = [];
-  let backgroundHydrationRunning = 0;
-  let backgroundHydrationStarted = false;
-  let initialBackgroundHydrationComplete = false;
-  const drainBackgroundHydration = () => {
-    while (backgroundHydrationRunning < backgroundHydrationLimit
-        && backgroundHydrationQueue.length > 0) {
-      const task = backgroundHydrationQueue.shift();
-      backgroundHydrationRunning += 1;
-      Promise.resolve()
-        .then(task)
-        .catch(() => undefined)
-        .finally(() => {
-          backgroundHydrationRunning -= 1;
-          drainBackgroundHydration();
-        });
-    }
-  };
-  const queueBackgroundHydration = (tasks) => {
-    backgroundHydrationQueue.push(...tasks);
-    if (backgroundHydrationStarted) drainBackgroundHydration();
-  };
-  const startBackgroundHydration = () => {
-    if (backgroundHydrationStarted) return;
-    backgroundHydrationStarted = true;
-    if (window.performance && typeof window.performance.mark === 'function') {
-      window.performance.mark('mcp-admin-background-hydration-started');
-    }
-    queueBackgroundHydration([
-      loadLoxberryNotifications,
-      loadConfiguration,
-      loadInitialState,
-      () => pollServiceStatus({initial: true}),
-      loadCertificateStatus,
-      () => pollSessions({initial: true}),
-      loadPluginLogList,
-      () => { initialBackgroundHydrationComplete = true; },
-    ]);
-  };
-  const scheduleBackgroundHydration = () => {
-    if (document.hidden) {
-      startBackgroundHydration();
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(startBackgroundHydration);
-    });
-  };
-  scheduleBackgroundHydration();
-  for (const field of [mqttHost, mqttPort, mqttUsername]) {
-    field.addEventListener('input', () => {
-      if (!mqttUseLoxberryGateway.checked) {
-        mqttCustomBroker = {
-          host: mqttHost.value,
-          port: mqttPort.value,
-          username: mqttUsername.value,
-        };
-      }
-    });
-  }
-  mqttUseLoxberryGateway.addEventListener('change', updateMqttBrokerFields);
-  updateMqttBrokerFields();
-  const actionTimeout = (action) => ({
-    save_mcp_config: 90000,
-    save_mqtt_config: 165000,
-    set_service_enabled: 75000,
-    set_logging: 75000,
-    revoke_session: 75000,
-    revoke_all: 75000,
-    renew_certificate: 30000,
-    service_action: 75000,
-    service_status: 7000,
-    list_sessions: 15000,
-  })[action] || 15000;
-  document.addEventListener('submit', async (event) => {
-    const form = event.target.closest('form[data-ajax]');
-    if (!form) return;
-      event.preventDefault();
-      const serviceCommand = form.dataset.serviceCommand;
-      const confirmationKey = form.dataset.ajax === 'set_service_enabled' && !serviceEnabledInput.checked
-        ? 'disable' : serviceCommand;
-      if ((form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
-          && serviceConfirmMessages[confirmationKey]
-          && form.dataset.confirmed !== 'true') {
-        pendingServiceForm = form;
-        window.clearTimeout(servicePollTimer);
-        servicePollTimer = null;
-        serviceConfirmMessage.textContent = serviceConfirmMessages[confirmationKey];
-        serviceConfirm.returnValue = '';
-        serviceConfirm.showModal();
-        return;
-      }
-    delete form.dataset.confirmed;
-    const button = form.querySelector('button[type="submit"]');
-    let keepButtonDisabled = false;
-    let sessionActionToken = null;
-    let sessionAction = null;
-      if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {
-        serviceActionRunning = true;
-        window.clearTimeout(servicePollTimer);
-        servicePollTimer = null;
-        renderService(lastService);
-    }
-    if (isSessionAction(form.dataset.ajax)) {
-      sessionAction = sessionActionDescriptor(form);
-      if (!sessionAction) return;
-      sessionActionToken = beginSessionAction(sessionAction, button);
-      if (!sessionActionToken) return;
-      window.clearTimeout(sessionPollTimer);
-      sessionPollTimer = null;
-      updateSessionActionControls();
-      }
-      button.disabled = true;
-      button.setAttribute('aria-busy', 'true');
-      if (!sessionActionToken || sessionActionFailures.size === 0) {
-        setAjaxStatus('', (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
-          ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
-          : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
-      }
-      const body = new URLSearchParams(new FormData(form));
-      const requestedServiceEnabled = form.dataset.ajax === 'set_service_enabled'
-        ? serviceEnabledInput.checked : null;
-      if (requestedServiceEnabled !== null) {
-        body.set('service_enabled', requestedServiceEnabled ? '1' : '0');
-      }
-      body.set('ajax', '1');
-      try {
-        const result = await postAjax(body, actionTimeout(form.dataset.ajax));
-        if (requestedServiceEnabled !== null) {
-          const service = result.data.service;
-          if (!service || Boolean(service.enabled) !== requestedServiceEnabled
-              || Boolean(service.active) !== requestedServiceEnabled) {
-            throw new Error('<TMPL_VAR STATUS.ERROR_ACTION ESCAPE=JS>');
-          }
-        }
-        if (sessionActionToken && sessionActionFailures.size > 0) {
-          showSessionActionFailure();
-        } else {
-          const cleanupFailed = form.dataset.ajax === 'save_mqtt_config'
-            && result.data.retained_cleanup?.status === 'failed';
-          setAjaxStatus(cleanupFailed ? 'warning' : 'success', cleanupFailed
-            ? '<TMPL_VAR AJAX.MQTT_CLEANUP_WARNING ESCAPE=JS>'
-            : '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>');
-          if (!cleanupFailed) hideSuccess(status, () => activeSessionActions.size > 0);
-        }
-        if (result.data.service) {
-          renderService(result.data.service, {
-            updateEnabledSetting: form.dataset.ajax === 'set_service_enabled',
-            emergencyStopRuntime: result.data.emergency_stop_runtime,
-          });
-        }
-        if (isSessionAction(form.dataset.ajax)) {
-          applySuccessfulSessionAction(form, sessionAction, result.data);
-        }
-        if (result.data.certificate) updateCertificate(result.data.certificate);
-        if (form.dataset.ajax === 'save_mqtt_config') {
-          mqttPassword.value = '';
-          mqttClearPassword.checked = false;
-          mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
-        }
-        if (form.dataset.ajax === 'save_mcp_config') {
-          const savedEndpoint = result.data.configuration.loxone.endpoint;
-          emergencyStopValue.value = result.data.configuration.emergency_stop.virtual_status_uuid;
-          resetEmergencyStopOptions({loading: true});
-          const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
-          queueBackgroundHydration([
-            () => loadEmergencyStopOptions(emergencyStopGeneration),
-          ]);
-          scheduleServicePoll(0);
-          miniserverEndpoint.value = savedEndpoint;
-          explorerLink.href = `${window.location.origin}${explorerPath}`;
-          syncTestEndpoint();
-        }
-        if (form.dataset.ajax === 'set_logging') renderLogging(result.data.configuration);
-        if (form.dataset.ajax === 'renew_certificate') {
-          keepButtonDisabled = true;
-          form.querySelector('input[name="securepin"]').value = '';
-          certificateRenewalState.textContent = certificateStateLabels.scheduled;
-          pollCertificateRenewal(button);
-        }
-      } catch (error) {
-        if (pageIsUnloading) return;
-        if (form.dataset.ajax === 'set_service_enabled') {
-          serviceEnabledInput.checked = serviceEnabledSetting;
-        }
-        const errorMessage = error instanceof DOMException && error.name === 'AbortError'
-          ? '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>'
-          : error instanceof TypeError
-            ? '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>'
-            : error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-        if (sessionActionToken) {
-          sessionActionFailures.set(sessionActionToken, errorMessage);
-          showSessionActionFailure();
-        } else {
-          setAjaxStatus('error', errorMessage);
-        }
-      } finally {
-        if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {
-          serviceActionRunning = false;
-          renderService(lastService);
-          scheduleServicePoll(0);
-        }
-        if (isSessionAction(form.dataset.ajax)) {
-          const refreshSessions = finishSessionAction(sessionActionToken);
-          updateSessionActionControls();
-          if (refreshSessions) scheduleSessionPoll(0);
-        }
-        if (!keepButtonDisabled) {
-          button.disabled = false;
-          button.removeAttribute('aria-busy');
-          if (sessionActionToken) updateSessionActionControls();
-        }
-      }
-  });
-})();
-</script>
+<TMPL_UNLESS SERVER_RENDERED_FALLBACK>
+<div id="admin-labels" hidden
+  data-l-setup-solar-history-dirty="<TMPL_VAR SETUP.SOLAR_HISTORY_DIRTY ESCAPE=HTML>"
+  data-l-setup-solar-history-saved="<TMPL_VAR SETUP.SOLAR_HISTORY_SAVED ESCAPE=HTML>"
+  data-l-setup-solar-history-confirm="<TMPL_VAR SETUP.SOLAR_HISTORY_CONFIRM ESCAPE=HTML>"
+  data-l-setup-solar-history-truncated="<TMPL_VAR SETUP.SOLAR_HISTORY_TRUNCATED ESCAPE=HTML>"
+  data-l-setup-weather-history-help="<TMPL_VAR SETUP.WEATHER_HISTORY_HELP ESCAPE=HTML>"
+  data-l-setup-weather-history-actual="<TMPL_VAR SETUP.WEATHER_HISTORY_ACTUAL ESCAPE=HTML>"
+  data-l-setup-weather-history-forecast="<TMPL_VAR SETUP.WEATHER_HISTORY_FORECAST ESCAPE=HTML>"
+  data-l-setup-weather-history-remove="<TMPL_VAR SETUP.WEATHER_HISTORY_REMOVE ESCAPE=HTML>"
+  data-l-setup-weather-history-remove-confirm="<TMPL_VAR SETUP.WEATHER_HISTORY_REMOVE_CONFIRM ESCAPE=HTML>"
+  data-l-setup-weather-history-saved="<TMPL_VAR SETUP.WEATHER_HISTORY_SAVED ESCAPE=HTML>"
+  data-l-setup-weather-history-select-fields="<TMPL_VAR SETUP.WEATHER_HISTORY_SELECT_FIELDS ESCAPE=HTML>"
+  data-l-profile-weather-type="<TMPL_VAR PROFILE.WEATHER_TYPE ESCAPE=HTML>"
+  data-l-profile-wind-direction="<TMPL_VAR PROFILE.WIND_DIRECTION ESCAPE=HTML>"
+  data-l-profile-solar-radiation="<TMPL_VAR PROFILE.SOLAR_RADIATION ESCAPE=HTML>"
+  data-l-profile-relative-humidity="<TMPL_VAR PROFILE.RELATIVE_HUMIDITY ESCAPE=HTML>"
+  data-l-profile-temperature="<TMPL_VAR PROFILE.TEMPERATURE ESCAPE=HTML>"
+  data-l-profile-perceived-temperature="<TMPL_VAR PROFILE.PERCEIVED_TEMPERATURE ESCAPE=HTML>"
+  data-l-profile-dew-point="<TMPL_VAR PROFILE.DEW_POINT ESCAPE=HTML>"
+  data-l-profile-precipitation="<TMPL_VAR PROFILE.PRECIPITATION ESCAPE=HTML>"
+  data-l-profile-wind-speed="<TMPL_VAR PROFILE.WIND_SPEED ESCAPE=HTML>"
+  data-l-profile-barometric-pressure="<TMPL_VAR PROFILE.BAROMETRIC_PRESSURE ESCAPE=HTML>"
+  data-l-action-allow-loxberry-operate="<TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE ESCAPE=HTML>"
+  data-l-action-allow-loxberry-read="<TMPL_VAR ACTION.ALLOW_LOXBERRY_READ ESCAPE=HTML>"
+  data-l-action-confirm-loxone-token="<TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN ESCAPE=HTML>"
+  data-l-action-copied="<TMPL_VAR ACTION.COPIED ESCAPE=HTML>"
+  data-l-action-revoke="<TMPL_VAR ACTION.REVOKE ESCAPE=HTML>"
+  data-l-ajax-error="<TMPL_VAR AJAX.ERROR ESCAPE=HTML>"
+  data-l-ajax-mqtt-cleanup-warning="<TMPL_VAR AJAX.MQTT_CLEANUP_WARNING ESCAPE=HTML>"
+  data-l-ajax-network="<TMPL_VAR AJAX.NETWORK ESCAPE=HTML>"
+  data-l-ajax-notifications-error="<TMPL_VAR AJAX.NOTIFICATIONS_ERROR ESCAPE=HTML>"
+  data-l-ajax-success="<TMPL_VAR AJAX.SUCCESS ESCAPE=HTML>"
+  data-l-ajax-timeout="<TMPL_VAR AJAX.TIMEOUT ESCAPE=HTML>"
+  data-l-ajax-working="<TMPL_VAR AJAX.WORKING ESCAPE=HTML>"
+  data-l-certificate-source-external="<TMPL_VAR CERTIFICATE.SOURCE_EXTERNAL ESCAPE=HTML>"
+  data-l-certificate-source-loxberry="<TMPL_VAR CERTIFICATE.SOURCE_LOXBERRY ESCAPE=HTML>"
+  data-l-certificate-unavailable="<TMPL_VAR CERTIFICATE.UNAVAILABLE ESCAPE=HTML>"
+  data-l-diagnostics-loglist-error="<TMPL_VAR DIAGNOSTICS.LOGLIST_ERROR ESCAPE=HTML>"
+  data-l-sessions-action="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"
+  data-l-sessions-binding-id="<TMPL_VAR SESSIONS.BINDING_ID ESCAPE=HTML>"
+  data-l-sessions-client="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"
+  data-l-sessions-expires="<TMPL_VAR SESSIONS.EXPIRES ESCAPE=HTML>"
+  data-l-sessions-identity="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"
+  data-l-sessions-inactive-login-required="<TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED ESCAPE=HTML>"
+  data-l-sessions-instance="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"
+  data-l-sessions-legacy-inactive="<TMPL_VAR SESSIONS.LEGACY_INACTIVE ESCAPE=HTML>"
+  data-l-sessions-removal-scheduled="<TMPL_VAR SESSIONS.REMOVAL_SCHEDULED ESCAPE=HTML>"
+  data-l-sessions-scopes="<TMPL_VAR SESSIONS.SCOPES ESCAPE=HTML>"
+  data-l-sessions-token="<TMPL_VAR SESSIONS.TOKEN ESCAPE=HTML>"
+  data-l-sessions-token-active="<TMPL_VAR SESSIONS.TOKEN_ACTIVE ESCAPE=HTML>"
+  data-l-sessions-token-confirmation-required="<TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED ESCAPE=HTML>"
+  data-l-setup-emergency-stop-current="<TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=HTML>"
+  data-l-setup-emergency-stop-loading="<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=HTML>"
+  data-l-setup-emergency-stop-load="<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD ESCAPE=HTML>"
+  data-l-setup-emergency-stop-refresh="<TMPL_VAR SETUP.EMERGENCY_STOP_REFRESH ESCAPE=HTML>"
+  data-l-setup-emergency-stop-cached="<TMPL_VAR SETUP.EMERGENCY_STOP_CACHED ESCAPE=HTML>"
+  data-l-setup-emergency-stop-stale="<TMPL_VAR SETUP.EMERGENCY_STOP_STALE ESCAPE=HTML>"
+  data-l-setup-emergency-stop-not-loaded="<TMPL_VAR SETUP.EMERGENCY_STOP_NOT_LOADED ESCAPE=HTML>"
+  data-l-setup-emergency-stop-retry="<TMPL_VAR SETUP.EMERGENCY_STOP_RETRY ESCAPE=HTML>"
+  data-l-setup-emergency-stop-selected="<TMPL_VAR SETUP.EMERGENCY_STOP_SELECTED ESCAPE=HTML>"
+  data-l-setup-emergency-stop-load-error="<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=HTML>"
+  data-l-setup-emergency-stop-none="<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=HTML>"
+  data-l-setup-emergency-stop-not-configured="<TMPL_VAR SETUP.EMERGENCY_STOP_NOT_CONFIGURED ESCAPE=HTML>"
+  data-l-setup-emergency-stop-no-options="<TMPL_VAR SETUP.EMERGENCY_STOP_NO_OPTIONS ESCAPE=HTML>"
+  data-l-status-action-running="<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=HTML>"
+  data-l-status-confirm-clear-event-history="<TMPL_VAR STATUS.CONFIRM_CLEAR_EVENT_HISTORY ESCAPE=HTML>"
+  data-l-status-confirm-disable="<TMPL_VAR STATUS.CONFIRM_DISABLE ESCAPE=HTML>"
+  data-l-status-confirm-restart="<TMPL_VAR STATUS.CONFIRM_RESTART ESCAPE=HTML>"
+  data-l-status-confirm-stop="<TMPL_VAR STATUS.CONFIRM_STOP ESCAPE=HTML>"
+  data-l-status-error-action="<TMPL_VAR STATUS.ERROR_ACTION ESCAPE=HTML>"
+  data-l-summary-approvals="<TMPL_VAR SUMMARY.APPROVALS ESCAPE=HTML>"
+  data-l-summary-disabled="<TMPL_VAR SUMMARY.DISABLED ESCAPE=HTML>"
+  data-l-summary-enabled="<TMPL_VAR SUMMARY.ENABLED ESCAPE=HTML>"
+  data-l-summary-ok="<TMPL_VAR SUMMARY.OK ESCAPE=HTML>"
+  data-l-summary-sessions="<TMPL_VAR SUMMARY.SESSIONS ESCAPE=HTML>"
+  data-l-summary-unavailable="<TMPL_VAR SUMMARY.UNAVAILABLE ESCAPE=HTML>"
+  data-l-summary-unknown="<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=HTML>"
+  data-l-summary-warning="<TMPL_VAR SUMMARY.WARNING ESCAPE=HTML>"
+></div>
+<script defer src="admin/core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v13"></script>
+<script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v18"></script>
+<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14"></script>
+</TMPL_UNLESS>

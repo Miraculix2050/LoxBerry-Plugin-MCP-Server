@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+
+from mcpserver.loxone.efm import Projection
+from mcpserver.loxone.energy_manager import ManagerMetadata
 
 
 class Freshness(StrEnum):
@@ -49,6 +52,9 @@ class StatisticSeries:
     accumulated: bool = False
     legacy_output_index: int | None = None
     legacy_output_count: int | None = None
+    state_uuid: str | None = None
+    recording_mode: int | None = None
+    accumulated_metadata_valid: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +76,7 @@ class StatusMonitorStatus:
     name: str
     priority: int
     color: str | None
+    uuid: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +108,18 @@ class WindowMonitorItem:
     room_uuid: str | None
     control_uuid: str | None
     install_place: str | None
+    diagnostics: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class WindowMonitorSummary:
+    """Collection coverage, including malformed retained positions."""
+
+    total: int | None = 0
+    returned: int = 0
+    omitted: int | None = 0
+    truncated: bool = False
+    diagnostics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +172,9 @@ class Control:
     step: float | None = None
     is_analog: bool | None = None
     statistic_series: tuple[StatisticSeries, ...] = ()
+    statistic_series_truncated: bool = False
+    efm: Projection | None = None
+    energy_manager: ManagerMetadata | None = None
     status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
     status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()
     format: str | None = None
@@ -160,6 +182,7 @@ class Control:
     ventilation_modes: tuple[NamedOption, ...] = ()
     ventilation_timer_profiles: tuple[VentilationTimerProfile, ...] = ()
     window_monitor_items: tuple[WindowMonitorItem, ...] = ()
+    window_monitor_summary: WindowMonitorSummary | None = None
     connected_inputs: int | None = None
     alarm_clock_has_night_light: bool | None = None
     alarm_clock_brightness_inactive_connected: bool | None = None
@@ -174,6 +197,14 @@ class Control:
     is_user_linked: bool = False
     is_monitor_referenced: bool = False
     is_hidden: bool = False
+    semantics_invalid_fields: tuple[str, ...] = ()
+    format_total_length: int | None = None
+    status_monitor_status_total: int | None = None
+    status_monitor_status_complete: bool = False
+    status_monitor_input_total: int | None = None
+    status_monitor_input_complete: bool = False
+    meter_type: str | None = None
+    meter_type_defaulted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +220,10 @@ class LoxoneStructure:
     global_metadata: tuple[GlobalMetadata, ...] = ()
     room_groups: tuple[NamedGroup, ...] = ()
     weather: WeatherMetadata = WeatherMetadata()
+    message_center_uuid: str | None = None
+    user_rights: int | None = None
+    caller_is_admin: bool | None = None
+    parse_identity: str = field(default="", kw_only=True, repr=False, compare=False)
 
 
 type StateValue = float | str | tuple[object, ...] | dict[str, object]

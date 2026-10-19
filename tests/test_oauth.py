@@ -19,8 +19,9 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from mcpserver.auth import scopes
 from mcpserver.auth import web as auth_web
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, ExplorerSession
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     EXPLORER_CLIENT_NAME,
@@ -28,9 +29,11 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
     REFRESH_FAMILY_TTL,
     SCOPE,
+    SUPPORTED_SCOPES,
     Phase0OAuthProvider,
     normalize_scopes,
 )
@@ -46,8 +49,126 @@ from mcpserver.loxone.client import (
 )
 from mcpserver.loxone.events import LoxoneProtocolError
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("public_pause", [False, True])
+async def test_suppressed_login_is_retryable_without_consuming_form_failure_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, public_pause: bool
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from mcpserver.auth.web import LoginTransaction
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationCooldown
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
+    if public_pause:
+        import time
+
+        coordinator._state["public_failure_guard"]["until"] = int(time.time()) + 120
+        coordinator._save()
+    else:
+        monkeypatch.setattr(
+            coordinator,
+            "attempt",
+            AsyncMock(side_effect=MiniserverAuthenticationCooldown("cooldown")),
+        )
+    fake = SimpleNamespace(probe=AsyncMock(), acquire_token=AsyncMock())
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+    )
+    transaction = object.__new__(LoginTransaction)
+    transaction.cleanup_pending = False
+    transaction.attempts = 0
+    transaction.client_id = "synthetic-client"
+    transaction.phase = "login"
+    for _ in range(6):
+        response = await web._login(transaction, {"username": "reader", "password": "synthetic"})
+        assert response.status_code == 429
+        assert "Retry-After" in response.headers
+    assert transaction.attempts == 0
+    assert len(web._global_login_failures) == 0
+    assert fake.acquire_token.await_count == 0
+    assert fake.probe.await_count == 0
+
+
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
+
+
+@pytest.mark.asyncio
+async def test_oauth_fresh_sign_in_is_one_attempt_until_session_authentication(
+    tmp_path, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from starlette.responses import Response
+
+    from mcpserver.loxone.client import LoxoneTokenAuthenticationRejected
+
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("synthetic", "1", False, False)),
+        acquire_token=AsyncMock(
+            side_effect=lambda *_args: LoxoneToken("synthetic", "reader", "key", "SHA1", 999999)
+        ),
+        open_session=AsyncMock(
+            side_effect=LoxoneTokenAuthenticationRejected("rejected", response_code="401")
+        ),
+        kill_token=AsyncMock(),
+    )
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    monkeypatch.setattr(web, "_login_page", lambda *_args: Response(status_code=401))
+    transaction = object.__new__(LoginTransaction)
+    transaction.cleanup_pending = False
+    transaction.transaction_id = "synthetic-transaction"
+    transaction.attempts = 0
+    transaction.client_id = "synthetic-client"
+    transaction.phase = "login"
+    for delay in (0, 0, 60, 120):
+        response = await web._login(transaction, {"username": "reader", "password": "synthetic"})
+        assert response.status_code == 401
+        assert coordinator.status()["next_auth_attempt_at"] == (now[0] + delay if delay else None)
+        now[0] += delay
+    assert (
+        fake.probe.await_count
+        == fake.acquire_token.await_count
+        == fake.open_session.await_count
+        == 4
+    )
+
+
+def test_provider_preserves_scope_exports_and_order() -> None:
+    expected = (
+        READ_SCOPE,
+        HISTORY_SCOPE,
+        CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
+        LOXBERRY_READ_SCOPE,
+        LOXBERRY_OPERATE_SCOPE,
+        "loxberry:knx:read",
+        "loxberry:knx:drafts",
+        "loxberry:knx:write",
+    )
+    assert scopes.SUPPORTED_SCOPES == SUPPORTED_SCOPES == expected
+    assert SCOPE == scopes.SCOPE == READ_SCOPE
 
 
 def test_control_scope_is_additive_and_never_granted_alone() -> None:
@@ -234,6 +355,8 @@ def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token
     assert provider.revoke_scope_locally(CONTROL_SCOPE) == 1
     snapshot = store.snapshot()
     assert snapshot["families"]["family"]["revoked"] is True
+    assert snapshot["families"]["family"]["revocation_reason"] == "scope_disabled"
+    assert snapshot["families"]["family"]["revocation_source"] == "configuration"
     assert snapshot["access_tokens"]["access"]["status"] == "revoked"
     assert deleted == []
 
@@ -267,6 +390,75 @@ def _provider(
         clock=clock or Clock(),
         explorer_origins=explorer_origins,
     )
+
+
+def test_expired_explorer_family_is_reported_before_cleanup(tmp_path: Path) -> None:
+    clock = Clock()
+    store = AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json")
+    family = {
+        "client_kind": "tool_explorer",
+        "explorer_origin": "https://public.example",
+        "identity_id": "identity",
+        "miniserver_id": "miniserver",
+        "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+        "expires_at": clock.value,
+        "revoked": True,
+        "revoked_at": clock.value - 10,
+    }
+    store.mutate(lambda document: document["families"].update({"expired": family}))
+    expired: list[dict[str, Any]] = []
+
+    Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_expired=expired.append,
+    )
+
+    assert expired == [family]
+    assert store.snapshot()["families"] == {}
+
+
+@pytest.mark.asyncio
+async def test_expiry_callback_failure_does_not_hide_committed_code_exchange(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fail_expiry(_family: dict[str, Any]) -> None:
+        raise RuntimeError("private callback detail")
+
+    clock = Clock()
+    store = AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json")
+    provider = Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_expired=fail_expiry,
+    )
+    client = await _client(provider)
+    raw_code = provider.issue_authorization_code(
+        client_id=client.client_id or "",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    code = await provider.load_authorization_code(client, raw_code)
+    assert code is not None
+    store.mutate(
+        lambda document: document["families"].update(
+            {"expired": {"client_kind": "tool_explorer", "expires_at": clock.value - 1}}
+        )
+    )
+
+    token = await provider.exchange_authorization_code(client, code)
+
+    assert await provider.load_access_token(token.access_token) is not None
+    assert store.snapshot()["families"].get("expired") is None
+    assert "outcome=expiration_record_failed error_type=RuntimeError" in caplog.text
+    assert "private callback detail" not in caplog.text
 
 
 async def _client(provider: Phase0OAuthProvider) -> OAuthClientInformationFull:
@@ -410,6 +602,69 @@ async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Pa
         provider.store.snapshot()["families"]["explorer-family"]["expires_at"]
         == clock.value + EXPLORER_REFRESH_FAMILY_TTL
     )
+
+
+@pytest.mark.asyncio
+async def test_only_validated_explorer_uses_stable_application_approval(tmp_path: Path) -> None:
+    origins: list[str] = []
+    clients: list[str] = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        explorer_origins=("https://loxberry-alias",),
+        loxberry_read_allowed=lambda client, *_: clients.append(client) or False,
+        explorer_loxberry_read_allowed=lambda origin, *_: origins.append(origin)
+        or origin == "https://public.example",
+    )
+    explorer = _client_info(
+        "dynamic-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    lookalike = _client_info(
+        "third-party",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=REDIRECT,
+    )
+    alias = _client_info(
+        "alias-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri="https://loxberry-alias/admin/plugins/mcpserver/explorer_callback.cgi",
+    )
+    await provider.register_client(explorer)
+    await provider.register_client(lookalike)
+    await provider.register_client(alias)
+
+    assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert not provider.loxberry_read_allowed("alias-explorer", "identity", "miniserver")
+    assert not provider.loxberry_read_allowed("third-party", "identity", "miniserver")
+
+    assert origins == ["https://public.example", "https://loxberry-alias"]
+    assert clients == ["alias-explorer", "third-party"]
+
+
+@pytest.mark.asyncio
+async def test_validated_explorer_keeps_matching_legacy_client_approval(tmp_path: Path) -> None:
+    seen: list[str] = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda client, *_: seen.append(client)
+        or client == "dynamic-explorer",
+    )
+    explorer = _client_info(
+        "dynamic-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    await provider.register_client(explorer)
+
+    assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert seen == ["dynamic-explorer"]
 
 
 @pytest.mark.asyncio
@@ -572,7 +827,8 @@ async def test_code_access_and_refresh_values_are_never_persisted(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_refresh_replay_revokes_the_entire_family(tmp_path: Path) -> None:
+async def test_refresh_replay_revokes_the_entire_family(tmp_path: Path, caplog) -> None:
+    caplog.set_level("DEBUG", logger="mcpserver.auth.lifecycle")
     provider = _provider(tmp_path)
     client = await _client(provider)
     raw_code = provider.issue_authorization_code(
@@ -596,6 +852,23 @@ async def test_refresh_replay_revokes_the_entire_family(tmp_path: Path) -> None:
     assert await provider.load_access_token(second.access_token) is None
     assert second.refresh_token is not None
     assert await provider.load_refresh_token(client, second.refresh_token) is None
+    family = provider.store.snapshot()["families"][refresh.family_id]
+    assert family["revocation_reason"] == "refresh_reuse"
+    assert family["revocation_source"] == "oauth"
+    assert family["revoked_at"] == provider.now()
+    assert "event=token_rotated" in caplog.text
+    assert "event=family_revoked" in caplog.text
+    for raw in (
+        raw_code,
+        first.access_token,
+        first.refresh_token,
+        second.access_token,
+        second.refresh_token,
+        refresh.family_id,
+    ):
+        assert raw not in caplog.text
+    await provider.revoke_token(refresh)
+    assert provider.store.snapshot()["families"][refresh.family_id] == family
 
 
 @pytest.mark.asyncio
@@ -625,7 +898,7 @@ def _web_app(
         resource=RESOURCE,
         loxone_store=explorer_store,
     )
-    return Starlette(
+    app = Starlette(
         routes=[
             Route("/register", web.register, methods=["POST"]),
             Route("/authorize", web.authorize, methods=["GET", "POST"]),
@@ -635,6 +908,8 @@ def _web_app(
             Route("/metadata", web.authorization_metadata, methods=["GET"]),
         ]
     )
+    app.state.oauth_web = web
+    return app
 
 
 def test_explorer_session_cookie_reuses_one_oauth_family_and_logout_revokes_it(
@@ -686,6 +961,199 @@ def test_explorer_session_cookie_reuses_one_oauth_family_and_logout_revokes_it(
     assert reused.json()["access_token"] == complete.json()["access_token"]
     assert logout.status_code == 204
     assert next(iter(provider.store.snapshot()["families"].values()))["revoked"] is True
+
+
+def test_explorer_locks_do_not_accumulate_after_repeated_logout(tmp_path: Path) -> None:
+    provider = _provider(tmp_path)
+    asyncio.run(
+        provider.register_client(
+            _client_info(
+                "explorer-client", client_name=EXPLORER_CLIENT_NAME, redirect_uri=EXPLORER_REDIRECT
+            )
+        )
+    )
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    app = _web_app(provider, encrypted)
+    headers = {"Origin": "https://public.example"}
+    with TestClient(app, base_url="https://public.example") as browser:
+        for _ in range(3):
+            code = provider.issue_authorization_code(
+                client_id="explorer-client",
+                redirect_uri=EXPLORER_REDIRECT,
+                code_challenge=CHALLENGE,
+                resource=RESOURCE,
+                identity_id="identity",
+                miniserver_id="miniserver",
+            )
+            complete = browser.post(
+                "/explorer-session",
+                headers=headers,
+                json={
+                    "action": "complete",
+                    "client_id": "explorer-client",
+                    "code": code,
+                    "redirect_uri": EXPLORER_REDIRECT,
+                    "code_verifier": VERIFIER,
+                    "resource": RESOURCE,
+                },
+            )
+            assert complete.status_code == 200
+            session_headers = {
+                **headers,
+                "Cookie": complete.headers["set-cookie"].split(";", 1)[0],
+            }
+            assert (
+                browser.post(
+                    "/explorer-session", headers=session_headers, json={"action": "access"}
+                ).status_code
+                == 200
+            )
+            assert (
+                browser.post(
+                    "/explorer-session", headers=session_headers, json={"action": "logout"}
+                ).status_code
+                == 204
+            )
+            assert app.state.oauth_web._explorer_locks == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interferer", ["access", "logout", "revoke", "cancel"])
+async def test_explorer_refresh_keeps_one_lock_through_concurrent_teardown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interferer: str
+) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    await provider.register_client(
+        _client_info(
+            "explorer-client", client_name=EXPLORER_CLIENT_NAME, redirect_uri=EXPLORER_REDIRECT
+        )
+    )
+    client = await provider.get_client("explorer-client")
+    assert client is not None
+    code = provider.issue_authorization_code(
+        client_id="explorer-client",
+        redirect_uri=EXPLORER_REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    authorization = await provider.load_authorization_code(client, code)
+    assert authorization is not None
+    token = await provider.exchange_authorization_code(client, authorization)
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    encrypted.put_explorer_session(
+        ExplorerSession(
+            "browser-session",
+            authorization.family_id,
+            "explorer-client",
+            RESOURCE,
+            token.scope or SCOPE,
+            token.access_token or "",
+            clock.value + 1,
+            token.refresh_token or "",
+            clock.value + EXPLORER_REFRESH_FAMILY_TTL,
+        )
+    )
+    app = _web_app(provider, encrypted)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_exchange = provider.exchange_refresh_token
+    exchanges = 0
+
+    async def delayed_exchange(
+        client: OAuthClientInformationFull, refresh: Any, scopes: list[str]
+    ) -> Any:
+        nonlocal exchanges
+        exchanges += 1
+        entered.set()
+        await release.wait()
+        return await original_exchange(client, refresh, scopes)
+
+    monkeypatch.setattr(provider, "exchange_refresh_token", delayed_exchange)
+    headers = {"Origin": "https://public.example", "Cookie": "mcp_explorer_session=browser-session"}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://public.example") as browser:
+        first = asyncio.create_task(
+            browser.post("/explorer-session", headers=headers, json={"action": "access"})
+        )
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        second = None
+        if interferer != "revoke":
+            second = asyncio.create_task(
+                browser.post(
+                    "/explorer-session",
+                    headers=headers,
+                    json={"action": "logout" if interferer == "logout" else "access"},
+                )
+            )
+            for _ in range(100):
+                if app.state.oauth_web._explorer_locks["browser-session"].users == 2:
+                    break
+                await asyncio.sleep(0)
+            assert app.state.oauth_web._explorer_locks["browser-session"].users == 2
+        if interferer == "cancel":
+            assert second is not None
+            second.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await second
+            assert app.state.oauth_web._explorer_locks["browser-session"].users == 1
+        if interferer == "revoke":
+            encrypted.delete_explorer_family(authorization.family_id)
+        release.set()
+        response = await first
+        if interferer == "revoke":
+            assert response.status_code == 401
+        else:
+            assert response.status_code == 200
+        if interferer == "access":
+            assert second is not None
+            assert (await second).status_code == 200
+            assert exchanges == 1
+        elif interferer == "logout":
+            assert second is not None
+            assert (await second).status_code == 204
+            assert encrypted.get_explorer_session("browser-session") is None
+        assert app.state.oauth_web._explorer_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_expired_explorer_session_removes_store_record_and_lock(tmp_path: Path) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    encrypted.put_explorer_session(
+        ExplorerSession(
+            "expired",
+            "family",
+            "client",
+            RESOURCE,
+            SCOPE,
+            "access-secret",
+            clock.value - 2,
+            "refresh-secret",
+            clock.value - 1,
+        )
+    )
+    app = _web_app(provider, encrypted)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="https://public.example"
+    ) as browser:
+        response = await browser.post(
+            "/explorer-session",
+            headers={"Origin": "https://public.example", "Cookie": "mcp_explorer_session=expired"},
+            json={"action": "access"},
+        )
+    assert response.status_code == 401
+    assert encrypted.get_explorer_session("expired") is None
+    assert app.state.oauth_web._explorer_locks == {}
 
 
 def test_explorer_session_rejects_cross_origin_requests(tmp_path: Path) -> None:
@@ -752,8 +1220,12 @@ def test_metadata_advertises_all_requestable_scopes(tmp_path: Path) -> None:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        "loxberry:knx:read",
+        "loxberry:knx:drafts",
+        "loxberry:knx:write",
     ]
     assert response.json()["code_challenge_methods_supported"] == ["S256"]
     assert response.headers["cache-control"] == "no-store"
@@ -802,6 +1274,65 @@ def test_consent_page_uses_one_permission_dialog_for_read_and_control(tmp_path: 
     assert 'name="grant_control" value="true"' in page
     assert "Confirm permissions / Berechtigungen bestätigen" in page
     assert "redirected to your MCP client" in page
+
+
+def test_local_knx_read_is_an_explicit_optional_consent_without_other_delegations(tmp_path):
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="knx",
+        csrf_token="csrf",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1_800_000_000,
+        scopes=(READ_SCOPE, "loxberry:knx:read"),
+    )
+    page = web._consent_page(transaction).body.decode()
+    assert 'name="grant_knx_read" value="true" data-optional-scope' in page
+    assert "Requires separate LoxBerry Admin approval" in page
+    assert "Separate LoxBerry-Admin-Freigabe erforderlich" in page
+    assert 'name="grant_loxberry"' not in page
+    assert 'name="grant_loxberry_operate"' not in page
+    assert 'name="grant_history"' not in page
+
+
+def test_local_knx_write_consent_is_explicit_and_independent(tmp_path):
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="knx",
+        csrf_token="csrf",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1_800_000_000,
+        scopes=(READ_SCOPE, "loxberry:knx:read", "loxberry:knx:drafts", "loxberry:knx:write"),
+    )
+    page = web._consent_page(transaction).body.decode()
+    assert 'name="grant_knx_write" value="true" data-optional-scope' in page
+    assert (
+        'id="grant_knx_write" type="checkbox" name="grant_knx_write" value="true" checked'
+        not in page
+    )
+    assert "Separate Admin write, draft and read approvals required" in page
+    assert "Separate Admin-Freigaben für Schreiben, Entwürfe und Lesen erforderlich" in page
+    assert 'name="grant_history"' not in page
+    assert 'name="grant_control"' not in page
 
 
 @pytest.mark.asyncio
@@ -879,16 +1410,22 @@ async def test_locally_approved_operate_scope_still_requires_current_consent(
 
 
 @pytest.mark.parametrize(
-    ("grant_control", "expected_scopes"),
+    ("requested_scope", "grant_field", "grant_control", "expected_scopes", "expected_status"),
     [
-        (False, [READ_SCOPE]),
-        (True, [READ_SCOPE, CONTROL_SCOPE]),
+        (CONTROL_SCOPE, "grant_control", False, [READ_SCOPE], 302),
+        (CONTROL_SCOPE, "grant_control", True, [READ_SCOPE, CONTROL_SCOPE], 302),
+        (MESSAGE_CONFIRM_SCOPE, "grant_messages", False, [READ_SCOPE], 302),
+        (MESSAGE_CONFIRM_SCOPE, "grant_messages", True, [READ_SCOPE, MESSAGE_CONFIRM_SCOPE], 302),
+        (CONTROL_SCOPE, "grant_messages", True, [], 400),
     ],
 )
 @pytest.mark.asyncio
 async def test_consent_issues_only_the_scopes_selected_by_the_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    requested_scope: str,
+    grant_field: str,
+    expected_status: int,
     grant_control: bool,
     expected_scopes: list[str],
 ) -> None:
@@ -906,7 +1443,7 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
         token_endpoint_auth_method="none",
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
-        scope=f"{READ_SCOPE} {CONTROL_SCOPE}",
+        scope=f"{READ_SCOPE} {requested_scope}",
     )
     await provider.register_client(client_info)
     web = Phase0OAuthWeb(
@@ -925,12 +1462,17 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
         code_challenge=CHALLENGE,
         resource=RESOURCE,
         created_at=provider.now(),
-        scopes=(READ_SCOPE, CONTROL_SCOPE),
+        scopes=(READ_SCOPE, requested_scope),
         identity_id="identity",
         miniserver_id="miniserver",
         phase="consent",
     )
     web.transactions[transaction.transaction_id] = transaction
+    page = web._consent_page(transaction).body.decode()
+    if requested_scope == MESSAGE_CONFIRM_SCOPE:
+        assert 'id="grant_messages" type="checkbox"' in page
+        assert 'id="grant_messages" type="checkbox" checked' not in page
+        assert "No deletion or bulk actions" in page
 
     async def kill_token(selected: LoginTransaction) -> bool:
         selected.loxone_token = None
@@ -940,7 +1482,7 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
     app = Starlette(routes=[Route("/authorize", web.authorize, methods=["POST"])])
     data = {"csrf": "csrf", "action": "approve"}
     if grant_control:
-        data["grant_control"] = "true"
+        data[grant_field] = "true"
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -950,6 +1492,9 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
     ) as client:
         approved = await client.post("/authorize", data=data)
 
+    assert approved.status_code == expected_status
+    if expected_status == 400:
+        return
     code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
     code = await provider.load_authorization_code(client_info, code_value)
     assert approved.status_code == 302
@@ -958,8 +1503,12 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "capability,field",
+    [(LOXBERRY_READ_SCOPE, "grant_loxberry"), ("loxberry:knx:read", "grant_knx_read")],
+)
 async def test_pending_loxberry_consent_issues_scope_without_local_approval(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str, field: str
 ) -> None:
     provider = Phase0OAuthProvider(
         AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
@@ -976,7 +1525,7 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
         token_endpoint_auth_method="none",
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
-        scope=f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+        scope=f"{READ_SCOPE} {capability}",
     )
     await provider.register_client(client_info)
     web = Phase0OAuthWeb(
@@ -995,7 +1544,7 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
         code_challenge=CHALLENGE,
         resource=RESOURCE,
         created_at=provider.now(),
-        scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+        scopes=(READ_SCOPE, capability),
         identity_id="identity",
         miniserver_id="miniserver",
         phase="consent",
@@ -1017,7 +1566,7 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
     ) as client:
         approved = await client.post(
             "/authorize",
-            data={"csrf": "csrf", "action": "approve", "grant_loxberry": "true"},
+            data={"csrf": "csrf", "action": "approve", field: "true"},
         )
 
     code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
@@ -1025,8 +1574,8 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
     family = next(iter(provider.store.snapshot()["families"].values()))
     assert approved.status_code == 302
     assert code is not None
-    assert code.scopes == [READ_SCOPE, LOXBERRY_READ_SCOPE]
-    assert family["pending_loxberry_read"] is True
+    assert code.scopes == [READ_SCOPE, capability]
+    assert family["pending_loxberry_read"] is (capability == LOXBERRY_READ_SCOPE)
 
 
 @pytest.mark.parametrize(
@@ -1292,7 +1841,7 @@ async def test_parallel_login_posts_acquire_only_one_loxone_token(
 
 @pytest.mark.parametrize("failure_type", [LoxoneConnectionError, LoxoneProtocolError])
 @pytest.mark.asyncio
-async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
+async def test_expired_login_transaction_is_retained_when_remote_kill_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure_type: type[Exception],
@@ -1324,14 +1873,16 @@ async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
             pass
 
         async def kill_token(self, value: LoxoneToken) -> None:
+            value.destroy()
             raise failure_type("remote unavailable")
 
     monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", FailingLoxoneClient)
     await web._cleanup()
 
-    assert web.transactions == {}
-    assert transaction.loxone_token is None
-    assert token.value == ""
+    assert web.transactions == {transaction.transaction_id: transaction}
+    assert transaction.loxone_token is token
+    assert transaction.cleanup_pending
+    assert token.value == "sensitive-jwt"
 
 
 @pytest.mark.asyncio
@@ -1381,7 +1932,8 @@ async def test_transaction_cleanup_is_gated_by_authentication_breaker(
     await web._kill(transaction)
 
     assert calls == 0
-    assert transaction.loxone_token is None
+    assert transaction.loxone_token is not None
+    assert transaction.cleanup_pending
 
 
 @pytest.mark.asyncio
@@ -1572,3 +2124,448 @@ async def test_token_route_enforces_pkce_resource_replay_and_revoke(tmp_path: Pa
     assert replay.json() == {"error": "invalid_grant"}
     assert revoked.status_code == 200
     assert await provider.load_access_token(issued.json()["access_token"]) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue_write_fails", [False, True])
+async def test_boundary_persistence_suppression_retains_issued_token_for_cleanup(
+    tmp_path, monkeypatch, queue_write_fails
+):
+    from unittest.mock import AsyncMock
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    token = LoxoneToken("sensitive-jwt", "reader", "key", "SHA256", 999999999)
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("1", "serial", False, False)),
+        acquire_token=AsyncMock(return_value=token),
+        open_session=AsyncMock(),
+    )
+    monkeypatch.setattr(auth_web, "LoxoneClient", lambda *_args, **_kwargs: fake)
+    original_save = coordinator._save
+    saves = [0]
+
+    def boundary_failure():
+        saves[0] += 1
+        if saves[0] >= 2:
+            raise OSError("synthetic guard write failure")
+        original_save()
+
+    monkeypatch.setattr(coordinator, "_save", boundary_failure)
+    original_put = token_store.put
+    if queue_write_fails:
+
+        def failed_queue(*_args, **_kwargs):
+            raise OSError("synthetic queue write failure")
+
+        monkeypatch.setattr(token_store, "put", failed_queue)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    tx = LoginTransaction(
+        transaction_id="cleanup",
+        csrf_token="csrf",
+        client_id="synthetic",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1,
+    )
+    response = await web._login(tx, {"username": "reader", "password": "synthetic"})
+    assert response.status_code == 429
+    assert tx.attempts == 0
+    assert fake.open_session.await_count == 0
+    assert not web._global_login_failures
+    if queue_write_fails:
+        assert tx.loxone_token is token and tx.cleanup_pending
+        assert token.value == "sensitive-jwt"
+        assert (
+            await web._login(tx, {"username": "reader", "password": "synthetic"})
+        ).status_code == 503
+        assert fake.acquire_token.await_count == 1
+        monkeypatch.setattr(token_store, "put", original_put)
+        assert await web._kill(tx)
+    assert tx.loxone_token is None
+    assert token.value == ""
+    restarted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    pending = restarted.pending_remote_revocations(2_000_000_000)
+    assert len(pending) == 1 and pending[0].attempts == 0
+    assert pending[0].token.value == "sensitive-jwt"
+    assert "sensitive-jwt" not in (tmp_path / "tokens.json").read_text()
+    pending[0].token.destroy()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_stage", ["token", "structure"])
+async def test_cancelled_fresh_login_queues_issued_token(tmp_path, monkeypatch, cancel_stage):
+    from unittest.mock import AsyncMock
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    token = LoxoneToken("sensitive-jwt", "reader", "key", "SHA256", 999999999)
+    reached = asyncio.Event()
+
+    async def interrupted(*_args):
+        reached.set()
+        await asyncio.Event().wait()
+
+    session = SimpleNamespace(load_structure=AsyncMock(side_effect=interrupted), close=AsyncMock())
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("1", "serial", False, False)),
+        acquire_token=AsyncMock(return_value=token),
+        open_session=AsyncMock(side_effect=interrupted)
+        if cancel_stage == "token"
+        else AsyncMock(return_value=session),
+    )
+    monkeypatch.setattr(auth_web, "LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    tx = LoginTransaction(
+        transaction_id="cancelled",
+        csrf_token="csrf",
+        client_id="synthetic",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1,
+    )
+    task = asyncio.create_task(web._login(tx, {"username": "reader", "password": "synthetic"}))
+    await asyncio.wait_for(reached.wait(), timeout=5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert tx.attempts == 0 and tx.phase == "login"
+    assert tx.loxone_token is None and not tx.cleanup_pending
+    assert token.value == ""
+    assert not web._global_login_failures
+    assert coordinator.status()["failure_count"] == 0
+    assert coordinator.status()["public_failure_count"] == 0
+    if cancel_stage == "structure":
+        session.close.assert_awaited_once()
+    restarted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    pending = restarted.pending_remote_revocations(2_000_000_000)
+    assert len(pending) == 1 and pending[0].attempts == 0
+    assert pending[0].token.value == "sensitive-jwt"
+    pending[0].token.destroy()
+
+
+@pytest.mark.asyncio
+async def test_repeated_failed_logins_keep_distinct_token_cleanup_records(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    issued = []
+
+    async def acquire(*_args):
+        token = LoxoneToken("jwt-" + str(len(issued)), "reader", "key", "SHA256", 999999999)
+        issued.append(token)
+        return token
+
+    session = SimpleNamespace(
+        load_structure=AsyncMock(side_effect=LoxoneProtocolError("synthetic")), close=AsyncMock()
+    )
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("1", "serial", False, False)),
+        acquire_token=AsyncMock(side_effect=acquire),
+        open_session=AsyncMock(return_value=session),
+    )
+    monkeypatch.setattr(auth_web, "LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    tx = LoginTransaction(
+        transaction_id="same-transaction",
+        csrf_token="csrf",
+        client_id="synthetic",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1,
+    )
+    for _ in range(2):
+        assert (
+            await web._login(tx, {"username": "reader", "password": "synthetic"})
+        ).status_code == 200
+    queued = token_store.pending_remote_revocations(2_000_000_000)
+    assert len(queued) == 2
+    assert len({item.family_id for item in queued}) == 2
+    assert {item.token.value for item in queued} == {"jwt-0", "jwt-1"}
+    assert all(token.value == "" for token in issued)
+    token_store.delete(
+        queued[0].family_id
+    )  # Completion of an older worker never deletes its replacement.
+    remaining = token_store.pending_remote_revocations(2_000_000_000)
+    assert len(remaining) == 1 and remaining[0].family_id == queued[1].family_id
+    for item in (*queued, *remaining):
+        item.token.destroy()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue_write_fails", [False, True])
+async def test_consent_cleanup_is_durable_even_while_authentication_is_suppressed(
+    tmp_path, monkeypatch, queue_write_fails
+):
+    from unittest.mock import AsyncMock
+
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationSuppressed
+
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    coordinator = MiniserverAuthCoordinator(tmp_path / "guard.json")
+    coordinator.attempt = AsyncMock(side_effect=MiniserverAuthenticationSuppressed("paused"))
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    token = LoxoneToken("synthetic-consent-jwt", "reader", "key", "SHA256", 999999999)
+    tx = LoginTransaction(
+        transaction_id="expired-consent",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        csrf_token="csrf",
+        created_at=0,
+        loxone_token=token,
+        miniserver_id="synthetic-server",
+        identity_id="synthetic-reader",
+    )
+    web.transactions[tx.transaction_id] = tx
+    original_put = token_store.put
+    if queue_write_fails:
+
+        def failed_queue(*_args, **_kwargs):
+            raise OSError("synthetic queue write failure")
+
+        monkeypatch.setattr(token_store, "put", failed_queue)
+    await web._cleanup()
+    coordinator.attempt.assert_not_awaited()
+    if queue_write_fails:
+        assert web.transactions[tx.transaction_id] is tx
+        assert tx.loxone_token is token and token.value == "synthetic-consent-jwt"
+        assert tx.cleanup_pending
+        monkeypatch.setattr(token_store, "put", original_put)
+        await web._cleanup()
+    assert tx.transaction_id not in web.transactions
+    assert tx.loxone_token is None and token.value == ""
+    pending = token_store.pending_remote_revocations(2_000_000_000)
+    assert len(pending) == 1
+    assert pending[0].token.value == "synthetic-consent-jwt"
+    pending[0].token.destroy()
+    assert "synthetic-consent-jwt" not in (tmp_path / "tokens.json").read_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["oauth_revocation", "explorer_logout"])
+async def test_explicit_revocation_records_initiating_path(tmp_path, reason):
+    provider = _provider(tmp_path)
+    provider.store.mutate(
+        lambda doc: (
+            doc["families"].update({"family": {"revoked": False}}),
+            doc["refresh_tokens"].update(
+                {
+                    hashlib.sha256(b"private-token").hexdigest(): {
+                        "family_id": "family",
+                        "client_id": "client",
+                        "status": "active",
+                    }
+                }
+            ),
+        )
+    )
+    await provider.revoke_raw_token("private-token", "other-client", reason=reason)
+    assert provider.store.snapshot()["families"]["family"]["revoked"] is False
+    await provider.revoke_raw_token("private-token", "client", reason=reason)
+    family = provider.store.snapshot()["families"]["family"]
+    assert (family["revocation_reason"], family["revocation_source"]) == (reason, "oauth")
+
+
+def test_family_expiry_is_logged_using_provider_clock_without_revocation(tmp_path, caplog):
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    provider.store.mutate(
+        lambda doc: doc["families"].update(
+            {
+                "expired-private": {
+                    "revoked": False,
+                    "expires_at": clock.value + 10,
+                }
+            }
+        )
+    )
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    caplog.clear()
+    clock.value += 10
+    provider._mutate_with_cleanup(lambda doc: None)
+    assert "event=family_expired" in caplog.text
+    assert "reason=family_expired" in caplog.text
+    assert "event=family_revoked" not in caplog.text
+    assert "expired-private" not in caplog.text
+    assert provider.store.snapshot()["families"] == {}
+
+
+@pytest.mark.asyncio
+async def test_approval_match_diagnostics_distinguish_capabilities_without_transferring_rights(
+    tmp_path, caplog
+):
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        loxberry_operate_enabled=True,
+        loxberry_read_allowed=lambda client, identity, server: client == "approved-client",
+        loxberry_operate_allowed=lambda *args: False,
+    )
+    caplog.set_level("DEBUG", logger="mcpserver.auth.lifecycle")
+    assert provider.loxberry_read_allowed("approved-client", "identity", "server") is True
+    assert provider.loxberry_operate_allowed("approved-client", "identity", "server") is False
+    assert provider.loxberry_read_allowed("different-client", "identity", "server") is False
+    matches = [
+        entry.getMessage()
+        for entry in caplog.records
+        if "event=approval_match " in entry.getMessage()
+    ]
+    assert "capability=read reason=exact_match" in matches[0]
+    assert "capability=operate reason=no_exact_match" in matches[1]
+    assert "capability=read reason=no_exact_match" in matches[2]
+    assert "approved-client" not in caplog.text and "different-client" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "oauth_revocation",
+        "refresh_reuse",
+        "refresh_invalid_state",
+        "explorer_logout",
+        "family_expired",
+    ],
+)
+def test_family_end_callback_preserves_initiating_cause(tmp_path, reason):
+    clock = Clock()
+    ended = []
+    store = AtomicJsonAuthStore(tmp_path / "sessions.json")
+    provider = Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_ended=lambda family, cause: ended.append((family, cause)),
+    )
+    store.mutate(
+        lambda doc: doc["families"].update(
+            {"family": {"revoked": False, "expires_at": clock.value + 10}}
+        )
+    )
+    if reason == "family_expired":
+        clock.value += 10
+        provider._mutate_with_cleanup(lambda doc: None)
+    else:
+        store.mutate(lambda doc: provider._revoke_family(doc, "family", reason=reason))
+    assert ended == [("family", reason)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_reason", ["admin_session", "refresh_reuse", None])
+async def test_repeated_revocation_callback_uses_persisted_first_cause(tmp_path, first_reason):
+    ended = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        on_family_ended=lambda family, cause: ended.append((family, cause)),
+    )
+    family = {
+        "revoked": True,
+        "expires_at": provider.now() + 1000,
+        "revoked_at": provider.now() - 1,
+    }
+    if first_reason is not None:
+        family.update(revocation_reason=first_reason, revocation_source="admin")
+    provider.store.mutate(
+        lambda doc: (
+            doc["families"].update({"family": family}),
+            doc["refresh_tokens"].update(
+                {
+                    hashlib.sha256(b"synthetic-repeat-token").hexdigest(): {
+                        "family_id": "family",
+                        "client_id": "client",
+                        "status": "revoked",
+                    }
+                }
+            ),
+        )
+    )
+    await provider.revoke_raw_token("synthetic-repeat-token", "client", reason="explorer_logout")
+    await provider.revoke_raw_token("synthetic-repeat-token", "client")
+    assert ended == [("family", first_reason or "unknown")] * 2
+    assert provider.store.snapshot()["families"]["family"] == family
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_expiry_cleanup_survives_family_end_callback_failure(tmp_path, caplog, legacy):
+    clock = Clock()
+    calls = []
+
+    def fail(*args):
+        calls.append(args)
+        raise RuntimeError("private token store detail")
+
+    store = AtomicJsonAuthStore(tmp_path / "sessions.json")
+    callbacks = {"on_family_revoked" if legacy else "on_family_ended": fail}
+    provider = Phase0OAuthProvider(
+        store, issuer=ISSUER, resource=RESOURCE, clock=clock, **callbacks
+    )
+    store.mutate(
+        lambda doc: doc["families"].update(
+            {"expired": {"revoked": False, "expires_at": clock.value}}
+        )
+    )
+    result = provider._mutate_with_cleanup(lambda doc: "operation completed")
+    assert result == "operation completed"
+    assert store.snapshot()["families"] == {}
+    assert calls == [("expired",)] if legacy else calls == [("expired", "family_expired")]
+    assert "outcome=token_cleanup_failed reason=family_expired" in caplog.text
+    assert "private token store detail" not in caplog.text
+    assert (
+        provider._mutate_with_cleanup(lambda doc: "next operation completed")
+        == "next operation completed"
+    )
+    assert len(calls) == 1

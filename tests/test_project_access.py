@@ -11,6 +11,44 @@ from mcpserver.loxone.project.service import ProjectService
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scheme", ["http", "https"])
+async def test_http_reads_reuse_only_verified_trust_configuration(monkeypatch, scheme):
+    import ssl
+
+    from mcpserver.loxone.security import CommandEncryptor
+
+    client = LoxoneClient(MiniserverEndpoint.parse(scheme + "://192.168.1.5"), client_uuid=uuid4())
+    monkeypatch.setattr(client, "websocket_public_key", AsyncMock(return_value="synthetic"))
+    monkeypatch.setattr(CommandEncryptor, "encrypted_http_request", lambda *_: "/encrypted")
+    original = httpx.AsyncClient
+    contexts = []
+
+    def factory(**options):
+        context = options["verify"]
+        assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+        assert context.cert_store_stats()["x509_ca"] > 0
+        assert options["trust_env"] is False and options["follow_redirects"] is False
+        contexts.append(context)
+        return original(
+            **options,
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, stream=httpx.ByteStream(b"synthetic"))
+            ),
+        )
+
+    monkeypatch.setattr("mcpserver.loxone.client.httpx.AsyncClient", factory)
+    assert await client._get_bytes("/fixed") == (b"synthetic", "utf-8")
+    assert await client._get_bytes("/fixed") == (b"synthetic", "utf-8")
+    assert (
+        await client.download_project(LoxoneToken("opaque", "reader", "", "SHA256", 9999999999))
+        == b"synthetic"
+    )
+    assert len(contexts) == 3 and all(context is contexts[0] for context in contexts)
+    second = LoxoneClient(client.endpoint, client_uuid=uuid4())
+    assert second._http_verify is not contexts[0]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "status,expected",
     [
@@ -56,6 +94,37 @@ async def test_http_stream_is_bounded(monkeypatch):
         await client.download_project(
             LoxoneToken("s", "u", "", "SHA256", 9999999999), ProjectLimits(download_bytes=4)
         )
+
+
+@pytest.mark.asyncio
+async def test_project_marker_uses_authenticated_session_and_closes_it(monkeypatch):
+    client = LoxoneClient(MiniserverEndpoint.parse("https://example.com"), client_uuid=uuid4())
+    session = SimpleNamespace(
+        structure_version=AsyncMock(return_value="revision"), close=AsyncMock()
+    )
+    monkeypatch.setattr(client, "open_session", AsyncMock(return_value=session))
+    token = LoxoneToken("secret", "reader", "", "SHA256", 9999999999)
+    assert await client.project_marker(token) == "revision"
+    client.open_session.assert_awaited_once_with(token)
+    session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_project_service_uses_coordinated_marker_reader():
+    client = SimpleNamespace(project_marker=AsyncMock(side_effect=AssertionError("raw login")))
+    reader = AsyncMock(return_value="revision")
+    service = ProjectService(
+        client,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        AsyncMock(return_value=True),
+        marker_reader=reader,
+    )
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+
+    assert await service._marker(token) == "revision"
+    reader.assert_awaited_once_with(token)
+    client.project_marker.assert_not_awaited()
 
 
 @pytest.mark.asyncio

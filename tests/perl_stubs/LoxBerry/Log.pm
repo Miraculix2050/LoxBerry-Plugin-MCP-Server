@@ -4,7 +4,22 @@ use warnings;
 use Exporter 'import';
 our @EXPORT = qw(LOGERR);
 sub new { return bless {}, shift; }
-sub LOGSTART { return; }
+sub _record {
+    my ($event, $message) = @_;
+    return if !$ENV{LB_TEST_LOG_EVENTS_PATH};
+    open my $log, '>>', $ENV{LB_TEST_LOG_EVENTS_PATH} or die $!;
+    print {$log} "$event:$message\n";
+    close $log;
+}
+sub LOGSTART { shift; _record('start', @_); }
+sub LOGEND { shift; _record('end', @_); }
+sub ERR { shift; _record('error', @_); }
+sub WARN { shift; _record('warning', @_); }
+sub INF { shift; _record('info', @_); }
+sub DEB { shift; _record('debug', @_); }
 sub LOGERR { return; }
-sub get_notifications_html { return ''; }
+sub get_notifications_html {
+    die 'private-detail' if $ENV{LB_TEST_NOTIFICATIONS_DIE};
+    return '';
+}
 1;

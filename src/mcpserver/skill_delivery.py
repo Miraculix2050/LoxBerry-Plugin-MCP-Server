@@ -2,40 +2,87 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from importlib.resources import files
-from typing import Final
+from typing import Final, Literal, get_args
 
 from mcp.server.fastmcp import FastMCP
 
 SKILL_NAME: Final = "using-loxberry-mcp"
-SKILL_REVISION: Final = 30
+SKILL_REVISION: Final = 119
 SKILL_MIME_TYPE: Final = "text/markdown"
 SKILL_RESOURCE_URI: Final = f"skill://{SKILL_NAME}/SKILL.md"
 SERVER_INSTRUCTIONS: Final = (
-    "For Loxone queries, history, LoxBerry diagnostics, ambiguous control names, "
-    "stale or unconfirmed states, "
-    "and before any control operation, retrieve the using-loxberry-mcp guide from "
-    f"{SKILL_RESOURCE_URI} or call loxone_get_skill_guide. Never retry uncertain writes."
+    "Inspect current schemas. Read using-loxberry-mcp core first via "
+    "loxone_get_skill_guide(section='core') or skill://using-loxberry-mcp/core.md. "
+    "Its task index selects states, history, project, knx, modbus, lighting, energy, "
+    "operations, diagnostics or alerts; load only needed modules. Before any write "
+    "load core and operations; add read modules only when their evidence is needed. "
+    "If module retrieval is "
+    "unavailable use loxone_get_skill_guide() or "
+    f"{SKILL_RESOURCE_URI}; if both fail stop the affected workflow. "
+    "Never retry uncertain writes."
 )
+SkillSection = Literal[
+    "full",
+    "core",
+    "states",
+    "history",
+    "project",
+    "knx",
+    "modbus",
+    "lighting",
+    "energy",
+    "operations",
+    "diagnostics",
+    "alerts",
+]
+SKILL_MODULES: Final = tuple(section for section in get_args(SkillSection) if section != "full")
 
 
-def read_skill_markdown() -> str:
-    """Read the canonical skill bundled in the installed Python package."""
-    resource = files("mcpserver").joinpath("skills", SKILL_NAME, "SKILL.md")
-    return resource.read_text(encoding="utf-8")
+@lru_cache(maxsize=12)
+def read_skill_markdown(section: SkillSection = "full") -> str:
+    """Read fixed packaged files without runtime, project or caller data access."""
+    root = files("mcpserver").joinpath("skills", SKILL_NAME)
+    if section == "full":
+        return root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    if section not in SKILL_MODULES:
+        raise ValueError("skill_section_invalid")
+    return root.joinpath("modules", f"{section}.md").read_text(encoding="utf-8")
+
+
+def render_full_guide() -> str:
+    """Build the compatibility artifact from the canonical module sources."""
+    root = files("mcpserver").joinpath("skills", SKILL_NAME)
+    header = root.joinpath("frontmatter.txt").read_text(encoding="utf-8").strip()
+    return (
+        header
+        + "\n\n"
+        + "\n\n".join(read_skill_markdown(section).strip() for section in SKILL_MODULES)
+        + "\n"
+    )
 
 
 def register_skill_resource(server: FastMCP) -> None:
-    """Publish the bundled skill as a static MCP resource."""
-
-    @server.resource(
+    """Register legacy and fixed, discoverable module resources."""
+    server.resource(
         SKILL_RESOURCE_URI,
         name=SKILL_NAME,
         title="Using LoxBerry MCP",
-        description=(
-            "Agent workflow for safe Loxone discovery, operations, and LoxBerry diagnostics."
-        ),
+        description="Complete compatibility guide; core and task modules are also available.",
         mime_type=SKILL_MIME_TYPE,
-    )
-    def skill_resource() -> str:
-        return read_skill_markdown()
+    )(lambda: read_skill_markdown())
+
+    def register(section: SkillSection) -> None:
+        def resource() -> str:
+            return read_skill_markdown(section)
+
+        server.resource(
+            f"skill://{SKILL_NAME}/{section}.md",
+            name=f"{SKILL_NAME}-{section}",
+            description=f"{section} guidance; read core first. No project data.",
+            mime_type=SKILL_MIME_TYPE,
+        )(resource)
+
+    for section in SKILL_MODULES:
+        register(section)

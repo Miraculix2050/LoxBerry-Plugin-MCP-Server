@@ -211,18 +211,33 @@ try {
         'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
+        'loxone_read_controls', 'loxone_get_state_semantics', 'loxone_get_active_alerts',
+        'loxone_get_system_messages',
+        'loxone_get_attention_overview',
+        'loxone_preview_system_message_confirmation',
+    'loxone_confirm_system_message',
+    'loxone_get_notifications',
         'loxone_get_states', 'loxone_list_global_metadata',
-        'loxone_get_skill_guide'
+        'loxone_analyze_opening_contacts',
+        'loxone_get_skill_guide', 'loxone_get_installation_profile', 'loxberry_get_knx_catalog',
+        'loxberry_get_knx_correction_drafts', 'loxberry_prepare_knx_corrections',
+        'loxberry_apply_knx_corrections',
+        'loxberry_save_installation_profile', 'loxberry_delete_installation_profile',
+        'loxone_list_event_history_sources', 'loxone_get_event_history',
+        'loxone_analyze_history', 'loxone_plan_loads'
     )
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
     $optional = @(
         'loxone_operate_control', 'loxone_get_control_history', 'loxone_get_statistics',
         'loxone_get_project_status', 'loxone_find_project_objects',
         'loxone_describe_project_object', 'loxone_trace_project_logic',
+        'loxone_analyze_observability', 'loxone_analyze_project',
+        'loxone_list_authentication_events',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
         'loxberry_get_system_status', 'loxberry_list_service_events',
-        'loxberry_list_miniserver_auth_events',
-        'loxberry_clear_statistics_cache'
+        'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
+        'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
+        'loxberry_purge_event_history_source'
     )
     $controlAdvertised = $actual -contains 'loxone_operate_control'
     if ($ControlFixturePath -and -not $controlAdvertised) {
@@ -232,18 +247,25 @@ try {
         @($actual | Where-Object { $_ -notin ($expected + $optional) }).Count -gt 0) {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }
+    $mutationAnnotations = @{
+        'loxone_operate_control' = @($true, $false)
+        'loxone_confirm_system_message' = @($true, $false)
+        'loxberry_purge_event_history_source' = @($true, $false)
+        'loxberry_delete_installation_profile' = @($true, $false)
+        'loxberry_clear_statistics_cache' = @($true, $true)
+        'loxberry_apply_knx_corrections' = @($true, $true)
+        'loxberry_add_event_history_source' = @($false, $true)
+        'loxberry_remove_event_history_source' = @($false, $true)
+        'loxberry_prepare_knx_corrections' = @($false, $true)
+        'loxberry_save_installation_profile' = @($false, $false)
+    }
     foreach ($tool in $toolsResponse.result.tools) {
-        if ($tool.name -eq 'loxone_operate_control') {
+        if ($mutationAnnotations.ContainsKey($tool.name)) {
+            $contract = $mutationAnnotations[$tool.name]
             if ($tool.annotations.readOnlyHint -ne $false -or
-                $tool.annotations.destructiveHint -ne $true -or
-                $tool.annotations.idempotentHint -ne $false) {
-                throw 'MCP control tool annotations violate the control contract.'
-            }
-        } elseif ($tool.name -eq 'loxberry_clear_statistics_cache') {
-            if ($tool.annotations.readOnlyHint -ne $false -or
-                $tool.annotations.destructiveHint -ne $true -or
-                $tool.annotations.idempotentHint -ne $true) {
-                throw 'MCP cache tool annotations violate the operate contract.'
+                $tool.annotations.destructiveHint -ne $contract[0] -or
+                $tool.annotations.idempotentHint -ne $contract[1]) {
+                throw 'MCP mutating tool annotations violate their explicit contract.'
             }
         } elseif ($tool.annotations.readOnlyHint -ne $true -or $tool.annotations.destructiveHint -ne $false) {
             throw 'MCP tool annotations violate the read-only contract.'
@@ -255,10 +277,26 @@ try {
 
     Send-JsonRpc @{ jsonrpc = '2.0'; id = 2; method = 'resources/list'; params = @{} }
     $resourcesResponse = Read-JsonRpc 2
-    if ($resourcesResponse.error -or @($resourcesResponse.result.resources).Count -ne 1 -or
-        [string]$resourcesResponse.result.resources[0].uri -ne
-            'skill://using-loxberry-mcp/SKILL.md' -or
-        $resourcesResponse.result.resources[0].mimeType -ne 'text/markdown') {
+    $expectedSkillUris = @(
+        'skill://using-loxberry-mcp/SKILL.md',
+        'skill://using-loxberry-mcp/core.md',
+        'skill://using-loxberry-mcp/knx.md',
+        'skill://using-loxberry-mcp/alerts.md',
+        'skill://using-loxberry-mcp/states.md',
+        'skill://using-loxberry-mcp/history.md',
+        'skill://using-loxberry-mcp/project.md',
+        'skill://using-loxberry-mcp/modbus.md',
+        'skill://using-loxberry-mcp/lighting.md',
+        'skill://using-loxberry-mcp/energy.md',
+        'skill://using-loxberry-mcp/operations.md',
+        'skill://using-loxberry-mcp/diagnostics.md'
+    )
+    $skillResources = @($resourcesResponse.result.resources)
+    if ($resourcesResponse.error -or $skillResources.Count -ne $expectedSkillUris.Count -or
+        @($skillResources | Where-Object {
+            [string]$_.uri -notin $expectedSkillUris -or $_.mimeType -ne 'text/markdown'
+        }).Count -ne 0 -or
+        @($skillResources.uri | Select-Object -Unique).Count -ne $expectedSkillUris.Count) {
         throw 'MCP skill resource inventory differs from the expected contract.'
     }
     Send-JsonRpc @{
@@ -274,9 +312,52 @@ try {
     }
 
     $script:nextId = 4
+    $promptListId = Get-NextId
+    Send-JsonRpc @{ jsonrpc = '2.0'; id = $promptListId; method = 'prompts/list'; params = @{} }
+    $promptListResponse = Read-JsonRpc $promptListId
+    $expectedPromptNames = @(
+        'knx_ets_inventory_review', 'knx_address_explanation',
+        'lighting_naming_review', 'presence_light_association', 'current_state_summary',
+        'temperature_history_summary', 'solar_daily_report', 'comparable_day_review',
+        'consumer_pv_comparison', 'energy_period_report'
+    )
+    if ($promptListResponse.error -or
+        @(Compare-Object ($expectedPromptNames | Sort-Object) ($promptListResponse.result.prompts.name | Sort-Object)).Count -ne 0) {
+        throw 'MCP prompt inventory differs from the expected contract.'
+    }
+    foreach ($promptName in $expectedPromptNames) {
+        $promptId = Get-NextId
+        $promptArguments = switch ($promptName) {
+            'knx_address_explanation' { @{ address = '1/2/3:1' } }
+            'temperature_history_summary' {
+                @{ binding_id = 'temperature'; start = '2026-10-01T00:00:00+02:00'; end = '2026-10-02T00:00:00+02:00'; timezone = 'Europe/Berlin' }
+            }
+            'solar_daily_report' { @{ date = '2026-10-01'; timezone = 'Europe/Berlin' } }
+            'comparable_day_review' {
+                @{ reference_date = '2026-10-01'; start = '2026-10-01T00:00:00+02:00'; end = '2026-10-08T00:00:00+02:00'; timezone = 'Europe/Berlin' }
+            }
+            'consumer_pv_comparison' {
+                @{ start = '2026-10-01T00:00:00+02:00'; end = '2026-10-02T00:00:00+02:00'; timezone = 'Europe/Berlin' }
+            }
+            'energy_period_report' { @{ period = 'week'; date = '2026-10-01'; timezone = 'Europe/Berlin' } }
+            default { @{} }
+        }
+        Send-JsonRpc @{
+            jsonrpc = '2.0'; id = $promptId; method = 'prompts/get'
+            params = @{ name = $promptName; arguments = $promptArguments }
+        }
+        $promptResponse = Read-JsonRpc $promptId
+        $promptMessages = @($promptResponse.result.messages)
+        if ($promptResponse.error -or $promptMessages.Count -ne 1 -or
+            $promptMessages[0].role -ne 'user' -or $promptMessages[0].content.type -ne 'text' -or
+            [System.Text.Encoding]::UTF8.GetByteCount($promptMessages[0].content.text) -gt 4096 -or
+            $promptMessages[0].content.text -notlike '*read-only*') {
+            throw 'MCP prompt recipe differs from the expected contract.'
+        }
+    }
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 30 -or
+        $skillGuide.data.revision -ne 119 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'
@@ -343,6 +424,42 @@ try {
     $stateUuid = @($description.data.states | ForEach-Object { $_.uuid }) | Select-Object -First 1
     if (-not $stateUuid) { throw 'The selected visible control has no readable state.' }
     [void](Invoke-ReadTool (Get-NextId) 'loxone_get_states' @{ state_uuids = @($stateUuid) })
+
+    $stateName = [string]@($description.data.states | Select-Object -First 1)[0].name
+    $semantics = Invoke-ReadTool (Get-NextId) 'loxone_get_state_semantics' @{
+        control_uuid = $visibleUuid; state_names = @($stateName)
+    }
+    $semanticItems = @($semantics.data.items)
+    if ($semantics.data.control_uuid -ne $visibleUuid -or
+        $semantics.data.returned -ne 1 -or $semantics.data.total -ne 1 -or
+        -not $semantics.data.complete -or $semantics.data.truncated -or
+        $semanticItems.Count -ne 1 -or $semanticItems[0].uuid -ne $stateUuid -or
+        $semanticItems[0].name -ne $stateName -or
+        $semanticItems[0].quality.freshness -notin @('current', 'stale', 'unknown', 'unavailable') -or
+        $semanticItems[0].semantics.interpretation_status -notin @('known', 'partial', 'unknown', 'invalid') -or
+        @($semanticItems[0].semantics.sources).Count -gt 8) {
+        throw 'State semantics did not preserve the bounded identity/quality contract.'
+    }
+    if ($hiddenUuid) {
+        $hiddenSemantics = Invoke-ToolEnvelope (Get-NextId) 'loxone_get_state_semantics' @{
+            control_uuid = $hiddenUuid
+        }
+        if ($hiddenSemantics.ok -or $hiddenSemantics.data.error -ne 'not_found') {
+            throw 'State semantics exposed a hidden control.'
+        }
+    }
+    Write-Output 'mcp_state_semantics=pass'
+
+    $alerts = Invoke-ReadTool (Get-NextId) 'loxone_get_active_alerts' @{ limit = 5 }
+    if ($alerts.data.scope -ne 'authorized_visible_runtime' -or
+        (@($alerts.data.supported_families) -join ',') -ne 'AalEmergency,AalSmartAlarm,Alarm,AlarmChain,SmokeAlarm' -or
+        $alerts.data.complete_scope -ne 'known_candidate_families' -or
+        @($alerts.data.findings).Count -gt 5 -or
+        $alerts.data.returned -ne @($alerts.data.findings).Count -or
+        (-not $alerts.data.coverage.complete -and $null -ne $alerts.data.total_active)) {
+        throw 'Active alerts did not preserve bounded delivery and coverage.'
+    }
+    Write-Output 'mcp_active_alerts=pass'
 
     if ($ReadFeatureAcceptance) {
         $roomSnapshot = $null

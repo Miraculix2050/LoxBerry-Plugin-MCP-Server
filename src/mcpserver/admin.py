@@ -8,14 +8,13 @@ import time
 
 _MODULE_IMPORT_STARTED_NS = time.time_ns()
 
-import asyncio
 import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
-import secrets
 import socket
 import subprocess
 import sys
@@ -24,17 +23,24 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
-from urllib.request import Request, urlopen
 from uuid import UUID
 
-from mcpserver import __version__
+from mcpserver.admin_errors import AdminError as AdminError
+from mcpserver.persistence import PersistenceUncertain
 
 if TYPE_CHECKING:
     from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
     from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
-from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.auth.store import (
+    admin_lifecycle_logging,
+    lifecycle_event,
+    lifecycle_summary,
+    mark_family_revoked,
+)
+from mcpserver.config import AtomicConfigStore, PluginConfig, binding_application_name
 
 _MODULE_IMPORT_FINISHED_NS = time.time_ns()
 
@@ -44,22 +50,10 @@ _SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 _INTERNAL_EMERGENCY_STOP_STATUS_URL: Final = "http://127.0.0.1:8765/internal/emergency-stop-status"
-_INTERNAL_MINISERVER_AUTH_STATUS_URL: Final = (
-    "http://127.0.0.1:8765/internal/miniserver-auth-status"
-)
-_INTERNAL_MINISERVER_AUTH_RECOVERY_URL: Final = (
-    "http://127.0.0.1:8765/internal/miniserver-auth-recovery"
-)
+_INTERNAL_EVENT_HISTORY_STATUS_URL: Final = "http://127.0.0.1:8765/internal/event-history-status"
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
-
-
-class AdminError(RuntimeError):
-    """A sanitized, user-actionable administrative error."""
-
-    def __init__(self, message: str, *, code: str = "invalid_request") -> None:
-        super().__init__(message)
-        self.code = code
+_EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS: Final = 90
 
 
 @dataclass(frozen=True)
@@ -185,6 +179,8 @@ def _emergency_stop_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
     """Read and validate the running service's own emergency-stop snapshot."""
     if not service.get("active"):
         return {"availability": "service_inactive"}
+    from urllib.request import Request, urlopen
+
     try:
         request = Request(
             _INTERNAL_EMERGENCY_STOP_STATUS_URL,
@@ -229,6 +225,76 @@ def _emergency_stop_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
         return {"availability": "unavailable"}
 
 
+def _event_history_runtime_status() -> dict[str, Any]:
+    """Read only the running recorder's bounded status, without touching SQLite."""
+    if not _service_active():
+        return {"availability": "service_inactive"}
+    from urllib.request import Request, urlopen
+
+    try:
+        with urlopen(
+            Request(_INTERNAL_EVENT_HISTORY_STATUS_URL, headers={"Accept": "application/json"}),
+            timeout=1,
+        ) as response:
+            if response.getcode() != 200:
+                raise ValueError("unexpected response status")
+            raw = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
+        if len(raw) > _INTERNAL_RESPONSE_MAX_BYTES:
+            raise ValueError("oversized response")
+        document = json.loads(raw)
+        item = document.get("event_history") if isinstance(document, dict) else None
+        if not isinstance(item, dict) or item.get("status") not in {
+            "disabled",
+            "unknown",
+            "unavailable",
+            "recording",
+        }:
+            raise ValueError("invalid runtime status")
+        observed = item.get("observed_at")
+        capture = item.get("capture_started_at")
+        reason = item.get("reason")
+        if reason is not None and reason not in {
+            "size_enforcement_failed",
+            "store_unavailable",
+            "no_sources",
+            "no_visible_sources",
+            "unsupported_value",
+            "subscription_unavailable",
+        }:
+            raise ValueError("invalid status reason")
+        if not isinstance(observed, int | float) or (
+            capture is not None and not isinstance(capture, int | float)
+        ):
+            raise ValueError("invalid runtime time")
+        return {
+            "availability": "available",
+            "status": item["status"],
+            "observed_at": observed,
+            "capture_started_at": capture,
+            "reason": reason,
+        }
+    except (OSError, ValueError):
+        return {"availability": "unavailable"}
+
+
+def _event_history_brief(config: PluginConfig) -> dict[str, Any]:
+    """Keep the main page's summary constant-time and independent of discovery."""
+    path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+    size = None
+    if path.is_absolute() and path.suffix == ".sqlite3":
+        with suppress(OSError):
+            size = sum(
+                candidate.stat().st_size
+                for candidate in (path, path.with_suffix(".sqlite3-wal"))
+                if candidate.exists()
+            )
+    return {
+        "enabled": config.event_history_enabled,
+        "active_source_count": len(config.event_history_sources),
+        "size_bytes": size,
+    }
+
+
 def _run_service_command(command: str) -> None:
     if command not in _SYSTEMD_COMMANDS:
         raise AdminError("service action is invalid")
@@ -253,48 +319,7 @@ def _service_response() -> dict[str, Any]:
         "service_active": service["active"],
         "service": service,
         "emergency_stop_runtime": _emergency_stop_runtime_status(service),
-        "miniserver_auth_runtime": _miniserver_auth_runtime_status(service),
     }
-
-
-def _miniserver_auth_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
-    """Read only the bounded service-owned breaker view over loopback."""
-    if not service.get("active"):
-        return {"availability": "unavailable"}
-    try:
-        with urlopen(_INTERNAL_MINISERVER_AUTH_STATUS_URL, timeout=2) as response:
-            raw = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
-        if len(raw) > _INTERNAL_RESPONSE_MAX_BYTES:
-            raise ValueError("response too large")
-        payload = json.loads(raw)
-        status = payload.get("miniserver_auth") if isinstance(payload, dict) else None
-        events = payload.get("events") if isinstance(payload, dict) else None
-        if not isinstance(status, dict) or not isinstance(events, list):
-            raise ValueError("invalid response")
-        if status.get("breaker_state") not in {"closed", "open_source_ip_blocked"}:
-            raise ValueError("invalid breaker state")
-        safe_events = []
-        for event in events[:50]:
-            if not isinstance(event, dict):
-                raise ValueError("invalid event")
-            safe_events.append(
-                {
-                    key: event[key]
-                    for key in (
-                        "timestamp",
-                        "sequence",
-                        "connection_owner",
-                        "phase",
-                        "outcome",
-                        "breaker_transition",
-                        "trace_id",
-                    )
-                    if key in event and isinstance(event[key], int | str)
-                }
-            )
-        return {"availability": "available", "status": status, "events": safe_events}
-    except (OSError, ValueError, json.JSONDecodeError):
-        return {"availability": "unavailable"}
 
 
 def _mqtt_gateway_status() -> dict[str, Any]:
@@ -500,7 +525,7 @@ def _renew_certificate(payload: object) -> dict[str, Any]:
 
 
 def _save(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import (
+    from mcpserver.auth.scopes import (
         CONTROL_SCOPE,
         HISTORY_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
@@ -513,13 +538,34 @@ def _save(payload: object) -> dict[str, Any]:
     config = PluginConfig.from_document(payload)
     store = _config_store()
     previous = store.load()
+    if "installation_profile_write_enabled" not in payload.get("tools", {}):
+        config = replace(
+            config, installation_profile_write_enabled=previous.installation_profile_write_enabled
+        )
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
+    # The dedicated KNX page owns this opt-in delegation; legacy Admin saves
+    # must not silently reset it when their form omits the additive keys.
+    if "loxberry_knx_read_enabled" not in payload.get("tools", {}):
+        config = replace(config, loxberry_knx_read_enabled=previous.loxberry_knx_read_enabled)
+    if "loxberry_knx_read_bindings" not in payload.get("policies", {}):
+        config = replace(config, loxberry_knx_read_bindings=previous.loxberry_knx_read_bindings)
+    if "loxberry_knx_drafts_enabled" not in payload.get("tools", {}):
+        config = replace(config, loxberry_knx_drafts_enabled=previous.loxberry_knx_drafts_enabled)
+    if "loxberry_knx_write_enabled" not in payload.get("tools", {}):
+        config = replace(config, loxberry_knx_write_enabled=previous.loxberry_knx_write_enabled)
+    if "loxberry_knx_drafts_bindings" not in payload.get("policies", {}):
+        config = replace(config, loxberry_knx_drafts_bindings=previous.loxberry_knx_drafts_bindings)
+    if "loxberry_knx_write_bindings" not in payload.get("policies", {}):
+        config = replace(config, loxberry_knx_write_bindings=previous.loxberry_knx_write_bindings)
     if "policies" not in payload:
         config = replace(
             config,
             loxberry_read_bindings=previous.loxberry_read_bindings,
             loxberry_operate_bindings=previous.loxberry_operate_bindings,
+            installation_profile_write_bindings=previous.installation_profile_write_bindings,
+            loxberry_binding_names=previous.loxberry_binding_names,
+            explorer_bindings=previous.explorer_bindings,
         )
     control_families: list[str] = []
     if previous.loxone_control_enabled and not config.loxone_control_enabled:
@@ -560,12 +606,119 @@ def _save(payload: object) -> dict[str, Any]:
             if disabled_phase4_scopes & set(str(record.get("scope", "")).split())
             and not record.get("revoked", False)
         ]
-    store.save(config)
+
+    def configuration_with_current_knx(
+        candidate: PluginConfig, current: PluginConfig, *, restore_previous_solar: bool = False
+    ) -> PluginConfig:
+        from mcpserver.knx.admin import validate_active_labels
+
+        if "loxberry_knx_read_enabled" not in payload.get("tools", {}):
+            candidate = replace(
+                candidate, loxberry_knx_read_enabled=current.loxberry_knx_read_enabled
+            )
+        if "loxberry_knx_read_bindings" not in payload.get("policies", {}):
+            candidate = replace(
+                candidate,
+                loxberry_knx_read_bindings=current.loxberry_knx_read_bindings,
+                explorer_bindings=tuple(
+                    item
+                    for item in candidate.explorer_bindings
+                    if item.capability != "loxberry:knx:read"
+                )
+                + tuple(
+                    item
+                    for item in current.explorer_bindings
+                    if item.capability == "loxberry:knx:read"
+                ),
+            )
+        if "loxberry_knx_drafts_enabled" not in payload.get("tools", {}):
+            candidate = replace(
+                candidate, loxberry_knx_drafts_enabled=current.loxberry_knx_drafts_enabled
+            )
+        if "loxberry_knx_write_enabled" not in payload.get("tools", {}):
+            candidate = replace(
+                candidate, loxberry_knx_write_enabled=current.loxberry_knx_write_enabled
+            )
+        if "loxberry_knx_drafts_bindings" not in payload.get("policies", {}):
+            candidate = replace(
+                candidate,
+                loxberry_knx_drafts_bindings=current.loxberry_knx_drafts_bindings,
+                explorer_bindings=tuple(
+                    item
+                    for item in candidate.explorer_bindings
+                    if item.capability != "loxberry:knx:drafts"
+                )
+                + tuple(
+                    item
+                    for item in current.explorer_bindings
+                    if item.capability == "loxberry:knx:drafts"
+                ),
+            )
+        if "loxberry_knx_write_bindings" not in payload.get("policies", {}):
+            candidate = replace(
+                candidate,
+                loxberry_knx_write_bindings=current.loxberry_knx_write_bindings,
+                explorer_bindings=tuple(
+                    item
+                    for item in candidate.explorer_bindings
+                    if item.capability != "loxberry:knx:write"
+                )
+                + tuple(
+                    item
+                    for item in current.explorer_bindings
+                    if item.capability == "loxberry:knx:write"
+                ),
+            )
+        # Profile approval controls are managed separately. Preserve the live
+        # value under this lock, including rollback after a restart failure.
+        if "installation_profile_write_enabled" not in payload.get("tools", {}):
+            candidate = replace(
+                candidate,
+                installation_profile_write_enabled=current.installation_profile_write_enabled,
+            )
+        if "installation_profile_write_bindings" not in payload.get("policies", {}):
+            candidate = replace(
+                candidate,
+                installation_profile_write_bindings=current.installation_profile_write_bindings,
+            )
+        # Labels are managed by revision-bound KNX actions. Full config forms
+        # carry display copies, not permission to roll back their live effects.
+        # Preserve labels with their receipts, including restart rollback.
+        candidate = replace(
+            candidate,
+            knx_address_taxonomy_endpoint=current.knx_address_taxonomy_endpoint,
+            knx_address_taxonomy=current.knx_address_taxonomy,
+            knx_taxonomy_targets=current.knx_taxonomy_targets,
+            knx_prefix_apply_receipts=current.knx_prefix_apply_receipts,
+            loxberry_knx_prefix_write_enabled=current.loxberry_knx_prefix_write_enabled,
+        )
+        # Resolve the active target after a possible Miniserver switch.
+        if not restore_previous_solar and "solar_forecast" not in payload:
+            candidate = replace(
+                candidate,
+                solar_forecast_enabled=current.solar_forecast_enabled,
+                solar_forecast_maximum_age_minutes=current.solar_forecast_maximum_age_minutes,
+            )
+        if not restore_previous_solar:
+            candidate = _confirmed_solar_config(current, candidate, payload)
+        candidate = PluginConfig.from_document(candidate.to_document())
+        validate_active_labels(candidate)
+        return candidate
+
+    # KNX application uses the same config lock. Preserve live label effects
+    # from the current configuration and validate immediately before each write.
+    config = store.mutate(lambda current: configuration_with_current_knx(config, current))
     try:
         _restart_service()
     except AdminError as apply_error:
         try:
-            store.save(previous)
+            # Rollback restores the captured association without depending on
+            # a producer file that may have changed since the failed apply.
+            store.mutate(
+                lambda current: configuration_with_current_knx(
+                    previous, current, restore_previous_solar=True
+                )
+            )
             _restart_service()
         except (AdminError, ConfigError) as rollback_error:
             raise AdminError("configuration apply and rollback failed") from rollback_error
@@ -577,24 +730,49 @@ def _save(payload: object) -> dict[str, Any]:
             control_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
+            reason="scope_disabled",
         )
     if loxberry_families:
         _revoke_many(
             loxberry_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
+            reason="scope_disabled",
         )
     if phase4_families:
         _revoke_many(
             phase4_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
+            reason="scope_disabled",
         )
     return {
         "configuration": config.to_document(),
         "applied": True,
         "sessions": _sessions(),
     } | _service_response()
+
+
+def _confirmed_solar_config(
+    previous: PluginConfig, candidate: PluginConfig, payload: dict[str, Any]
+) -> PluginConfig:
+    """Only a fresh fixed-source read establishes a new administrator association."""
+    candidate = replace(candidate, solar_forecast_fingerprint=previous.solar_forecast_fingerprint)
+    if payload.get("confirm_solar_forecast_source") is True:
+        from mcpserver.history_analysis import HistoryAnalysisDeadline
+        from mcpserver.local_solar_forecast import read_forecast
+        from mcpserver.solar_forecast import ForecastEvidenceError
+
+        try:
+            confirmed = read_forecast(candidate, deadline=time.monotonic() + 10)
+        except (ForecastEvidenceError, ValueError, TimeoutError, HistoryAnalysisDeadline):
+            raise AdminError("Local forecast source cannot be confirmed") from None
+        if confirmed.publication_age_seconds > candidate.solar_forecast_maximum_age_minutes * 60:
+            raise AdminError("Local forecast source publication is stale")
+        candidate = replace(candidate, solar_forecast_fingerprint=confirmed.fingerprint)
+    elif candidate.solar_forecast_enabled and not previous.solar_forecast_fingerprint:
+        raise AdminError("Local forecast activation requires explicit source confirmation")
+    return candidate
 
 
 def _save_mcp(payload: object) -> dict[str, Any]:
@@ -614,14 +792,20 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "loxone_control_enabled",
         "loxberry_read_enabled",
         "loxone_history_enabled",
+        "loxone_message_confirmation_enabled",
         "loxberry_operate_enabled",
         "requests_per_minute",
         "control_requests_per_minute",
         "loxberry_requests_per_minute",
         "history_requests_per_minute",
         "loxberry_operate_requests_per_minute",
+        "explorer_binding_retention_hours",
         "max_parallel_calls",
         "statistics_memory_max_mib",
+        "event_history_enabled",
+        "weather_history_enabled",
+        "solar_forecast_enabled",
+        "solar_forecast_maximum_age_minutes",
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
@@ -637,6 +821,9 @@ def _save_mcp(payload: object) -> dict[str, Any]:
     def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
         was_active = _service_active()
         updated = replace(previous, **{field: getattr(candidate, field) for field in fields})
+        updated = _confirmed_solar_config(previous, updated, payload)
+        # Section payloads omit preserved policies; validate their merged invariants.
+        updated = PluginConfig.from_document(updated.to_document())
         save(updated)
         if not was_active:
             return updated
@@ -654,16 +841,85 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         return updated
 
     updated = store.transaction(apply)
-    return {"configuration": updated.to_document(), "applied": True} | _service_response()
+    return {
+        "configuration": updated.to_document(),
+        "event_history_brief": _event_history_brief(updated),
+        "applied": True,
+    } | _service_response()
 
 
-def _emergency_stop_options() -> dict[str, Any]:
+def _save_knx_taxonomy(payload: object) -> dict[str, Any]:
+    """Save administrator labels for the currently configured Miniserver."""
+    from mcpserver.loxone.endpoint import MiniserverEndpoint
+    from mcpserver.loxone.project.taxonomy import parse_taxonomy
+
+    if not isinstance(payload, dict) or set(payload) != {"entries"}:
+        raise AdminError("KNX taxonomy payload is invalid")
+    try:
+        entries = parse_taxonomy(payload["entries"])
+    except ValueError as exc:
+        raise AdminError(str(exc)) from exc
+
+    def update(previous: PluginConfig) -> PluginConfig:
+        if not previous.loxone_endpoint:
+            raise AdminError("A Miniserver endpoint is required for KNX taxonomy")
+        updated = replace(
+            previous,
+            knx_address_taxonomy_endpoint=MiniserverEndpoint.parse(previous.loxone_endpoint).origin,
+            knx_address_taxonomy=entries,
+        )
+        from mcpserver.knx.admin import validate_active_labels
+
+        validate_active_labels(updated)
+        return updated
+
+    config = _config_store().mutate(update)
+    return {"configuration": config.to_document(), "applied": True}
+
+
+def _emergency_stop_cache(config: PluginConfig) -> EmergencyOptionsCache | None:
+    """Bind cached options to the current configured Miniserver credentials."""
+    import asyncio
+
     from mcpserver.auth.store import AtomicJsonAuthStore
-    from mcpserver.emergency_stop import virtual_status_options
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+    from mcpserver.loxone.service_access import LoxBerryServiceCredentials
+
+    store_path = Path(os.getenv("MCPSERVER_AUTH_STORE", "").strip())
+    if not config.loxone_endpoint or not store_path.is_absolute() or store_path.suffix != ".json":
+        return None
+    try:
+        username, password = asyncio.run(LoxBerryServiceCredentials(config).load())
+        profile = AtomicJsonAuthStore(store_path).pseudonym(
+            "emergency-stop-options-v1", config.loxone_endpoint, username, password
+        )
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        return None
+    return EmergencyOptionsCache(store_path, profile)
+
+
+def _cached_emergency_stop_options() -> dict[str, Any]:
+    config = _config_store().load()
+    if not config.loxone_endpoint:
+        return {"status": "not_configured", "options": []}
+    cache = _emergency_stop_cache(config)
+    return (
+        cache.response(cache.read(), cached_only=True)
+        if cache is not None
+        else {"status": "not_loaded", "options": []}
+    )
+
+
+def _discover_emergency_stop_options(
+    config: PluginConfig, *, manual_retry: bool, early_probe: bool = False
+) -> dict[str, Any]:
+    import asyncio
+
+    from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.emergency_stop import VirtualStatusOptions, virtual_status_options
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.client import MiniserverEndpoint
 
-    config = _config_store().load()
     store_path = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
     coordinator = None
     if (
@@ -679,15 +935,154 @@ def _emergency_stop_options() -> dict[str, Any]:
             maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
             profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
         )
-    result = asyncio.run(
-        virtual_status_options(config, coordinator)
-        if coordinator is not None
-        else virtual_status_options(config)
-    )
-    response = {"status": result.status, "options": list(result.options)}
+    if early_probe and coordinator is None:
+        raise AdminError("Authentication protection unavailable", code="temporarily_unavailable")
+    if early_probe:
+        discovery = virtual_status_options(config, coordinator, manual_retry=True, early_probe=True)
+    elif coordinator is None:
+        discovery = virtual_status_options(config)
+    elif manual_retry:
+        discovery = virtual_status_options(config, coordinator, manual_retry=True)
+    else:
+        discovery = virtual_status_options(config, coordinator)
+    try:
+        result = asyncio.run(
+            asyncio.wait_for(discovery, timeout=_EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS)
+        )
+    except TimeoutError:
+        result = VirtualStatusOptions(
+            status="unavailable", options=(), failure_code="connection_failed"
+        )
+    response: dict[str, Any] = {"status": result.status, "options": list(result.options)}
     if result.failure_code is not None:
         response["discovery_failure_code"] = result.failure_code
+    if result.retry_not_before is not None:
+        response["retry_not_before"] = result.retry_not_before
     return response
+
+
+def _emergency_stop_options(
+    *, manual_retry: bool = False, automatic: bool = False
+) -> dict[str, Any]:
+    config = _config_store().load()
+    cache = _emergency_stop_cache(config)
+
+    def discover() -> dict[str, Any]:
+        from mcpserver.service_discovery import request_projection
+
+        if not config.loxone_endpoint:
+            return {"status": "not_configured", "options": []}
+        try:
+            return request_projection(
+                config,
+                _auth_store(),
+                "emergency_stop_display" if automatic else "emergency_stop",
+                manual_retry=manual_retry,
+            )
+        except Exception as exc:
+            code = getattr(exc, "code", "temporarily_unavailable")
+            reason = {
+                "authentication_busy": "authentication_busy",
+                "authentication_cooldown": "authentication_cooldown",
+                "source_ip_blocked": "authentication_suppressed",
+            }.get(code, "connection_failed")
+            return {"status": "unavailable", "options": [], "discovery_failure_code": reason}
+
+    if cache is None:
+        return discover()
+    try:
+        return cache.refresh(discover, join_concurrent=False)
+    except TimeoutError:
+        existing = cache.read()
+        retained = bool(existing and existing["has_options"])
+        return {
+            "status": "unavailable",
+            "options": existing["options"] if existing and retained else [],
+            "cached": retained,
+            "stale": retained,
+            "discovery_failure_code": "authentication_busy",
+        }
+    except (OSError, ValueError):
+        existing = cache.read()
+        retained = bool(existing and existing["has_options"])
+        return {
+            "status": "unavailable",
+            "options": existing["options"] if existing and retained else [],
+            "cached": retained,
+            "stale": retained,
+        }
+
+
+def _remote_cleanup_status() -> dict[str, Any]:
+    """Return only fixed, aggregate cleanup and breaker fields to local admins."""
+    from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+    from mcpserver.auth.remote_revocation import RemoteRevocationState, RemoteRevocationStateError
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+    from mcpserver.loxone.client import MiniserverEndpoint
+
+    try:
+        store = _token_store()
+        result = RemoteRevocationState(store.path).summary(store, int(time.time()))
+        config = _config_store().load()
+        if config.loxone_endpoint:
+            auth_store = _auth_store()
+            endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+            coordinator = MiniserverAuthCoordinator(
+                auth_store.path.parent / "miniserver-auth-diagnostics.json",
+                initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+                maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+                profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+            )
+            result.update(coordinator.current_status())
+        else:
+            result["breaker_state"] = "closed"
+        result["available"] = True
+        return result
+    except (AdminError, LoxoneTokenStoreError, RemoteRevocationStateError, ValueError):
+        return {"available": False}
+
+
+def _clear_event_history(payload: object = None) -> dict[str, Any]:
+    """Delete only plugin-owned local event records through the local Admin UI."""
+    from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
+
+    if not isinstance(payload, dict) or payload.get("confirm") is not True:
+        raise AdminError("explicit confirmation is required", code="confirmation_required")
+
+    config = _config_store().load()
+    path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+    if not path.is_absolute():
+        raise AdminError("local event history is unavailable")
+    was_active = _service_active()
+    if was_active:
+        _stop_service()
+    try:
+        store = EventHistoryStore(
+            path,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        store.initialize()
+        from mcpserver.loxone.weather_history import WeatherHistory
+
+        weather_removed = WeatherHistory(store).summary()
+        removed = store.clear()
+    except EventHistoryUnavailable as exc:
+        raise AdminError("local event history is unavailable") from exc
+    finally:
+        if was_active:
+            try:
+                _start_service()
+            except AdminError as exc:
+                raise AdminError(
+                    "local event history may be cleared but service restart failed",
+                    code="outcome_unknown",
+                ) from exc
+    return {
+        "event_history_entries_removed": removed,
+        "weather_history_deliveries_removed": weather_removed["deliveries"],
+        "weather_history_points_removed": weather_removed["points"],
+    }
 
 
 def _save_mqtt(payload: object) -> dict[str, Any]:
@@ -788,11 +1183,16 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
                     else "failed"
                 )
             return updated
+        except PersistenceUncertain:
+            # The filesystem change has happened. Do not compensate or restart blindly.
+            raise
         except (AdminError, MqttCredentialStoreError, ValueError) as apply_error:
             rollback_error: Exception | None = None
             if configuration_restore_required:
                 try:
                     save(previous)
+                except PersistenceUncertain as exc:
+                    raise AdminError("MQTT configuration apply and rollback failed") from exc
                 except ConfigError as exc:
                     rollback_error = exc
             if credentials_restore_required and credentials is not None:
@@ -903,7 +1303,7 @@ def _binding_pseudonym(subject_key: bytes, namespace: str, record: dict[str, Any
 
 
 def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
-    from mcpserver.auth.provider import READ_SCOPE
+    from mcpserver.auth.scopes import READ_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     document = snapshot.auth_document
@@ -948,6 +1348,35 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
             else None
         )
         client = clients.get(client_id, {})
+        explorer_read_approved = False
+        explorer_operate_approved = False
+        if record.get("client_kind") == "tool_explorer" and snapshot.configuration is not None:
+            from mcpserver.explorer_bindings import active_explorer_binding
+
+            explorer_read_approved = (
+                active_explorer_binding(
+                    snapshot.configuration,
+                    _auth_store(),
+                    "loxberry:read",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
+                    now=int(snapshot.now),
+                )
+                is not None
+            )
+            explorer_operate_approved = (
+                active_explorer_binding(
+                    snapshot.configuration,
+                    _auth_store(),
+                    "loxberry:operate",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
+                    now=int(snapshot.now),
+                )
+                is not None
+            )
         client_name = client.get("client_name", "") if isinstance(client, dict) else ""
         result.append(
             {
@@ -966,14 +1395,82 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
                 is True
                 and record.get("loxone_token_rejection_kind") == "token_authentication",
                 "loxberry_read_eligible": pending_loxberry_read,
-                "loxberry_read_approved": read_binding in bindings if read_binding else False,
+                "loxberry_read_approved": (
+                    explorer_read_approved or (read_binding in bindings if read_binding else False)
+                ),
                 "loxberry_operate_eligible": pending_loxberry_operate,
                 "loxberry_operate_approved": (
-                    operate_binding in operate_bindings if operate_binding else False
+                    explorer_operate_approved
+                    or (operate_binding in operate_bindings if operate_binding else False)
                 ),
             }
         )
     return sorted(result, key=lambda item: str(item["id"]))
+
+
+def _authentication_events(payload: object) -> dict[str, Any]:
+    """Read bounded authentication diagnostics only on explicit local Admin request."""
+    from mcpserver.loxone.auth_diagnostics import (
+        MiniserverAuthCoordinator,
+        authentication_binding,
+    )
+    from mcpserver.loxone.client import MiniserverEndpoint
+
+    if not isinstance(payload, dict) or set(payload) - {"session_id"}:
+        raise AdminError("Authentication history request is invalid")
+    family_id = payload.get("session_id")
+    if "session_id" in payload and (
+        not isinstance(family_id, str) or not family_id or len(family_id) > 128
+    ):
+        raise AdminError("Session identifier is invalid")
+    snapshot = _admin_read_snapshot(require_configuration=True)
+    config = snapshot.configuration
+    if config is None or not config.loxone_endpoint:
+        return {"events": [], "history_status": "unavailable", "bindings": []}
+    store = _auth_store()
+    endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+    coordinator = MiniserverAuthCoordinator(
+        store.path.parent / "miniserver-auth-diagnostics.json",
+        initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+        maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+        profile_id=store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+    )
+    families = snapshot.auth_document.get("families", {})
+    if not isinstance(families, dict):
+        families = {}
+
+    def binding(record: dict[str, Any]) -> str | None:
+        values = [record.get(key) for key in ("client_id", "identity_id", "miniserver_id")]
+        if not all(isinstance(value, str) and value for value in values):
+            return None
+        return authentication_binding(store, str(values[0]), str(values[1]), str(values[2]))
+
+    if family_id is not None:
+        record = families.get(family_id)
+        if not isinstance(record, dict) or (binding_id := binding(record)) is None:
+            raise AdminError("Session authentication history is unavailable")
+        return coordinator.diagnostic_snapshot(binding_id=binding_id) | {"bindings": []}
+    result = coordinator.diagnostic_snapshot()
+    groups: dict[str, dict[str, Any]] = {}
+    for session in _sessions(snapshot):
+        record = families.get(session["id"])
+        if not isinstance(record, dict) or (binding_id := binding(record)) is None:
+            continue
+        if binding_id not in groups:
+            if len(groups) >= 50:
+                continue
+            history = coordinator.diagnostic_snapshot(binding_id=binding_id)
+            groups[binding_id] = {
+                "session_id": session["id"],
+                "client": session["client"],
+                "client_name": str(session["client_name"])[:120],
+                "identity": session["identity"],
+                "miniserver": str(record["miniserver_id"])[:12],
+                "event_count": len(history["events"]),
+                "history_status": history["history_status"],
+                "latest_event": history["events"][0] if history["events"] else None,
+            }
+    return result | {"bindings": list(groups.values()), "bindings_bounded": True}
 
 
 def _confirm_loxone_token(payload: object) -> dict[str, Any]:
@@ -985,58 +1482,6 @@ def _confirm_loxone_token(payload: object) -> dict[str, Any]:
     if not LoxoneTokenHealthStore(_auth_store()).confirm_retry(family_id):
         raise AdminError("Loxone token confirmation is unavailable")
     return {"sessions": _sessions()}
-
-
-def _request_miniserver_auth_recovery(payload: object) -> dict[str, Any]:
-    """Authorize one signed, one-shot service probe for a live OAuth family."""
-    family_id = payload.get("session_id") if isinstance(payload, dict) else None
-    if not isinstance(family_id, str) or len(family_id) > 128:
-        raise AdminError("session identifier is invalid")
-    snapshot = _admin_read_snapshot()
-    record = snapshot.auth_document.get("families", {}).get(family_id)
-    if (
-        not isinstance(record, dict)
-        or record.get("revoked")
-        or not isinstance(record.get("expires_at"), int | float)
-        or record["expires_at"] <= snapshot.now
-        or snapshot.subject_key is None
-    ):
-        raise AdminError("active session is unavailable")
-    from mcpserver.loxone.auth_diagnostics import recovery_request_key, recovery_request_signature
-
-    try:
-        key = recovery_request_key(_path("MCPSERVER_INSTALL_KEY", suffix=".key").read_bytes())
-    except (OSError, ValueError) as exc:
-        raise AdminError("recovery authorization is unavailable") from exc
-    binding = _binding_pseudonym(snapshot.subject_key, "miniserver-auth-binding-v1", record)
-    expires_at = int(time.time()) + 30
-    nonce = secrets.token_urlsafe(24)
-    body = json.dumps(
-        {"binding_id": binding, "expires_at": expires_at, "nonce": nonce},
-        separators=(",", ":"),
-    ).encode("utf-8")
-    request = Request(
-        _INTERNAL_MINISERVER_AUTH_RECOVERY_URL,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "X-MCPServer-Recovery-Signature": recovery_request_signature(
-                key, binding_id=binding, expires_at=expires_at, nonce=nonce
-            ),
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=2) as response:
-            raw = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
-        if len(raw) > _INTERNAL_RESPONSE_MAX_BYTES:
-            raise ValueError("response too large")
-        answer = json.loads(raw)
-        if not isinstance(answer, dict) or answer.get("ok") is not True:
-            raise ValueError("recovery rejected")
-    except (OSError, ValueError, json.JSONDecodeError):
-        raise AdminError("recovery authorization is unavailable") from None
-    return _service_response() | {"sessions": _sessions(snapshot)}
 
 
 def _loxberry_binding(record: dict[str, Any], *, subject_key: bytes | None = None) -> str:
@@ -1061,7 +1506,49 @@ def _loxberry_operate_binding(record: dict[str, Any], *, subject_key: bytes | No
     )
 
 
-def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str, Any]]:
+def _binding_display_names(
+    configuration: PluginConfig | None, document: dict[str, Any], subject_key: bytes | None
+) -> dict[str, str]:
+    """Enrich old hash-only approvals only through exact retained family matches."""
+    if configuration is None:
+        return {}
+    names = dict(configuration.loxberry_binding_names)
+    if subject_key is None:
+        return names
+    clients = document.get("clients", {})
+    if not isinstance(clients, dict):
+        return names
+    for record in document.get("families", {}).values():
+        if not isinstance(record, dict) or not all(
+            isinstance(record.get(field), str) and record[field]
+            for field in ("client_id", "identity_id", "miniserver_id")
+        ):
+            continue
+        client = clients.get(record["client_id"], {})
+        name = binding_application_name(
+            client.get("client_name") if isinstance(client, dict) else None
+        )
+        if not name:
+            continue
+        for namespace, bindings in (
+            ("loxberry-read-binding-v1", configuration.loxberry_read_bindings),
+            ("loxberry-operate-binding-v1", configuration.loxberry_operate_bindings),
+        ):
+            binding = _binding_pseudonym(subject_key, namespace, record)
+            if binding in bindings:
+                names.setdefault(binding, name)
+    return names
+
+
+def _retain_binding_names(configuration: PluginConfig, document: dict[str, Any]) -> PluginConfig:
+    subject_key = base64.urlsafe_b64decode(document["subject_key"].encode("ascii"))
+    names = _binding_display_names(configuration, document, subject_key)
+    return replace(configuration, loxberry_binding_names=tuple(names.items()))
+
+
+def _binding_rows(
+    binding: str, sessions: list[dict[str, str]], *, client_name: str = ""
+) -> list[dict[str, Any]]:
     if sessions:
         return [
             {
@@ -1075,7 +1562,7 @@ def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str
     return [
         {
             "client": binding[:12],
-            "client_name": "",
+            "client_name": client_name,
             "identity": "",
             "binding_id": binding,
             "fingerprint": binding[:12],
@@ -1084,12 +1571,35 @@ def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str
     ]
 
 
+def _explorer_binding_rows(
+    binding: str,
+    sessions: list[dict[str, str]],
+    *,
+    inactive_since: int | None,
+    expires_at: int | None,
+) -> list[dict[str, Any]]:
+    rows = _binding_rows(binding, sessions)
+    for row in rows:
+        row["explorer_application"] = True
+        row["inactive_login_required"] = not sessions
+        row["inactive_since"] = inactive_since
+        row["retention_expires_at"] = expires_at
+        if not sessions:
+            row["client_name"] = "LoxBerry MCP Tool Explorer"
+    return rows
+
+
 def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
-    from mcpserver.auth.provider import LOXBERRY_READ_SCOPE
+    from mcpserver.auth.scopes import LOXBERRY_READ_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     bindings = snapshot.configuration.loxberry_read_bindings if snapshot.configuration else ()
-    if not bindings:
+    explorer_approvals = tuple(
+        item
+        for item in (snapshot.configuration.explorer_bindings if snapshot.configuration else ())
+        if item.capability == LOXBERRY_READ_SCOPE
+    )
+    if not bindings and not explorer_approvals:
         return []
     document = snapshot.auth_document
     clients = document.get("clients", {})
@@ -1122,24 +1632,84 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
                 "scopes": str(record.get("scope", "")),
             }
         )
-    return [
+    names = _binding_display_names(snapshot.configuration, document, snapshot.subject_key)
+    legacy = [
         {
             "id": binding,
             "fingerprint": binding[:12],
             "active": bool(related[binding]),
             "sessions": related[binding],
-            "rows": _binding_rows(binding, related[binding]),
+            "rows": _binding_rows(binding, related[binding], client_name=names.get(binding, "")),
         }
         for binding in bindings
+    ]
+    from mcpserver.explorer_bindings import explorer_binding_id
+
+    explorer_related: dict[str, list[dict[str, str]]] = {
+        item.binding_id: [] for item in explorer_approvals
+    }
+    for record in document.get("families", {}).values():
+        if (
+            not isinstance(record, dict)
+            or record.get("client_kind") != "tool_explorer"
+            or record.get("revoked", False)
+            or not isinstance(record.get("expires_at"), int | float)
+            or record["expires_at"] <= snapshot.now
+            or LOXBERRY_READ_SCOPE not in str(record.get("scope", "")).split()
+        ):
+            continue
+        binding = explorer_binding_id(
+            _auth_store(),
+            LOXBERRY_READ_SCOPE,
+            str(record.get("identity_id", "")),
+            str(record.get("miniserver_id", "")),
+            str(record.get("explorer_origin", "")),
+        )
+        if binding in explorer_related:
+            explorer_related[binding].append(
+                {
+                    "client": str(record.get("client_id", ""))[:12],
+                    "client_name": "LoxBerry MCP Tool Explorer",
+                    "identity": str(record.get("identity_id", ""))[:12],
+                    "scopes": str(record.get("scope", "")),
+                }
+            )
+    retention = (
+        snapshot.configuration.explorer_binding_retention_hours * 3600
+        if snapshot.configuration
+        else 0
+    )
+    return legacy + [
+        {
+            "id": item.binding_id,
+            "fingerprint": item.binding_id[:12],
+            "active": bool(explorer_related[item.binding_id]),
+            "legacy": False,
+            "sessions": explorer_related[item.binding_id],
+            "rows": _explorer_binding_rows(
+                item.binding_id,
+                explorer_related[item.binding_id],
+                inactive_since=item.inactive_since,
+                expires_at=(
+                    item.inactive_since + retention if item.inactive_since is not None else None
+                ),
+            ),
+        }
+        for item in explorer_approvals
     ]
 
 
 def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
-    from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+    from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     bindings = snapshot.configuration.loxberry_operate_bindings if snapshot.configuration else ()
-    if not bindings:
+    explorer_approvals = tuple(
+        item
+        for item in (snapshot.configuration.explorer_bindings if snapshot.configuration else ())
+        if item.capability == LOXBERRY_OPERATE_SCOPE
+    )
+    if not bindings and not explorer_approvals:
         return []
     document = snapshot.auth_document
     related: dict[str, list[dict[str, str]]] = {binding: [] for binding in bindings}
@@ -1170,20 +1740,75 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
                 "scopes": str(record.get("scope", "")),
             }
         )
-    return [
+    names = _binding_display_names(snapshot.configuration, document, snapshot.subject_key)
+    legacy = [
         {
             "id": binding,
             "fingerprint": binding[:12],
             "active": bool(related[binding]),
             "sessions": related[binding],
-            "rows": _binding_rows(binding, related[binding]),
+            "rows": _binding_rows(binding, related[binding], client_name=names.get(binding, "")),
         }
         for binding in bindings
+    ]
+    from mcpserver.explorer_bindings import explorer_binding_id
+
+    explorer_related: dict[str, list[dict[str, str]]] = {
+        item.binding_id: [] for item in explorer_approvals
+    }
+    for record in document.get("families", {}).values():
+        if (
+            not isinstance(record, dict)
+            or record.get("client_kind") != "tool_explorer"
+            or record.get("revoked", False)
+            or not isinstance(record.get("expires_at"), int | float)
+            or record["expires_at"] <= snapshot.now
+            or LOXBERRY_OPERATE_SCOPE not in str(record.get("scope", "")).split()
+        ):
+            continue
+        binding = explorer_binding_id(
+            _auth_store(),
+            LOXBERRY_OPERATE_SCOPE,
+            str(record.get("identity_id", "")),
+            str(record.get("miniserver_id", "")),
+            str(record.get("explorer_origin", "")),
+        )
+        if binding in explorer_related:
+            explorer_related[binding].append(
+                {
+                    "client": str(record.get("client_id", ""))[:12],
+                    "client_name": "LoxBerry MCP Tool Explorer",
+                    "identity": str(record.get("identity_id", ""))[:12],
+                    "scopes": str(record.get("scope", "")),
+                }
+            )
+    retention = (
+        snapshot.configuration.explorer_binding_retention_hours * 3600
+        if snapshot.configuration
+        else 0
+    )
+    return legacy + [
+        {
+            "id": item.binding_id,
+            "fingerprint": item.binding_id[:12],
+            "active": bool(explorer_related[item.binding_id]),
+            "legacy": False,
+            "sessions": explorer_related[item.binding_id],
+            "rows": _explorer_binding_rows(
+                item.binding_id,
+                explorer_related[item.binding_id],
+                inactive_since=item.inactive_since,
+                expires_at=(
+                    item.inactive_since + retention if item.inactive_since is not None else None
+                ),
+            ),
+        }
+        for item in explorer_approvals
     ]
 
 
 def _allow_loxberry_read(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import READ_SCOPE
+    from mcpserver.auth.scopes import READ_SCOPE
 
     session_id = payload.get("session_id") if isinstance(payload, dict) else None
     if not isinstance(session_id, str) or len(session_id) > 128:
@@ -1199,57 +1824,127 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         or READ_SCOPE not in str(record.get("scope", "")).split()
     ):
         raise AdminError("pending diagnostic session is unavailable")
+    if record.get("client_kind") == "tool_explorer":
+        from mcpserver.explorer_bindings import record_explorer_approval
+
+        try:
+            record_explorer_approval(
+                _config_store(),
+                _auth_store(),
+                "loxberry:read",
+                record,
+                now=int(time.time()),
+                on_transition=lambda binding: lifecycle_event(
+                    "approval_granted",
+                    family_id=session_id,
+                    binding_id=binding,
+                    reason="read",
+                    source="admin",
+                    outcome="committed",
+                ),
+            )
+        except PersistenceUncertain:
+            raise
+        except ValueError as exc:
+            raise AdminError(str(exc)) from exc
+        return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
     binding = _loxberry_binding(record)
 
+    created = False
+
     def add_binding(previous: PluginConfig) -> PluginConfig:
+        nonlocal created
         if binding in previous.loxberry_read_bindings:
-            return previous
+            return _retain_binding_names(previous, document)
         if len(previous.loxberry_read_bindings) >= 64:
             raise AdminError("LoxBerry approval capacity reached")
-        return replace(
-            previous,
-            loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
+        created = True
+        return _retain_binding_names(
+            replace(
+                previous,
+                loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
+            ),
+            document,
         )
 
     _config_store().mutate(add_binding)
+    if created:
+        lifecycle_event(
+            "approval_granted",
+            family_id=session_id,
+            binding_id=binding,
+            reason="read",
+            source="admin",
+            outcome="committed",
+        )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
 def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
+    from mcpserver.explorer_bindings import explorer_binding_id
+
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry approval is invalid")
 
     def remove_binding(previous: PluginConfig) -> PluginConfig:
-        if binding not in previous.loxberry_read_bindings:
+        explorer_matches = tuple(
+            item
+            for item in previous.explorer_bindings
+            if not (item.capability == "loxberry:read" and item.binding_id == binding)
+        )
+        if binding not in previous.loxberry_read_bindings and len(explorer_matches) == len(
+            previous.explorer_bindings
+        ):
             raise AdminError("LoxBerry approval is unavailable")
         return replace(
             previous,
             loxberry_read_bindings=tuple(
                 item for item in previous.loxberry_read_bindings if item != binding
             ),
+            loxberry_binding_names=tuple(
+                (key, name) for key, name in previous.loxberry_binding_names if key != binding
+            ),
+            explorer_bindings=explorer_matches,
         )
 
     updated_config = _config_store().mutate(remove_binding)
+    lifecycle_event(
+        "approval_removed", binding_id=binding, reason="read", source="admin", outcome="committed"
+    )
     document = _auth_store().snapshot()
     families = [
         family_id
         for family_id, record in document.get("families", {}).items()
         if isinstance(record, dict)
         and not record.get("revoked", False)
-        and _loxberry_binding(record) == binding
+        and (
+            _loxberry_binding(record) == binding
+            or (
+                record.get("client_kind") == "tool_explorer"
+                and explorer_binding_id(
+                    _auth_store(),
+                    "loxberry:read",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
+                )
+                == binding
+            )
+        )
     ]
     if families:
         _revoke_many(
             families,
             endpoint=updated_config.loxone_endpoint,
             timeout_seconds=updated_config.connection_timeout,
+            reason="approval_read_removed",
         )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
 def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE
+    from mcpserver.auth.scopes import HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE
 
     session_id = payload.get("session_id") if isinstance(payload, dict) else None
     if not isinstance(session_id, str) or len(session_id) > 128:
@@ -1267,19 +1962,62 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
         or LOXBERRY_OPERATE_SCOPE not in scopes
     ):
         raise AdminError("pending operation session is unavailable")
+    if record.get("client_kind") == "tool_explorer":
+        from mcpserver.explorer_bindings import record_explorer_approval
+
+        try:
+            record_explorer_approval(
+                _config_store(),
+                _auth_store(),
+                "loxberry:operate",
+                record,
+                now=int(time.time()),
+                on_transition=lambda binding: lifecycle_event(
+                    "approval_granted",
+                    family_id=session_id,
+                    binding_id=binding,
+                    reason="operate",
+                    source="admin",
+                    outcome="committed",
+                ),
+            )
+        except PersistenceUncertain:
+            raise
+        except ValueError as exc:
+            raise AdminError(str(exc)) from exc
+        return {
+            "sessions": _sessions(),
+            "loxberry_operate_bindings": _loxberry_operate_bindings(),
+        }
     binding = _loxberry_operate_binding(record)
 
+    created = False
+
     def add_binding(previous: PluginConfig) -> PluginConfig:
+        nonlocal created
         if binding in previous.loxberry_operate_bindings:
-            return previous
+            return _retain_binding_names(previous, document)
         if len(previous.loxberry_operate_bindings) >= 64:
             raise AdminError("LoxBerry operation approval capacity reached")
-        return replace(
-            previous,
-            loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
+        created = True
+        return _retain_binding_names(
+            replace(
+                previous,
+                loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
+            ),
+            document,
         )
 
     _config_store().mutate(add_binding)
+    if created:
+        lifecycle_event(
+            "approval_granted",
+            family_id=session_id,
+            binding_id=binding,
+            reason="operate",
+            source="admin",
+            outcome="committed",
+        )
     return {
         "sessions": _sessions(),
         "loxberry_operate_bindings": _loxberry_operate_bindings(),
@@ -1287,23 +2025,42 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
 
 def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+    from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE
+    from mcpserver.explorer_bindings import explorer_binding_id
 
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry operation approval is invalid")
 
     def remove_binding(previous: PluginConfig) -> PluginConfig:
-        if binding not in previous.loxberry_operate_bindings:
+        explorer_matches = tuple(
+            item
+            for item in previous.explorer_bindings
+            if not (item.capability == "loxberry:operate" and item.binding_id == binding)
+        )
+        if binding not in previous.loxberry_operate_bindings and len(explorer_matches) == len(
+            previous.explorer_bindings
+        ):
             raise AdminError("LoxBerry operation approval is unavailable")
         return replace(
             previous,
             loxberry_operate_bindings=tuple(
                 item for item in previous.loxberry_operate_bindings if item != binding
             ),
+            loxberry_binding_names=tuple(
+                (key, name) for key, name in previous.loxberry_binding_names if key != binding
+            ),
+            explorer_bindings=explorer_matches,
         )
 
     updated_config = _config_store().mutate(remove_binding)
+    lifecycle_event(
+        "approval_removed",
+        binding_id=binding,
+        reason="operate",
+        source="admin",
+        outcome="committed",
+    )
     document = _auth_store().snapshot()
     families = [
         family_id
@@ -1311,13 +2068,27 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
         if isinstance(record, dict)
         and not record.get("revoked", False)
         and LOXBERRY_OPERATE_SCOPE in str(record.get("scope", "")).split()
-        and _loxberry_operate_binding(record) == binding
+        and (
+            _loxberry_operate_binding(record) == binding
+            or (
+                record.get("client_kind") == "tool_explorer"
+                and explorer_binding_id(
+                    _auth_store(),
+                    "loxberry:operate",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
+                )
+                == binding
+            )
+        )
     ]
     if families:
         _revoke_many(
             families,
             endpoint=updated_config.loxone_endpoint,
             timeout_seconds=updated_config.connection_timeout,
+            reason="approval_operate_removed",
         )
     return {
         "sessions": _sessions(),
@@ -1335,12 +2106,14 @@ def _revoke(
         None if family_id is None else [family_id],
         endpoint=endpoint,
         timeout_seconds=timeout_seconds,
+        reason="admin_all_sessions" if family_id is None else "admin_session",
     )
 
 
 def _revoke_many(
     family_ids: list[str] | None,
     *,
+    reason: str = "admin_session",
     endpoint: str | None = None,
     timeout_seconds: float | None = None,
 ) -> int:
@@ -1358,7 +2131,12 @@ def _revoke_many(
             family = document["families"].get(target)
             if family is None:
                 continue
-            family["revoked"] = True
+            mark_family_revoked(
+                family,
+                now=int(time.time()),
+                reason=reason,
+                source="configuration" if reason == "scope_disabled" else "admin",
+            )
             revoked.append(target)
             for collection in ("codes", "access_tokens", "refresh_tokens"):
                 for record in document[collection].values():
@@ -1378,8 +2156,10 @@ def _revoke_many(
 
 
 def _diagnostic() -> dict[str, Any]:
+    from mcpserver import __version__
     from mcpserver.loxone.client import MiniserverEndpoint
 
+    snapshot = _admin_read_snapshot()
     config = _config_store().load()
     endpoint = MiniserverEndpoint.parse(config.loxone_endpoint) if config.loxone_endpoint else None
     return {
@@ -1390,20 +2170,175 @@ def _diagnostic() -> dict[str, Any]:
         "transport": ("wss" if endpoint is not None and endpoint.secure else "ws")
         if endpoint is not None
         else "not_configured",
-        "session_count": len(_sessions()),
+        "session_count": len(_sessions(snapshot)),
+        "auth_lifecycle": lifecycle_summary(snapshot.auth_document),
     }
 
 
-def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict[str, Any]:
+def _event_history_source_revision() -> dict[str, str | bool]:
+    """Read a local change marker without importing discovery or auth clients."""
+    from mcpserver.loxone.event_history import EventHistoryStore, source_revision_for_snapshot
+
+    config = _config_store().load()
+    try:
+        store = EventHistoryStore(
+            _path("MCPSERVER_EVENT_HISTORY_STORE", suffix=".sqlite3"),
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        snapshot = store.snapshot(config.event_history_sources)
+    except Exception:
+        return {"availability": "unavailable"}
+    return {
+        "availability": "available",
+        "payload_pending": any(source.logical_value_bytes is None for source in snapshot.sources),
+        "revision": source_revision_for_snapshot(
+            config.event_history_sources,
+            snapshot,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        ),
+    }
+
+
+def dispatch(request: object, *, timing: dict[str, float | int] | None = None) -> dict[str, Any]:
+    try:
+        return _dispatch(request, timing=timing)
+    except PersistenceUncertain as exc:
+        raise AdminError(
+            "A stored change is visible, but durability is unconfirmed. "
+            "Reload the saved state before taking further action.",
+            code="persistence_uncertain",
+        ) from exc
+
+
+def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) -> dict[str, Any]:
     if not isinstance(request, dict) or not isinstance(request.get("action"), str):
         raise AdminError("request is invalid")
     action = request["action"]
     payload = request.get("payload", {})
+    if action.startswith("profile_"):
+        from mcpserver.installation_profile_admin import dispatch_profile
+
+        return dispatch_profile(action, payload, _config_store())
+    if action.startswith("knx_"):
+        from mcpserver.knx.admin import dispatch_knx
+
+        config_store = _config_store()
+        return (
+            dispatch_knx(action, payload, config_store, timing=timing)
+            if timing is not None
+            else dispatch_knx(action, payload, config_store)
+        )
+    if action == "page_snapshot":
+        sections: dict[str, dict[str, Any]] = {}
+        for section_action in (
+            "get_config",
+            "emergency_stop_cached_options",
+            "page_state",
+            "service_status",
+            "certificate_status",
+            "list_sessions",
+        ):
+            section_started = time.perf_counter_ns()
+            try:
+                sections[section_action] = {
+                    "ok": True,
+                    "data": dispatch({"action": section_action}, timing=timing),
+                }
+            except AdminError as exc:
+                sections[section_action] = {
+                    "ok": False,
+                    "error": {"code": exc.code, "message": str(exc)},
+                }
+            except Exception:
+                sections[section_action] = {
+                    "ok": False,
+                    "error": {
+                        "code": "internal_error",
+                        "message": "administrative action failed",
+                    },
+                }
+            if timing is not None:
+                timing[f"{section_action}_ms"] = (
+                    time.perf_counter_ns() - section_started
+                ) / 1_000_000
+        return sections
     if action == "page_state":
         return {
             "mqtt_gateway": _mqtt_gateway_status(),
             "mqtt_password_configured": _mqtt_password_configured(),
         }
+    if action == "event_history_source_revision":
+        return _event_history_source_revision()
+    if action in {
+        "event_history_overview",
+        "event_history_local_overview",
+        "event_history_quick_summary",
+        "event_history_discover",
+        "event_history_discover_states",
+        "event_history_prepare_selector",
+        "event_history_visible_overview",
+        "event_history_selector_catalog",
+        "event_history_selector_facets",
+        "event_history_selector_query",
+        "event_history_selector_states",
+        "event_history_chart_prepare",
+        "event_history_chart_query",
+        "event_history_save_policy",
+        "event_history_add_source",
+        "event_history_remove_source",
+        "event_history_purge_source",
+    }:
+        from mcpserver import event_history_admin
+
+        if action == "event_history_overview":
+            return event_history_admin.overview()
+        if action == "event_history_local_overview":
+            return event_history_admin.overview(local_only=True)
+        if action == "event_history_quick_summary":
+            return event_history_admin.quick_summary()
+        if action == "event_history_discover":
+            return event_history_admin.discover(payload)
+        if action == "event_history_discover_states":
+            return event_history_admin.discover_states(payload)
+        if action == "event_history_prepare_selector":
+            return event_history_admin.prepare_selector()
+        if action == "event_history_visible_overview":
+            return event_history_admin.visible_overview()
+        if action == "event_history_selector_catalog":
+            return event_history_admin.selector_catalog(payload)
+        if action == "event_history_selector_facets":
+            return event_history_admin.selector_facets(payload)
+        if action == "event_history_selector_query":
+            return event_history_admin.selector_query(payload)
+        if action == "event_history_selector_states":
+            return event_history_admin.selector_states(payload)
+        if action == "event_history_chart_prepare":
+            return event_history_admin.chart_prepare(payload, timing=timing)
+        if action == "event_history_chart_query":
+            return event_history_admin.chart_query(payload)
+        if action == "event_history_save_policy":
+            return event_history_admin.save_policy(payload)
+        if action == "event_history_add_source":
+            return event_history_admin.change_source(payload, add=True)
+        if action == "event_history_remove_source":
+            return event_history_admin.change_source(payload, add=False)
+        return event_history_admin.purge_source(payload)
+    if action == "event_history_runtime_status":
+        return _event_history_runtime_status()
+    if action in {"solar_history_options", "solar_history_save"}:
+        from mcpserver.event_history_admin import solar_sources
+
+        return solar_sources(action, payload)
+    if action in {
+        "weather_history_options",
+        "weather_history_add_source",
+        "weather_history_remove_source",
+    }:
+        from mcpserver.event_history_admin import weather_sources
+
+        return weather_sources(action, payload)
     if action == "get_config":
         store = _config_store()
         if timing is None:
@@ -1411,18 +2346,57 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         else:
             configuration, config_timing = store.load_with_timing()
             timing.update(config_timing)
-        return {"configuration": configuration.to_document()}
+        return {
+            "configuration": configuration.to_document(),
+            "event_history_brief": _event_history_brief(configuration),
+        }
     if action == "save_config":
         return _save(payload)
     if action == "save_mcp_config":
         return _save_mcp(payload)
+    if action in {"inspect_message_confirmation", "approve_message_confirmation"}:
+        from mcpserver.message_approval import MessageApprovalStore
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("preview_id"), str):
+            raise AdminError("Invalid message preview")
+        approvals = MessageApprovalStore(_config_store().path)
+        try:
+            if action == "inspect_message_confirmation":
+                return approvals.inspect(payload["preview_id"])
+            if not isinstance(payload.get("challenge"), str):
+                raise AdminError("Invalid message approval")
+            approvals.approve(payload["preview_id"], payload["challenge"])
+        except (ValueError, OSError) as exc:
+            raise AdminError("Message preview is unavailable or approval does not match") from exc
+        logging.getLogger("mcpserver.message_confirmation").info(
+            "component=message_confirmation_approval severity=INFO outcome=approved"
+        )
+        return {"approved": True}
+    if action == "save_knx_taxonomy":
+        return _save_knx_taxonomy(payload)
     if action == "save_mqtt_config":
         return _save_mqtt(payload)
     if action == "emergency_stop_options":
         return _emergency_stop_options()
+    if action == "emergency_stop_refresh":
+        return _emergency_stop_options(automatic=True)
+    if action == "emergency_stop_cached_options":
+        return _cached_emergency_stop_options()
+    if action == "emergency_stop_retry":
+        return _emergency_stop_options(manual_retry=True)
+    if action == "miniserver_auth_probe":
+        # Only the authenticated native Admin bridge exposes this explicit action.
+        result = _discover_emergency_stop_options(
+            _config_store().load(), manual_retry=True, early_probe=True
+        )
+        return {"status": result["status"], "remote_cleanup": _remote_cleanup_status()}
+    if action == "clear_event_history":
+        return _clear_event_history(payload)
     if action == "set_logging":
         return _set_logging(payload)
     if action == "status":
+        from mcpserver import __version__
+
         return {
             "version": __version__,
             "sessions": _sessions(),
@@ -1435,6 +2409,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
     if action == "set_service_enabled":
         return _set_service_enabled(payload)
     if action == "test_connection":
+        import asyncio
+
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":
         snapshot = _admin_read_snapshot()
@@ -1442,6 +2418,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             "sessions": _sessions(snapshot),
             "loxberry_bindings": _loxberry_bindings(snapshot),
             "loxberry_operate_bindings": _loxberry_operate_bindings(snapshot),
+            "remote_cleanup": _remote_cleanup_status(),
         }
     if action == "allow_loxberry_read":
         return _allow_loxberry_read(payload)
@@ -1456,10 +2433,10 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         if not isinstance(family_id, str) or len(family_id) > 128:
             raise AdminError("session identifier is invalid")
         return {"revoked": _revoke(family_id), "sessions": _sessions()}
+    if action == "list_authentication_events":
+        return _authentication_events(payload)
     if action == "confirm_loxone_token":
         return _confirm_loxone_token(payload)
-    if action == "request_miniserver_auth_recovery":
-        return _request_miniserver_auth_recovery(payload)
     if action == "revoke_all":
         return {"revoked": _revoke(None), "sessions": _sessions()}
     if action == "diagnostic":
@@ -1472,16 +2449,27 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
 
 
 def main() -> None:
+    main_entered_ns = time.time_ns()
     request_started = time.perf_counter_ns()
-    timing: dict[str, float] = {}
+    timing: dict[str, float | int] = {}
     action: str | None = None
     try:
-        raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
-        if len(raw) > _MAX_REQUEST_BYTES:
+        maximum = (
+            24 * 1024 * 1024 if os.getenv("MCPSERVER_KNX_ADMIN") == "1" else _MAX_REQUEST_BYTES
+        )
+        raw = sys.stdin.buffer.read(maximum + 1)
+        if len(raw) > maximum:
             raise AdminError("request is too large")
         request = json.loads(raw)
         action = request.get("action") if isinstance(request, dict) else None
-        response = {"ok": True, "data": dispatch(request, timing=timing)}
+        with admin_lifecycle_logging():
+            dispatch_started = time.perf_counter_ns()
+            response = {"ok": True, "data": dispatch(request, timing=timing)}
+            if action in {"knx_page", "knx_read_page", "knx_project_page"}:
+                timing["helper_input_ms"] = (dispatch_started - request_started) / 1_000_000
+                timing["helper_dispatch_ms"] = (
+                    time.perf_counter_ns() - dispatch_started
+                ) / 1_000_000
     except AdminError as exc:
         response = {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1491,21 +2479,55 @@ def main() -> None:
             "ok": False,
             "error": {"code": "internal_error", "message": "administrative action failed"},
         }
-    sys.stdout.write(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
-    if action == "get_config":
+    serialize_started = time.perf_counter_ns()
+    serialized = json.dumps(response, ensure_ascii=True, separators=(",", ":"))
+    if action == "event_history_chart_prepare":
+        timing["serialization_ms"] = (time.perf_counter_ns() - serialize_started) / 1_000_000
+        timing["serialized_bytes"] = len(serialized.encode("utf-8"))
+    sys.stdout.write(serialized + "\n")
+    if action in {"knx_page", "knx_read_page", "knx_project_page"}:
+        sys.stdout.flush()
+    if action in (
+        "get_config",
+        "page_snapshot",
+        "event_history_chart_prepare",
+        "knx_page",
+        "knx_read_page",
+        "knx_project_page",
+    ):
         helper_started = os.getenv("MCPSERVER_ADMIN_STARTED_NS", "")
         try:
             bootstrap_ms = (int(_MODULE_IMPORT_STARTED_NS) - int(helper_started)) / 1_000_000
         except ValueError:
             bootstrap_ms = None
-        timing.update(
-            {
-                "module_import_ms": (_MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS)
-                / 1_000_000,
-                "request_dispatch_ms": (time.perf_counter_ns() - request_started) / 1_000_000,
-            }
-        )
-        if bootstrap_ms is not None and bootstrap_ms >= 0:
+        if action in {"knx_page", "knx_read_page", "knx_project_page"}:
+            timing["module_definitions_ms"] = (
+                main_entered_ns - _MODULE_IMPORT_FINISHED_NS
+            ) / 1_000_000
+            timing["helper_total_ms"] = (
+                bootstrap_ms + (time.time_ns() - _MODULE_IMPORT_STARTED_NS) / 1_000_000
+                if bootstrap_ms is not None
+                else 0
+            )
+            timing["helper_serialize_ms"] = (time.perf_counter_ns() - serialize_started) / 1_000_000
+            timing["module_import_ms"] = (
+                _MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS
+            ) / 1_000_000
+            if bootstrap_ms is not None and 0 <= bootstrap_ms <= 60000:
+                timing["process_bootstrap_ms"] = bootstrap_ms
+        if action in ("get_config", "page_snapshot"):
+            timing.update(
+                {
+                    "module_import_ms": (_MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS)
+                    / 1_000_000,
+                    "request_dispatch_ms": (time.perf_counter_ns() - request_started) / 1_000_000,
+                }
+            )
+        if (
+            action in ("get_config", "page_snapshot")
+            and bootstrap_ms is not None
+            and bootstrap_ms >= 0
+        ):
             timing["process_bootstrap_ms"] = bootstrap_ms
         sys.stderr.write(
             "mcpserver_admin_timing="

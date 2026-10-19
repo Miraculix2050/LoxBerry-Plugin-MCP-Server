@@ -12,6 +12,7 @@ import stat
 import sys
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -21,9 +22,17 @@ from urllib.parse import urlsplit
 
 import idna
 
+from mcpserver.knx.prefix_receipts import PrefixReceipt, parse_receipts
 from mcpserver.loxone.endpoint import MiniserverEndpoint
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
+from mcpserver.loxone.uuid import normalize_history_control_id, normalize_loxone_uuid
+from mcpserver.loxone.weather_history import MAX_SOURCES as MAX_WEATHER_HISTORY_SOURCES
+from mcpserver.loxone.weather_history import WeatherHistorySource
+from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
+from mcpserver.solar_recording import SolarRecordingSource
+from mcpserver.solar_recording import parse_sources as parse_solar_sources
 
-SCHEMA_VERSION: Final = 9
+SCHEMA_VERSION: Final = 12
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -31,7 +40,11 @@ DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
 DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE: Final = 30
 DEFAULT_HISTORY_REQUESTS_PER_MINUTE: Final = 12
 DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE: Final = 3
+DEFAULT_EXPLORER_BINDING_RETENTION_HOURS: Final = 72
 DEFAULT_STATISTICS_MEMORY_MAX_MIB: Final = 128
+DEFAULT_EVENT_HISTORY_RETENTION_DAYS: Final = 90
+DEFAULT_EVENT_HISTORY_MAXIMUM_MIB: Final = 128
+MAX_EVENT_HISTORY_SOURCES: Final = 64
 DEFAULT_STRUCTURE_REFRESH_SECONDS: Final = 300
 DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS: Final = 16
 DEFAULT_RUNTIME_SESSION_IDLE_SECONDS: Final = 900
@@ -52,6 +65,10 @@ _TransactionResult = TypeVar("_TransactionResult")
 
 class ConfigError(ValueError):
     """The plugin configuration is invalid or cannot be persisted safely."""
+
+
+class ConfigPersistenceUncertain(ConfigError, PersistenceUncertain):
+    """The new configuration is visible, but durability was not confirmed."""
 
 
 def _lock_file(handle: BinaryIO) -> None:
@@ -156,6 +173,29 @@ def _emergency_stop_uuid(value: object) -> str:
     return value
 
 
+def _event_history_sources(value: object) -> tuple[tuple[str, str], ...]:
+    """Validate the deliberately small allowlist of recorded state sources."""
+    if not isinstance(value, list) or len(value) > MAX_EVENT_HISTORY_SOURCES:
+        raise ConfigError("event_history.sources is unsupported")
+    sources: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ConfigError("event_history.sources is unsupported")
+        control_value = item.get("control_uuid")
+        state_value = item.get("state_uuid")
+        if not isinstance(control_value, str) or not isinstance(state_value, str):
+            raise ConfigError("event_history.sources is unsupported")
+        try:
+            control_uuid = normalize_history_control_id(control_value)
+            state_uuid = normalize_loxone_uuid(state_value)
+        except ValueError as exc:
+            raise ConfigError("event_history.sources is unsupported") from exc
+        if not control_uuid or not state_uuid or (control_uuid, state_uuid) in sources:
+            raise ConfigError("event_history.sources is unsupported")
+        sources.append((control_uuid, state_uuid))
+    return tuple(sources)
+
+
 def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > MAX_LOXBERRY_BINDINGS:
         raise ConfigError(f"{name} is unsupported")
@@ -173,6 +213,129 @@ def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     return tuple(bindings)
 
 
+def _weather_history_sources(value: object) -> tuple[WeatherHistorySource, ...]:
+    if not isinstance(value, list) or len(value) > MAX_WEATHER_HISTORY_SOURCES:
+        raise ConfigError("event_history.weather_sources is unsupported")
+    try:
+        sources = tuple(WeatherHistorySource.parse(item) for item in value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("event_history.weather_sources is unsupported") from exc
+    if len({(s.state_uuid, s.mode) for s in sources}) != len(sources):
+        raise ConfigError("weather history sources must be unique")
+    return sources
+
+
+def binding_application_name(value: object) -> str:
+    """Return bounded display metadata; never an authorization identity."""
+    if not isinstance(value, str):
+        return ""
+    name = value.strip()
+    if (
+        not name
+        or len(name) > 200
+        or any(unicodedata.category(char).startswith("C") for char in name)
+    ):
+        return ""
+    return name
+
+
+def _binding_names(value: object, *, bindings: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, dict) or len(value) > 2 * MAX_LOXBERRY_BINDINGS:
+        raise ConfigError("policies.loxberry_binding_names must be a bounded object")
+    result: list[tuple[str, str]] = []
+    for binding, name in value.items():
+        if binding not in bindings or not binding_application_name(name) or name != name.strip():
+            raise ConfigError("policies.loxberry_binding_names has unsupported display metadata")
+        result.append((binding, name))
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
+class ExplorerBindingApproval:
+    """Pseudonymous, reusable approval for the fixed local Tool Explorer."""
+
+    binding_id: str
+    capability: str
+    application_id: str
+    version: int
+    created_at: int
+    last_active_at: int
+    last_active_until: int
+    inactive_since: int | None = None
+
+
+def _explorer_bindings(value: object) -> tuple[ExplorerBindingApproval, ...]:
+    if not isinstance(value, list) or len(value) > 128:
+        raise ConfigError("policies.explorer_bindings must be a bounded list")
+    result: list[ExplorerBindingApproval] = []
+    seen: set[tuple[str, str]] = set()
+    for index, item in enumerate(value):
+        name = f"policies.explorer_bindings[{index}]"
+        record = _mapping(item, name=name)
+        if set(record) != {
+            "binding_id",
+            "capability",
+            "application_id",
+            "version",
+            "created_at",
+            "last_active_at",
+            "last_active_until",
+            "inactive_since",
+        }:
+            raise ConfigError(f"{name} has unsupported fields")
+        binding_id = record.get("binding_id")
+        if not isinstance(binding_id, str) or len(binding_id) != 64:
+            raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value")
+        try:
+            int(binding_id, 16)
+        except ValueError as exc:
+            raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value") from exc
+        if binding_id.lower() != binding_id:
+            raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value")
+        capability = record.get("capability")
+        if capability not in {
+            "loxberry:read",
+            "loxberry:operate",
+            "loxberry:knx:read",
+            "loxberry:knx:drafts",
+            "loxberry:knx:write",
+        }:
+            raise ConfigError(f"{name}.capability is unsupported")
+        if record.get("application_id") != "tool-explorer-v1" or record.get("version") != 1:
+            raise ConfigError(f"{name} application identity is unsupported")
+        timestamps: dict[str, int] = {}
+        for field in ("created_at", "last_active_at", "last_active_until"):
+            timestamps[field] = _integer(
+                record.get(field), name=f"{name}.{field}", minimum=0, maximum=2**63 - 1
+            )
+        inactive = record.get("inactive_since")
+        if inactive is not None:
+            inactive = _integer(
+                inactive, name=f"{name}.inactive_since", minimum=0, maximum=2**63 - 1
+            )
+        if timestamps["last_active_at"] < timestamps["created_at"]:
+            raise ConfigError(f"{name} timestamps are inconsistent")
+        if timestamps["last_active_until"] < timestamps["last_active_at"]:
+            raise ConfigError(f"{name} timestamps are inconsistent")
+        key = (capability, binding_id)
+        if key in seen:
+            raise ConfigError(f"{name} is duplicated")
+        seen.add(key)
+        result.append(
+            ExplorerBindingApproval(
+                binding_id=binding_id,
+                capability=capability,
+                application_id="tool-explorer-v1",
+                version=1,
+                created_at=timestamps["created_at"],
+                last_active_at=timestamps["last_active_at"],
+                last_active_until=timestamps["last_active_until"],
+                inactive_since=inactive,
+            )
+        )
+    return tuple(result)
+
+
 @dataclass(frozen=True, slots=True)
 class PluginConfig:
     """The small public Phase 1 configuration contract."""
@@ -184,18 +347,42 @@ class PluginConfig:
     loxone_read_enabled: bool = True
     loxone_control_enabled: bool = False
     loxberry_read_enabled: bool = False
+    loxberry_knx_read_enabled: bool = False
+    loxberry_knx_drafts_enabled: bool = False
+    loxberry_knx_write_enabled: bool = False
+    loxberry_knx_prefix_write_enabled: bool = False
     loxone_history_enabled: bool = False
+    loxone_message_confirmation_enabled: bool = False
     loxberry_operate_enabled: bool = False
+    installation_profile_write_enabled: bool = False
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     control_requests_per_minute: int = DEFAULT_CONTROL_REQUESTS_PER_MINUTE
     loxberry_requests_per_minute: int = DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE
     history_requests_per_minute: int = DEFAULT_HISTORY_REQUESTS_PER_MINUTE
     loxberry_operate_requests_per_minute: int = DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE
+    explorer_binding_retention_hours: int = DEFAULT_EXPLORER_BINDING_RETENTION_HOURS
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
+    loxberry_knx_read_bindings: tuple[str, ...] = ()
+    loxberry_knx_drafts_bindings: tuple[str, ...] = ()
+    loxberry_knx_write_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
+    installation_profile_write_bindings: tuple[str, ...] = ()
+    loxberry_binding_names: tuple[tuple[str, str], ...] = ()
+    explorer_bindings: tuple[ExplorerBindingApproval, ...] = ()
     statistics_memory_max_mib: int = DEFAULT_STATISTICS_MEMORY_MAX_MIB
+    event_history_enabled: bool = False
+    event_history_retention_days: int = DEFAULT_EVENT_HISTORY_RETENTION_DAYS
+    event_history_maximum_mib: int = DEFAULT_EVENT_HISTORY_MAXIMUM_MIB
+    event_history_sources: tuple[tuple[str, str], ...] = ()
+    weather_history_enabled: bool = False
+    weather_history_sources: tuple[WeatherHistorySource, ...] = ()
+    solar_history_enabled: bool = False
+    solar_history_sources: tuple[SolarRecordingSource, ...] = ()
+    solar_forecast_enabled: bool = False
+    solar_forecast_maximum_age_minutes: int = 180
+    solar_forecast_fingerprint: str = ""
     structure_refresh_seconds: int = DEFAULT_STRUCTURE_REFRESH_SECONDS
     max_active_runtime_sessions: int = DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS
     runtime_session_idle_seconds: int = DEFAULT_RUNTIME_SESSION_IDLE_SECONDS
@@ -213,6 +400,10 @@ class PluginConfig:
     mqtt_port: int = DEFAULT_MQTT_PORT
     mqtt_username: str = ""
     emergency_stop_virtual_status_uuid: str = ""
+    knx_address_taxonomy_endpoint: str = ""
+    knx_address_taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
+    knx_taxonomy_targets: tuple[tuple[str, tuple[AddressTaxonomyEntry, ...]], ...] = ()
+    knx_prefix_apply_receipts: tuple[PrefixReceipt, ...] = ()
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -222,7 +413,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, 9, 10, 11, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -233,6 +424,29 @@ class PluginConfig:
         logging_config = _mapping(root.get("logging", {}), name="logging")
         mqtt = _mapping(root.get("mqtt", {}), name="mqtt")
         emergency_stop = _mapping(root.get("emergency_stop", {}), name="emergency_stop")
+        event_history = _mapping(root.get("event_history", {}), name="event_history")
+        solar_forecast = _mapping(root.get("solar_forecast", {}), name="solar_forecast")
+        solar_forecast_enabled = _boolean(
+            solar_forecast.get("enabled", False), name="solar_forecast.enabled"
+        )
+        solar_forecast_maximum_age_minutes = _integer(
+            solar_forecast.get("maximum_age_minutes", 180),
+            name="solar_forecast.maximum_age_minutes",
+            minimum=1,
+            maximum=1440,
+        )
+        solar_forecast_fingerprint = solar_forecast.get("fingerprint", "")
+        if not isinstance(solar_forecast_fingerprint, str) or (
+            solar_forecast_fingerprint
+            and re.fullmatch(r"[a-f0-9]{64}", solar_forecast_fingerprint) is None
+        ):
+            raise ConfigError("solar_forecast.fingerprint is invalid")
+        taxonomy = _mapping(root.get("knx_address_taxonomy", {}), name="knx_address_taxonomy")
+
+        try:
+            prefix_receipts = parse_receipts(root.get("knx_prefix_apply_receipts", []))
+        except ValueError:
+            raise ConfigError("knx_prefix_apply_receipts is invalid") from None
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -292,14 +506,66 @@ class PluginConfig:
         loxberry_read_enabled = _boolean(
             tools.get("loxberry_read_enabled", False), name="tools.loxberry_read_enabled"
         )
+        loxberry_knx_read_enabled = _boolean(
+            tools.get("loxberry_knx_read_enabled", False), name="tools.loxberry_knx_read_enabled"
+        )
+        loxberry_knx_drafts_enabled = _boolean(
+            tools.get("loxberry_knx_drafts_enabled", False),
+            name="tools.loxberry_knx_drafts_enabled",
+        )
+        loxberry_knx_write_enabled = _boolean(
+            tools.get("loxberry_knx_write_enabled", False),
+            name="tools.loxberry_knx_write_enabled",
+        )
         loxone_history_enabled = _boolean(
             tools.get("loxone_history_enabled", False), name="tools.loxone_history_enabled"
+        )
+        loxone_message_confirmation_enabled = _boolean(
+            tools.get("loxone_message_confirmation_enabled", False),
+            name="tools.loxone_message_confirmation_enabled",
         )
         loxberry_operate_enabled = _boolean(
             tools.get("loxberry_operate_enabled", False), name="tools.loxberry_operate_enabled"
         )
+        installation_profile_write_enabled = _boolean(
+            tools.get("installation_profile_write_enabled", False),
+            name="tools.installation_profile_write_enabled",
+        )
         if loxberry_operate_enabled and not loxone_history_enabled:
             raise ConfigError("tools.loxberry_operate_enabled requires loxone history")
+        event_history_enabled = _boolean(
+            event_history.get("enabled", False), name="event_history.enabled"
+        )
+        if event_history_enabled and not loxone_history_enabled:
+            raise ConfigError("event_history.enabled requires loxone history")
+        event_history_retention_days = _integer(
+            event_history.get("retention_days", DEFAULT_EVENT_HISTORY_RETENTION_DAYS),
+            name="event_history.retention_days",
+            minimum=1,
+            maximum=365,
+        )
+        event_history_maximum_mib = _integer(
+            event_history.get("maximum_mib", DEFAULT_EVENT_HISTORY_MAXIMUM_MIB),
+            name="event_history.maximum_mib",
+            minimum=16,
+            maximum=1024,
+        )
+        event_history_sources = _event_history_sources(event_history.get("sources", []))
+        weather_history_enabled = _boolean(
+            event_history.get("weather_enabled", False), name="event_history.weather_enabled"
+        )
+        if weather_history_enabled and not loxone_history_enabled:
+            raise ConfigError("event_history.weather_enabled requires loxone history")
+        weather_history_sources = _weather_history_sources(event_history.get("weather_sources", []))
+        solar_history_enabled = _boolean(
+            event_history.get("solar_enabled", False), name="event_history.solar_enabled"
+        )
+        if solar_history_enabled and not loxone_history_enabled:
+            raise ConfigError("event_history.solar_enabled requires loxone history")
+        try:
+            solar_history_sources = parse_solar_sources(event_history.get("solar_sources", []))
+        except ValueError as exc:
+            raise ConfigError("event_history.solar_sources is unsupported") from exc
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
         if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
@@ -336,6 +602,15 @@ class PluginConfig:
             name="limits.loxberry_operate_requests_per_minute",
             minimum=1,
             maximum=30,
+        )
+        explorer_binding_retention_hours = _integer(
+            limits.get(
+                "explorer_binding_retention_hours",
+                DEFAULT_EXPLORER_BINDING_RETENTION_HOURS,
+            ),
+            name="limits.explorer_binding_retention_hours",
+            minimum=1,
+            maximum=720,
         )
         parallel = _integer(
             limits.get("max_parallel_calls", DEFAULT_MAX_PARALLEL_CALLS),
@@ -408,10 +683,35 @@ class PluginConfig:
         loxberry_read_bindings = _bindings(
             policies.get("loxberry_read_bindings", []), name="policies.loxberry_read_bindings"
         )
+        loxberry_knx_read_bindings = _bindings(
+            policies.get("loxberry_knx_read_bindings", []),
+            name="policies.loxberry_knx_read_bindings",
+        )
+        loxberry_knx_drafts_bindings = _bindings(
+            policies.get("loxberry_knx_drafts_bindings", []),
+            name="policies.loxberry_knx_drafts_bindings",
+        )
+        loxberry_knx_write_bindings = _bindings(
+            policies.get("loxberry_knx_write_bindings", []),
+            name="policies.loxberry_knx_write_bindings",
+        )
         loxberry_operate_bindings = _bindings(
             policies.get("loxberry_operate_bindings", []),
             name="policies.loxberry_operate_bindings",
         )
+        installation_profile_write_bindings = _bindings(
+            policies.get("installation_profile_write_bindings", []),
+            name="policies.installation_profile_write_bindings",
+        )
+        loxberry_binding_names = _binding_names(
+            policies.get("loxberry_binding_names", {}),
+            bindings=loxberry_read_bindings
+            + loxberry_operate_bindings
+            + loxberry_knx_read_bindings
+            + loxberry_knx_drafts_bindings
+            + loxberry_knx_write_bindings,
+        )
+        explorer_bindings = _explorer_bindings(policies.get("explorer_bindings", []))
         cache_max_mib = _integer(
             cache.get("statistics_memory_max_mib", DEFAULT_STATISTICS_MEMORY_MAX_MIB),
             name="cache.statistics_memory_max_mib",
@@ -442,6 +742,38 @@ class PluginConfig:
         emergency_stop_virtual_status_uuid = _emergency_stop_uuid(
             emergency_stop.get("virtual_status_uuid", "")
         )
+        taxonomy_endpoint = taxonomy.get("endpoint", "")
+        if not isinstance(taxonomy_endpoint, str) or len(taxonomy_endpoint) > 512:
+            raise ConfigError("knx_address_taxonomy.endpoint is invalid")
+        if taxonomy_endpoint:
+            # Retain labels on endpoint changes, but never apply them to another server.
+            try:
+                taxonomy_endpoint = MiniserverEndpoint.parse(taxonomy_endpoint).origin
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+        try:
+            taxonomy_entries = parse_taxonomy(taxonomy.get("entries", []))
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if taxonomy_entries and not taxonomy_endpoint:
+            raise ConfigError("knx_address_taxonomy.endpoint is required")
+        target_document = root.get("knx_taxonomy_targets", {})
+        if not isinstance(target_document, dict) or len(target_document) > 128:
+            raise ConfigError("knx_taxonomy_targets is invalid")
+        target_entries: dict[str, tuple[AddressTaxonomyEntry, ...]] = {}
+        try:
+            for origin, values in target_document.items():
+                if not isinstance(origin, str) or MiniserverEndpoint.parse(origin).origin != origin:
+                    raise ValueError("knx_taxonomy_targets endpoint is invalid")
+                target_entries[origin] = parse_taxonomy(values)
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if taxonomy_endpoint:
+            target_entries[taxonomy_endpoint] = taxonomy_entries
+        active_origin = MiniserverEndpoint.parse(endpoint).origin if endpoint else ""
+        if active_origin in target_entries:
+            taxonomy_endpoint = active_origin
+            taxonomy_entries = target_entries[active_origin]
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -450,18 +782,45 @@ class PluginConfig:
             loxone_read_enabled=read_enabled,
             loxone_control_enabled=control_enabled,
             loxberry_read_enabled=loxberry_read_enabled,
+            loxberry_knx_read_enabled=loxberry_knx_read_enabled,
+            loxberry_knx_drafts_enabled=loxberry_knx_drafts_enabled,
+            loxberry_knx_write_enabled=loxberry_knx_write_enabled,
+            loxberry_knx_prefix_write_enabled=_boolean(
+                tools.get("loxberry_knx_prefix_write_enabled", False),
+                name="tools.loxberry_knx_prefix_write_enabled",
+            ),
             loxone_history_enabled=loxone_history_enabled,
+            loxone_message_confirmation_enabled=loxone_message_confirmation_enabled,
             loxberry_operate_enabled=loxberry_operate_enabled,
+            installation_profile_write_enabled=installation_profile_write_enabled,
             requests_per_minute=requests,
             control_requests_per_minute=control_requests,
             loxberry_requests_per_minute=loxberry_requests,
             history_requests_per_minute=history_requests,
             loxberry_operate_requests_per_minute=operate_requests,
+            explorer_binding_retention_hours=explorer_binding_retention_hours,
             max_parallel_calls=parallel,
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
+            loxberry_knx_read_bindings=loxberry_knx_read_bindings,
+            loxberry_knx_drafts_bindings=loxberry_knx_drafts_bindings,
+            loxberry_knx_write_bindings=loxberry_knx_write_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
+            installation_profile_write_bindings=installation_profile_write_bindings,
+            loxberry_binding_names=loxberry_binding_names,
+            explorer_bindings=explorer_bindings,
             statistics_memory_max_mib=cache_max_mib,
+            event_history_enabled=event_history_enabled,
+            event_history_retention_days=event_history_retention_days,
+            event_history_maximum_mib=event_history_maximum_mib,
+            event_history_sources=event_history_sources,
+            weather_history_enabled=weather_history_enabled,
+            weather_history_sources=weather_history_sources,
+            solar_history_enabled=solar_history_enabled,
+            solar_history_sources=solar_history_sources,
+            solar_forecast_enabled=solar_forecast_enabled,
+            solar_forecast_maximum_age_minutes=solar_forecast_maximum_age_minutes,
+            solar_forecast_fingerprint=solar_forecast_fingerprint,
             structure_refresh_seconds=structure_refresh_seconds,
             max_active_runtime_sessions=max_active_runtime_sessions,
             runtime_session_idle_seconds=runtime_session_idle_seconds,
@@ -479,12 +838,19 @@ class PluginConfig:
             mqtt_port=mqtt_port,
             mqtt_username=mqtt_username,
             emergency_stop_virtual_status_uuid=emergency_stop_virtual_status_uuid,
+            knx_address_taxonomy_endpoint=taxonomy_endpoint,
+            knx_address_taxonomy=taxonomy_entries,
+            knx_taxonomy_targets=tuple(sorted(target_entries.items())),
+            knx_prefix_apply_receipts=prefix_receipts,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
+        document["knx_prefix_apply_receipts"] = [
+            row.config_record() for row in self.knx_prefix_apply_receipts
+        ]
         for key in (
             "server",
             "loxone",
@@ -495,6 +861,9 @@ class PluginConfig:
             "cache",
             "mqtt",
             "emergency_stop",
+            "event_history",
+            "solar_forecast",
+            "knx_address_taxonomy",
         ):
             current = document.get(key)
             if not isinstance(current, dict):
@@ -506,14 +875,29 @@ class PluginConfig:
         document["tools"]["loxone_read_enabled"] = self.loxone_read_enabled
         document["tools"]["loxone_control_enabled"] = self.loxone_control_enabled
         document["tools"]["loxberry_read_enabled"] = self.loxberry_read_enabled
+        document["tools"]["loxberry_knx_read_enabled"] = self.loxberry_knx_read_enabled
+        document["tools"]["loxberry_knx_drafts_enabled"] = self.loxberry_knx_drafts_enabled
+        document["tools"]["loxberry_knx_write_enabled"] = self.loxberry_knx_write_enabled
+        document["tools"]["loxberry_knx_prefix_write_enabled"] = (
+            self.loxberry_knx_prefix_write_enabled
+        )
         document["tools"]["loxone_history_enabled"] = self.loxone_history_enabled
+        document["tools"]["loxone_message_confirmation_enabled"] = (
+            self.loxone_message_confirmation_enabled
+        )
         document["tools"]["loxberry_operate_enabled"] = self.loxberry_operate_enabled
+        document["tools"]["installation_profile_write_enabled"] = (
+            self.installation_profile_write_enabled
+        )
         document["limits"]["requests_per_minute"] = self.requests_per_minute
         document["limits"]["control_requests_per_minute"] = self.control_requests_per_minute
         document["limits"]["loxberry_requests_per_minute"] = self.loxberry_requests_per_minute
         document["limits"]["history_requests_per_minute"] = self.history_requests_per_minute
         document["limits"]["loxberry_operate_requests_per_minute"] = (
             self.loxberry_operate_requests_per_minute
+        )
+        document["limits"]["explorer_binding_retention_hours"] = (
+            self.explorer_binding_retention_hours
         )
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
         document["limits"]["structure_refresh_seconds"] = self.structure_refresh_seconds
@@ -532,10 +916,75 @@ class PluginConfig:
         document["logging"]["level"] = self.log_level
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
+        document["policies"]["loxberry_knx_read_bindings"] = list(self.loxberry_knx_read_bindings)
+        document["policies"]["loxberry_knx_drafts_bindings"] = list(
+            self.loxberry_knx_drafts_bindings
+        )
+        document["policies"]["loxberry_knx_write_bindings"] = list(self.loxberry_knx_write_bindings)
         document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
+        document["policies"]["installation_profile_write_bindings"] = list(
+            self.installation_profile_write_bindings
+        )
+        document["policies"]["loxberry_binding_names"] = dict(self.loxberry_binding_names)
+        document["policies"]["explorer_bindings"] = [
+            {
+                "binding_id": item.binding_id,
+                "capability": item.capability,
+                "application_id": item.application_id,
+                "version": item.version,
+                "created_at": item.created_at,
+                "last_active_at": item.last_active_at,
+                "last_active_until": item.last_active_until,
+                "inactive_since": item.inactive_since,
+            }
+            for item in self.explorer_bindings
+        ]
         document["cache"].pop("statistics_mode", None)
         document["cache"].pop("statistics_max_mib", None)
         document["cache"]["statistics_memory_max_mib"] = self.statistics_memory_max_mib
+        document["event_history"]["enabled"] = self.event_history_enabled
+        document["knx_address_taxonomy"]["endpoint"] = self.knx_address_taxonomy_endpoint
+        document["knx_address_taxonomy"]["entries"] = [
+            {
+                "address_format": entry.address_format,
+                "prefix": entry.prefix,
+                "label": entry.label,
+            }
+            for entry in self.knx_address_taxonomy
+        ]
+        targets = dict(self.knx_taxonomy_targets)
+        if self.knx_address_taxonomy_endpoint:
+            targets[self.knx_address_taxonomy_endpoint] = self.knx_address_taxonomy
+        document["knx_taxonomy_targets"] = {
+            origin: [
+                {
+                    "prefix": entry.prefix,
+                    "label": entry.label,
+                    "address_format": entry.address_format,
+                }
+                for entry in entries
+            ]
+            for origin, entries in targets.items()
+        }
+        document["event_history"]["retention_days"] = self.event_history_retention_days
+        document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
+        document["event_history"]["weather_enabled"] = self.weather_history_enabled
+        document["event_history"]["solar_enabled"] = self.solar_history_enabled
+        document["event_history"]["solar_sources"] = [
+            s.model_dump() for s in self.solar_history_sources
+        ]
+        document["solar_forecast"].update(
+            enabled=self.solar_forecast_enabled,
+            maximum_age_minutes=self.solar_forecast_maximum_age_minutes,
+            fingerprint=self.solar_forecast_fingerprint,
+        )
+        document["event_history"]["weather_sources"] = [
+            s.document() for s in self.weather_history_sources
+        ]
+        document["event_history"]["sources"] = [
+            {"control_uuid": control_uuid, "state_uuid": state_uuid}
+            for control_uuid, state_uuid in self.event_history_sources
+        ]
         document["mqtt"]["enabled"] = self.mqtt_enabled
         document["mqtt"]["root_topic"] = self.mqtt_root_topic
         document["mqtt"]["heartbeat_seconds"] = self.mqtt_heartbeat_seconds
@@ -611,6 +1060,7 @@ class AtomicConfigStore:
         document = config.to_document()
         PluginConfig.from_document(document)
         temporary: Path | None = None
+        replaced = False
         try:
             self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
@@ -618,15 +1068,21 @@ class AtomicConfigStore:
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump(document, handle, ensure_ascii=True, sort_keys=True, indent=2)
                 handle.write("\n")
+                os.chmod(temporary, 0o600)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
+            replaced = True
             os.chmod(self.path, 0o600)
+            fsync_parent_directory(self.path)
         except OSError as exc:
             if temporary is not None:
                 with suppress(OSError):
                     temporary.unlink(missing_ok=True)
+            if replaced:
+                raise ConfigPersistenceUncertain(
+                    "configuration change is visible; durability is unconfirmed"
+                ) from exc
             raise ConfigError("configuration update failed") from exc
 
     def mutate(self, operation: Callable[[PluginConfig], PluginConfig]) -> PluginConfig:

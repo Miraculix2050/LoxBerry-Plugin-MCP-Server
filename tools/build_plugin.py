@@ -42,8 +42,11 @@ _EXECUTABLES: Final = {
     "bin/renew-web-certificate",
     "bin/root-lifecycle-paths.py",
     "webfrontend/htmlauth/index.cgi",
+    "webfrontend/htmlauth/knx.cgi",
+    "webfrontend/htmlauth/message-approval.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/event_history.cgi",
 }
 _TEXT_SUFFIXES: Final = {
     ".cfg",
@@ -56,6 +59,7 @@ _TEXT_SUFFIXES: Final = {
     ".js",
     ".lock",
     ".md",
+    ".pm",
     ".sh",
     ".svg",
     ".txt",
@@ -93,7 +97,9 @@ def expected_source_entries(root: Path) -> set[str]:
     entries.update(
         {
             "bin/emergency-stop-miniserver.php",
+            "bin/event-history-upgrade.py",
             "bin/healthcheck",
+            "bin/lib/MCPServer/RequestSecurity.pm",
             "bin/mcpserver-admin",
             "bin/renew-web-certificate",
             "bin/root-lifecycle-paths.py",
@@ -168,10 +174,24 @@ def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
             source.relative_to(source_root).as_posix(): source
             for source in (source_root / "mcpserver").rglob("*.py")
         }
+        sources.update(
+            {
+                source.relative_to(source_root).as_posix(): source
+                for source in (source_root / "mcpserver/skills/using-loxberry-mcp").rglob("*")
+                if source.is_file() and source.suffix in {".md", ".txt"}
+            }
+        )
         members = [
             name
             for name in wheel.namelist()
-            if name.startswith("mcpserver/") and name.endswith(".py")
+            if name.startswith("mcpserver/")
+            and (
+                name.endswith(".py")
+                or (
+                    name.startswith("mcpserver/skills/using-loxberry-mcp/")
+                    and name.endswith((".md", ".txt"))
+                )
+            )
         ]
         if len(members) != len(set(members)) or set(members) != set(sources):
             raise SystemExit("project wheel Python source set differs from current source")
@@ -289,7 +309,9 @@ def main() -> int:
     entries.extend(
         [
             (root / "bin" / "emergency-stop-miniserver.php", "bin/emergency-stop-miniserver.php"),
+            (root / "bin" / "event-history-upgrade.py", "bin/event-history-upgrade.py"),
             (root / "bin" / "healthcheck", "bin/healthcheck"),
+            (root / "bin/lib/MCPServer/RequestSecurity.pm", "bin/lib/MCPServer/RequestSecurity.pm"),
             (root / "bin" / "mcpserver-admin", "bin/mcpserver-admin"),
             (root / "bin" / "renew-web-certificate", "bin/renew-web-certificate"),
             (root / "bin" / "root-lifecycle-paths.py", "bin/root-lifecycle-paths.py"),

@@ -1,0 +1,240 @@
+# Native EFM semantic evidence matrix v2
+
+- Evidence version: `efm_semantic_matrix.17_2_8_28.v2`, baseline review 2026-10-18;
+  installation-observation follow-up 2026-10-19.
+- Scope: #534; exact EFM firmware `17.2.8.28`, existing native aggregate views only.
+- Decision: baseline review retained unknowns; the 2026-10-19 follow-up accepts
+  only Cpwr's declared display-unit binding in semantic rule v2. Retain
+  `native_efm_result.v2` and transport unchanged. Documented block behavior,
+  observed wire shape and an accepted aggregate decoder are separate evidence.
+
+## Sources and applicability
+
+| ID | Primary source | Version/date and locator | Applicability |
+| --- | --- | --- | --- |
+| D1 | [Structure File](https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf) | 17.1, 2026-08-06, physical PDF pp.64–67 | EFM details, node meanings, states and aggregate commands. Local retained official PDF hash reverified on 2026-10-18; online PDF retrieval failed. |
+| K1 | [Energieflussmonitor](https://www.loxone.com/dede/kb/energieflussmonitor/) / [Energy Flow Monitor](https://www.loxone.com/enen/kb/energy-flow-monitor/) | Retrieved 2026-10-18; outputs and application example; no publication date or firmware bound stated | Block outputs and display/configuration explanation; not a version-bound wire mapping. |
+| K2 | [Bidirectional meter](https://www.loxone.com/dede/kb/zaehler-bidirektional/) | Retrieved 2026-10-18; outputs, properties, meter reading/units; undated | Meter input direction is configurable; output Pf describes consumption/delivery. Does not identify aggregate EFM sign encoding. |
+| K3 | [Storage meter](https://www.loxone.com/dede/kb/zaehler-speicher/) / [Meter & Storage](https://www.loxone.com/enus/kb/meter-storage/) | Retrieved 2026-10-18; English outputs/properties rechecked 2026-10-19; undated | Output Pf is positive for discharge and negative for charge; the direction property concerns the physical value at input Pf. Input direction and units are configurable. Not an aggregate Spwr decoder. |
+| K4 | [Meter](https://www.loxone.com/dede/kb/zaehler/) | Retrieved 2026-10-18; inputs and meter reading/units; undated | Power/flow and readings depend on configured medium, units and connected inputs. Not proof of an EFM period unit. |
+| E1 | [Original sanitized matrix](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/436#issuecomment-6109313546) | Browser capture 2026-10-11, exact firmware 17.2.8.28 | Owner-authenticated read-only same-origin requests; fresh structure and independent firmware lookup. Browser identity equality with the MCP caller was not established. |
+| E2 | [Delivered semantics and acceptance](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/492) | Recorded acceptance on candidate `12ac66b2ffd99f960b6178dc425ffb6b31bbbc69`; merged as `c5daa493f1061e518c97b68446ee6c79da736bfb` | Separate fresh caller-owned admin session and installed MCP handler, all six views; actual/day also through HTTP-MCP/Explorer. Existing semantics only. |
+| E3 | Caller-authorized linked-storage comparisons, #534 follow-up | Read-only device observations 2026-10-19, exact firmware 17.2.8.28; private provenance retained | Native actual.Spwr compared with the explicitly referenced storage meter and verified participant-state binding on one installation; negative, zero and positive cases observed. No universal sign or input-inversion contract. |
+| E4 | Caller-authorized Rest/display comparisons | Read-only observations 2026-10-19, exact firmware 17.2.8.28; private provenance retained | Three native actual reads, 30 exact adjacent meter/participant comparisons, stable same-EFM actualFormat. Cpwr matched an adjacent consumption value in each round; native Rest missing three times despite signed values at the separately referenced meter/state. No universal inclusion formula or physical simultaneity. |
+
+D1 SHA-256:
+`97bbc5ec79c8479c0f2f561a55780a764a518fe420d11fd2fc26979fc41e5f23`.
+The EFM command table on p.67 was also rendered and visually checked. Adjacent
+Fronius/Energy Monitor units on that page belong to another control family.
+KB statements have no independently established 17.2.8.28 applicability for a
+new aggregate interpretation; their review date is not a source version.
+
+E1 establishes the JSON-string wire shape and numeric fields in the tables
+below. E2 separately establishes the existing format rule through a fresh
+caller-owned administrator session. Both concern firmware 17.2.8.28 and remain
+historical evidence, not confirmation of today's configuration or permission.
+Detailed sanitized capture provenance, receipt times, acquisition limitations
+and artifact digests are retained in the private project-data evidence store.
+The original documentation review made no new device requests. The later E3
+follow-up adds installation observations only and accepts no new runtime rule.
+
+## Actual field decisions
+
+“Confirmed existing” applies only to the stated released subset. Every remaining
+unknown has an insufficient-evidence disposition. Only the Cpwr display-unit
+extension below is newly authorized by the follow-up evidence.
+`unit=null`, `sign_convention=null`, `scale=null`, `currency=null` and
+`semantic_complete=false` retain their released meanings.
+
+| Exact aggregate field | Documentation | Observed raw evidence | Supported encoding / decision | Precise missing prerequisite |
+| --- | --- | --- | --- | --- |
+| actual.Gpwr | D1 pp.66–67: grid power; block-setting unit. K1: grid-power output. D1 p.65 signs apply to node.actual. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/grid_power, W/kW only through the unchanged exact actualFormat rule. Sign and boundary unknown. | Explicit aggregate sign contract plus independent configuration linking grid direction and physical measurement boundary to this aggregate field. |
+| actual.Ppwr | D1 pp.66–67: production power; block-setting unit. K1: production-power output. | E1 numeric; E2 own EFM format retained | **Confirmed existing:** power/production_power, same W/kW rule. Sign and boundary unknown. | Explicit aggregate direction contract and configuration proving which production sources, reverse flows and measurement boundary the aggregate includes. |
+| actual.Spwr | D1 pp.66–67: storage power; block-setting unit. K3 signs describe meter.Pf, D1 p.65 describes node.actual. | E1 numeric; E2 own EFM format retained; E3 agrees with linked meter-output signs for negative, zero and positive cases on one installation | **Confirmed existing:** power/storage_power, same W/kW rule. E3 supports installation-level correspondence with K3; general charge/discharge sign contract and boundary remain unknown. | Aggregate Spwr sign contract and independent storage configuration/boundary evidence beyond E3's explicit references. Input-direction encoding remains unknown but is not required to interpret the meter's normalized output. |
+| actual.Cpwr | D1 p.64 explicitly illustrates actualFormat using currently consumed power; p.67 identifies native Cpwr as load power; K1 calls the block output consumption power. | E1 numeric; E4 independently corroborates the consumption-specific applicability with exact references and unchanged root format. | **Proven extension:** power/load_power with declared W/kW and configured_display_format origin through the same strict stable-format guard, semantic rule v2. No numerical conversion. | Physical calibration, exact inclusion/boundary, sign and observation-time contracts remain unverified. This is a consumption-specific source chain, not a neighboring-field analogy or a unit inferred from equal values. |
+| actual.Rest | D1 p.67 lists Rest; K1 defines the block output as calculated remaining top-group power. Residuals can include unmetered loads and measurement differences. | Absent in E1 and all three E4 native responses; separately referenced meter/participant values include both signs and zero. | **Insufficient native binding:** block function is known; missing native Rest remains missing with no unit/role promotion. | A native Rest specimen and exact top-group/configuration/unit linkage remain needed. The available participant state must not be copied into this missing aggregate field. No residual reconstruction or forced zero balance. |
+
+The released actualFormat rule accepts only the same EFM's complete bounded
+single numeric `%…f` format followed by literal W/kW, unchanged across the two
+already required structures. Values are never scaled. Missing, invalid,
+unsupported and changed metadata remain distinct; changed metadata drops unit
+enrichment while retaining raw values. Generic control, participant, storage and
+total formats are not fallback evidence.
+
+### Rest function and declared display units: clarified 2026-10-19
+
+K1 explicitly defines the **block output** Rest as remaining top-group power.
+This documented quantity/function is known; the unqualified row above concerns
+its exact native field binding. Distribution-board residuals can include
+unmetered downstream devices and measurement differences. Tolerances, different
+update/sample times and rounded displays do not imply an exact zero balance.
+Do not clamp residuals, diagnose an unmetered consumer from a nonzero residual
+alone or replace native Rest by arithmetic on rounded displayed numbers.
+
+Owner-supplied visualization and display-settings screenshots establish
+presentation evidence only and remain private. Power/flow, energy/quantity and
+storage-level formats are separately configurable. A known display label is
+declared metadata, not proof of source calibration or automatic numerical unit
+conversion. Whether EFM arithmetic ignores units is not established by those
+screenshots. The Gpwr/Ppwr/Spwr/Cpwr unit rule explicitly reports
+`unit_origin=configured_display_format`, with per-field source paths; no native
+field gains a physical calibration claim. Cpwr's newly accepted declared unit
+binding is justified separately below. Missing, rejected and changed formats,
+native Rest and period fields retain null origin.
+
+Fresh native Rest/Cpwr comparisons and format-to-field applicability remain a
+separate read-only device phase; E4 now records its bounded outcome. The
+[observation report](efm-rest-display-observations.md) supplies the source chain,
+source distinction and explicit remaining prerequisites; detailed acquisition
+records remain private.
+
+### Installation-level Spwr follow-up
+
+E3 resolves the missing positive native observation for the tested installation:
+three positive `get/actual.Spwr` responses each matched at least one adjacent
+storage-meter `actual` value. The meter and its explicitly bound EFM participant
+were exactly equal in both reads bracketing each native request. Cached EFM
+`Spwr` was also positive. Earlier E3 rounds observed matching negative and zero
+signs. Selection used fresh control references and the verified firmware-bound
+participant mapping, not display names or matching numbers.
+
+This supports correspondence with K3's normalized **output** convention on that
+installation. It does not identify the incoming physical value or prove an
+inversion: the Config direction setting and source-field encoding remain
+unverified. Sequential software observations also do not establish a physical
+measurement instant, continuous sign transition, multiple-storage behavior or
+a general aggregate boundary. The runtime `sign_convention` remains null.
+Detailed values, identities, acquisition times, traces and preservation hashes
+remain in the private evidence store; they are not public product examples.
+
+## Meter-output prerequisite resolved separately
+
+The 2026-10-19 analytical follow-up combines D1 physical pp.105–106
+(`Meter.details.type`, its explicit missing-field default, and advertised state
+channels) with the meter KB output tables. The implementation now exposes the
+[documented meter output rules](meter-output-semantics.md) for unidirectional,
+bidirectional and storage subtypes. `PwrN`/`powerName` is a power/flow display
+label. The configurable direction on absolute Bi/storage meters concerns input
+Pf; its unknown XML encoding does not block the fixed output convention.
+
+This closes the meter-output question, not the native aggregate questions below.
+The runtime subtype also does not prove the historical configuration, physical
+medium, source wiring or measurement time. Native EFM and meter output rules
+retain separate source references. No new aggregate decoder is authorized.
+
+## Period field decisions
+
+The following seven rows apply **independently to each** of day, week, month,
+year and lifetime: 35 aggregate field/view combinations. All were numeric in E1.
+D1 p.67 lists the fields and current-period selectors but does not bind a
+quantity, unit, direction or currency to each aggregate field. K1's named block
+outputs and formulas are contextual documentation, not native field aliases.
+
+| Field in each period view | Documentation / independently observed metadata | Supported encoding / decision | Precise missing prerequisite |
+| --- | --- | --- | --- |
+| Export | D1 lists Export; K1 documents Ed, a daily block output. E2 totalFormat exists. | **Insufficient evidence:** raw numeric Export; quantity/unit/direction unknown. | Explicit aggregate Export quantity/unit and export-boundary contract tied to configured sources. No Ed alias or totalNeg mapping established. |
+| Import | D1 lists Import; K1 documents Id. E2 totalFormat exists. | **Insufficient evidence:** raw numeric Import; quantity/unit/direction unknown. | Explicit aggregate Import quantity/unit and import-boundary contract tied to configured sources. No Id alias or total mapping established. |
+| Production | D1 lists Production; K1 documents Pd. | **Insufficient evidence:** raw numeric Production; quantity/unit/direction unknown. | Aggregate quantity/unit and included production/reverse-flow boundary for each view; no Pd alias. |
+| Charge | D1 lists Charge; K3 documents storage meter channels. | **Insufficient evidence:** raw numeric Charge; quantity/unit/direction unknown. | Aggregate charge quantity/unit/direction and configured storage boundary; no transfer from a meter's reading or totalNeg. |
+| Discharge | D1 lists Discharge; K3 documents storage meter channels. | **Insufficient evidence:** raw numeric Discharge; quantity/unit/direction unknown. | Aggregate discharge quantity/unit/direction and configured storage boundary; no transfer from a meter's reading or total. |
+| Consumption | D1 lists Consumption; K1 documents Cd. | **Insufficient evidence:** raw numeric Consumption; quantity/unit/direction unknown. | Aggregate quantity/unit and consumption boundary, including residual/storage treatment; no Cd alias or balance formula. |
+| Income | D1 lists Income; K1 describes Yd and export/import price parameters. | **Insufficient evidence:** raw numeric Income; quantity/unit/currency unknown. | Explicit native Income meaning, currency source and applicability, time accumulation and tariff/source linkage. Income=Yd=OYt is not established. No tariff reconstruction. |
+
+`totalFormat` is documented for `total/totalNeg` (D1 p.64). Its retained format in E2
+does not prove that the seven aggregate period fields use that unit. Meter KB
+examples also allow different media and independently configured power/reading
+units; they do not supply the missing aggregate mapping.
+
+### View, boundary and completion decisions
+
+These decisions qualify all seven fields in the corresponding view. They do not
+promote any field to a known quantity or unit.
+
+| View | Documented selector / observed shape | Confirmed existing encoding | Unknown / precise missing prerequisite |
+| --- | --- | --- | --- |
+| day | D1 p.67: current day; E1/E2 seven fields | current_calendar_period; period_completion=running | Start/end/timezone and reset require an explicit aggregate clock/boundary contract and matching source/configuration evidence. Not yesterday. |
+| week | D1 p.67: current week; E1/E2 seven fields | current_calendar_period; period_completion=running | Same clock/reset evidence; week start and calendar convention not independently established. |
+| month | D1 p.67: current month; E1/E2 seven fields | current_calendar_period; period_completion=running | Explicit month/timezone/reset contract and matching evidence absent. |
+| year | D1 p.67: current year; E1/E2 seven fields | current_calendar_period; period_completion=running | Explicit year/timezone/reset contract and matching evidence absent. |
+| lifetime | D1 p.67: total/lifetime; E1/E2 seven fields | lifetime_accumulator; period_completion=unknown | Initial epoch, reset/reconfiguration and inclusion rules need a firmware-bound contract and independent source/configuration evidence. Not guaranteed since installation. |
+
+For every period: `period_start=null`, `period_end=null`, `timezone=null`,
+`period_boundaries=unknown`. “Running” identifies the current native calendar
+view; it does not prove continuous recording, full coverage or a common physical
+measurement instant. No historic date selector is introduced.
+
+## Measurement timestamp and freshness decision
+
+**Insufficient evidence** for every view: no independently proven physical
+measurement timestamp was retained. D1's aggregate command table provides no
+timestamp mapping. E1 response receipt and E2 `retrieved_at` prove retrieval
+only. Keep `observation_freshness=unknown`, `retrieval_freshness=current` and
+the physical-observation-time limitation. A configuration modification marker,
+transport receipt, successful request or plausible value is not a measurement
+timestamp. A new interpretation requires an explicit source timestamp/clock
+contract and caller-authenticated evidence tying it to these exact aggregates.
+
+## Result and verification boundary
+
+The fixed matrix is complete with proven-extension, confirmed-existing and
+insufficient-evidence decisions. The follow-up adds only the Cpwr declared-display
+unit binding under semantic rule v2; retained semantic rule v1 remains readable.
+Raw values, missing-field handling, authorization, source request counts,
+timeouts and transport budgets remain unchanged. Schema guidance, bundled skill
+and DE/EN docs follow the narrow extension. Node signs, meter KB meanings
+and residual display configuration are recorded as research context, not decoded
+into aggregate fields. No new target, firmware or compatibility claim is made.
+
+The baseline was documentation-only. The Cpwr follow-up requires normal review,
+regression/negative tests, synchronized contracts/docs and Full CI. E4 supplies
+scoped read-only source observations; local replay is separate from acceptance
+of newly installed code. No deployment, browser acceptance or broader hardware
+compatibility is claimed. E1/E2 remain historical source evidence.
+Broader topology/transformations remain #357; manager acceptance #533, optional
+non-admin disclosure #535, weather/PV planning #509/#510 and performance #501
+remain separate.
+
+
+## Final aggregate/period disposition
+
+The final analytical pass accepts no additional runtime interpretation beyond
+semantic rule v2. The following source boundaries apply to the existing decoder;
+they are deliberate limits of the completed #534 investigation.
+
+| Question | Established source boundary | Delivery / prerequisite for expansion |
+| --- | --- | --- |
+| Native aggregate membership | D1 distinguishes calculated EFM aggregates from individually typed nodes. K1 distinguishes organizing groups from metered distribution boards. | Preserve native values. A decoder expansion needs an exact aggregate inclusion/sign contract covering hierarchy, reverse flows and multiple sources; a single flat installation cannot supply it. |
+| Native period units | D1 p.64 binds totalFormat to total/totalNeg; p.67 lists seven different aggregate keys. | No per-field unit transfer. Require an explicit binding for each admitted field/view, not a node energy example or a project display format. |
+| Income | K1 defines the block output Yd using import/export prices, accumulated hourly or when prices change. | Native Income is not documented as an alias of Yd. No currency, tariff formula or yield alias is inferred. Require a native-field contract and matching price/currency applicability. |
+| Clock and reset | D1 selects current calendar views and lifetime. A local project can declare a timezone/currency, but contains neither native response boundaries nor accumulated reset history. | Do not manufacture timestamps or lifetime origin. Require an exact calendar/reset contract plus source evidence for that field/view. |
+| Rest | Block remaining-top-group meaning is documented; native delivery remains separate from a referenced meter. | Return available raw Rest without a unit. Preserve missing native fields and separately identify meter readings. |
+
+The supplied meter reference project contains meter blocks but no EFM block;
+it cannot independently prove native EFM aggregation. The household project's
+EFM declares separate power/quantity display formats and explicit meter links;
+its output connectors do not declare native formulas or polarity inversion.
+Current local settings are configuration evidence, not proof of installed or
+historical state. Private project identifiers, detailed traces and acquisition
+records remain outside product documentation.
+
+The official [App beta notes](https://www.loxone.com/enen/support/loxone-app-public-beta/)
+for App 17.2.1 (21992) distinguish newer Miniserver-supplied accumulated production
+components from earlier fallback calculations and describe fixes for group and
+reverse-rest presentation. The [Config beta notes](https://www.loxone.com/enen/support/loxone-config-public-beta/)
+also record BG-I44612 concerning bidirectional delivery in EFM lifetime values.
+These are version-sensitive change notices, not a documented mapping to this
+allowlisted native response. They neither prove a defect on firmware 17.2.8.28
+nor authorize new fields, a reconstructed formula or wider compatibility.
+
+The retained official D1 remains the versioned technical source. Direct online
+PDF/page retrieval was unavailable during rechecking; indexed official KB and
+change-note text supplied the supplementary context above. Search snippets are
+not treated as a newer version-bound wire specification.
+
+Regression coverage exercises all 35 field/view combinations: raw signed numbers
+remain present, omitted fields remain missing, and display formats or incidental
+currency/timezone metadata do not manufacture period semantics or boundaries.
+Normal review and final CI cover this closeout; no runtime transport, schema,
+authorization or request-budget change, target access or deployment is needed.
+#534 can remain closed with these documented limits. Future expansion requires
+the missing contract/evidence rather than silently promoting an unknown value.

@@ -1,19 +1,35 @@
 """Deterministic graph of observed C/Co/In project relationships."""
 
 import hashlib
+import re
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from time import perf_counter
 
 from .decoder import decode_loxcc
+from .identity import IdentityEvidence, logical_runtime_nodes
+from .knx_datatypes import verified_knx_format
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
-from .semantics import KnxSemantics, classify_knx, signal_use_rules
+from .semantics import (
+    STATE_RULE_ID,
+    KnxSemantics,
+    StateFlow,
+    classify_knx,
+    decode_state_flow,
+    expects_raw_datatype,
+    signal_use_rules,
+)
 
+PROJECT_MODEL_VERSION = 15
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
 _DIAGNOSTIC_LABEL_LIMIT = 100
-_KNOWN_KNX_ATTRIBUTES = frozenset({"Type", "U", "Title", "Desc", "IName", "EibAddr", "EIBType"})
-_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EIBType"})
+_KNOWN_KNX_ATTRIBUTES = frozenset(
+    {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
+)
+_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EibAddrPulse", "EIBType"})
 
 
 def normalize_id(value: str | None) -> str:
@@ -30,6 +46,22 @@ class GraphNode:
     block_type: str | None = field(repr=False)
     attributes: tuple[tuple[str, str], ...] = field(repr=False)
     knx: KnxSemantics | None = field(default=None, repr=False)
+
+
+API_CONNECTOR_RULE_ID = "api_connector_metadata_v1"
+
+
+def is_api_connector(node: GraphNode) -> bool:
+    """Classify exact stored port keys, never aliases or command compatibility."""
+    keys = [value for key, value in node.attributes if key == "K"]
+    return node.kind == "connector" and len(keys) == 1 and keys[0] in {"OutputAPI", "API"}
+
+
+def _is_api_relationship(destination: GraphNode, candidates: list[GraphNode]) -> bool:
+    """Ambiguous sources retain metadata only if every known candidate is API."""
+    return is_api_connector(destination) or (
+        bool(candidates) and all(is_api_connector(source) for source in candidates)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +94,8 @@ class ProjectGraph:
     unresolved: tuple[tuple[str, str], ...]
     semantic_edges: tuple[SemanticEdge, ...] = field(default=(), repr=False)
 
+    state_flows: tuple[StateFlow, ...] = field(default=(), repr=False)
+
     def traverse(
         self, start: str, *, upstream: bool = False, depth: int = 8, limit: int = 500
     ) -> tuple[str, ...]:
@@ -71,7 +105,7 @@ class ProjectGraph:
             raise ProjectError("project_node_unknown")
         adjacency: dict[str, list[str]] = defaultdict(list)
         for edge in self.edges:
-            if edge.kind not in {"signal", "reference"}:
+            if edge.kind not in {"signal", "reference", "api_connection"}:
                 continue
             source, target = (edge.target, edge.source) if upstream else (edge.source, edge.target)
             adjacency[source].append(target)
@@ -134,9 +168,88 @@ class ProjectSnapshot:
     model_version: int
     projects: tuple[ProjectPartSummary, ...] = field(repr=False)
     graph: ProjectGraph = field(repr=False)
+    # Loader-bound response bytes/limits; never an authorization decision.
+    content_identity: str = field(default="", repr=False, compare=False, kw_only=True)
     source_diagnostics: ProjectSourceDiagnostics = field(
         default_factory=lambda: ProjectSourceDiagnostics((), True, 0), repr=False
     )
+    logical_aliases: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    logical_source_ids: tuple[tuple[str, tuple[str, ...]], ...] = field(default=(), repr=False)
+    # Successful loaders inspect every admitted source or fail the whole load.
+    # Diagnostic presentation truncation is independent of source ingestion.
+    source_ingestion_complete: bool = field(default=True, kw_only=True)
+    logical_identity: Mapping[str, IdentityEvidence] = field(
+        default_factory=dict, repr=False, kw_only=True
+    )
+    _logical_occurrences: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False, kw_only=True
+    )
+    _logical_ports: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False, kw_only=True
+    )
+    _logical_alias_lookup: Mapping[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _logical_source_lookup: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _logical_nodes: tuple[GraphNode, ...] = field(default=(), repr=False, compare=False)
+
+    def canonical_node_key(self, key: str) -> str:
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return aliases.get(key, key)
+
+    def source_ids_for(self, key: str) -> tuple[str, ...]:
+        canonical = self.canonical_node_key(key)
+        sources = self._logical_source_lookup or dict(self.logical_source_ids)
+        return sources.get(canonical, ())
+
+    def occurrence_keys_for(self, key: str) -> tuple[str, ...]:
+        canonical = self.canonical_node_key(key)
+        if self._logical_occurrences:
+            return self._logical_occurrences.get(canonical, (key,))
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return tuple(alias for alias, target in aliases.items() if target == canonical) or (key,)
+
+    def logical_nodes(self) -> tuple[GraphNode, ...]:
+        if self._logical_nodes:
+            return self._logical_nodes
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return tuple(
+            node for node in self.graph.nodes if aliases.get(node.key, node.key) == node.key
+        )
+
+
+def _logical_knx_nodes(
+    graph: ProjectGraph,
+) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, tuple[str, ...]], ...]]:
+    """Group identical KNX blocks from separate internal model sources.
+
+    A source UUID is the only identity input. Equal names or group addresses are
+    deliberately insufficient. Keeping the raw graph intact lets callers retain
+    provenance while query and analysis consumers use one deterministic
+    representative for each verified logical object.
+    """
+    candidates: dict[tuple[str, str, object], list[GraphNode]] = defaultdict(list)
+    for node in graph.nodes:
+        if node.kind != "block" or node.knx is None:
+            continue
+        source_id = normalize_id(node.source_id)
+        if not source_id:
+            continue
+        candidates[(source_id, node.block_type or "", node.knx)].append(node)
+
+    aliases: list[tuple[str, str]] = []
+    sources: list[tuple[str, tuple[str, ...]]] = []
+    for occurrences in candidates.values():
+        # Repeated IDs inside one model source are ambiguous source data and
+        # must not silently become a logical object.
+        if len(occurrences) < 2 or len({node.project for node in occurrences}) != len(occurrences):
+            continue
+        canonical = min(occurrences, key=lambda node: (node.project, node.source_index, node.key))
+        aliases.extend((node.key, canonical.key) for node in occurrences)
+        sources.append((canonical.key, tuple(sorted(node.project for node in occurrences))))
+    return tuple(sorted(aliases)), tuple(sorted(sources))
 
 
 def build_graph(
@@ -146,8 +259,12 @@ def build_graph(
     edges: set[GraphEdge] = set()
     semantic_edges: set[SemanticEdge] = set()
     unresolved: list[tuple[str, str]] = []
+    state_flows: list[StateFlow] = []
+    model_indexes: list[tuple[ParsedProject, dict[int, GraphNode], dict[str, list[GraphNode]]]] = []
+    bundle_by_id: dict[str, list[GraphNode]] = defaultdict(list)
     node: GraphNode | None
     for namespace, project in projects:
+        dpt_mapping_verified = verified_knx_format(project)
         local: dict[int, GraphNode] = {}
         by_id: dict[str, list[GraphNode]] = defaultdict(list)
         for index, element in enumerate(project.elements):
@@ -161,7 +278,7 @@ def build_graph(
                 element.value("U"),
                 element.value("Type"),
                 element.attributes,
-                classify_knx(element),
+                classify_knx(element, dpt_mapping_verified=dpt_mapping_verified),
             )
             local[index] = node
             nodes.append(node)
@@ -169,6 +286,9 @@ def build_graph(
                 raise ProjectError("project_graph_limit")
             if node.source_id:
                 by_id[normalize_id(node.source_id)].append(node)
+                bundle_by_id[normalize_id(node.source_id)].append(node)
+        model_indexes.append((project, local, by_id))
+    for project, local, by_id in model_indexes:
         for index, element in enumerate(project.elements):
             node = local.get(index)
             if node is not None:
@@ -180,21 +300,61 @@ def build_graph(
                 reference = element.value("Ref")
                 if reference:
                     candidates = by_id.get(normalize_id(reference), [])
+                    # Observed OutputRef -> VirtualOutCmd links can cross model
+                    # sources in one authorized bundle. Never override local
+                    # ambiguity or generalize this evidence to other link types.
+                    if (
+                        not candidates
+                        and node.kind == "block"
+                        and node.block_type == "OutputRef"
+                        and re.fullmatch(r"[0-9a-f]{32}", normalize_id(reference))
+                    ):
+                        external = bundle_by_id.get(normalize_id(reference), [])
+                        if (
+                            len(external) == 1
+                            and external[0].kind == "block"
+                            and external[0].block_type == "VirtualOutCmd"
+                        ):
+                            candidates = external
                     if len(candidates) == 1:
-                        edges.add(GraphEdge(candidates[0].key, node.key, "reference"))
+                        kind = (
+                            "api_connection"
+                            if is_api_connector(candidates[0]) or is_api_connector(node)
+                            else "reference"
+                        )
+                        edges.add(GraphEdge(candidates[0].key, node.key, kind))
                     else:
-                        unresolved.append((node.key, "reference_unresolved"))
+                        unresolved.append(
+                            (
+                                node.key,
+                                "api_connection_unresolved"
+                                if _is_api_relationship(node, candidates)
+                                else "reference_unresolved",
+                            )
+                        )
             if element.tag == "In" and element.parent in local:
                 destination = local[element.parent]
                 candidates = by_id.get(normalize_id(element.value("Input")), [])
                 # Observed schema: Co(input) contains In(Input=source Co UUID).
                 if len(candidates) == 1 and candidates[0].kind == destination.kind == "connector":
-                    edges.add(GraphEdge(candidates[0].key, destination.key, "signal"))
+                    kind = (
+                        "api_connection"
+                        if is_api_connector(candidates[0]) or is_api_connector(destination)
+                        else "signal"
+                    )
+                    edges.add(GraphEdge(candidates[0].key, destination.key, kind))
                 else:
-                    unresolved.append((destination.key, "signal_unresolved"))
+                    unresolved.append(
+                        (
+                            destination.key,
+                            "api_connection_unresolved"
+                            if _is_api_relationship(destination, candidates)
+                            else "signal_unresolved",
+                        )
+                    )
             if len(edges) > limits.edges:
                 raise ProjectError("project_graph_limit")
-        semantic_edges.update(_build_semantic_edges(project, local))
+        semantic_edges.update(_build_semantic_edges(project, local, state_flows, by_id))
         if len(semantic_edges) > limits.edges:
             raise ProjectError("project_graph_limit")
     return ProjectGraph(
@@ -202,10 +362,16 @@ def build_graph(
         tuple(sorted(edges, key=lambda e: (e.source, e.target, e.kind))),
         tuple(unresolved),
         tuple(sorted(semantic_edges, key=lambda e: (e.source, e.target, e.rule_id))),
+        tuple(state_flows),
     )
 
 
-def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -> set[SemanticEdge]:
+def _build_semantic_edges(
+    project: ParsedProject,
+    local: dict[int, GraphNode],
+    state_flows: list[StateFlow],
+    source_ids: dict[str, list[GraphNode]],
+) -> set[SemanticEdge]:
     """Build only explicit, allowlisted internal connector relationships."""
 
     result: set[SemanticEdge] = set()
@@ -213,11 +379,28 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
     for child_index, child in enumerate(project.elements):
         if child.parent is not None:
             children[child.parent].append(child_index)
+    version_elements = [
+        e for e in project.elements if any(k == "ConfigVersion" for k, _ in e.attributes)
+    ]
+    configs = {e.value("ConfigVersion") for e in version_elements}
+    config_version = (
+        next(iter(configs))
+        if len(configs) == 1
+        and all(
+            e.tag == "C"
+            and e.value("Type") == "Document"
+            and sum(k == "Type" for k, _ in e.attributes) == 1
+            and sum(k == "ConfigVersion" for k, _ in e.attributes) == 1
+            for e in version_elements
+        )
+        else None
+    )
     for index, element in enumerate(project.elements):
         if element.tag != "C":
             continue
-        rules = signal_use_rules(element.value("Type"))
-        if not rules:
+        source_type = element.value("Type")
+        rules = signal_use_rules(source_type)
+        if not rules and source_type not in {"State", "InputRef"}:
             continue
         connectors: dict[str, list[GraphNode]] = defaultdict(list)
         for child_index in children.get(index, []):
@@ -228,6 +411,63 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
             key = child.value("K")
             if connector is not None and key is not None:
                 connectors[key].append(connector)
+        if source_type == "State":
+            flow = decode_state_flow(project, index, local[index].key, children, config_version)
+            if flow.reason is None and (
+                any(sum(k == name for k, _ in element.attributes) != 1 for name in ("Type", "U"))
+                or any(
+                    sum(k == "K" for k, _ in c.attributes) != 1
+                    or sum(k == "U" for k, _ in c.attributes) != 1
+                    for c in (project.elements[i] for i in children.get(index, []))
+                    if c.tag == "Co"
+                )
+                or any(
+                    len(connectors.get(k, [])) != 1
+                    for k in ("AQ", "TQ", "OutputAPI", *(f"I{i}" for i in range(1, 9)))
+                )
+            ):
+                flow = StateFlow(flow.block_key, flow.version, "state_connector_unverified")
+            if flow.reason is None:
+                for child_index in children.get(index, []):
+                    child = project.elements[child_index]
+                    if (
+                        child.tag == "Co"
+                        and child.value("K") not in {"OutputAPI", *(f"I{i}" for i in range(1, 9))}
+                        and any(
+                            project.elements[c].tag == "In" for c in children.get(child_index, [])
+                        )
+                    ):
+                        flow = StateFlow(flow.block_key, flow.version, "state_connector_unverified")
+                        break
+            state_flows.append(flow)
+            if flow.reason is None:
+                for input_key in flow.dependencies:
+                    result.add(
+                        SemanticEdge(
+                            connectors[input_key][0].key,
+                            connectors["AQ"][0].key,
+                            STATE_RULE_ID,
+                            "configured_state_selection",
+                            None,
+                        )
+                    )
+        # Observed InputRef: explicit Ref to one source block, with one AQ output.
+        # This projects the explicit reference onto that output, not containment
+        # or an arbitrary internal input/output relationship. Unknown references
+        # and duplicated AQ keys cannot acquire this relationship.
+        if source_type == "InputRef" and element.value("Ref"):
+            referred = source_ids.get(normalize_id(element.value("Ref")), [])
+            outputs = connectors.get("AQ", [])
+            if len(referred) == 1 and referred[0].kind == "block" and len(outputs) == 1:
+                result.add(
+                    SemanticEdge(
+                        local[index].key,
+                        outputs[0].key,
+                        "input_ref_aq_v1",
+                        "reference_projection",
+                        None,
+                    )
+                )
         for rule in rules:
             sources = connectors.get(rule.input_key, [])
             targets = connectors.get(rule.output_key, [])
@@ -332,7 +572,7 @@ def _source_diagnostics(
                 add("missing_group_address", node)
             elif knx.group_address.canonical is None:
                 add("invalid_group_address", node)
-            if knx.datatype is None:
+            if knx.datatype is None and expects_raw_datatype(knx.source_type):
                 add("missing_raw_datatype", node)
         for key, value in node.attributes:
             if key not in _KNOWN_KNX_ATTRIBUTES:
@@ -396,44 +636,60 @@ def _source_diagnostics(
 
 
 def build_snapshot(
-    bundle: ProjectBundle, limits: ProjectLimits = DEFAULT_LIMITS
+    bundle: ProjectBundle,
+    limits: ProjectLimits = DEFAULT_LIMITS,
+    *,
+    timings: dict[str, float] | None = None,
 ) -> ProjectSnapshot:
     total_bytes = 0
     total_elements = 0
     total_attributes = 0
     projects: list[ProjectPartSummary] = []
-    nodes: list[GraphNode] = []
-    edges: list[GraphEdge] = []
-    semantic_edges: list[SemanticEdge] = []
-    unresolved: list[tuple[str, str]] = []
+    parsed_projects: list[tuple[str, ParsedProject]] = []
     anomalies: list[tuple[str, int | None, str]] = []
+    unmodeled_node_keys: set[str] = set()
     for member in bundle.files:
+        started = perf_counter()
         data = decode_loxcc(member.content, limits)
+        if timings is not None:
+            timings["decode"] = timings.get("decode", 0.0) + perf_counter() - started
         total_bytes += len(data)
         if total_bytes > limits.decoded_bytes:
             raise ProjectError("project_decoded_limit")
+        started = perf_counter()
         project = parse_project(data, limits)
+        if timings is not None:
+            timings["tokenize"] = timings.get("tokenize", 0.0) + perf_counter() - started
         total_elements += len(project.elements)
         total_attributes += sum(len(element.attributes) for element in project.elements)
         if total_elements > limits.elements or total_attributes > limits.attributes:
             raise ProjectError("project_parse_limit")
         namespace = hashlib.sha256(member.key.encode()).hexdigest()[:24]
-        part_graph = build_graph(((namespace, project),), limits)
-        nodes.extend(part_graph.nodes)
-        edges.extend(part_graph.edges)
-        semantic_edges.extend(part_graph.semantic_edges)
-        unresolved.extend(part_graph.unresolved)
+        parsed_projects.append((namespace, project))
+        owners: list[int | None] = []
+        for index, element in enumerate(project.elements):
+            owner = (
+                index
+                if element.tag in {"C", "Co"}
+                else (owners[element.parent] if element.parent is not None else None)
+            )
+            owners.append(owner)
+            if owner is not None and (
+                any(isinstance(value, str) and value.strip() for value in element.content)
+                or element.tag not in {"C", "Co", "In"}
+                or (
+                    element.tag == "In"
+                    and (len(element.attributes) != 1 or element.attributes[0][0] != "Input")
+                )
+            ):
+                unmodeled_node_keys.add(f"{namespace}:{owner}")
         for index, code in project.anomalies:
             context: int | None = index
             while context is not None and project.elements[context].tag not in {"C", "Co"}:
                 context = project.elements[context].parent
             anomalies.append((namespace, context, code))
-        if (
-            len(nodes) > limits.elements
-            or len(edges) > limits.edges
-            or len(semantic_edges) > limits.edges
-        ):
-            raise ProjectError("project_graph_limit")
+            if context is not None:
+                unmodeled_node_keys.add(f"{namespace}:{context}")
         projects.append(
             ProjectPartSummary(
                 namespace,
@@ -441,11 +697,54 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
-    graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges))
+    started = perf_counter()
+    graph = build_graph(tuple(parsed_projects), limits)
+    if timings is not None:
+        timings["graph"] = perf_counter() - started
+    started = perf_counter()
+    logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
+    runtime_aliases, runtime_sources, identity_evidence = logical_runtime_nodes(
+        graph, unmodeled_node_keys=frozenset(unmodeled_node_keys)
+    )
+    logical_aliases = tuple(sorted((*logical_aliases, *runtime_aliases)))
+    logical_source_ids = tuple(sorted((*logical_source_ids, *runtime_sources)))
+    occurrences: dict[str, list[str]] = defaultdict(list)
+    for key, canonical in logical_aliases:
+        occurrences[canonical].append(key)
+    # These private dicts are constructed once with the immutable snapshot and
+    # never exposed to callers. They must remain pickle-compatible because the
+    # isolated project worker returns snapshots over its local IPC boundary.
+    alias_lookup = dict(logical_aliases)
+    source_lookup = dict(logical_source_ids)
+    raw_nodes = {node.key: node for node in graph.nodes}
+    port_groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for edge in graph.edges:
+        if edge.kind != "contains" or edge.source not in identity_evidence:
+            continue
+        port_canonical = alias_lookup.get(edge.source)
+        child = raw_nodes[edge.target]
+        port = dict(child.attributes).get("K")
+        if port_canonical is not None and child.kind == "connector" and port:
+            port_groups[port_canonical, port].append(child.key)
+    port_lookup = {key: tuple(sorted(group)) for group in port_groups.values() for key in group}
+    logical_nodes = tuple(
+        node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
+    )
+    diagnostics = _source_diagnostics(graph, tuple(anomalies))
+    if timings is not None:
+        timings["diagnostics"] = perf_counter() - started
     return ProjectSnapshot(
         bundle.fingerprint,
-        4,
+        PROJECT_MODEL_VERSION,
         tuple(projects),
         graph,
-        _source_diagnostics(graph, tuple(anomalies)),
+        diagnostics,
+        logical_aliases,
+        logical_source_ids,
+        alias_lookup,
+        source_lookup,
+        logical_nodes,
+        logical_identity=identity_evidence,
+        _logical_occurrences={key: tuple(values) for key, values in occurrences.items()},
+        _logical_ports=port_lookup,
     )

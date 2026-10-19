@@ -1,0 +1,4 @@
+---
+name: using-loxberry-mcp
+description: Guides safe use of the LoxBerry MCP Server to inspect Loxone rooms, controls, project logic, states, weather, history and statistics, diagnose LoxBerry status, clear the plugin-owned statistics cache, and explicitly operate supported Loxone controls. Use for Loxone MCP questions, project traces, LoxBerry diagnostics, history, ambiguous names, stale state, pagination, unconfirmed operations, or an emergency-stop rejection.
+---

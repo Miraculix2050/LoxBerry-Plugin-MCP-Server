@@ -4,15 +4,97 @@
 
 ## Basic settings
 
-The **Enable service** switch is the saved operating permission. It is enabled after a new installation, while MCP and MQTT health are separately disabled. Enabling it starts the service immediately and at the next system boot. Disabling it stops the service immediately and prevents it from starting at the next system boot; this choice is preserved across upgrades. The **Start**, **Stop** and **Restart** status actions are available only while this permission is enabled and affect only the current runtime state, never the boot behavior.
+### Local irradiance forecasts
+
+[Local irradiance guidance](local-solar-forecast.en.md) uses a separately confirmed
+Weather4Lox source. `solar_forecast.enabled` defaults to `false` and
+`maximum_age_minutes` to 180 (1–1440). The private fingerprint is captured only
+by an explicit local administrator source confirmation; supplying a fingerprint
+cannot establish an association. Independent LoxBerry read approval is required.
+This feature preserves recording/archive settings and is not a PV-yield model.
+
+### MCP profile management
+
+The dedicated [profile page](installation-profile.en.md) manages
+`tools.installation_profile_write_enabled` (default: `false`) and at most
+64 exact approvals in `policies.installation_profile_write_bindings`.
+These approvals supplement general operation rights and survive ordinary
+configuration edits. Revocation is checked on the next write, including an
+in-progress request before persistence. An atomic write that has already started
+cannot be undone; inspect the stored profile after an uncertain outcome.
+
+### Admin access and reverse proxies
+
+Admin and Event History actions require a POST with an Origin whose scheme, host
+and effective port match the browser address of the request. Direct HTTP and HTTPS
+access remain supported; an omitted port means 80 for HTTP and 443 for HTTPS.
+Cross-scheme requests and missing or malformed Origins are rejected.
+
+The plugin ignores `Forwarded` and `X-Forwarded-*` headers. For TLS termination at
+a reverse proxy, the administrator must sanitize incoming forwarding headers and
+use an explicitly trusted webserver configuration to supply the external host and
+port as `HTTP_HOST` and the external scheme as consistent CGI metadata:
+`HTTPS=on/1` for HTTPS or `off/0` for HTTP and/or `REQUEST_SCHEME=https/http`.
+Contradictory or invalid values are rejected; if both scheme variables are absent,
+native Apache's HTTP convention applies. Backend TLS metadata must be overwritten
+where necessary. The configured MCP origin does not replace this request metadata.
+Check both Admin pages after proxy changes; this does not establish general
+reverse-proxy compatibility.
+
+### Persistence and storage errors
+
+On supported LoxBerry/Linux filesystems, configuration and MQTT credential updates
+sync the file before atomic replacement and then sync its parent directory. MQTT
+credential deletion and existing configuration migrations also sync the directory.
+Windows development skips directory sync; this does not establish equivalent
+power-loss durability. Newly created directory trees and installation keys, caches
+and diagnostic snapshots are outside this guarantee.
+
+A saved change is separate from applying it to the running service. If the file
+change succeeds but its durability cannot be confirmed, the Admin page reports
+`persistence_uncertain` and does not automatically retry, restore or switch the
+service. Reload the saved state before taking further action. MQTT settings and
+credentials are separate files and may show a partial update. A failed restoration
+is reported as a rollback failure. An upgrade migration with a directory-sync error
+stops with an error even if the migrated file is already visible.
+An idempotent retry also syncs the directory and succeeds only after that sync.
+
+These sync operations reduce a filesystem metadata durability gap; they do not
+guarantee survival of arbitrary hardware failure or storage corruption.
+
+In **Status & operation**, **Service operation and autostart** shows the saved operating permission. It is enabled after a new installation, while MCP and MQTT health are separately disabled. Applying the enabled permission starts the service immediately and at the next system boot. Disabling it stops the service immediately and prevents it from starting at the next system boot; this choice is preserved across upgrades. The **Start**, **Stop** and **Restart** status actions are available only while this permission is enabled and affect only the current runtime state, never the boot behavior.
 
 ## MCP configuration
 
-Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. Only **Enable MCP access** releases MCP and OAuth access.
+Add `?lang=de` or `?lang=en` to the Admin page URL to preview that language for the current page, including AJAX feedback. Without the parameter, the LoxBerry system language still applies; the preview does not change that setting.
+
+Admin section headings show the last successfully loaded, saved MCP and MQTT settings, the current session count, and the number of pending approval actions. The session list refreshes every ten seconds while the page is visible, even when its section is closed. The HTTPS badge reflects certificate, origin, and hostname checks; loading or missing data has a neutral label. Editing a form does not change a badge until the save succeeds.
+
+Under **Connection**, configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. **Test connection** uses the currently selected or manually entered target without saving the configuration. Only **Enable MCP endpoint access** releases MCP and OAuth access. Permissions and local event-history enablement remain visible; rate, runtime, structure, and cache settings are under **Advanced settings**. Their values are saved even while that section is closed.
 
 ### Authentication recovery
 
-The advanced limits include an initial and maximum delay for one lazy Miniserver authentication recovery probe. Defaults are 15 minutes and 24 hours. After the Miniserver confirms that the source IP is blocked, the service makes no further login attempts until the delay has elapsed and a real tool or runtime request needs a connection. A repeated block doubles the delay up to the configured maximum. These limits are plugin policy, not a claimed Miniserver block duration; changing them does not itself start a login attempt. The Admin UI shows minutes while retaining the compatible seconds-based configuration format. A local administrator may authorize one early probe for one active OAuth session; it never globally unlocks other clients.
+The advanced limits include an initial and maximum delay for one lazy Miniserver authentication recovery probe. Defaults are 15 minutes and 24 hours. After the Miniserver confirms that the source IP is blocked, the service makes no further login attempts until the delay has elapsed and a real tool or runtime request needs a connection. A repeated block doubles the delay up to the configured maximum. These limits are plugin policy, not a claimed Miniserver block duration; changing them does not itself start a login attempt.
+
+## Local event history
+
+Native plugin upgrades retain the local event database through a SQLite snapshot. Existing retention limits still apply.
+
+The main Admin UI shows enablement, the configured active-source count, the current SQLite database plus WAL file size, and links to **Local event history** in configuration and under **Help and developer tools**. The separate view shows local measurements first and loads the control selector in the background. It checks visible controls afresh on every page open; saved control names stay hidden until then. Filter the bounded list by name or UUID and by room, category, and type; each filter group accepts at most 100 selected values. **Load controls** forces a new discovery. Then select an advertised state of that control; the source limit is 64 active pairs.
+
+The four sections of the separate view can be opened and closed independently. On the first visit only recorded sources is open; each choice is saved in the browser. The local status and storage overview and action feedback remain visible when sections are closed.
+
+In the recorded-source list, select up to four currently visible sources and choose **Open selected charts**. A separate Admin tab starts with the last 24 hours; presets cover 1 hour, 7 days and 30 days and advance with the clock while the tab is visible. A custom range stays fixed and may span at most 90 days. Each source has its own scale while the time range and cursor are synchronized. On wide screens, the name, room, category, type, and capture intervals sit beside each plot; narrow screens stack them above it. The chart view uses the available Admin content width. The recording and coverage caveat appears once above all charts, while no-event and reduced-detail notices remain source-specific. Ctrl+mouse wheel over a plot zooms the time axis around the pointer; ordinary wheel scrolling still scrolls the page. Zoom within loaded periods is local; Earlier/Later and zoom beyond them fetch only missing time intervals. Numeric observations are lines, booleans are steps, and text changes appear in the event list. When one source has both numeric and Boolean observations in a range, the chart shows both on separate value scales. Exact chart values are available from the cursor or, with a focused chart, the arrow keys, Home and End. The displayed values are locally retained observations, not a reconstruction of earlier state; capture gaps and removed-source periods remain unknown. Dense ranges are marked when display detail is reduced. Narrow the range to inspect exact events. The chart tab checks current Miniserver visibility on opening and periodically while visible; it clears chart values if access cannot be confirmed. It appends new events only while visible, including in a fixed range; only a rolling range moves its time axis. The recorder wakes visible chart and source windows after committed changes. They then fetch only new values or refreshed local source counts through authorization-checked queries; bounded background checks cover service interruptions. A temporary selector refresh keeps existing charts visible until visibility is checked again. On reload, the tab may reuse a bounded snapshot for up to five minutes. It fetches missing and newer values only after a fresh visibility check and history-change check; access loss or changed history discards the snapshot. The source overview never loads values. On a temporary query failure, already authorized values remain visible with a stale notice; failed visibility verification clears them. A displayed reference ID helps locate the corresponding Admin log entry. Each source keeps at most 4,000 cached events. If new events exceed that limit, only the affected chart reloads its current range, using reduced detail when needed. Its previous values remain visible until the replacement succeeds; other charts retain their loaded data. A failed replacement shows a source-specific warning and may retry on the next visible update. Reduced detail does not mean a recording gap and may omit intermediate transitions; select a shorter range for exact retained events.
+
+When another plugin request is signing in to the Miniserver, Event History discovery waits within one shared 15-second budget for authentication coordination. The overall discovery timeout still applies. If coordination remains busy or authentication is suppressed, visibility remains unavailable; existing source details are not used as fresh authorization.
+
+For short state lists, the dropdown is enough; longer lists also show a text filter. State inputs are disabled while loading. The Miniserver structure does not reliably identify value types: a visible state can produce values that cannot be recorded. The recorder supports scalar values only and reports unsupported values in its runtime status. **Start recording** shows progress and then updates the source overview. An enabled source alone does not prove that any event was captured.
+
+While the tab is visible, the page regularly checks a local change marker. If another browser adds or stops a source, deletes its retained data, or clears the entire history, the page reloads the authorized source overview without discarding unsaved retention or size edits. After a failed visibility check, it retries with bounded spacing. If another tab changes the control generation, the page reloads the selector and retains a control/state pair that remains visible. Concurrent page loads share one completed structure refresh even when its control catalog is unchanged. With verified visibility and an unchanged marker, no further Miniserver structure request is made. **Refresh overview** is disabled while loading and then shows a success message for five seconds; errors remain visible.
+
+The overview separates configured retention and maximum size from the measured file size and retained evidence. Event timestamps show the oldest and newest stored change, not a complete history. Recent capture intervals are shown separately; a gap remains a gap even after a source is re-added. Currently visible sources show their room, category and type from the fresh authorized structure. The separate source-list facets for room, category, type and recording status combine selected values with OR within each facet and AND across facets; unassigned room and category are selectable. Table columns sort in either direction, with a separate sort control on narrow screens. Unverified sources remain separate at the end. Counts on this page include only currently visible sources, and hidden-source historical details are withheld. For configured sources whose visibility cannot be verified, the view shows only their saved identifiers and offers confirmed removal. The estimated logical value data per source counts only the UTF-8 JSON event values, not UUIDs, timestamps, SQLite pages, indexes or WAL. Legacy data shows unavailable until its bounded background measurement completes. Source estimates do not sum to the physical database size. When the store, Miniserver structure, or running recorder cannot be checked, the affected information is marked unavailable or unknown.
+
+**Stop recording** retains stored evidence under the global limits. **Delete retained data** is a separate confirmed action available only for an inactive visible source. **Delete all history** has its own confirmation and clears events and coverage while keeping configured source selections. After an uncertain deletion result, inspect the refreshed overview before attempting another operation.
 
 ## Emergency-stop signal (Virtual Status)
 

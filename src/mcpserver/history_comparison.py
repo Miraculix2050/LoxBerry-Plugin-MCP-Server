@@ -1,0 +1,834 @@
+"""Source-preserving comparisons of independently evidenced historical inputs."""
+
+from __future__ import annotations
+
+import time
+from bisect import bisect_right
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, localcontext
+from math import ceil, isfinite
+from statistics import fmean
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from mcpserver.analysis_context import HistoryAnalysisContext, HistoryResolvedAssociation
+from mcpserver.history_analysis import HistoryAnalysisDeadline, SourceAnalysis, StateSegment
+from mcpserver.load_cycles import ActivityEpisode, LoadCyclesResult, describe_load_cycles
+from mcpserver.load_flexibility import LoadFlexibility
+from mcpserver.loxone.history_evidence import HistoryInterval, timezone, utc_timestamp
+from mcpserver.loxone.state_semantics import SeriesSemantics
+from mcpserver.loxone.statistics import StatisticPoint
+from mcpserver.retrospective_shift import (
+    BudgetCandidate,
+    RetrospectiveShiftResult,
+    ShiftLoad,
+    _boundary,
+    _inactive,
+    allocate_candidates,
+    conditional_retrospective_shift,
+    observed_candidates,
+)
+
+ComparisonOperation = Literal[
+    "consumer_ranking", "pv_load_overlap", "operating_phases", "baseload", "retrospective_shift"
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonInput:
+    summary: SourceAnalysis
+    semantics: SeriesSemantics | None = None
+    points: tuple[StatisticPoint, ...] = ()
+    segments: tuple[StateSegment, ...] = ()
+    profile_role: str | None = None
+    declared_boundary: str | None = None
+    load_flexibility: LoadFlexibility | None = None
+    declared_direction: str | None = None
+    association_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.semantics is not None
+            and self.semantics.measurement_role == "native_self_consumption_channel"
+            and self.profile_role != "self_consumption"
+        ):
+            raise ValueError("native self-consumption channel requires the self_consumption role")
+
+    @property
+    def identity(self) -> str | None:
+        return self.association_id or self.summary.binding_id
+
+
+class ContextCycleEvidence(BaseModel):
+    load_id: str
+    consumer_id: str
+    operating_id: str
+    episode_count: int = Field(ge=0, le=100_000)
+    episodes: list[ActivityEpisode] = Field(max_length=16)
+    truncated: bool
+    limitations: list[str] = Field(max_length=16)
+
+
+class ContextHistoryAllocation(BaseModel):
+    load_id: str
+    kind: Literal["observed", "declared_real", "hypothetical"]
+    energy_origin: Literal["observed_intervals", "user_declared_uniform"]
+    observed_start: str | None = None
+    observed_end: str | None = None
+    alternative_start: str
+    alternative_end: str
+    conditional_export_absorption_upper_bound_wh: float = Field(ge=0, allow_inf_nan=False)
+    conditions: list[str] = Field(max_length=16)
+
+
+class ContextHistoryAnalysis(BaseModel):
+    method_version: Literal["context_history.v1"] = "context_history.v1"
+    associations: list[HistoryResolvedAssociation] = Field(default_factory=list, max_length=16)
+    cycles: list[ContextCycleEvidence] = Field(default_factory=list, max_length=16)
+    allocations: list[ContextHistoryAllocation] = Field(default_factory=list, max_length=16)
+    profile_revision: int | None = None
+    evaluated_alternatives: int = Field(default=0, ge=0, le=4096)
+    conditional_export_absorption_upper_bound_wh: float = Field(
+        default=0, ge=0, allow_inf_nan=False
+    )
+    examples_truncated: bool = False
+    limitations: list[str] = Field(default_factory=list, max_length=16)
+
+
+class ComparisonResult(BaseModel):
+    status: Literal["partial", "insufficient_evidence"] = "insufficient_evidence"
+    method: str = "unavailable"
+    method_version: Literal["history_comparison.v1"] = "history_comparison.v1"
+    unit: str | None = None
+    metrics: dict[str, float | int | None] = Field(default_factory=dict, max_length=16)
+    metric_units: dict[str, str] = Field(default_factory=dict, max_length=16)
+    items: list[dict[str, str | float | int | None]] = Field(default_factory=list, max_length=16)
+    usable_intervals: list[HistoryInterval] = Field(default_factory=list, max_length=128)
+    usable_intervals_truncated: bool = False
+    limitations: list[str] = Field(default_factory=list, max_length=16)
+    load_cycles: LoadCyclesResult | None = None
+    retrospective_shift: RetrospectiveShiftResult | None = None
+    context_analysis: ContextHistoryAnalysis | None = None
+
+
+def _check(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise HistoryAnalysisDeadline()
+
+
+def compare_context_history(
+    operation: ComparisonOperation,
+    inputs: tuple[ComparisonInput, ...],
+    context: HistoryAnalysisContext,
+    *,
+    start: float,
+    end: float,
+    timezone_name: str,
+    comparable_boundaries_confirmed: bool,
+    night_start_hour: int,
+    night_end_hour: int,
+    deadline: float,
+) -> ComparisonResult:
+    """Keep observations intact; declared demand has no invented historical baseline."""
+    with localcontext() as precision:
+        precision.prec = 800
+        return _compare_context_history(
+            operation,
+            inputs,
+            context,
+            start,
+            end,
+            timezone_name,
+            comparable_boundaries_confirmed,
+            night_start_hour,
+            night_end_hour,
+            deadline,
+        )
+
+
+def _compare_context_history(
+    operation: ComparisonOperation,
+    inputs: tuple[ComparisonInput, ...],
+    context: HistoryAnalysisContext,
+    start: float,
+    end: float,
+    timezone_name: str,
+    boundaries: bool,
+    night_start: int,
+    night_end: int,
+    deadline: float,
+) -> ComparisonResult:
+    result = (
+        ComparisonResult()
+        if operation == "retrospective_shift"
+        else compare_history(
+            operation,
+            inputs,
+            start=start,
+            end=end,
+            timezone_name=timezone_name,
+            comparable_boundaries_confirmed=boundaries,
+            night_start_hour=night_start,
+            night_end_hour=night_end,
+            deadline=deadline,
+        )
+    )
+    evidence = ContextHistoryAnalysis(
+        limitations=[
+            "request_associations_do_not_establish_quantity_or_physical_measurement",
+            "declared_models_do_not_rewrite_observations_or_prove_historical_improvement",
+        ]
+    )
+    result.context_analysis = evidence
+    # Context identifiers are not persistent profile binding IDs.
+    result.load_cycles = None
+    result.retrospective_shift = None
+    by_id = {s.association_id: s for s in inputs}
+    observed = []
+    for load in context.loads:
+        _check(deadline)
+        if load.kind != "observed":
+            continue
+        consumer, state = by_id.get(load.consumer_id), by_id.get(load.operating_id)
+        flex = load.flexibility or (consumer.load_flexibility if consumer else None)
+        if (
+            consumer is None
+            or state is None
+            or flex is None
+            or consumer.summary.source_kind != "statistic"
+            or state.summary.source_kind != "event_history"
+            or flex.energy_profile_origin != "observed_intervals"
+        ):
+            evidence.limitations.append("complete_measured_cycle_model_unavailable")
+            continue
+        flex = flex.model_copy(update={"operating_binding_id": load.operating_id})
+        cycles = describe_load_cycles(
+            state.segments,
+            qualified_hourly_energy(consumer, start, end, deadline),
+            flex,
+            load.load_id,
+            start=start,
+            end=end,
+            deadline=deadline,
+        )
+        assert load.consumer_id is not None and load.operating_id is not None
+        evidence.cycles.append(
+            ContextCycleEvidence(
+                load_id=load.load_id,
+                consumer_id=load.consumer_id,
+                operating_id=load.operating_id,
+                episode_count=cycles.episode_count,
+                episodes=cycles.episodes,
+                truncated=cycles.truncated or cycles.energy_intervals_truncated,
+                limitations=cycles.limitations,
+            )
+        )
+        observed.append(ShiftLoad(load.load_id, flex, cycles, state.segments))
+    if operation != "retrospective_shift":
+        evidence.limitations = list(dict.fromkeys(evidence.limitations))
+        return result
+    exports = [s for s in inputs if s.profile_role == "grid_export"]
+    export_association = next(
+        (
+            a
+            for a in context.associations
+            if len(exports) == 1 and a.association_id == exports[0].association_id
+        ),
+        None,
+    )
+    if (
+        not boundaries
+        or len(exports) != 1
+        or export_association is None
+        or export_association.origin != "user_confirmed"
+        or exports[0].declared_direction != "export"
+        or not exports[0].declared_boundary
+        or not context.loads
+        or any(
+            s.profile_role == "consumer" and s.declared_boundary != exports[0].declared_boundary
+            for s in inputs
+        )
+    ):
+        result.limitations = ["one_confirmed_export_boundary_and_explicit_load_models_required"]
+        return result
+    export_hours = qualified_hourly_energy(exports[0], start, end, deadline)
+    if not export_hours:
+        result.limitations = ["complete_native_hourly_export_energy_required"]
+        return result
+    candidates: list[BudgetCandidate] = []
+    originals: dict[BudgetCandidate, ActivityEpisode] = {}
+    if observed:
+        metadata, alternatives = observed_candidates(
+            tuple(observed), export_hours, start, end, deadline
+        )
+        evidence.evaluated_alternatives = metadata.evaluated_alternatives
+        if any("budget" in item for item in metadata.limitations):
+            result.limitations = metadata.limitations
+            return result
+        for alt in alternatives:
+            candidate = BudgetCandidate(
+                alt.load.binding_id,
+                alt.episode.start,
+                alt.start,
+                alt.end,
+                alt.load.flexibility.minimum_off_seconds,
+                alt.demand,
+            )
+            candidates.append(candidate)
+            originals[candidate] = alt.episode
+    declared_feedback_missing = False
+    for load in context.loads:
+        if load.kind == "observed":
+            continue
+        assert load.cycle is not None
+        cycle = load.cycle
+        for at in sorted(export_hours):
+            _check(deadline)
+            finish = at + cycle.duration_seconds
+            day = datetime.fromtimestamp(at, timezone(timezone_name)).date()
+            fits = False
+            for anchor in (day, day - timedelta(days=1)):
+                completion = _boundary(
+                    anchor, cycle.latest_completion, cycle.completion_day_offset, timezone_name
+                )
+                for window in cycle.windows:
+                    a = _boundary(anchor, window.start, 0, timezone_name)
+                    b = _boundary(anchor, window.end, window.end_day_offset, timezone_name)
+                    if (
+                        anchor.weekday() in window.weekdays
+                        and a is not None
+                        and b is not None
+                        and completion is not None
+                        and a <= at < finish <= min(b, completion)
+                    ):
+                        fits = True
+            if not fits or finish > end:
+                continue
+            if evidence.evaluated_alternatives == 4096:
+                result.limitations = ["alternative_search_budget_exceeded_no_partial_allocation"]
+                return result
+            evidence.evaluated_alternatives += 1
+            positions = [at + i * 3600 for i in range(ceil(cycle.duration_seconds / 3600))]
+            if any(position not in export_hours for position in positions):
+                continue
+            state = by_id.get(load.operating_id)
+            if state is None:
+                declared_feedback_missing = True
+            if state is not None and not _inactive(
+                state.segments,
+                at - cycle.minimum_off_seconds,
+                finish + cycle.minimum_off_seconds,
+                deadline,
+            ):
+                continue
+            energy = Decimal(str(cycle.cycle_energy_wh))
+            demand: list[tuple[float, Decimal]] = []
+            for index, position in enumerate(positions):
+                seconds = min(3600, cycle.duration_seconds - index * 3600)
+                value = energy * Decimal(seconds) / Decimal(cycle.duration_seconds)
+                if index == len(positions) - 1:
+                    value = energy - sum((v for _, v in demand), Decimal(0))
+                demand.append((position, value))
+            candidates.append(
+                BudgetCandidate(
+                    load.load_id,
+                    "declared_once",
+                    at,
+                    finish,
+                    cycle.minimum_off_seconds,
+                    tuple(demand),
+                )
+            )
+    selections, evidence.examples_truncated = allocate_candidates(
+        candidates,
+        {at: Decimal(str(value)) for at, value in export_hours.items()},
+        deadline,
+    )
+    loads = {load.load_id: load for load in context.loads}
+    total = sum((s.absorbed_wh for s in selections), Decimal(0))
+    if not isfinite(float(total)):
+        result.limitations = ["derived_numeric_overflow"]
+        return result
+    for selection in selections:
+        chosen = selection.candidate
+        load = loads[chosen.load_id]
+        original = originals.get(chosen)
+        evidence.allocations.append(
+            ContextHistoryAllocation(
+                load_id=load.load_id,
+                kind=load.kind,
+                energy_origin="observed_intervals" if original else "user_declared_uniform",
+                observed_start=original.start if original else None,
+                observed_end=original.end if original else None,
+                alternative_start=utc_timestamp(chosen.start),
+                alternative_end=utc_timestamp(chosen.end),
+                conditional_export_absorption_upper_bound_wh=float(selection.absorbed_wh),
+                conditions=[
+                    "historical_native_locks_and_admissibility_unproven",
+                    "subhour_supply_unknown",
+                ],
+            )
+        )
+    evidence.conditional_export_absorption_upper_bound_wh = float(total)
+    evidence.limitations = list(
+        dict.fromkeys(
+            [
+                *evidence.limitations,
+                "one_shared_measured_export_budget_not_proven_pv_production",
+                "conditional_upper_bound_not_measured_self_consumption_savings_or_operation_permission",
+                *(
+                    [
+                        "declared_cycles_without_feedback_have_unverified_activity_and_minimum_off_clearance"
+                    ]
+                    if declared_feedback_missing
+                    else []
+                ),
+            ]
+        )
+    )
+    result.status = "partial" if evidence.allocations else "insufficient_evidence"
+    result.method, result.unit = "conditional_context_export_absorption", "Wh"
+    result.limitations = evidence.limitations
+    return result
+
+
+def hourly_energy_semantics_qualified(semantic: SeriesSemantics | None) -> bool:
+    """Qualify the source contract independently of its available data coverage."""
+    return bool(
+        semantic is not None
+        and semantic.interpretation_status != "invalid"
+        and semantic.measurement_quantity == "energy"
+        and semantic.timestamp_basis == "unix_utc"
+        and semantic.timestamp_position == "interval_start"
+        and semantic.value_meaning == "interval_difference_sum"
+        and semantic.unit in {"Wh", "kWh"}
+    )
+
+
+def qualified_hourly_energy(
+    source: ComparisonInput, start: float, end: float, deadline: float
+) -> dict[float, float]:
+    """Return whole documented hourly energies in Wh; never allocate partial hours."""
+    semantic = source.semantics
+    if source.summary.status == "insufficient_evidence" or not hourly_energy_semantics_qualified(
+        semantic
+    ):
+        return {}
+    assert semantic is not None
+    values: dict[float, float] = {}
+    previous = None
+    for point in sorted(source.points, key=lambda p: p.timestamp):
+        _check(deadline)
+        if not start <= point.timestamp or point.timestamp + 3600 > end:
+            continue
+        value = point.value * (1000 if semantic.unit == "kWh" else 1)
+        if (
+            not isfinite(value)
+            or value < 0
+            or (previous is not None and point.timestamp < previous + 3600)
+        ):
+            return {}
+        values[point.timestamp] = value
+        previous = point.timestamp
+    return values
+
+
+def _coverage(result: ComparisonResult, hours: list[float]) -> None:
+    result.usable_intervals = [
+        HistoryInterval(start=utc_timestamp(t), end=utc_timestamp(t + 3600)) for t in hours[:128]
+    ]
+    result.usable_intervals_truncated = len(hours) > 128
+
+
+def _finite(result: ComparisonResult) -> ComparisonResult:
+    values = list(result.metrics.values()) + [v for item in result.items for v in item.values()]
+    if any(isinstance(v, int | float) and not isfinite(v) for v in values):
+        return ComparisonResult(limitations=["derived_numeric_overflow"])
+    return result
+
+
+def _retrospective_shift(
+    inputs: tuple[ComparisonInput, ...],
+    start: float,
+    end: float,
+    boundaries_confirmed: bool,
+    deadline: float,
+) -> ComparisonResult:
+    result = ComparisonResult()
+    export = [s for s in inputs if s.profile_role == "grid_export"]
+    consumers = [s for s in inputs if s.profile_role == "consumer"]
+    states = [s for s in inputs if s.profile_role == "operating_state"]
+    if (
+        not boundaries_confirmed
+        or len(export) != 1
+        or not 1 <= len(consumers) <= 7
+        or len(states) != len(consumers)
+        or len(inputs) != 1 + 2 * len(consumers)
+        or any(not s.summary.binding_id for s in inputs)
+        or any(s.summary.source_kind != "statistic" for s in export + consumers)
+        or any(s.summary.source_kind != "event_history" for s in states)
+        or export[0].declared_direction != "export"
+    ):
+        result.limitations = [
+            "confirmed_export_direction_consumer_operating_pairs_and_boundary_confirmation_required"
+        ]
+        return result
+    boundary = export[0].declared_boundary
+    if not boundary or any(s.declared_boundary != boundary for s in consumers):
+        result.limitations = ["matching_declared_export_consumer_boundary_required"]
+        return result
+    export_hours = qualified_hourly_energy(export[0], start, end, deadline)
+    if not export_hours:
+        result.limitations = ["complete_native_hourly_export_energy_required"]
+        return result
+    state_map = {s.summary.binding_id: s for s in states}
+    loads = []
+    associations = []
+    for consumer in consumers:
+        _check(deadline)
+        flex = consumer.load_flexibility
+        state = state_map.get(flex.operating_binding_id) if flex is not None else None
+        if (
+            flex is None
+            or state is None
+            or not state.segments
+            or consumer.summary.binding_id is None
+        ):
+            result.limitations = [
+                "usable_confirmed_load_constraints_and_exact_operating_association_required"
+            ]
+            return result
+        associations.append(flex.operating_binding_id)
+        cycles = describe_load_cycles(
+            state.segments,
+            qualified_hourly_energy(consumer, start, end, deadline),
+            flex,
+            consumer.summary.binding_id,
+            start=start,
+            end=end,
+            deadline=deadline,
+        )
+        loads.append(ShiftLoad(consumer.summary.binding_id, flex, cycles, state.segments))
+    if len(state_map) != len(states) or len(set(associations)) != len(associations):
+        result.limitations = ["distinct_consumer_operating_associations_required"]
+        return result
+    result.retrospective_shift = conditional_retrospective_shift(
+        tuple(loads),
+        export_hours,
+        start=start,
+        end=end,
+        deadline=deadline,
+    )
+    result.method = "conditional_shared_export_absorption"
+    result.status = result.retrospective_shift.status
+    result.unit = "Wh"
+    result.limitations = list(result.retrospective_shift.limitations)
+    return result
+
+
+def compare_history(
+    operation: ComparisonOperation,
+    inputs: tuple[ComparisonInput, ...],
+    *,
+    start: float,
+    end: float,
+    timezone_name: str,
+    comparable_boundaries_confirmed: bool,
+    night_start_hour: int,
+    night_end_hour: int,
+    deadline: float,
+    analysis_context: HistoryAnalysisContext | None = None,
+) -> ComparisonResult:
+    if analysis_context is not None:
+        return compare_context_history(
+            operation,
+            inputs,
+            analysis_context,
+            start=start,
+            end=end,
+            timezone_name=timezone_name,
+            comparable_boundaries_confirmed=comparable_boundaries_confirmed,
+            night_start_hour=night_start_hour,
+            night_end_hour=night_end_hour,
+            deadline=deadline,
+        )
+    _check(deadline)
+    result = ComparisonResult()
+    if operation == "retrospective_shift":
+        return _retrospective_shift(inputs, start, end, comparable_boundaries_confirmed, deadline)
+    if operation == "consumer_ranking":
+        if not comparable_boundaries_confirmed:
+            result.limitations = ["explicit_comparable_boundary_confirmation_required"]
+            return result
+        boundaries = [source.declared_boundary for source in inputs]
+        if (
+            len(inputs) < 2
+            or any(s.profile_role != "consumer" or not s.identity for s in inputs)
+            or any(not boundary for boundary in boundaries)
+            or len(set(boundaries)) != len(boundaries)
+        ):
+            result.limitations = ["distinct_confirmed_consumer_boundaries_required"]
+            return result
+        reference = inputs[0].summary
+        if any(
+            s.summary.status == "insufficient_evidence"
+            or s.summary.unit not in {"Wh", "kWh"}
+            or s.summary.method != reference.method
+            or (
+                reference.method != "whole_hourly_interval_sum"
+                and s.summary.usable_intervals != reference.usable_intervals
+            )
+            or not s.summary.usable_intervals
+            or "energy" not in s.summary.metrics
+            for s in inputs
+        ):
+            result.limitations = ["compatible_complete_energy_observation_windows_required"]
+            return result
+        reference_hours = qualified_hourly_energy(inputs[0], start, end, deadline)
+        if reference.method == "whole_hourly_interval_sum" and any(
+            qualified_hourly_energy(source, start, end, deadline).keys() != reference_hours.keys()
+            for source in inputs[1:]
+        ):
+            result.limitations = ["identical_whole_energy_interval_coverage_required"]
+            return result
+        result.method, result.status, result.unit = (
+            "individual_declared_consumer_ranking",
+            "partial",
+            "Wh",
+        )
+        result.items = sorted(
+            (
+                {
+                    "association_id" if s.association_id else "binding_id": s.identity,
+                    "energy": float(s.summary.metrics["energy"] or 0)
+                    * (1000 if s.summary.unit == "kWh" else 1),
+                }
+                for s in inputs
+            ),
+            key=lambda item: float(item["energy"] or 0),
+            reverse=True,
+        )
+        if reference.method == "whole_hourly_interval_sum":
+            _coverage(result, sorted(reference_hours))
+        else:
+            result.usable_intervals = reference.usable_intervals
+        result.limitations = [
+            "boundary_compatibility_is_user_declared",
+            "individual_counters_are_not_summed_parent_child_overlap_must_be_excluded",
+            "source_energy_limits_and_unobserved_resets_still_apply",
+        ]
+        return _finite(result)
+    if operation == "pv_load_overlap":
+        production = [s for s in inputs if s.profile_role == "production"]
+        load = [s for s in inputs if s.profile_role in {"consumer", "house_consumption"}]
+        states = [s for s in inputs if s.summary.source_kind == "event_history"]
+        if (
+            len(inputs) not in {2, 3}
+            or len(production) != 1
+            or len(load) != 1
+            or len(states) != len(inputs) - 2
+            or any(not s.identity for s in production + load)
+        ):
+            result.limitations = ["one_confirmed_production_and_one_load_binding_required"]
+            return result
+        pv, consumption = (
+            qualified_hourly_energy(production[0], start, end, deadline),
+            qualified_hourly_energy(load[0], start, end, deadline),
+        )
+        common = sorted(pv.keys() & consumption.keys())
+        if states:
+            active = [segment for segment in states[0].segments if segment.active]
+            starts = [segment.start for segment in active]
+            gated_hours = []
+            for timestamp in common:
+                _check(deadline)
+                index = bisect_right(starts, timestamp) - 1
+                if index >= 0 and timestamp + 3600 <= active[index].end:
+                    gated_hours.append(timestamp)
+            common = gated_hours
+        if not common:
+            result.limitations = ["aligned_whole_energy_intervals_required"]
+            return result
+        result.status, result.method, result.unit = (
+            "partial",
+            "coincident_hourly_energy_windows",
+            "Wh",
+        )
+        result.metrics = {
+            "production_energy": sum(pv[t] for t in common),
+            "load_energy": sum(consumption[t] for t in common),
+            "coincident_energy_upper_bound": sum(min(pv[t], consumption[t]) for t in common),
+            "positive_production_and_load_seconds": 3600
+            * sum(pv[t] > 0 and consumption[t] > 0 for t in common),
+            "aligned_seconds": 3600 * len(common),
+            "production_denominator": sum(pv[t] for t in common),
+            "exact_solar_attribution_fraction": None,
+        }
+        result.metric_units = {
+            "production_energy": "Wh",
+            "load_energy": "Wh",
+            "coincident_energy_upper_bound": "Wh",
+            "production_denominator": "Wh",
+            "positive_production_and_load_seconds": "s",
+            "aligned_seconds": "s",
+            "exact_solar_attribution_fraction": "1",
+        }
+        _coverage(result, common)
+        result.limitations = [
+            "profile_roles_are_user_declared",
+            "hourly_coincidence_is_not_simultaneity_or_exact_solar_attribution",
+            "upper_bound_is_not_measured_self_consumption",
+            "unmatched_or_partial_intervals_excluded",
+            "native_efm_balance_requires_its_separate_supported_contract",
+        ]
+        if not result.metrics["production_denominator"]:
+            result.limitations.append("no_generation_denominator_attribution_undefined")
+        if states:
+            result.limitations.append("only_whole_energy_intervals_inside_evidenced_active_phases")
+        return _finite(result)
+    if operation == "operating_phases":
+        states = [s for s in inputs if s.summary.source_kind == "event_history"]
+        numeric = [s for s in inputs if s.summary.source_kind == "statistic"]
+        if len(inputs) != 2 or len(states) != 1 or len(numeric) != 1 or not states[0].segments:
+            result.limitations = ["one_evidenced_state_and_one_numeric_source_required"]
+            return result
+        intervals = qualified_hourly_energy(numeric[0], start, end, deadline)
+        flexibility = numeric[0].load_flexibility
+        if (
+            flexibility is not None
+            and numeric[0].profile_role == "consumer"
+            and states[0].profile_role == "operating_state"
+            and states[0].summary.binding_id == flexibility.operating_binding_id
+            and numeric[0].summary.binding_id is not None
+        ):
+            result.load_cycles = describe_load_cycles(
+                states[0].segments,
+                intervals,
+                flexibility,
+                numeric[0].summary.binding_id,
+                start=start,
+                end=end,
+                deadline=deadline,
+            )
+        active = [s for s in states[0].segments if s.active]
+        active_starts = [s.start for s in active]
+
+        def in_active(first: float, last: float, *, observation: bool = False) -> bool:
+            index = bisect_right(active_starts, first) - 1
+            return index >= 0 and (
+                last < active[index].end if observation else last <= active[index].end
+            )
+
+        inside = [t for t in intervals if in_active(t, t + 3600)]
+        semantic = numeric[0].semantics
+        samples = []
+        if (
+            numeric[0].summary.status != "insufficient_evidence"
+            and semantic
+            and semantic.measurement_quantity == "temperature"
+            and semantic.timestamp_basis == "unix_utc"
+            and semantic.value_meaning == "sample"
+            and semantic.unit is not None
+            and semantic.interpretation_status != "invalid"
+        ):
+            for point in numeric[0].points:
+                _check(deadline)
+                if start <= point.timestamp < end and in_active(
+                    point.timestamp, point.timestamp, observation=True
+                ):
+                    samples.append(point.value)
+        if not inside and not samples:
+            result.limitations = ["no_complete_active_energy_intervals_or_temperature_samples"]
+            return result
+        result.status, result.method = "partial", "observations_inside_evidenced_active_phases"
+        try:
+            mean = fmean(samples) if samples else None
+        except OverflowError:
+            return ComparisonResult(limitations=["derived_numeric_overflow"])
+        result.metrics = {
+            "active_seconds": sum(s.end - s.start for s in active),
+            "energy_in_complete_active_intervals_Wh": sum(intervals[t] for t in inside)
+            if inside
+            else None,
+            "temperature_active_sample_mean": mean,
+            "temperature_sample_count": len(samples),
+        }
+        result.metric_units = {
+            "active_seconds": "s",
+            "energy_in_complete_active_intervals_Wh": "Wh",
+        }
+        if samples and semantic and semantic.unit:
+            result.metric_units["temperature_active_sample_mean"] = semantic.unit
+        _coverage(result, sorted(inside))
+        result.limitations = [
+            "state_duration_is_not_measured_energy",
+            "partial_energy_intervals_not_allocated",
+            "temperature_mean_is_not_time_weighted",
+            "association_is_not_causation_or_exact_solar_attribution",
+            "source_gaps_remain_unknown",
+        ]
+        return _finite(result)
+    if len(inputs) != 1:
+        result.limitations = ["baseload_requires_one_selected_channel"]
+        return result
+    if not 0 <= night_start_hour < night_end_hour <= 24:
+        raise ValueError("night window requires ordered whole local hours")
+    zone = timezone(timezone_name)
+    intervals = qualified_hourly_energy(inputs[0], start, end, deadline)
+    day = datetime.fromtimestamp(start, UTC).astimezone(zone).date()
+    local_end = datetime.fromtimestamp(end, UTC).astimezone(zone)
+    last_day = local_end.date()
+    if local_end.time().replace(tzinfo=None) == datetime.min.time():
+        last_day -= timedelta(days=1)
+    selected: list[float] = []
+    while day <= last_day:
+        _check(deadline)
+        midnight = datetime.combine(day, datetime.min.time())
+        bounds = []
+        for hour in (night_start_hour, night_end_hour):
+            wall = midnight + timedelta(hours=hour)
+            first, second = wall.replace(tzinfo=zone, fold=0), wall.replace(tzinfo=zone, fold=1)
+            if (
+                first.utcoffset() != second.utcoffset()
+                or first.astimezone(UTC).astimezone(zone).replace(tzinfo=None) != wall
+            ):
+                raise ValueError("night window has ambiguous or nonexistent local boundary")
+            bounds.append(first.timestamp())
+        selected.extend(t for t in intervals if bounds[0] <= t and t + 3600 <= bounds[1])
+        day += timedelta(days=1)
+    if not selected:
+        result.limitations = ["whole_evidenced_nighttime_energy_intervals_required"]
+        return result
+    # Each documented hour contributes the same real duration, including DST repeats.
+    powers = sorted(intervals[t] for t in selected)
+    middle = len(powers) // 2
+    median = powers[middle] if len(powers) % 2 else powers[middle - 1] / 2 + powers[middle] / 2
+    result.status, result.method, result.unit = (
+        "partial",
+        "time_weighted_median_of_hourly_mean_power",
+        "W",
+    )
+    result.metrics = {
+        "nighttime_median_power": median,
+        "usable_night_seconds": len(selected) * 3600,
+        "estimated_24_hour_energy_Wh": median * 24,
+        "night_start_hour": night_start_hour,
+        "night_end_hour": night_end_hour,
+    }
+    result.metric_units = {
+        "nighttime_median_power": "W",
+        "usable_night_seconds": "s",
+        "estimated_24_hour_energy_Wh": "Wh",
+        "night_start_hour": "h",
+        "night_end_hour": "h",
+    }
+    _coverage(result, sorted(selected))
+    result.limitations = [
+        "power_is_derived_hourly_mean_energy_Wh_per_hour_not_instantaneous_power",
+        "24_hour_extrapolation_is_an_estimate",
+        "only_selected_channel_boundary_not_whole_installation",
+        "partial_hours_and_unknown_gaps_excluded",
+    ]
+    return _finite(result)

@@ -3,12 +3,29 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
 
+from mcpserver.schema_reference import tool_schema_catalog
+
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
+SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-core.js"
+APP_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
+AUTH_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-auth.js"
+CLIENT_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-client.js"
+STATE_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-state.js"
+VIEWS_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-views.js"
+ADAPTERS = ROOT / "webfrontend" / "htmlauth" / "explorer-adapters.js"
+ADMIN_SCRIPTS = ROOT / "webfrontend" / "htmlauth" / "admin"
+
+
+def read_explorer_source() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (SCRIPT, VIEWS_SCRIPT, AUTH_SCRIPT, CLIENT_SCRIPT, APP_SCRIPT)
+    )
 
 
 def test_help_and_explorer_link_to_static_schema_reference() -> None:
@@ -31,10 +48,26 @@ def test_schema_reference_link_label_is_concise_in_both_languages() -> None:
     assert "SCHEMA_REFERENCE=Open schema reference" in english
 
 
+def test_explorer_catalog_publishes_operation_targets_view() -> None:
+    catalog = tool_schema_catalog("test")
+    describe = next(tool for tool in catalog["tools"] if tool["name"] == "loxone_describe_control")
+    view = describe["inputSchema"]["properties"]["view"]
+
+    assert view["default"] == "full"
+    assert view["enum"] == [
+        "full",
+        "history_targets",
+        "operation_targets",
+        "state_refs",
+        "energy_context",
+        "lighting_context",
+    ]
+
+
 def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() -> None:
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     responsive_panels = source[
         source.index("function syncResponsivePanels") : source.index("function showError")
     ]
@@ -43,6 +76,13 @@ def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() ->
     assert template.count('id="explorer-history"') == 1
     assert '<details id="explorer-tools-panel" class="mcp-explorer-card" open>' in template
     assert '<details id="explorer-history-panel" class="mcp-explorer-card" open>' in template
+    assert (
+        '<details id="explorer-request" class="mcp-explorer-card" tabindex="-1" open>' in template
+    )
+    assert '<details id="explorer-result" class="mcp-explorer-card" tabindex="-1" open>' in template
+    assert '<summary><h2 id="request-title"><TMPL_VAR EXPLORER.SELECTED_TOOL></h2>' in template
+    assert '<summary><h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2></summary>' in template
+    assert '<details id="explorer-history-arguments" hidden>' in template
     assert 'class="mcp-explorer-panel-label"' in template
     assert 'id="explorer-request"' in template
     assert 'id="explorer-result"' in template
@@ -67,7 +107,7 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     render_tools = source[
         source.index("function renderTools()") : source.index("function draftFor(")
     ]
@@ -81,10 +121,72 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
         in template
     )
     assert 'data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"' in template
-    assert "label('toolBadgeReadOnly')" in render_tools
-    assert "label('toolBadgeWrite')" in render_tools
+    assert "core.toolMetadataLabels(tool)[0]" in render_tools
+    assert "core.toolIsMutating(tool)" in render_tools
     assert "text: 'read-only'" not in render_tools
     assert "text: 'write'" not in render_tools
+
+
+def test_request_result_and_history_arguments_reopen_on_relevant_actions() -> None:
+    source = read_explorer_source()
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+    select_tool = source[
+        source.index("function selectTool(") : source.index("function setDraftField(")
+    ]
+    render_result = source[
+        source.index("function renderResult(") : source.index("function transcriptEntry(")
+    ]
+
+    assert "SELECTED_TOOL=Ausgewähltes Tool" in german
+    assert "SELECTED_TOOL=Selected tool" in english
+    assert 'id="explorer-request-selection"' in template
+    assert 'id="explorer-history-arguments-value"' in template
+    assert "if (state.selectedTool) elements.request.open = true" in select_tool
+    assert "elements.result.open = true" in render_result
+    assert "elements.historyArguments.open = false" in render_result
+    assert "elements.historyArgumentsValue.textContent = ''" in render_result
+    assert (
+        "elements.result.open = true"
+        in source[
+            source.index("function revealResult()") : source.index("function syncResponsivePanels")
+        ]
+    )
+
+
+def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    source = read_explorer_source()
+    keys = [
+        "TOOL_BADGE_WRITE_POSSIBLE",
+        "TOOL_HINT_DESTRUCTIVE",
+        "TOOL_HINT_ADDITIVE",
+        "TOOL_HINT_IDEMPOTENT",
+        "TOOL_HINT_REPEAT_EFFECT",
+        "TOOL_HINT_OPEN_WORLD",
+        "TOOL_HINT_CLOSED_WORLD",
+        "TOOL_HINTS_NOTICE",
+        "TOOL_DESCRIPTION",
+        "TOOL_REQUIRED_SCOPES",
+        "TOOL_SCOPE_EITHER",
+        "TOOL_SCOPE_OR",
+        "TOOL_SCOPE_LOCAL_APPROVAL",
+        "TOOL_SCOPES_UNKNOWN",
+        "TOOL_TECHNICAL_METADATA",
+    ]
+    for key in keys:
+        attribute = key.lower().replace("_", "-")
+        assert f"{key}=" in german
+        assert f"{key}=" in english
+        assert f'data-{attribute}="<TMPL_VAR EXPLORER.{key} ESCAPE=HTML>"' in template
+    assert "core.toolMetadataLabels(state.selectedTool)" in source
+    assert "core.toolRequiredScopes(state.selectedTool)" in source
+    assert "core.toolScopeAlternatives(state.selectedTool)" in source
+    assert "JSON.stringify(state.selectedTool.annotations || {}, null, 2)" in source
+    assert "element('details', {className: 'mcp-explorer-technical'})" in source
 
 
 def run_core(expression: str) -> object:
@@ -92,7 +194,23 @@ def run_core(expression: str) -> object:
     if node is None:
         pytest.skip("Node.js is required for explorer JavaScript tests")
     program = (
-        f"const core=require({json.dumps(str(SCRIPT))}); console.log(JSON.stringify({expression}));"
+        f"const core={{...require({json.dumps(str(SCRIPT))}),"
+        f"...require({json.dumps(str(VIEWS_SCRIPT))})}};"
+        f"console.log(JSON.stringify({expression}));"
+    )
+    result = subprocess.run(
+        [node, "-e", program], check=True, capture_output=True, text=True, encoding="utf-8"
+    )
+    return json.loads(result.stdout)
+
+
+def run_adapters(expression: str) -> object:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for explorer JavaScript tests")
+    program = (
+        f"const adapters=require({json.dumps(str(ADAPTERS))}); "
+        f"console.log(JSON.stringify({expression}));"
     )
     result = subprocess.run([node, "-e", program], check=True, capture_output=True, text=True)
     return json.loads(result.stdout)
@@ -103,12 +221,259 @@ def run_core_async(expression: str) -> object:
     if node is None:
         pytest.skip("Node.js is required for explorer JavaScript tests")
     program = (
-        f"const core=require({json.dumps(str(SCRIPT))});"
+        f"const core={{...require({json.dumps(str(SCRIPT))}),"
+        f"...require({json.dumps(str(VIEWS_SCRIPT))})}};"
         f"(async()=>console.log(JSON.stringify(await ({expression}))))()"
         ".catch(error=>{console.error(error);process.exit(1);});"
     )
     result = subprocess.run([node, "-e", program], check=True, capture_output=True, text=True)
     return json.loads(result.stdout)
+
+
+def run_inspector(scenario: str) -> object:
+    dom = """(() => {
+      class Node {
+        constructor(tag) {
+          this.tag = tag; this.children = []; this.attrs = {}; this.handlers = {};
+          this.textContent = ''; this.hidden = false; this.className = '';
+        }
+        append(...nodes) { this.children.push(...nodes); }
+        replaceChildren(...nodes) { this.children = nodes; }
+        remove() {
+          if (this.parent) this.parent.children = this.parent.children.filter(n => n !== this);
+        }
+        setAttribute(key, value) { this.attrs[key] = value; }
+        getAttribute(key) { return this.attrs[key]; }
+        addEventListener(key, handler) { this.handlers[key] = handler; }
+        click() { this.handlers.click(); }
+      }
+      const document = {createElement: tag => new Node(tag)};
+      const originalAppend = Node.prototype.append;
+      Node.prototype.append = function (...nodes) {
+        nodes.forEach(child => { child.parent = this; }); originalAppend.apply(this, nodes);
+      };
+      const walk = root => [root, ...root.children.flatMap(walk)];
+      const labels = {selectValue:'Select',expandResult:'Expand',
+        collapseResult:'Collapse',moreResults:'Show more'};
+      const transfers = [];
+      const inspect = value => core.createResultInspector(document, value, labels,
+        (selected, path) => transfers.push({selected, path}));
+    """
+    return run_core(dom + scenario + "})()")
+
+
+def test_result_inspector_bounds_initial_dom_and_reaches_all_array_items() -> None:
+    result = run_inspector("""
+      const tree = inspect(Array.from({length:1000}, (_, i) => ({value:i})));
+      const count = () => walk(tree).filter(node =>
+        node.className === 'mcp-explorer-tree-entry').length;
+      const initial = count();
+      for (let i = 0; i < 9; i++) {
+        walk(tree).find(node => node.className === 'mcp-explorer-tree-more').click();
+      }
+      return {initial, final:count(), more:walk(tree).filter(node =>
+        node.className === 'mcp-explorer-tree-more').length,
+        last:walk(tree).some(node => node.tag === 'button' &&
+          node.textContent.endsWith('999 {1}'))};
+    """)
+    assert result == {"initial": 100, "final": 1000, "more": 0, "last": True}
+
+
+def test_result_inspector_shallow_budget_disclosure_and_exact_transfer_path() -> None:
+    result = run_inspector("""
+      const many = Object.fromEntries(Array.from({length:150}, (_, i) =>
+        [`field${i}`, {value:i, other:true}]));
+      const budgetTree = inspect(many);
+      const budget = walk(budgetTree).filter(node =>
+        node.className === 'mcp-explorer-tree-entry').length;
+      const tree = inspect({metadata:{cursor:'next'},items:[{id:'exact'}]});
+      const before = walk(tree).filter(node =>
+        node.className === 'mcp-explorer-tree-entry').length;
+      const toggle = walk(tree).find(node => node.className === 'mcp-explorer-tree-toggle'
+        && node.textContent.includes('items'));
+      const collapsed = toggle.getAttribute('aria-expanded');
+      toggle.click();
+      const expanded = toggle.getAttribute('aria-expanded');
+      const index = walk(tree).find(node => node.className === 'mcp-explorer-tree-toggle'
+        && node.textContent.includes('0 {1}'));
+      index.click();
+      walk(tree).find(node => node.tag === 'button' && node.textContent === 'id: "exact"').click();
+      toggle.click();
+      return {budget, before, collapsed, expanded, closed:toggle.getAttribute('aria-expanded'),
+        after:walk(tree).filter(node =>
+          node.className === 'mcp-explorer-tree-entry').length, transfers};
+    """)
+    assert result == {
+        "budget": 200,
+        "before": 3,
+        "collapsed": "false",
+        "expanded": "true",
+        "closed": "false",
+        "after": 5,
+        "transfers": [{"selected": "exact", "path": ["items", 0, "id"]}],
+    }
+
+
+def test_result_inspector_empty_scalar_and_error_values() -> None:
+    result = run_inspector("""
+      const values = [inspect(null),inspect([]),inspect({}),inspect({isError:true,
+        content:[{type:'text',text:'failed'}]})];
+      return values.map(tree => ({text:walk(tree).map(node => node.textContent).filter(Boolean),
+        items:walk(tree).filter(node =>
+          node.className === 'mcp-explorer-tree-entry').length}));
+    """)
+    assert result[0]["items"] == 1
+    assert result[1]["text"] == ["[0]"]
+    assert result[2]["text"] == ["{0}"]
+    assert result[3]["items"] >= 2
+
+
+def test_result_inspector_array_object_preview_and_null_display() -> None:
+    result = run_inspector("""
+      const tree = inspect({items:[
+        {name:'  Kitchen  ',type:'Switch',uuid:'a'},
+        {name:' ',title:'Overview',type:'Page'},
+        {label:'Etage'}, {type:'Light'}, {id:0}, {uuid:'abc',timestamp:1727300000},
+        {name:null,other:1}, null, 'plain',
+        {weather_type_text:'Clear',type:'Weather'},
+        {block_type:'AutoJalousie'},
+        {component:'WeatherServer'},
+        {code:'Weather.1'},
+        {timestamp:1727300000},
+        {name:'X'.repeat(90)}
+      ], ordinary:{name:'No preview'}, missing:null});
+      const items = walk(tree).find(node => node.tag === 'button' &&
+        node.textContent.includes('items [15]'));
+      items.click();
+      const captions = walk(tree).filter(node => node.className ===
+        'mcp-explorer-tree-toggle').map(node => node.textContent);
+      const values = walk(tree).filter(node => node.className ===
+        'mcp-explorer-value').map(node => node.textContent);
+      walk(tree).find(node => node.className === 'mcp-explorer-value' &&
+        node.textContent === '7: -').click();
+      return {captions,values,transfers};
+    """)
+    assert any(text.endswith('0 {3} "Kitchen"') for text in result["captions"])
+    assert any(text.endswith('1 {3} "Overview"') for text in result["captions"])
+    assert any(text.endswith('2 {1} "Etage"') for text in result["captions"])
+    assert any(text.endswith('3 {1} "Light"') for text in result["captions"])
+    assert any(text.endswith("4 {1} 0") for text in result["captions"])
+    assert any(text.endswith('5 {2} "abc"') for text in result["captions"])
+    assert any(text.endswith("6 {2}") for text in result["captions"])
+    assert any(text.endswith("ordinary {1}") for text in result["captions"])
+    assert any(text.endswith('9 {2} "Clear"') for text in result["captions"])
+    assert any(text.endswith('10 {1} "AutoJalousie"') for text in result["captions"])
+    assert any(text.endswith('11 {1} "WeatherServer"') for text in result["captions"])
+    assert any(text.endswith('12 {1} "Weather.1"') for text in result["captions"])
+    assert any(text.endswith("13 {1} 1727300000") for text in result["captions"])
+    assert any('14 {1} "' + "X" * 80 in text for text in result["captions"])
+    assert "7: -" in result["values"]
+    assert '8: "plain"' in result["values"]
+    assert "missing: -" in result["values"]
+    assert result["transfers"] == [{"selected": None, "path": ["items", 7]}]
+
+
+def test_result_inspector_previews_nested_names_and_relationship_arrays() -> None:
+    captions = run_inspector("""
+      const tree = inspect({items:[
+        {control:{name:'Boiler'},state:{value:1}},
+        {control_name:'Heating',control_uuid:'a'},
+        {state_name:'Temperature',state_uuid:'b'},
+        {model_source_id:'source-1'},
+        {finding_type:'datatype_conflict',finding_id:'finding-1'},
+        {strategy:'record_on_change'},
+        {source:'node-a',target:'node-b',kind:'signal'},
+        {source_project_node_id:'node-c',target_project_node_id:'node-d',classification:'knx_to_loxone'},
+        {observed_at:'2026-09-25T12:00:00Z'},
+        {state_uuid:'state-1'},
+        {interpretation:'rising_edge'},
+        {classification:'knx_to_loxone'},
+        {kind:'reference'},
+        {at:'2026-09-26T12:00:00Z'},
+        {what:'SwitchOn',timestamp:'2026-09-26T12:01:00Z'},
+        {source_type:'EIBtextsensor',timestamp:'2026-09-26T12:02:00Z'},
+        {source_field:'ModbusAddress',evidence_status:'absent',raw_value:null}
+      ]});
+      walk(tree).find(node => node.tag === 'button' &&
+        node.textContent.includes('items [17]')).click();
+      return walk(tree).filter(node => node.className ===
+        'mcp-explorer-tree-toggle').map(node => node.textContent);
+    """)
+    expected = [
+        '0 {2} "Boiler"',
+        '1 {2} "Heating"',
+        '2 {2} "Temperature"',
+        '3 {1} "source-1"',
+        '4 {2} "datatype_conflict"',
+        '5 {1} "record_on_change"',
+        '6 {3} "node-a → node-b"',
+        '7 {3} "node-c → node-d"',
+        '8 {1} "2026-09-25T12:00:00Z"',
+        '9 {1} "state-1"',
+        '10 {1} "rising_edge"',
+        '11 {1} "knx_to_loxone"',
+        '12 {1} "reference"',
+        '13 {1} "2026-09-26T12:00:00Z"',
+        '14 {2} "SwitchOn"',
+        '15 {2} "EIBtextsensor"',
+        '16 {3} "ModbusAddress"',
+    ]
+    for label in expected:
+        assert any(caption.endswith(label) for caption in captions)
+
+
+def test_result_inspector_bounds_whitespace_scans_and_skips_later_candidates() -> None:
+    result = run_inspector("""
+      const huge = ' '.repeat(100000);
+      const original = String.prototype[Symbol.iterator];
+      let inspected = 0;
+      String.prototype[Symbol.iterator] = function () {
+        const iterator = original.call(this);
+        if (this.valueOf() !== huge) return iterator;
+        return {next() { inspected += 1; return iterator.next(); },
+          [Symbol.iterator]() { return this; }};
+      };
+      try {
+        const named = {name:'Primary',target:'node-b'};
+        Object.defineProperty(named,'source',{
+          enumerable:true,get() { throw new Error('later candidate was read'); }
+        });
+        const tree = inspect({items:[{name:huge,type:'Fallback'},named]});
+        walk(tree).find(node => node.tag === 'button' &&
+          node.textContent.includes('items [2]')).click();
+        return {inspected,captions:walk(tree).filter(node => node.className ===
+          'mcp-explorer-tree-toggle').map(node => node.textContent)};
+      } finally { String.prototype[Symbol.iterator] = original; }
+    """)
+    assert result["inspected"] <= 400
+    assert any(text.endswith('0 {2} "Fallback"') for text in result["captions"])
+    assert any(text.endswith('1 {3} "Primary"') for text in result["captions"])
+
+
+def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:
+    source = read_explorer_source()
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    render_result = source[
+        source.index("function renderResult(") : source.index("function transcriptEntry(")
+    ]
+    render_history = source[
+        source.index("function renderHistory(") : source.index("async function runSelectedTool(")
+    ]
+
+    assert "createResultInspector(document, displayed" in render_result
+    assert (
+        "actions.showResult(entry.result, {tool: entry.tool, arguments: entry.arguments, "
+        "history: true})" in render_history
+    )
+    assert "elements.resultRaw.textContent = JSON.stringify(result" not in render_result
+    assert "elements.resultRaw.textContent = JSON.stringify(state.lastResult, null, 2)" in source
+    assert "navigator.clipboard.writeText(JSON.stringify(state.lastResult, null, 2))" in source
+    for key in ("EXPAND_RESULT", "COLLAPSE_RESULT", "MORE_RESULTS", "SELECT_VALUE"):
+        assert f"EXPLORER.{key} ESCAPE=HTML" in template
+        assert f"{key}=" in german
+        assert f"{key}=" in english
 
 
 def test_explorer_preserves_structured_mcp_error_details() -> None:
@@ -130,7 +495,7 @@ def test_explorer_preserves_structured_mcp_error_details() -> None:
         "message": "emergency_stop_active",
         "result": {"error": response["error"]},
     }
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     assert "error.mcpResult = failure.result" in source
     assert "core.clone(error.mcpResult)" in source
 
@@ -239,7 +604,7 @@ def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> N
 
 
 def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     discover_start = source.index("async function discover()")
     discover = source[
         discover_start : source.index("async function registerClient", discover_start)
@@ -258,7 +623,7 @@ def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
 
 
 def test_explorer_opens_oauth_popup_synchronously_only_for_https() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     handler_start = source.index("elements.connect.addEventListener('click'")
     handler = source[
         handler_start : source.index("elements.disconnect.addEventListener", handler_start)
@@ -267,7 +632,7 @@ def test_explorer_opens_oauth_popup_synchronously_only_for_https() -> None:
     assert "const insecureOrigin = window.location.protocol !== 'https:';" in handler
     assert "const authorizationPopup = insecureOrigin ? null : openAuthorizationPopup();" in handler
     assert handler.index("openAuthorizationPopup()") < handler.index("setBusy(true)")
-    assert "state.oauth = await authorize(authorizationPopup);" in handler
+    assert "explorerState.setSession(await authorize(authorizationPopup));" in handler
     assert "authorizationPopup?.close()" in handler
 
 
@@ -383,6 +748,100 @@ def test_explorer_transfer_uses_the_target_tool_draft_and_invalidates_cursor() -
     ) == {"control_uuid": "new", "series_id": "series"}
 
 
+def test_explorer_filters_tools_locally_by_name_description_and_group() -> None:
+    tools = [
+        {
+            "name": "loxone_find_controls",
+            "description": "Find visible controls",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_get_control_history",
+            "description": "Read archived events",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_operate_control",
+            "description": "Set a control",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False},
+        },
+        {
+            "name": "loxberry_get_system_status",
+            "description": "Read host health",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+    ]
+    encoded = json.dumps(tools)
+
+    def filtered(search: str, groups: list[str]) -> list[dict[str, object]]:
+        return run_core(
+            f"core.filteredToolGroups({encoded},{json.dumps(search)},{json.dumps(groups)})"
+        )
+
+    assert [group["id"] for group in filtered("", [])] == [
+        "loxoneRead",
+        "loxoneHistory",
+        "loxoneControl",
+        "loxberryRead",
+    ]
+    assert [tool["name"] for group in filtered("FIND_CONTROLS", []) for tool in group["tools"]] == [
+        "loxone_find_controls"
+    ]
+    assert [tool["name"] for group in filtered("  ARCHIVED  ", []) for tool in group["tools"]] == [
+        "loxone_get_control_history"
+    ]
+    assert [
+        tool["name"] for group in filtered("control", ["loxoneHistory"]) for tool in group["tools"]
+    ] == ["loxone_get_control_history"]
+    assert filtered("host", ["loxoneRead"]) == []
+    assert filtered("", ["loxberryRead"])[0]["tools"][0]["name"] == "loxberry_get_system_status"
+    assert [group["id"] for group in filtered("", ["loxoneHistory", "loxberryRead"])] == [
+        "loxoneHistory",
+        "loxberryRead",
+    ]
+    assert filtered("host", ["loxoneHistory", "loxberryRead"])[0]["id"] == "loxberryRead"
+
+
+def test_explorer_scope_filters_include_all_published_history_and_operate_tools() -> None:
+    history_names = [
+        "loxone_get_statistics",
+        "loxone_get_control_history",
+        "loxone_list_event_history_sources",
+        "loxone_get_event_history",
+        "loxone_analyze_observability",
+    ]
+    operate_names = [
+        "loxberry_clear_statistics_cache",
+        "loxberry_add_event_history_source",
+        "loxberry_remove_event_history_source",
+        "loxberry_purge_event_history_source",
+    ]
+    tools = [
+        {"name": name, "annotations": {"readOnlyHint": True, "destructiveHint": False}}
+        for name in history_names + operate_names + ["loxberry_list_event_history_sources"]
+    ]
+    encoded = json.dumps(tools)
+
+    def names_for(group: str) -> list[str]:
+        groups = run_core(f"core.filteredToolGroups({encoded},'',{json.dumps([group])})")
+        return [tool["name"] for entry in groups for tool in entry["tools"]]
+
+    assert set(names_for("loxoneHistory")) == set(history_names)
+    assert set(names_for("loxberryOperate")) == set(operate_names)
+    assert names_for("loxoneRead") == []
+    assert names_for("loxberryRead") == ["loxberry_list_event_history_sources"]
+
+
+def test_explorer_discovery_labels_exist_in_both_languages() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    for language in (german, english):
+        for key in ("SEARCH_TOOLS=", "FILTER_TOOLS=", "FILTER_ALL=", "NO_MATCHING_TOOLS="):
+            assert key in language
+    assert "FILTER_TOOLS=Gruppen filtern" in german
+    assert "FILTER_TOOLS=Filter groups" in english
+
+
 def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
     tools = [
         {
@@ -422,13 +881,20 @@ def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
     assert [tool["name"] for tool in groups[4]["tools"]] == ["loxberry_clear_statistics_cache"]
 
     result = {
-        "data": {"uuid": "control", "capabilities": {"statistics": [{"series_id": "series"}]}}
+        "data": {
+            "uuid": "control",
+            "view": "history_targets",
+            "capabilities": {"statistics": [{"series_id": "series"}]},
+            "omitted_sections": ["presentation", "relationships", "non_history_capabilities"],
+        }
     }
-    assert run_core(
-        "core.statisticsTransfer('loxone_describe_control',"
-        f"{json.dumps(result)},['data','capabilities','statistics',0],{{series_id:'series'}},0)"
+    assert run_adapters(
+        "adapters.transferRecipe('loxone_describe_control',"
+        f"{json.dumps(result)},['data','capabilities','statistics',0],{{series_id:'series'}},"
+        "[{name:'loxone_get_statistics'}],0)"
     ) == {
         "tool": "loxone_get_statistics",
+        "contextLabel": "statisticsTransferContext",
         "arguments": {
             "control_uuid": "control",
             "series_id": "series",
@@ -437,6 +903,120 @@ def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
             "granularity": "raw",
         },
     }
+
+
+def test_unknown_tool_uses_generic_explorer_path() -> None:
+    tool = {
+        "name": "future_custom_tool",
+        "description": "Search future data",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    }
+    encoded = json.dumps(tool)
+    assert run_adapters(f"adapters.forTool({encoded})") is None
+    assert run_core(f"core.toolGroup({encoded})") == "other"
+    assert run_core(f"core.toolRequiredScopes({encoded})") is None
+    assert run_core(f"core.filteredToolGroups([{encoded}],'future',['other'])")[0]["tools"] == [
+        tool
+    ]
+    assert run_core(f"core.validateArguments({{query:'text'}},{encoded}.inputSchema)") == []
+    assert run_core(f"core.validateArguments({{}},{encoded}.inputSchema)")
+    assert run_core(f"core.toolIsMutating({encoded})") is False
+
+
+def test_modbus_selection_validation_uses_scope_annotation() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["knx", "modbus"], "default": "knx"},
+            "analyses": {
+                "type": "array",
+                "items": {"type": "string"},
+                "x-analyses-by-scope": {
+                    "knx": ["address_patterns"],
+                    "modbus": ["inventory", "evidence_gaps"],
+                },
+            },
+        },
+    }
+    encoded = json.dumps(schema)
+    assert run_core(f"core.validateArguments({{scope:'modbus'}},{encoded})") == []
+    for analyses in ([], ["inventory", "inventory"], ["address_patterns"]):
+        arguments = json.dumps({"scope": "modbus", "analyses": analyses})
+        assert run_core(f"core.validateArguments({arguments},{encoded})")
+    assert (
+        run_core(f"core.validateArguments({{scope:'modbus',analyses:['inventory']}},{encoded})")
+        == []
+    )
+
+
+def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_safely() -> None:
+    assert run_adapters("adapters.toolGroup({name:'future_loxone_tool'})") == "other"
+    assert run_adapters("adapters.requiredMutationScope({name:'future_write'})") is None
+    assert run_core("core.toolIsMutating({name:'future_write'})") is True
+    assert (
+        run_adapters("adapters.requiredMutationScope({name:'loxone_operate_control'})")
+        == "loxone:control"
+    )
+    assert (
+        run_adapters("adapters.requiredMutationScope({name:'loxberry_add_event_history_source'})")
+        == "loxberry:operate"
+    )
+    assert run_adapters(
+        "adapters.requiredScopes({name:'loxberry_list_event_history_sources'})"
+    ) == ["loxone:read", "loxone:history"]
+    assert run_adapters(
+        "adapters.scopeAlternatives({name:'loxberry_list_event_history_sources'})"
+    ) == ["loxberry:read", "loxberry:operate"]
+
+
+def test_operation_adapter_changes_only_action_parameters() -> None:
+    assert run_adapters(
+        "adapters.changeAction({control_uuid:'id',action:'set_value',value:4,cursor:'keep'},'on')"
+    ) == {"control_uuid": "id", "action": "on", "cursor": "keep"}
+    assert (
+        run_adapters("adapters.fieldVisible({name:'loxone_operate_control'},'value',{action:'on'})")
+        is False
+    )
+    assert run_adapters("adapters.fieldVisible({name:'future_tool'},'value',{action:'on'})") is True
+    assert (
+        run_adapters(
+            "adapters.fieldVisible({name:'loxone_operate_control'},'brightness',"
+            "{action:'set_color_temperature'})"
+        )
+        is True
+    )
+
+
+def test_statistics_recipe_requires_source_shape_and_available_target() -> None:
+    result = {"data": {"uuid": "control"}}
+    source = json.dumps(result)
+    path = "['data','capabilities','statistics',0]"
+    assert (
+        run_adapters(
+            f"adapters.transferRecipe('loxone_describe_control',{source},{path},"
+            "{series_id:'series'},[])"
+        )
+        is None
+    )
+    assert (
+        run_adapters(
+            f"adapters.transferRecipe('other_tool',{source},{path},"
+            "{series_id:'series'},[{name:'loxone_get_statistics'}])"
+        )
+        is None
+    )
+    assert (
+        run_adapters(
+            f"adapters.transferRecipe('loxone_describe_control',{source},['data'],"
+            "{series_id:'series'},[{name:'loxone_get_statistics'}])"
+        )
+        is None
+    )
 
 
 def test_explorer_converts_datetime_local_values_to_rfc3339() -> None:
@@ -628,6 +1208,73 @@ def test_explorer_write_classification_fails_closed() -> None:
         assert run_core(f"core.toolIsMutating({json.dumps(tool)})") is True
 
 
+def test_tool_metadata_labels_follow_explicit_hints_without_inventing_safety() -> None:
+    cases = [
+        (
+            {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+            ["toolBadgeReadOnly", "toolHintClosedWorld"],
+        ),
+        (
+            {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "idempotentHint": False,
+                "openWorldHint": True,
+            },
+            ["toolBadgeWrite", "toolHintDestructive", "toolHintRepeatEffect", "toolHintOpenWorld"],
+        ),
+        (
+            {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            ["toolBadgeWrite", "toolHintAdditive", "toolHintIdempotent", "toolHintClosedWorld"],
+        ),
+        (
+            {"readOnlyHint": True, "destructiveHint": True, "openWorldHint": False},
+            ["toolBadgeWritePossible"],
+        ),
+        ({"readOnlyHint": True}, ["toolBadgeWritePossible"]),
+        ({}, ["toolBadgeWritePossible"]),
+    ]
+    for hints, expected in cases:
+        tool = {"annotations": hints}
+        assert run_core(f"core.toolMetadataLabels({json.dumps(tool)})") == expected
+
+
+def test_required_scopes_cover_current_tools_and_leave_unknown_tools_unmapped() -> None:
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+    names = [tool["name"] for tool in tool_schema_catalog(version)["tools"]]
+    mapped = run_core(
+        f"Object.fromEntries({json.dumps(names)}.map(name => "
+        "[name,core.toolRequiredScopes({name})]))"
+    )
+    assert set(mapped) == set(names)
+    assert all(scopes and scopes[0] == "loxone:read" for scopes in mapped.values())
+    assert mapped["loxone_get_system_status"] == ["loxone:read"]
+    assert mapped["loxone_read_controls"] == ["loxone:read"]
+    assert mapped["loxone_get_statistics"] == ["loxone:read", "loxone:history"]
+    assert mapped["loxone_list_event_history_sources"] == ["loxone:read", "loxone:history"]
+    assert mapped["loxone_operate_control"] == ["loxone:read", "loxone:control"]
+    assert mapped["loxberry_get_service_health"] == ["loxone:read", "loxberry:read"]
+    assert mapped["loxberry_list_event_history_sources"] == ["loxone:read", "loxone:history"]
+    assert mapped["loxberry_add_event_history_source"] == [
+        "loxone:read",
+        "loxone:history",
+        "loxberry:operate",
+    ]
+    assert mapped["loxberry_purge_event_history_source"] == [
+        "loxone:read",
+        "loxone:history",
+        "loxberry:operate",
+    ]
+    assert run_core("core.toolRequiredScopes({name:'future_tool'})") is None
+
+
 def test_explorer_oauth_guards_and_resource_binding() -> None:
     assert (
         run_core(
@@ -674,10 +1321,13 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
         "oauth": None,
         "tools": [],
         "selectedTool": None,
+        "toolSearch": "",
+        "toolGroups": [],
         "arguments": {},
         "history": [],
         "transcript": [],
         "lastResult": None,
+        "hasResult": False,
         "lastResultContext": None,
         "nextPageRequest": None,
         "transferPath": "",
@@ -686,24 +1336,181 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
     }
 
 
-def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
+    expression = """(() => {
+      const text = () => ({textContent:'secret',hidden:false});
+      const list = () => ({children:['secret'],hidden:false,
+        replaceChildren(){this.children=[];}});
+      const dialog = () => ({open:true,returnValue:'',close(value){
+        this.open=false; this.returnValue=value || '';
+      }});
+      const elements={json:{value:'{"token":"secret"}'},confirmTool:text(),
+        confirmArguments:text(),confirm:dialog(),transferSource:text(),
+        transferContext:text(),transferTool:list(),transferField:list(),
+        transferEmpty:{hidden:true},transferApply:{disabled:false},transfer:dialog(),
+        resultContext:text(),historyArguments:{hidden:false,open:true},
+        historyArgumentsValue:text(),restoreHistory:{hidden:false},
+        resultTree:list(),resultRaw:text(),rawDetails:{open:true},
+        validation:text(),callFeedback:text()};
+      core.clearSensitiveDom(elements);
+      return {
+        json:elements.json.value,confirmTool:elements.confirmTool.textContent,
+        confirmArguments:elements.confirmArguments.textContent,
+        confirmOpen:elements.confirm.open,confirmReturn:elements.confirm.returnValue,
+        transferSource:elements.transferSource.textContent,
+        transferContext:elements.transferContext.textContent,
+        transferTool:elements.transferTool.children,
+        transferField:elements.transferField.children,
+        transferEmpty:elements.transferEmpty.hidden,
+        transferApply:elements.transferApply.disabled,transferOpen:elements.transfer.open,
+        resultContext:elements.resultContext.textContent,
+        resultContextHidden:elements.resultContext.hidden,
+        historyArguments:elements.historyArgumentsValue.textContent,
+        historyArgumentsHidden:elements.historyArguments.hidden,
+        historyArgumentsOpen:elements.historyArguments.open,
+        restoreHistory:elements.restoreHistory.hidden,
+        resultTree:elements.resultTree.children,
+        resultRaw:elements.resultRaw.textContent,
+        rawOpen:elements.rawDetails.open,
+        validation:elements.validation.textContent,
+        validationHidden:elements.validation.hidden,
+        callFeedback:elements.callFeedback.textContent,
+        callFeedbackHidden:elements.callFeedback.hidden,
+      };
+    })()"""
+    assert run_core(expression) == {
+        "json": "{}",
+        "confirmTool": "",
+        "confirmArguments": "",
+        "confirmOpen": False,
+        "confirmReturn": "cancel",
+        "transferSource": "",
+        "transferContext": "",
+        "transferTool": [],
+        "transferField": [],
+        "transferEmpty": False,
+        "transferApply": True,
+        "transferOpen": False,
+        "resultContext": "",
+        "resultContextHidden": True,
+        "historyArguments": "",
+        "historyArgumentsHidden": True,
+        "historyArgumentsOpen": False,
+        "restoreHistory": True,
+        "resultTree": [],
+        "resultRaw": "",
+        "rawOpen": False,
+        "validation": "",
+        "validationHidden": True,
+        "callFeedback": "",
+        "callFeedbackHidden": True,
+    }
 
-    assert "error.sessionCleared = true" in source
-    assert "!(error && error.sessionCleared === true)" in source
-    assert "sessionCleared = Boolean(error && error.sessionCleared === true)" in source
-    assert source.count("if (!sessionCleared) {") >= 2
+
+def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
+    expression = """(() => {
+      const scopes = core.EXPLORER_SCOPE_ORDER;
+      const all = core.grantedScopes(scopes.join(' '));
+      const partial = core.grantedScopes('loxone:read loxone:history loxberry:read');
+      return {
+        all: scopes.map(scope => all.has(scope)),
+        partial: scopes.map(scope => partial.has(scope)),
+        absent: core.grantedScopes(undefined),
+        empty: core.grantedScopes('  '),
+        unknown: core.grantedScopes('loxone:read unrelated:admin'),
+        duplicate: core.grantedScopes('loxone:read loxone:read'),
+      };
+    })()"""
+    assert run_core(expression) == {
+        "all": [True] * 9,
+        "partial": [True, True, False, False, True, False, False, False, False],
+        "absent": None,
+        "empty": None,
+        "unknown": None,
+        "duplicate": None,
+    }
+
+
+def test_message_confirmation_has_its_own_explorer_scope_and_group() -> None:
+    assert run_adapters("adapters.requiredScopes('loxone_confirm_system_message')") == [
+        "loxone:read",
+        "loxone:messages:confirm",
+    ]
+    assert (
+        run_adapters("adapters.requiredMutationScope('loxone_confirm_system_message')")
+        == "loxone:messages:confirm"
+    )
+    assert run_adapters("adapters.toolGroup('loxone_confirm_system_message')") == "loxoneMessages"
+    assert run_adapters(
+        "adapters.requiredScopes('loxone_preview_system_message_confirmation')"
+    ) == ["loxone:read"]
+
+
+def test_explorer_scope_labels_exist_in_both_languages() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    for language in (german, english):
+        for key in (
+            "GRANTED_OAUTH_SCOPES=",
+            "SCOPE_GRANTED=",
+            "SCOPE_NOT_GRANTED=",
+            "SCOPE_UNAVAILABLE=",
+        ):
+            assert key in language
 
 
 def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
     assert "explorer-session" in source
     assert "credentials: 'same-origin'" in source
     assert "BroadcastChannel" in source
     assert "sessionStorage" not in source
-    assert "localStorage" not in source
+    assert source.count("window.localStorage.getItem(key)") == 1
+    assert source.count("window.localStorage.setItem(key, String(element.open))") == 1
+    assert "mcp-explorer-connection-open-v1" in source
+    assert "mcp-explorer-scopes-open-v1" in source
     assert "refreshToken" not in source
+
+
+def test_explorer_connection_and_scopes_are_independent_persistent_disclosures() -> None:
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    source = read_explorer_source()
+
+    links = template.index('href="index.cgi"')
+    panel = template.index('id="explorer-connection-panel"')
+    scopes = template.index('id="explorer-access-scopes"')
+    assert links < panel < scopes
+    assert '<details id="explorer-connection-panel" class="mcp-explorer-card" open>' in template
+    assert '<details id="explorer-access-scopes" hidden>' in template
+    assert '<summary><h1 id="explorer-title">' in template
+    assert "<summary><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></summary>" in template
+    assert (
+        "persistDisclosure(elements.connectionPanel, 'mcp-explorer-connection-open-v1')" in source
+    )
+    assert "persistDisclosure(elements.accessScopes, 'mcp-explorer-scopes-open-v1')" in source
+
+
+def test_explorer_connection_summary_shows_live_status_badge() -> None:
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
+    source = read_explorer_source()
+    summary = template[
+        template.index('<details id="explorer-connection-panel"') : template.index(
+            '<div class="mcp-explorer-panel-content',
+        )
+    ]
+
+    assert 'id="explorer-title"' in summary
+    assert 'id="explorer-connection-badge" class="mcp-service-badge"' in summary
+    assert 'data-kind="inactive"><TMPL_VAR EXPLORER.DISCONNECTED>' in summary
+    assert "#explorer-connection-badge { margin-inline-start:" in stylesheet
+    assert "connectionBadge: document.getElementById('explorer-connection-badge')" in source
+    render_connection = source[
+        source.index("function renderConnection") : source.index("function element")
+    ]
+    assert "label(connected ? 'connected' : 'disconnected')" in render_connection
+    assert "connected ? 'success' : 'inactive'" in render_connection
 
 
 def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
@@ -736,24 +1543,41 @@ def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
 
 
 def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
-    add_transcript = source[
-        source.index("function addTranscript") : source.index("function safeMcpResponse")
+    app = APP_SCRIPT.read_text(encoding="utf-8")
+    add_transcript = app[app.index("function addTranscript") : app.index("const mcp =")]
+    view = VIEWS_SCRIPT.read_text(encoding="utf-8")
+    append_transcript = view[
+        view.index("function appendTranscript") : view.index("function renderHistory")
     ]
     transcript_entry = source[
         source.index("function transcriptEntry") : source.index("function renderTranscript")
     ]
 
     assert "renderTranscript()" not in add_transcript
-    assert "elements.transcript.append(transcriptEntry(entry))" in add_transcript
-    assert "firstElementChild?.remove()" in add_transcript
+    assert "views.appendTranscript(entry, explorerState.appendTranscript(entry))" in add_transcript
+    assert "elements.transcript.append(transcriptEntry(entry))" in append_transcript
+    assert "firstElementChild?.remove()" in append_transcript
     assert "details.addEventListener('toggle'" in transcript_entry
     assert "{once: true}" in transcript_entry
+    assert "new Date(entry.at).toLocaleString()" in transcript_entry
+    assert "className: 'mcp-explorer-protocol-meta'" in transcript_entry
+    assert transcript_entry.index("label('dateTime')") < transcript_entry.index("label('status')")
+    template = (ROOT / "templates/explorer.html").read_text(encoding="utf-8")
+    assert 'data-date-time="<TMPL_VAR EXPLORER.DATE_TIME ESCAPE=HTML>"' in template
+    assert "DATE_TIME=Datum/Uhrzeit" in (ROOT / "templates/lang/language_de.ini").read_text(
+        encoding="utf-8"
+    )
+    assert "DATE_TIME=Date/time" in (ROOT / "templates/lang/language_en.ini").read_text(
+        encoding="utf-8"
+    )
+    stylesheet = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    assert ".mcp-explorer-protocol-meta p { margin: 0; }" in stylesheet
 
 
 def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
     assert "elements.formTab.tabIndex = jsonMode ? -1 : 0" in source
     assert "elements.jsonTab.tabIndex = jsonMode ? 0 : -1" in source
@@ -782,8 +1606,95 @@ def test_explorer_redacts_secret_shaped_arguments() -> None:
     }
 
 
+def test_explorer_history_summary_is_schema_bound_redacted_and_short() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "integer"},
+            "options": {
+                "type": "object",
+                "properties": {
+                    "region": {"type": "string"},
+                    "credential": {"type": "string", "writeOnly": True},
+                },
+            },
+            "password": {"type": "string"},
+        },
+    }
+    value = {
+        "query": "Rollladen" * 30,
+        "limit": 20,
+        "options": {"region": "north", "credential": "nested-secret", "unknown": "hidden"},
+        "password": "top-secret",
+        "unknown": "hidden-too",
+    }
+    summary = run_core(f"core.summarizeArguments({json.dumps(value)},{json.dumps(schema)})")
+    assert isinstance(summary, str)
+    assert summary.startswith('query="Rollladen')
+    assert "limit=20" in summary
+    assert "[redacted]" in summary
+    assert len(summary) <= 120
+    for secret in ("nested-secret", "top-secret", "hidden", "hidden-too"):
+        assert secret not in summary
+    assert run_core(f"core.summarizeArguments({json.dumps(value)},null)") == ""
+
+
+def test_explorer_history_summary_prioritizes_non_default_arguments() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "has_statistics": {"type": "boolean", "default": False},
+            "has_history": {"type": "boolean", "default": False},
+            "has_notes": {"type": "boolean", "default": False},
+            "query": {"type": "string"},
+        },
+    }
+    value = {
+        "has_statistics": False,
+        "has_history": False,
+        "has_notes": False,
+        "query": "MCP-Test",
+    }
+    summary = run_core(f"core.summarizeArguments({json.dumps(value)},{json.dumps(schema)})")
+    assert summary.startswith('query="MCP-Test"')
+    assert summary.count("=") <= 3
+
+
+def test_explorer_history_and_call_feedback_are_separate_from_connection() -> None:
+    source = read_explorer_source()
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    run = source[
+        source.index("async function runSelectedTool") : source.index("function openTransfer")
+    ]
+    history = source[
+        source.index("function renderHistory") : source.index("async function runSelectedTool")
+    ]
+
+    assert "at: Date.now()" in run
+    assert "new Date(entry.at).toLocaleTimeString()" in history
+    assert "core.summarizeArguments(entry.arguments" in history
+    assert "setCallFeedback(label('working'), 'working')" in run
+    assert "setCallFeedback(`${label(ok ? 'callCompleted' : 'error')}" in run
+    assert "setStatus(" not in run
+    assert 'id="explorer-call-feedback"' in template
+    assert 'role="status" aria-live="polite" hidden' in template
+    assert template.index('id="explorer-result"') < template.index(
+        'id="explorer-transcript-details"'
+    )
+    assert template.index(
+        "</details>", template.index('id="explorer-raw-details"')
+    ) < template.index('id="explorer-transcript-details"')
+    assert "TRANSCRIPT=MCP protocol / debug" in (ROOT / "templates/lang/language_en.ini").read_text(
+        encoding="utf-8"
+    )
+    assert "TRANSCRIPT=MCP-Protokoll / Debug" in (
+        ROOT / "templates/lang/language_de.ini"
+    ).read_text(encoding="utf-8")
+
+
 def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
     callback = (ROOT / "webfrontend" / "htmlauth" / "explorer_callback.cgi").read_text(
@@ -800,21 +1711,22 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "action: 'access'" in source
     assert "if (state.oauth) await revokeAndClear()" in source
     assert "core.toolIsMutating(state.selectedTool)" in source
-    assert "state.history.length > core.MAX_CALL_HISTORY" in source
+    assert "data.history.length > core.MAX_CALL_HISTORY" in STATE_SCRIPT.read_text(encoding="utf-8")
     assert "fetchWithTimeout('/plugins/mcpserver/mcp'" in source
     assert "}, 70000)" in source
     assert "sessionStorage" not in source
-    assert "localStorage" not in source
+    assert "window.localStorage.setItem(key, String(element.open))" in source
     assert "navigator.locks.request" not in source
     assert "await refreshAccessToken();" in source
     assert "window.addEventListener('pagehide'" not in source
     assert "navigator.sendBeacon" not in source
     assert 'target="_blank"' in (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     index_template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    configuration = (ADMIN_SCRIPTS / "configuration.js").read_text(encoding="utf-8")
     index_cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
     assert 'id="explorer-link"' in index_template
     assert 'href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>"' in index_template
-    assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in index_template
+    assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in configuration
     assert "EXPLORER_URL => 'explorer.cgi'" in index_cgi
     assert "savedOrigin" not in index_template
     assert "@media (max-width: 52rem)" in stylesheet
@@ -826,19 +1738,20 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "data-tool-group-loxone-history=" in template
     assert 'data-help-control-type="<TMPL_VAR EXPLORER.HELP_CONTROL_TYPE ESCAPE=HTML>"' in template
     assert "const description = helpKey ? label(helpKey) : effective.description" in source
-    assert 'id="explorer-access-scopes"' not in template
-    assert 'id="explorer-scope-' not in template
+    assert 'id="explorer-access-scopes" hidden' in template
+    assert 'id="explorer-scope-list"' in template
     assert "<TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN>" in template
     assert 'id="explorer-origin-warning"' in template
     assert 'id="explorer-origin-link"' in template
     assert "const canonicalUrl = core.canonicalExplorerUrl(" in source
     assert "showConnectionError(_error, label('error'))" in source
     assert 'id="explorer-session-expiry" hidden' in template
-    assert "const scope = core.EXPLORER_SCOPE_ORDER.filter" in source
+    assert "const selectedScopes = requestedScopes || core.EXPLORER_SCOPE_ORDER" in source
+    assert "supported.has(item) && selectedScopes.includes(item)" in source
     assert "const registrationScope = scope" in source
     assert "supported.delete('loxberry:operate')" in source
     assert "return fetchJson(metadata.explorer_session_endpoint" in source
-    assert "state.selectedTool.name === 'loxberry_clear_statistics_cache'" in source
+    assert "adapters.requiredMutationScope(state.selectedTool)" in source
     assert "elements.historyArguments.hidden = !historySource" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
@@ -850,7 +1763,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
 
 
 def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     initial_discovery = source[
         source.index("(async () => {", source.index("selectTab(false, false);")) :
     ]
@@ -860,7 +1773,7 @@ def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None
 
 
 def test_explorer_login_failure_remains_visible_after_connection_render() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     login_handler = source[
         source.index("elements.connect.addEventListener('click'") : source.index(
             "elements.disconnect.addEventListener('click'"
@@ -872,13 +1785,19 @@ def test_explorer_login_failure_remains_visible_after_connection_render() -> Non
         )
     ]
 
-    assert failure_handler.index("renderAll();") < failure_handler.index(
+    assert failure_handler.index(
         "showConnectionError(error, label('error'));"
+    ) < failure_handler.index("renderAll();")
+    connection = (
+        VIEWS_SCRIPT.read_text(encoding="utf-8")
+        .split("function renderConnection()", 1)[1]
+        .split("function renderTools()", 1)[0]
     )
+    assert "setStatus(" not in connection
 
 
 def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
-    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    source = (ADMIN_SCRIPTS / "sessions.js").read_text(encoding="utf-8")
 
     assert "session.loxberry_read_eligible && !session.loxberry_read_approved" in source
     assert "allowForm.dataset.ajax = 'allow_loxberry_read'" in source
@@ -886,9 +1805,10 @@ def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
 
 
 def test_session_refresh_updates_related_loxberry_bindings() -> None:
-    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    markup = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    source = (ADMIN_SCRIPTS / "sessions.js").read_text(encoding="utf-8")
 
-    assert 'id="loxberry-binding-list"' in source
+    assert 'id="loxberry-binding-list"' in markup
     assert "const updateLoxberryBindings = (bindings) =>" in source
     assert "const updateLoxberryBindingTable = (bindings, section, body, actionName) =>" in source
     assert "result.data.loxberry_bindings" in source
@@ -898,9 +1818,10 @@ def test_session_refresh_updates_related_loxberry_bindings() -> None:
 
 
 def test_session_refresh_updates_separate_loxberry_operate_bindings() -> None:
-    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    markup = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    source = (ADMIN_SCRIPTS / "sessions.js").read_text(encoding="utf-8")
 
-    assert 'id="loxberry-operate-binding-list"' in source
+    assert 'id="loxberry-operate-binding-list"' in markup
     assert "const updateLoxberryOperateBindings = (bindings) =>" in source
     assert "result.data.loxberry_operate_bindings" in source
     assert "bindingRow.inactive" in source
@@ -914,22 +1835,6 @@ def test_explorer_uses_csp_compatible_panel_free_loxberry_header() -> None:
     assert "lbheader($L{'EXPLORER.TITLE'} . \" V$version\", 'nopanels'" in cgi
     assert "'unsafe-eval'" not in cgi
     assert '<a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>' in template
-
-
-def test_explorer_transcript_never_records_authorization_headers() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
-    add_transcript = source[
-        source.index("function addTranscript") : source.index("async function mcpRequest")
-    ]
-    request_section = source[
-        source.index("async function mcpRequest") : source.index("async function initializeMcp")
-    ]
-
-    assert "headers" not in add_transcript
-    assert "safeRequest" in request_section
-    assert "redactArguments" in request_section
-    assert "safeMcpResponse" in request_section
-    assert "[omitted; structuredContent shown]" in source
 
 
 def test_oauth_callback_emits_no_store_and_frame_protection() -> None:
@@ -968,3 +1873,30 @@ def test_explorer_page_emits_no_store_and_frame_protection() -> None:
     assert "referrer-policy: no-referrer" in headers
     assert "x-content-type-options: nosniff" in headers
     assert "x-frame-options: deny" in headers
+
+
+def test_knx_sources_are_lazy_separate_and_keep_primary_loxone_name() -> None:
+    result = run_inspector("""
+      Object.defineProperty(Node.prototype, 'childElementCount', {
+        get(){return this.children.length;}});
+      const item = {project_node_id:'p:1',runtime_control:{name:'Primary Loxone'},knx:{
+        title:'Project title',description:'Project description',group_address:{original:'1/2/3:1'},
+        metadata:{imported:{name:'<img src=x onerror=alert(1)>',description:''},
+          manual:{name:'Manual'}}}};
+      const card = core.createKnxMetadataInspector(document,item,key => key);
+      const initial = walk(card).map(node => node.textContent).filter(Boolean);
+      card.open = true; card.handlers.toggle();
+      const expanded = walk(card).map(node => node.textContent).filter(Boolean);
+      const count = walk(card).length; card.handlers.toggle();
+      const tree = inspect([item]);
+      return {initial,expanded,count,repeated:walk(card).length,
+        captions:walk(tree).map(node => node.textContent).filter(Boolean),
+        absent:core.createKnxMetadataInspector(document,{knx:{}},key => key)};
+    """)
+    assert result["initial"] == ["Primary Loxone — 1/2/3:1 — knxMetadata"]
+    assert result["count"] == result["repeated"]
+    assert "knxName: <img src=x onerror=alert(1)>" in result["expanded"]
+    assert "knxDescription: knxEmpty" in result["expanded"]
+    assert "knxDescription: knxUnknown" in result["expanded"]
+    assert "Primary Loxone" in repr(result["captions"])
+    assert result["absent"] is None

@@ -19,11 +19,16 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
       - name: Install
         run: |
           python -m pip install --disable-pip-version-check \
             -r requirements/runtime-arm64.lock -r requirements/dev.lock
           python -m pip install --disable-pip-version-check --no-deps -e .
+          npm ci --ignore-scripts
       - name: Test
         run: python tools/test.py
       - name: Check target integration scripts

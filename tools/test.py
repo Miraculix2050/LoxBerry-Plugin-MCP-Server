@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ _PYTEST_TEMP_PARENT: Final = "tmp"
 _DOCUMENTATION_PATTERNS: Final = (
     "AGENTS.md",
     "CONTRIBUTING.md",
+    "CHANGELOG.md",
     "docs/**",
     "LICENSE",
     "README.md",
@@ -31,6 +33,158 @@ _FULL_PATTERNS: Final = (
     "src/mcpserver/__init__.py",
 )
 _TEST_GROUPS: Final = (
+    (
+        (
+            "src/mcpserver/lighting_analysis.py",
+            "src/mcpserver/loxone/lighting.py",
+            "src/mcpserver/tools.py",
+            "src/mcpserver/loxone/project/worker.py",
+        ),
+        (
+            "tests/test_lighting_analysis.py",
+            "tests/test_lighting_context.py",
+            "tests/test_lighting_relationships.py",
+            "tests/test_project_modbus_analysis.py",
+            "tests/test_project_tools.py",
+            "tests/test_project_worker.py",
+            "tests/test_schema_reference.py",
+        ),
+    ),
+    (
+        (
+            "src/mcpserver/analysis_context.py",
+            "src/mcpserver/context_planning.py",
+            "src/mcpserver/load_planning*.py",
+            "src/mcpserver/pv_forecast_runtime.py",
+        ),
+        (
+            "tests/test_analysis_context.py",
+            "tests/test_lighting_analysis.py",
+            "tests/test_history_analysis.py",
+            "tests/test_history_analysis_tools.py",
+            "tests/test_installation_profile.py",
+            "tests/test_installation_profile_tools.py",
+            "tests/test_context_planning.py",
+            "tests/test_load_planning.py",
+            "tests/test_load_planning_runtime.py",
+            "tests/test_schema_reference.py",
+            "tests/test_pv_forecast_hours.py",
+        ),
+    ),
+    (
+        ("src/mcpserver/solar_history.py",),
+        ("tests/test_solar_history.py", "tests/test_comparable_days.py"),
+    ),
+    (
+        ("src/mcpserver/prompts.py", "src/mcpserver/analysis_prompts.py"),
+        (
+            "tests/test_analysis_prompts.py",
+            "tests/test_knx_prompts.py",
+            "tests/test_mcp_discovery.py",
+            "tests/test_schema_reference.py",
+            "tests/test_server.py",
+            "tests/test_plugin_package.py",
+        ),
+    ),
+    (
+        (
+            "src/mcpserver/knx/**",
+            "src/mcpserver/explorer_bindings.py",
+            "templates/knx.html",
+            "webfrontend/htmlauth/knx*",
+        ),
+        (
+            "tests/test_knx_catalog_runtime.py",
+            "tests/test_knx_catalog_delegation.py",
+            "tests/test_knx_correction_admin.py",
+            "tests/test_knx_correction_drafts.py",
+            "tests/test_knx_correction_model.py",
+            "tests/test_knx_correction_runtime.py",
+            "tests/test_knx_correction_service.py",
+            "tests/test_knx_prompts.py",
+            "tests/test_knx_management.py",
+            "tests/test_knx_read_model.py",
+            "tests/test_knx_xml_import.py",
+            "tests/test_knx_xml_export.py",
+            "tests/test_knx_xml_export_ui.py",
+            "tests/test_knx_csv_import.py",
+            "tests/test_knx_import_service.py",
+            "tests/test_knx_import_ui.py",
+            "tests/test_knx_file_comparison.py",
+            "tests/test_knx_file_comparison_ui.py",
+            "tests/test_knx_project_metadata.py",
+            "tests/test_knx_project_comparison.py",
+            "tests/test_knx_project_tools.py",
+            "tests/test_knx_project_ui.py",
+            "tests/test_explorer_bindings.py",
+            "tests/test_admin.py",
+            "tests/test_oauth.py",
+            "tests/test_server.py",
+            "tests/test_schema_reference.py",
+        ),
+    ),
+    (
+        (
+            "src/mcpserver/installation_profile*.py",
+            "webfrontend/htmlauth/profile.cgi",
+            "webfrontend/htmlauth/profile.js",
+            "templates/profile.html",
+            "tests/js/profile-behavior.test.cjs",
+        ),
+        (
+            "tests/test_installation_profile.py",
+            "tests/test_installation_profile_admin.py",
+            "tests/test_installation_profile_tools.py",
+            "tests/test_installation_profile_write.py",
+            "tests/test_schema_reference.py",
+            "tests/test_server.py",
+        ),
+    ),
+    (
+        (
+            "tools/analysis_acceptance.py",
+            "tests/fixtures/analysis/**",
+            "docs/user/analysis-support.*.md",
+        ),
+        ("tests/test_analysis_acceptance.py",),
+    ),
+    (
+        ("src/mcpserver/discovery.py", "tools/check_mcp_discovery.py"),
+        ("tests/test_mcp_discovery.py", "tests/test_schema_reference.py", "tests/test_server.py"),
+    ),
+    (
+        (
+            "bin/lib/MCPServer/RequestSecurity.pm",
+            "webfrontend/htmlauth/index.cgi",
+            "webfrontend/htmlauth/event_history.cgi",
+        ),
+        ("tests/test_admin_request_security.py",),
+    ),
+    (
+        (
+            "src/mcpserver/loxone/opening_contacts.py",
+            "src/mcpserver/loxone/project/**",
+            "tests/fixtures/project/**",
+        ),
+        (
+            "tests/test_opening_contacts.py",
+            "tests/test_project_access.py",
+            "tests/test_project_analysis.py",
+            "tests/test_project_coverage.py",
+            "tests/test_project_graph.py",
+            "tests/test_project_identity.py",
+            "tests/test_project_knx_semantics.py",
+            "tests/test_project_mapping.py",
+            "tests/test_project_modbus.py",
+            "tests/test_project_modbus_analysis.py",
+            "tests/test_project_modbus_checks.py",
+            "tests/test_project_query.py",
+            "tests/test_project_tools.py",
+            "tests/test_project_worker.py",
+            "tests/test_schema_reference.py",
+            "tests/test_window_monitor.py",
+        ),
+    ),
     (
         (
             ".gitattributes",
@@ -63,7 +217,16 @@ _TEST_GROUPS: Final = (
     (
         (
             "src/mcpserver/admin.py",
+            "src/mcpserver/event_history_admin.py",
+            "src/mcpserver/event_history_selector_cache.py",
+            "src/mcpserver/emergency_options_cache.py",
+            "src/mcpserver/auth/scopes.py",
             "templates/index.html",
+            "templates/event-history.html",
+            "templates/event-history-charts.html",
+            "webfrontend/htmlauth/event_history.cgi",
+            "webfrontend/htmlauth/event-history/**",
+            "webfrontend/htmlauth/admin/**",
             "webfrontend/htmlauth/mcp-ui.css",
             "tools/benchmark_admin_page_state.py",
             "templates/lang/**",
@@ -71,8 +234,12 @@ _TEST_GROUPS: Final = (
         ),
         (
             "tests/test_admin.py",
+            "tests/test_event_history_admin.py",
+            "tests/test_event_history_selector_cache.py",
+            "tests/test_emergency_options_cache.py",
             "tests/test_admin_ui.py",
             "tests/test_apache_config.py",
+            "tests/test_explorer_ui.py",
         ),
     ),
     (
@@ -83,9 +250,26 @@ _TEST_GROUPS: Final = (
             "webfrontend/htmlauth/explorer.cgi",
             "webfrontend/htmlauth/explorer_callback.cgi",
             "webfrontend/htmlauth/explorer.js",
+            "webfrontend/htmlauth/explorer-*.js",
         ),
-        ("tests/test_explorer_ui.py", "tests/test_oauth.py"),
+        (
+            "tests/test_explorer_ui.py",
+            "tests/test_explorer_modules.py",
+            "tests/test_explorer_behavior.py",
+            "tests/test_oauth.py",
+        ),
     ),
+    (
+        (
+            "tools/browser/**",
+            "tests/js/chart-measurement.test.cjs",
+            "webfrontend/htmlauth/event-history/**",
+            "webfrontend/htmlauth/mcp-ui.css",
+            "templates/event-history-charts.html",
+        ),
+        ("tests/test_chart_measurement.py",),
+    ),
+    (("tests/js/**",), ("tests/test_explorer_behavior.py",)),
     (
         ("config/default-config.json", "src/mcpserver/config.py"),
         (
@@ -117,26 +301,57 @@ _TEST_GROUPS: Final = (
         (
             "tests/test_control.py",
             "tests/test_control_commands.py",
+            "tests/test_event_history.py",
+            "tests/test_event_history_admin.py",
             "tests/test_loxone_cache.py",
             "tests/test_loxone_client.py",
             "tests/test_loxone_events.py",
             "tests/test_loxone_security.py",
             "tests/test_loxone_structure.py",
+            "tests/test_state_semantics.py",
+            "tests/test_active_alerts.py",
             "tests/test_loxone_target.py",
             "tests/test_tools.py",
         ),
     ),
     (
-        ("src/mcpserver/server.py",),
-        ("tests/test_oauth.py", "tests/test_server.py", "tests/test_tools.py"),
+        ("src/mcpserver/server.py", "src/mcpserver/service_discovery.py"),
+        (
+            "tests/test_oauth.py",
+            "tests/test_server.py",
+            "tests/test_tools.py",
+            "tests/test_service_discovery.py",
+            "tests/test_service_miniserver_access.py",
+            "tests/test_event_history_admin.py",
+            "tests/test_event_history_selector_cache.py",
+            "tests/test_emergency_options_cache.py",
+            "tests/test_admin.py",
+        ),
+    ),
+    (
+        ("src/mcpserver/output_validation.py",),
+        (
+            "tests/test_output_validation.py",
+            "tests/test_server.py",
+            "tests/test_schema_reference.py",
+        ),
     ),
     (
         ("src/mcpserver/settings.py",),
         ("tests/test_config.py", "tests/test_server.py", "tests/test_settings.py"),
     ),
     (
-        ("src/mcpserver/skill_delivery.py", "src/mcpserver/skills/**"),
-        ("tests/test_plugin_package.py", "tests/test_tools.py"),
+        (
+            "src/mcpserver/skill_delivery.py",
+            "src/mcpserver/skills/**",
+            "tools/test_mcp_client.ps1",
+        ),
+        (
+            "tests/test_plugin_package.py",
+            "tests/test_tools.py",
+            "tests/test_skill_sections.py",
+            "tests/test_server.py",
+        ),
     ),
     (
         ("src/mcpserver/tools.py",),
@@ -216,7 +431,9 @@ def create_plan(profile: str, files: tuple[str, ...] = ()) -> TestPlan:
             else:
                 fallback_reasons.append(path)
             continue
-        if _matches(path, _DOCUMENTATION_PATTERNS):
+        if _matches(path, _DOCUMENTATION_PATTERNS) and not any(
+            _matches(path, patterns) for patterns, _ in _TEST_GROUPS
+        ):
             continue
         if _matches(path, _FULL_PATTERNS):
             fallback_reasons.append(path)
@@ -298,6 +515,52 @@ def _runtime_issues() -> tuple[str, ...]:
     return tuple(issues)
 
 
+def _dom_runtime_issues() -> tuple[str, ...]:
+    node = shutil.which("node")
+    if node is None:
+        return ("Node.js 24 is required for Explorer DOM tests",)
+    version = subprocess.run(
+        (node, "--version"), check=False, cwd=ROOT, capture_output=True, text=True
+    )
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.\d+", version.stdout.strip())
+    if version.returncode or match is None or (int(match[1]), int(match[2])) < (24, 15):
+        return ("Node.js 24.15 or newer is required for Explorer DOM tests",)
+    if int(match[1]) == 25:
+        return ("Node.js 25 is unsupported by the pinned Explorer DOM dependency",)
+    dependency = subprocess.run(
+        (
+            node,
+            "-e",
+            "const pkg = require('./package.json'); "
+            "const installed = require('jsdom/package.json'); "
+            "require('jsdom'); "
+            "if (installed.version !== pkg.devDependencies.jsdom) process.exit(1);",
+        ),
+        check=False,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if dependency.returncode:
+        return ("Explorer DOM tests require npm ci --ignore-scripts",)
+    return ()
+
+
+def _required_runtime_issues(plan: TestPlan) -> tuple[str, ...]:
+    issues = list(_runtime_issues()) if plan.effective_profile == "full" else []
+    selected = any(
+        any(
+            target in command
+            for target in ("tests/test_explorer_behavior.py", "tests/test_chart_measurement.py")
+        )
+        for command in plan.commands
+        if _is_pytest_command(command)
+    )
+    if plan.effective_profile == "full" or selected:
+        issues.extend(_dom_runtime_issues())
+    return tuple(issues)
+
+
 def _format_command(command: Command) -> str:
     return subprocess.list2cmdline(command)
 
@@ -312,18 +575,16 @@ def _print_plan(plan: TestPlan) -> None:
         print(f"TEST_PLAN_REASON={plan.reason}", flush=True)
     for command in plan.commands:
         print(f"TEST_COMMAND={_format_command(command)}", flush=True)
-    if plan.effective_profile == "full":
-        for issue in _runtime_issues():
-            print(f"TEST_ENVIRONMENT={issue}", flush=True)
+    for issue in _required_runtime_issues(plan):
+        print(f"TEST_ENVIRONMENT={issue}", flush=True)
 
 
 def _run(plan: TestPlan) -> int:
-    if plan.effective_profile == "full":
-        issues = _runtime_issues()
-        if issues:
-            for issue in issues:
-                print(f"INCOMPLETE={issue}", file=sys.stderr)
-            return 2
+    issues = _required_runtime_issues(plan)
+    if issues:
+        for issue in issues:
+            print(f"INCOMPLETE={issue}", file=sys.stderr)
+        return 2
 
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     existing_pytest_options = environment.get("PYTEST_ADDOPTS", "")

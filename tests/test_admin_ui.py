@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -7,6 +8,323 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+ADMIN_SCRIPTS = (
+    "core.js",
+    "configuration.js",
+    "service.js",
+    "certificate.js",
+    "sessions.js",
+    "page.js",
+)
+
+
+def test_solar_recording_can_be_disabled_after_discovery_failure() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const solarPanel =');
+const panel = source.slice(start, source.indexOf('  syncMiniserverSelection();', start));
+class Element {
+  constructor() {
+    this.children = []; this.events = {}; this.disabled = false;
+    this.value = ''; this.checked = false;
+  }
+  addEventListener(event, handler) { this.events[event] = handler; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren() { this.children = []; }
+}
+const elements = new Map();
+const get = (id) => {
+  if (!elements.has(id)) elements.set(id, new Element());
+  return elements.get(id);
+};
+const requests = [];
+const configured = {
+  control_uuid:'pv-control',state_uuid:null,kind:'pv_forecast',unit:'kWh',
+  source_reference:'fixture',confirmed:true,
+};
+vm.runInNewContext(panel, {
+  URLSearchParams, document:{getElementById:get,createElement:()=>new Element()}, label:(key)=>key,
+  postAjax:async (body, timeout)=>{
+    const action = body.get('action'), payload = JSON.parse(body.get('payload'));
+    requests.push({action,payload});
+    if (action === 'solar_history_options') {
+      if (payload.discover) throw new Error('offline');
+      return {data:{sources:[configured],enabled:true,revision:'local',choices:[]}};
+    }
+    assert.equal(action, 'solar_history_save'); assert.ok(timeout > 65000);
+    assert.equal(payload.enabled,false); assert.equal(payload.sources.length,0);
+    return {data:{sources:[],enabled:false,revision:'next'}};
+  },
+});
+(async()=>{
+  await new Promise(setImmediate);
+  assert.equal(requests.length,1); assert.equal(requests[0].payload.discover,undefined);
+  assert.equal(get('solar-recorder-enabled').checked,true);
+  assert.equal(get('solar-recorder-save').disabled,false);
+  assert.equal(get('solar-recorder-add').disabled,true);
+  await get('solar-recorder-load').events.click();
+  assert.equal(get('solar-recorder-status').textContent,'offline');
+  assert.equal(get('solar-recorder-save').disabled,false);
+  get('solar-recorder-configured').children[0].children[1].events.click();
+  get('solar-recorder-enabled').checked=false;
+  await get('solar-recorder-save').events.click();
+  assert.equal(get('solar-recorder-status').textContent,'SETUP.SOLAR_HISTORY_SAVED');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_weather_source_mutations_wait_for_discovery_and_restart() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf("  const weatherPanel =");
+const panel = source.slice(start, source.indexOf("  const solarPanel =", start));
+class Element {
+  constructor() { this.children = []; this.events = {}; this.disabled = false; }
+  addEventListener(event, handler) { this.events[event] = handler; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren() { this.children = []; }
+  querySelectorAll() { return []; }
+}
+const elements = new Map();
+const get = (id) => {
+  if (!elements.has(id)) elements.set(id, new Element());
+  return elements.get(id);
+};
+const configured = {state_uuid: 'weather', mode: 'actual', fields: ['temperature']};
+const requests = [];
+const context = {
+  URLSearchParams,
+  document: {getElementById: get, createElement: () => new Element()},
+  window: {confirm: () => true},
+  label: (key) => key,
+  postAjax: async (body, timeout) => {
+    const action = body.get('action');
+    requests.push([action, timeout]);
+    // Model a successful server response after the maximum backend work.
+    const elapsed = action === 'weather_history_add_source' ? 95000 :
+                    action === 'weather_history_remove_source' ? 65000 : 30000;
+    if (timeout <= elapsed) throw new Error('premature client abort');
+    return {data: {choices: [configured], fields: ['temperature'], sources:
+      action === 'weather_history_remove_source' ? [] : [configured]}};
+  },
+};
+vm.runInNewContext(panel, context);
+(async () => {
+  await get('weather-recorder-load').events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_HELP');
+  get('weather-recorder-source').value = JSON.stringify(configured);
+  get('weather-recorder-fields').querySelectorAll = () => [{value: 'temperature'}];
+  await get('weather-recorder-add').events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_SAVED');
+  assert.equal(get('weather-recorder-add').disabled, false);
+  const row = get('weather-recorder-configured').children[0];
+  await row.children[1].events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_SAVED');
+  assert.equal(get('weather-recorder-configured').children.length, 0);
+  assert.equal(requests[0][1], 35000);
+  assert.ok(requests[1][1] > 95000);
+  assert.ok(requests[2][1] > 65000);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _admin_script(name: str) -> str:
+    return (ROOT / "webfrontend/htmlauth/admin" / name).read_text(encoding="utf-8")
+
+
+def _admin_source() -> str:
+    """Read the rendered template contract and its static Admin scripts together."""
+    markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    return markup + "\n" + "\n".join(_admin_script(name) for name in ADMIN_SCRIPTS)
+
+
+def test_admin_ajax_carries_only_supported_page_language_preview() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const cases = [
+  ['?lang=en', 'en'],
+  ['?lang=de', 'de'],
+  ['', null],
+  ['?lang=fr', null],
+];
+(async () => {
+  for (const [search, expected] of cases) {
+    let sent;
+    const context = {
+      URLSearchParams, AbortController, Intl,
+      fetch: async (url, options) => {
+        sent = {url, options};
+        return {ok: true, json: async () => ({ok: true, data: {}})};
+      },
+      window: {
+        location: {hash: '', search},
+        localStorage: {getItem: () => null},
+        performance: {getEntriesByType: () => []},
+        addEventListener() {},
+        setTimeout: () => 1,
+        clearTimeout() {},
+      },
+      document: {
+        documentElement: {lang: 'de'},
+        getElementById: (id) => id === 'page-notice' ? null : {
+          getAttribute: () => 'error',
+        },
+        querySelectorAll: () => [],
+        addEventListener() {},
+      },
+      HTMLDetailsElement: class {},
+    };
+    vm.runInNewContext(source, context);
+    const body = new URLSearchParams({action: 'emergency_stop_options', ajax: '1'});
+    await context.window.McpAdmin.createCore().postAjax(body, 15000);
+    assert.equal(sent.url, 'index.cgi');
+    assert.equal(sent.options.method, 'POST');
+    assert.equal(sent.options.body.get('action'), 'emergency_stop_options');
+    assert.equal(sent.options.body.get('lang'), expected);
+    assert.equal(sent.options.headers['X-Requested-With'], 'XMLHttpRequest');
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/core.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
+    markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    browser_scripts = re.findall(r'<script defer src="(admin/[^"?]+\.js)\?v=', markup)
+    assert browser_scripts == [
+        f"admin/{name}"
+        for name in (
+            "core.js",
+            "certificate.js",
+            "sessions.js",
+            "service.js",
+            "configuration.js",
+            "page.js",
+        )
+    ]
+    assert markup.index(
+        '<TMPL_UNLESS SERVER_RENDERED_FALLBACK>\n<div id="admin-labels"'
+    ) < markup.index('<script defer src="admin/core.js')
+    assert markup.index('<script defer src="admin/page.js') < markup.rindex("</TMPL_UNLESS>")
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    for name in ADMIN_SCRIPTS:
+        source = _admin_script(name)
+        assert "<TMPL_" not in source
+        asset_version = {"configuration.js": "v18", "page.js": "v14", "sessions.js": "v13"}.get(
+            name, "v12"
+        )
+        assert (
+            f'<script defer src="admin/{name}?v='
+            f'<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-{asset_version}"></script>'
+        ) in markup
+        subprocess.run(
+            [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        for key in set(re.findall(r"label\('([A-Z][A-Z0-9_.]+)'\)", source)):
+            attribute = "data-l-" + key.lower().replace(".", "-").replace("_", "-")
+            assert f'{attribute}="<TMPL_VAR {key} ESCAPE=HTML>"' in markup
+
+
+def test_certificate_module_renders_a_valid_expiry() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+const elements = new Map();
+const element = (id) => {
+  if (id === 'page-notice') return null;
+  if (!elements.has(id)) elements.set(id, {
+    dataset: {stateIdle: 'idle', yes: 'yes', no: 'no'},
+    hidden: false,
+    textContent: '',
+    getAttribute: () => 'label',
+    setAttribute() {},
+  });
+  return elements.get(id);
+};
+const context = {
+  URLSearchParams,
+  window: {
+    location: {hash: '', search: ''},
+    localStorage: {getItem: () => null},
+    performance: {getEntriesByType: () => []},
+    addEventListener() {},
+  },
+  document: {
+    documentElement: {lang: 'de'},
+    getElementById: element,
+    querySelectorAll: () => [],
+    addEventListener() {},
+  },
+  HTMLDetailsElement: class {},
+};
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const core = context.window.McpAdmin.createCore();
+vm.runInNewContext(fs.readFileSync(process.argv[2], 'utf8'), context);
+const certificate = context.window.McpAdmin.createCertificate(core, () => {});
+certificate.updateCertificate({
+  available: true,
+  source: 'loxberry_ca',
+  expires_at: 2000000000,
+  origin_configured: true,
+  origin_matches: true,
+  hostname_matches: true,
+  dns_san_count: 1,
+  ip_san_count: 1,
+  renewal_supported: false,
+});
+if (!element('certificate-expiry').textContent) process.exit(1);
+if (element('certificate-summary-badge').textContent !== 'label') process.exit(1);
+"""
+    subprocess.run(
+        [
+            node,
+            "-e",
+            script,
+            str(ROOT / "webfrontend/htmlauth/admin/core.js"),
+            str(ROOT / "webfrontend/htmlauth/admin/certificate.js"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _admin_cgi_environment(tmp_path: Path) -> dict[str, str]:
@@ -19,8 +337,19 @@ def _admin_cgi_environment(tmp_path: Path) -> dict[str, str]:
         encoding="utf-8",
     )
     helper.chmod(0o755)
+    security_module = tmp_path / "lib/MCPServer/RequestSecurity.pm"
+    security_module.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "bin/lib/MCPServer/RequestSecurity.pm", security_module)
     return {
-        **os.environ,
+        **{
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"HTTPS", "REQUEST_SCHEME", "HTTP_ORIGIN", "HTTP_HOST"}
+            and not key.startswith("HTTP_X_FORWARDED_")
+            and key != "HTTP_FORWARDED"
+        },
+        "HTTPS": "on",
+        "REQUEST_SCHEME": "https",
         "LB_TEST_HOME": str(tmp_path),
         "LB_TEST_CONFIG_DIR": str(tmp_path),
         "LB_TEST_DATA_DIR": str(tmp_path),
@@ -100,30 +429,189 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert '"ok":true' in loglist.stdout
     assert '"loglist_html"' in loglist.stdout
     assert '"notifications_html"' not in loglist.stdout
+    assert "No LogManager entry is registered for this plugin." in loglist.stdout
+    assert 'role=\\"status\\"' in loglist.stdout
+
+    auxiliary_request = "action=page_auxiliary&ajax=1"
+    auxiliary = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=auxiliary_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(auxiliary_request))},
+    )
+    assert '"page_notifications"' in auxiliary.stdout
+    assert '"page_loglist"' in auxiliary.stdout
+    assert '"notifications_html"' in auxiliary.stdout
+    assert '"loglist_html"' in auxiliary.stdout
+
+    empty_shell = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_HTML": "<style>.native { display: block }</style>",
+        },
+    )
+    assert "No LogManager entry is registered for this plugin." in empty_shell.stdout
+
+    localized_empty = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOG_TEXT_BYTES": "1",
+        },
+    )
+    assert "Keine Logeintr&#xE4;ge." in localized_empty.stdout
+    assert "&#xC3;&#xA4;" not in localized_empty.stdout
+
+    unavailable_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_UNAVAILABLE": "1",
+        },
+    )
+    assert "The LogManager is unavailable." in unavailable_loglist.stdout
+    assert "No LogManager entry is registered" not in unavailable_loglist.stdout
+
+    transient_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_FAIL_ONCE": "1",
+            "LB_TEST_LOGLIST_HTML": ('<a href="/admin/system/logfile.cgi?log=1">admin-ui</a>'),
+        },
+    )
+    assert "admin-ui" in transient_loglist.stdout
+    assert "The LogManager is unavailable." not in transient_loglist.stdout
+
+    populated_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_HTML": (
+                '<ul id="native-log"><li><a href="/admin/system/logfile.cgi?log=1">'
+                "admin-ui</a></li></ul>"
+            ),
+        },
+    )
+    assert "native-log" in populated_loglist.stdout
+    assert "admin-ui" in populated_loglist.stdout
+    assert "No LogManager entry is registered" not in populated_loglist.stdout
+
+
+def test_admin_ajax_localized_messages_are_utf8(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\n"
+        "my $request = <STDIN>;\n"
+        "if ($request =~ /emergency_stop_options/) {\n"
+        '  print q({"ok":true,"data":{"status":"unavailable","options":[],'
+        '"discovery_failure_code":"authentication_busy"}});\n'
+        "} else {\n"
+        '  print q({"ok":false,"error":{"code":"service_action_failed"}});\n'
+        "}\n",
+        encoding="utf-8",
+    )
+    cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
+    for system_language, preview_language, emergency_text, service_text in (
+        ("de", None, "Anmeldung läuft.", "Aktion für Dienst fehlgeschlagen."),
+        (
+            "de",
+            "en",
+            "Another sign-in is in progress.",
+            "The service action could not be completed.",
+        ),
+        ("en", "de", "Anmeldung läuft.", "Aktion für Dienst fehlgeschlagen."),
+        (
+            "en",
+            None,
+            "Another sign-in is in progress.",
+            "The service action could not be completed.",
+        ),
+    ):
+        for action, field, expected in (
+            ("emergency_stop_options", "failure_text", emergency_text),
+            ("status", "message", service_text),
+        ):
+            request = f"action={action}&ajax=1"
+            if preview_language is not None:
+                request += f"&lang={preview_language}"
+            response = subprocess.run(
+                [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+                check=True,
+                capture_output=True,
+                text=True,
+                input=request,
+                env={
+                    **environment,
+                    "LB_TEST_SYSTEM_LANG": system_language,
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                    "CONTENT_LENGTH": str(len(request)),
+                    "HTTP_ORIGIN": "https://loxberry.example",
+                    "HTTP_HOST": "loxberry.example",
+                },
+            )
+            payload = json.loads(response.stdout.partition("\n\n")[2])
+            detail = payload["data"] if field == "failure_text" else payload["error"]
+            assert detail[field] == expected
 
 
 def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "} elsif ($action eq 'get_config') {" in cgi
     assert "admin_call('get_config', {})" in cgi
     assert "} elsif ($action eq 'page_notifications') {" in cgi
     assert "notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // ''" in cgi
     assert "} elsif ($action eq 'page_loglist') {" in cgi
-    assert "loglist_html => LoxBerry::Web::loglist_html() // ''" in cgi
+    assert "loglist_html => native_loglist_html()" in cgi
     assert "my $server_rendered_fallback = ($q->{fallback} // '') eq '1';" in cgi
     assert "if ($server_rendered_fallback) {" in cgi
     assert "my $config_result = admin_call('get_config', {});" in cgi
     assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
-    assert "my $options_result = admin_call('emergency_stop_options', {});" in cgi
+    assert "// admin_call('emergency_stop_refresh', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
     assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
-    assert "const loadConfiguration = async () =>" in template
+    assert (
+        "const loadConfiguration = async (suppliedResult, cachedEmergencyStopOptions) =>"
+        in template
+    )
     assert "const publicOrigin = String(server.public_origin || '')" in template
     assert "String(loxone.endpoint || miniserverEndpoint.value || '')" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
@@ -142,16 +630,18 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
     assert '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.WORKING>' in template
-    assert "const loadLoxberryNotifications = async () =>" in template
+    assert "const loadLoxberryNotifications = async (suppliedResult) =>" in template
     assert "body.set('action', 'page_notifications')" in template
-    assert "const loadPluginLogList = async () =>" in template
+    assert "const loadPluginLogList = async (suppliedResult) =>" in template
     assert "body.set('action', 'page_loglist')" in template
-    assert "loadLoxberryNotifications," in template
-    assert "loadPluginLogList," in template
-    assert template.index("loadLoxberryNotifications,") < template.index("loadConfiguration,")
-    assert template.index("loadPluginLogList,") > template.index(
-        "() => pollSessions({initial: true}),"
-    )
+    hydration = _admin_script("page.js")
+    assert "body.set('action', 'page_snapshot')" in hydration
+    assert "body.set('action', 'page_auxiliary')" in hydration
+    assert "postAjax(body, 60000)" in hydration
+    assert "postAjax(body, 35000)" in hydration
+    assert "await Promise.allSettled([loadSnapshot(), loadAuxiliary()])" in hydration
+    assert "await loadLoxberryNotifications(sections?.page_notifications)" in hydration
+    assert "await loadPluginLogList(sections?.page_loglist)" in hydration
     assert "<TMPL_VAR LOGLIST>" not in template
     assert (
         '<noscript><meta http-equiv="refresh" content="0;url='
@@ -160,14 +650,11 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded" in cgi
     assert "NOTIFICATIONS_HTML => $notifications_html" in cgi
     assert "LOGLIST_HTML => $loglist_html" in cgi
+    assert "$loglist_html = native_loglist_html();" in cgi
     assert "mcpserver_admin_timing=" in cgi
     assert "component=admin_helper request_id=%s action=%s timing=%s" in cgi
     assert (
         'id="mcp-config-fields" class="mcp-configuration-fields" '
-        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
-    )
-    assert (
-        'id="test-connection-fields" class="mcp-configuration-fields" '
         "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
     )
     assert (
@@ -180,9 +667,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert "document.getElementById('logging-config-fields')," in template
     assert "configurationFallbackLink.hidden = false;" in template
-    assert (
-        "if (<TMPL_IF SERVER_RENDERED_FALLBACK>true<TMPL_ELSE>false</TMPL_IF>) return;" in template
-    )
+    assert '<TMPL_UNLESS SERVER_RENDERED_FALLBACK>\n<div id="admin-labels"' in template
     assert 'id="service-enabled-setting-status"' in template
     assert 'id="mqtt-page-state-status"' in template
     assert 'id="emergency-stop-select"' in template
@@ -197,15 +682,22 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "const backgroundHydrationQueue = [];" in template
     assert "Promise.resolve()" in template
     assert ".then(task)" in template
-    assert "loadConfiguration," in template
-    assert "loadInitialState," in template
-    assert "() => pollServiceStatus({initial: true})," in template
-    assert "loadCertificateStatus," in template
-    assert "() => pollSessions({initial: true})," in template
     assert (
-        "queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);"
+        "await loadConfiguration(sections?.get_config, sections?.emergency_stop_cached_options);"
         in template
     )
+    assert "await loadInitialState(sections?.page_state);" in template
+    assert (
+        "await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});"
+        in template
+    )
+    assert "await loadCertificateStatus(sections?.certificate_status);" in template
+    assert (
+        "await pollSessions({initial: true, suppliedResult: sections?.list_sessions});" in template
+    )
+    assert "queueBackgroundHydration([() => loadEmergencyStopOptions" not in template
+    assert "emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_LOAD');" in template
+    assert "emergencyStopRetry.hidden = false;" in template
     assert "window.requestAnimationFrame(() => {" in template
     assert "if (document.hidden) {" in template
     assert "scheduleBackgroundHydration();" in template
@@ -214,29 +706,30 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "window.addEventListener('beforeunload', markPageUnloading);" in template
     assert "window.addEventListener('pagehide', markPageUnloading);" in template
     assert "if (pageIsUnloading) return;" in template
-    assert "if (certificateSection.open && initialBackgroundHydrationComplete)" in template
+    assert "if (accessSection.open && initialBackgroundHydrationComplete)" in template
     assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
-    assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
+    assert "emergencyStopRetry.dataset.retry === 'true'" in template
     assert "queueBackgroundHydration([" in template
     assert 'id="emergency-stop-refresh"' not in template
-    assert "emergencyStopRefresh" not in template
+    assert "let emergencyStopRefreshTimer = null;" in template
+    assert "void hydrateEmergencyStopOptions(" in template
     assert "let emergencyStopDiscoveryGeneration = 0;" in template
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
     assert (
-        "const loadEmergencyStopOptions = async "
-        "(expectedGeneration = emergencyStopDiscoveryGeneration)" in template
+        "const loadEmergencyStopOptions = async (" in template
+        and "expectedGeneration = emergencyStopDiscoveryGeneration, manualRetry = false" in template
     )
     assert "if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;" in template
-    assert "const generation = expectedGeneration;" in template
-    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
+    assert "const generation = ++emergencyStopDiscoveryGeneration;" in template
+    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") >= 3
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
     assert "Server-Timing: mcp-template;dur=%.1f" in cgi
     assert "phase=loxberry_header duration_ms=%.1f" in cgi
     assert "lbheader($L{'BASIC.TITLE'} . \" V$version\", '', '', 'nojqm')" in cgi
-    assert "our %navbar" in cgi
+    assert 'class="mcp-section-nav"' in template
     assert "mcp-admin-shell-parsed" in template
     assert "mcp-admin-background-hydration-started" in template
     assert "print LoxBerry::Log::get_notifications_html($lbpplugindir);" not in cgi
@@ -265,7 +758,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
-    assert "if (certificateSection.open) loadCertificateStatus();" not in template
+    assert "if (accessSection.open) loadCertificateStatus();" not in template
     assert "if (sessionsSection.open) pollSessions();" not in template
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
@@ -284,7 +777,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -292,9 +785,9 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
     assert 'id="emergency-stop-select"' in template
     assert 'id="emergency-stop-refresh"' not in template
-    assert "EMERGENCY_STOP_REFRESH" not in template
-    assert "EMERGENCY_STOP_REFRESH" not in german
-    assert "EMERGENCY_STOP_REFRESH" not in english
+    assert "EMERGENCY_STOP_REFRESH" in template
+    assert "EMERGENCY_STOP_REFRESH=" in german
+    assert "EMERGENCY_STOP_REFRESH=" in english
     assert "EMERGENCY_STOP_LOADING=" in german
     assert "EMERGENCY_STOP_LOADING=" in english
     assert "emergencyStopSelect.disabled = false;" in template
@@ -304,10 +797,30 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "EMERGENCY_STOP_LOADING" in template
     assert "EMERGENCY_STOP_NO_OPTIONS" in template
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
+    assert 'id="emergency-stop-retry"' in template
+    assert "body.set('action', automatic ? 'emergency_stop_refresh'" in template
+    assert "result.data.failure_text" in template
+    assert "retry_not_before" in template
+    assert "Number.isInteger(status.pending) && status.pending > 0)" in template
+    assert "REMOTE_CLEANUP_WARNING_VISIBLE" in template
+    assert "REMOTE_CLEANUP_WARNING ESCAPE=HTML" in template
+    assert "REMOTE_CLEANUP_WARNING => $remote_cleanup_warning" in cgi
+    assert "authentication_busy => 'EMERGENCY_STOP_AUTH_BUSY'" in cgi
+    assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
+    for key in (
+        "EMERGENCY_STOP_AUTH_SUPPRESSED",
+        "EMERGENCY_STOP_AUTH_BUSY",
+        "EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE",
+        "EMERGENCY_STOP_CONNECTION_FAILED",
+        "EMERGENCY_STOP_STRUCTURE_FAILED",
+        "EMERGENCY_STOP_RETRY",
+        "EMERGENCY_STOP_STALE",
+    ):
+        assert key in german and key in english
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'data-ajax="save_mcp_config"' in template
     assert 'data-ajax="save_mqtt_config"' in template
@@ -322,19 +835,1200 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "if (element.dataset.kind === 'success') element.hidden = true;" in template
     assert "window.clearTimeout(hideStatusTimers.get(status))" in template
     assert "url.searchParams.delete('notice')" in template
-    assert "postAjax(body, actionTimeout(form.dataset.ajax))" in template
+    assert "postAjax(body, actionTimeout(submittedAction))" in template
     assert "save_mcp_config: 90000" in template
     assert "save_mqtt_config: 165000" in template
     assert "result.data.retained_cleanup?.status === 'failed'" in template
     assert "AJAX.MQTT_CLEANUP_WARNING" in template
     assert "revoke_all: 75000" in template
-    assert "postAjax(body, 5000)" in template
+    assert "postAjax(body, 15000)" in template
     assert "new URLSearchParams(new FormData(form))" in template
     assert "const body = new FormData" not in template
-    assert "if (result.data.certificate) updateCertificate" in template
+    assert "if (result.data.certificate) certificate.updateCertificate" in template
     assert 'id="session-table-template"' in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "for (const row of existing.values()) row.remove()" in template
+
+
+def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
+    template = (ROOT / "templates/knx.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/knx.cgi").read_text(encoding="utf-8")
+    js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
+    assert 'id="knx-taxonomy-form"' in template
+    assert 'href="knx.cgi"' in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v18" in _admin_source()
+    assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v13" in template
+    assert 'id="knx-taxonomy-form"' not in _admin_source()
+    assert "same_origin_post()" in cgi
+    assert "knx_taxonomy" in cgi
+    assert "TextDecoder('utf-8', {fatal: true})" in js
+    assert "file.size > 64 * 1024" in js
+    assert "content.includes('\\0')" in js
+    assert "taxonomy_revision: labelsRevision ?? state.taxonomy_revision" in js
+    for language in ("de", "en"):
+        text = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "KNX_TAXONOMY_HELP=" in text
+        assert "JSON_APPLY=" in text
+
+
+def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
+
+    assert "EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0" in cgi
+    assert (
+        'MCPSERVER_EVENT_HISTORY_STORE} = "$lbpdatadir/event-history/state-events.sqlite3"' in cgi
+    )
+    assert (
+        'name="event_history_enabled" type="checkbox" value="1" '
+        "<TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>"
+    ) in template
+
+
+def test_event_history_has_dedicated_bounded_admin_view() -> None:
+    main = _admin_source()
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+
+    assert 'href="event_history.cgi"' in main
+    assert 'name="event_history_enabled"' in main
+    assert 'name="event_history_retention_days"' not in main
+    assert 'name="event_history_maximum_mib"' not in main
+    assert "event_history_sources_json" not in main
+    assert 'data-ajax="clear_event_history"' not in main
+    assert 'id="history-source-rows"' in page
+    assert 'data-coverage="' in page
+    assert 'data-storage="' not in page
+    assert 'id="history-search"' in page
+    assert 'id="history-clear"' in page
+    assert "Same-origin POST required" in cgi
+    assert "event_history_purge_source" in cgi
+    assert (
+        "component=event_history_admin request_id=%s action=%s outcome=%s duration_ms=%.1f" in cgi
+    )
+    assert "window.confirm(label('confirmClear'))" in script
+
+
+def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
+    overview = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+    chart = (ROOT / "webfrontend/htmlauth/event-history/charts.js").read_text(encoding="utf-8")
+    template = (ROOT / "templates/event-history-charts.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+
+    assert 'id="history-open-charts"' in (ROOT / "templates/event-history.html").read_text(
+        encoding="utf-8"
+    )
+    assert "event_history_chart_query" not in overview
+    assert "event_history_chart_query" in chart
+    assert "event_history_chart_prepare" in chart
+    assert "event-history/vendor/uplot/uPlot.iife.min.js" in template
+    assert template.index("event-history/chart-cache.js") < template.index(
+        "event-history/charts.js"
+    )
+    assert "event_history_chart_query" in cgi
+    assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
+
+
+def test_chart_timing_cgi_forwards_only_fixed_numeric_diagnostics() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+
+    assert (
+        "config_load_ms|selector_refresh_ms|selector_coordinator_wait_ms|"
+        "selector_token_acquisition_ms|selector_session_establishment_ms|"
+        "selector_structure_load_ms|selector_auth_count|revalidation_ms|history_prepare_ms|serialization_ms"
+        in cgi
+    )
+    assert "selected_sources|discovered_controls|serialized_bytes" in cgi
+    assert "component=event_history_chart_timing request_id=%s phase=%s duration_ms=%.1f" in cgi
+    assert "phase=cgi_delivery duration_ms=%.1f response_bytes=%d" in cgi
+    assert (
+        "control_uuid"
+        not in cgi[cgi.index("my %chart_phase_timing") : cgi.index("sub wait_update")]
+    )
+
+
+def test_chart_subphase_allowlist_rejects_private_and_non_numeric_values() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    start = source.index("%chart_phase_timing = map")
+    end = source.index("keys %{$diagnostics};", start) + len("keys %{$diagnostics};")
+    fields = (
+        "selector_coordinator_wait_ms",
+        "selector_token_acquisition_ms",
+        "selector_session_establishment_ms",
+        "selector_structure_load_ms",
+    )
+    for rejected in ("private-token-endpoint-name-project-uuid", -1, None, {"private": 3}):
+        values = dict.fromkeys(fields, 1.25)
+        values[fields[0]] = rejected
+        values["private-uuid"] = 99
+        script = (
+            "use strict; use warnings; use JSON::PP qw(encode_json decode_json); "
+            "my %chart_phase_timing; my $diagnostics = decode_json(q|"
+            + json.dumps(values)
+            + "|); "
+            + source[start:end]
+            + " print encode_json(\\%chart_phase_timing);"
+        )
+        result = subprocess.run([perl, "-e", script], capture_output=True, text=True, check=True)
+        assert json.loads(result.stdout) == dict.fromkeys(fields[1:], 1.25)
+        assert "private" not in result.stdout + result.stderr
+
+
+def test_chart_delivery_timing_includes_successful_stdout_flush() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    reply = source[source.index("sub reply {") : source.index("sub admin_call {")]
+    script = (
+        r"""
+use strict;
+use warnings;
+use IO::Handle;
+use JSON::PP qw(encode_json);
+my $now = 1;
+sub CLOCK_MONOTONIC { 0 }
+sub clock_gettime { $now }
+my $q = {action => 'event_history_chart_prepare'};
+my $request_id = 'test';
+my $lbpplugindir = 'test';
+sub headers { () }
+{ package CGI; sub header { "Content-Type: application/json\n\n" } }
+my $cgi = bless {}, 'CGI';
+{ package LoxBerry::Log;
+  sub new { bless {}, shift }
+  sub INF { print STDERR $_[1], "\n" }
+}
+no warnings 'redefine';
+*IO::Handle::flush = sub {
+    die 'body not written' unless tell(STDOUT) > 0;
+    print STDERR "flush\n";
+    $now = 2;
+    return !$ENV{TEST_FLUSH_FAIL};
+};
+"""
+        + reply
+        + "reply({ok => JSON::PP::true}, 200);"
+    )
+    for failed in (False, True):
+        result = subprocess.run(
+            [perl, "-e", script],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C", "TEST_FLUSH_FAIL": "1" if failed else "0"},
+            check=False,
+        )
+        assert result.stdout.endswith('{"ok":true}')
+        assert result.stderr.startswith("flush\n")
+        if failed:
+            assert result.returncode != 0
+            assert "phase=cgi_delivery" not in result.stderr
+        else:
+            assert result.returncode == 0, result.stderr
+            assert "phase=cgi_delivery duration_ms=1000.0" in result.stderr
+
+
+def test_chart_prepare_logging_classifies_fast_slow_and_failed_results() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    start = source.index("        if (!$result->{ok} || $duration_ms >= 5000")
+    logging = source[
+        start : source.index("        if ($action eq 'event_history_chart_prepare')", start)
+    ]
+    script = (
+        r"""
+use strict;
+use warnings;
+my ($action, $duration_ms, $ok) = @ARGV;
+my $result = {ok => $ok};
+my $code = $ok ? 'ok' : 'internal_error';
+my $request_id = 'test';
+my $lbpplugindir = 'test';
+{ package LoxBerry::Log;
+  sub new { bless {}, shift }
+  sub INF { print $_[1] }
+}
+"""
+        + logging
+    )
+    for action, duration, ok, outcome in (
+        ("prepare", 25, 1, "completed"),
+        ("prepare", 4999, 1, "completed"),
+        ("prepare", 5000, 1, "slow"),
+        ("prepare", 25, 0, "failed"),
+        ("query", 25, 1, None),
+        ("query", 5000, 1, "slow"),
+        ("query", 25, 0, "failed"),
+    ):
+        result = subprocess.run(
+            [perl, "-e", script, f"event_history_chart_{action}", str(duration), str(ok)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        if outcome is None:
+            assert result.stdout == ""
+        else:
+            assert f"outcome={outcome} " in result.stdout
+
+
+def test_event_history_update_relay_is_bounded_and_fixed_to_loopback() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    relay = source[source.index("sub wait_update {") : source.index("\nmy %actions =")]
+    script = (
+        r"""
+use strict;
+use warnings;
+use JSON::PP qw(decode_json);
+{ package HTTP::Tiny;
+  our $calls = 0;
+  our $url = '';
+  our %options;
+  our $content = '{"token":"0123456789abcdef","changed":true}';
+  sub new { my $class = shift; %options = @_; bless {}, $class }
+  sub get { my ($self, $url) = @_; $calls++; $HTTP::Tiny::url = $url;
+    return {success => 1, content => $content}; }
+}
+"""
+        + relay
+        + r"""
+die 'invalid token reached loopback' if wait_update('invalid!')->{ok} || $HTTP::Tiny::calls;
+my $result = wait_update('');
+die 'wrong loopback route' unless $HTTP::Tiny::url eq
+    'http://127.0.0.1:8765/internal/event-history-updates?token=';
+die 'relay lacks response bounds' unless $HTTP::Tiny::options{max_size} == 256
+    && $HTTP::Tiny::options{max_redirect} == 0;
+die 'valid wakeup unavailable' unless $result->{data}{availability} eq 'available';
+$HTTP::Tiny::content = 'x' x 257;
+die 'oversized response accepted' unless wait_update('')->{data}{availability} eq 'unavailable';
+$HTTP::Tiny::content = '{"token":"0123456789abcdef","changed":"true"}';
+die 'non-boolean signal accepted' unless wait_update('')->{data}{availability} eq 'unavailable';
+"""
+    )
+    subprocess.run([perl, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_event_history_selector_is_progressive_and_localized() -> None:
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+
+    assert 'id="history-control-list"' in page
+    assert 'role="radiogroup"' in page
+    assert 'id="history-prev-controls"' in page
+    assert 'id="history-more-controls"' in page
+    assert 'id="history-state-search-wrap" hidden' in page
+    assert 'id="history-add-status"' in page
+    assert 'data-refresh-working="<TMPL_VAR EVENT_HISTORY.REFRESH_WORKING' in page
+    assert 'data-refreshed="<TMPL_VAR EVENT_HISTORY.REFRESHED' in page
+    assert 'data-refresh-failed="<TMPL_VAR EVENT_HISTORY.REFRESH_FAILED' in page
+    assert "<TMPL_VAR EVENT_HISTORY.STATES>" in page
+    assert all(f'data-facet="{field}"' in page for field in ("room", "category", "type"))
+    assert "void loadQuickSummary();" in script
+    assert "void loadControls();" in script
+    assert "event_history_prepare_selector" in script
+    assert "event_history_selector_catalog" in script
+    assert "event_history_selector_states" in script
+    assert "event_history_source_revision" in script
+    assert "api.request('event_history_source_revision', {}, 15000)" in script
+    assert "refreshButton.disabled = true" in script
+    assert "refreshButton.textContent = label('refreshWorking')" in script
+    assert "setMessage(label(refreshed ? 'refreshed' : 'refreshFailed')" in script
+    assert "}, 5000);" in script
+    assert "event_history_prepare_selector" in cgi
+    assert "event_history_source_revision" in cgi
+    for language in ("de", "en"):
+        translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        for key in (
+            "LOAD_CONTROLS",
+            "FILTER_CLEAR",
+            "ROOM",
+            "CATEGORY",
+            "TYPE",
+            "STATES",
+            "STATES_LOADING",
+            "STATE_SUPPORT_HELP",
+            "ADD_WORKING",
+            "ADD_APPLIED",
+            "ADD_REFRESH_FAILED",
+            "REFRESH_WORKING",
+            "REFRESHED",
+            "REFRESH_FAILED",
+        ):
+            assert f"{key}=" in translations
+
+
+def test_event_history_source_filters_combine_facets_locally() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const sourceFacetId ='),
+  source.indexOf('  const renderRows ='));
+const nodes = new Map();
+const $ = (id) => {
+  if (!nodes.has(id)) nodes.set(id, {listeners: {},
+    addEventListener(name, fn) {this.listeners[name] = fn;}, setAttribute() {}});
+  return nodes.get(id);
+};
+const headers = ['control', 'state', 'status', 'events', 'size', 'period', 'actions']
+  .map((field) => ({dataset: {sourceSort: field}, textContent: field, attrs: {},
+    addEventListener(name, fn) {this[name] = fn;},
+    setAttribute(name, value) {this.attrs[name] = value;},
+    closest() {return this.heading;}}));
+for (const button of headers) button.heading = {attrs: {},
+  setAttribute(name, value) {this.attrs[name] = value;},
+  removeAttribute(name) {delete this.attrs[name];}};
+const panels = Object.fromEntries(['room', 'category', 'type', 'status'].map((field) => {
+  const list = {children: [], replaceChildren() {this.children = [];},
+    append(item) {this.children.push(item);}};
+  return [field, {list, querySelector: () => list}];
+}));
+const document = {createElement: (tag) => ({tag, children: [],
+  append(...items) {this.children.push(...items);}, addEventListener() {}})};
+const drawn = [];
+const context = {$, document, text: (tag, value) => ({tag, value}),
+  root: {querySelector: (selector) => panels[selector.match(/"(.*?)"/)[1]],
+    querySelectorAll: (selector) => selector === '[data-source-sort]' ? headers : []},
+  label: (key) => key, renderRows: (visible) => drawn.push(Array.from(visible, (item) => item.id))};
+vm.runInNewContext(`let sourceItems = [
+  {id: 1, room_id: 'r1', room: 'Kitchen', category_id: 'c1', category: 'Lights',
+    control_type: 'Switch', recording_status: 'active', control_name: 'Zulu', state_name: 'B',
+    event_count: 10, logical_value_bytes: 11, newest_event_at: 20},
+  {id: 2, room_id: 'r2', room: 'Hall', category_id: 'c1', category: 'Lights',
+    control_type: 'Switch', recording_status: 'removed', control_name: 'Alpha', state_name: 'A',
+    event_count: 20, logical_value_bytes: null, newest_event_at: 10},
+  {id: 3, room_id: null, room: null, category_id: 'c2', category: 'Climate',
+    control_type: 'Sensor', recording_status: 'active', control_name: 'Beta', state_name: 'C',
+    event_count: 2, logical_value_bytes: 2, newest_event_at: null}];
+let unverifiedItems = []; let sourceVisibility = 'available';
+const sourceFilters = {room: new Set(), category: new Set(), type: new Set(), status: new Set()};
+const sourceSort = {field: '', direction: 'ascending'};
+const sourceSortFields = ['control', 'state', 'status', 'events', 'size', 'period', 'actions'];
+const sourceCollator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+${section}
+globalThis.subject = {applySourceFilters, renderSourceFacets, selectSourceSort,
+  sourceFilters, sourceSize};`, context);
+const {applySourceFilters, renderSourceFacets, selectSourceSort, sourceFilters, sourceSize} =
+  context.subject;
+assert.equal(sourceSize(0), '0 KiB');
+assert.equal(sourceSize(null), 'unavailable');
+for (const bytes of [1, 11, 51]) assert.notEqual(sourceSize(bytes), '0 KiB');
+renderSourceFacets();
+assert.deepEqual(drawn.at(-1), [1, 2, 3]);
+assert.deepEqual(panels.status.list.children.map((row) => row.children[1].value),
+  ['active', 'removed']);
+sourceFilters.room.add('r1'); sourceFilters.room.add('r2');
+sourceFilters.category.add('c1'); sourceFilters.type.add('Switch');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1, 2]);
+sourceFilters.status.add('active');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1]);
+sourceFilters.status.add('removed');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1, 2]);
+sourceFilters.room.clear(); sourceFilters.room.add('');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), []);
+assert.equal(nodes.get('history-source-no-matches').hidden, false);
+sourceFilters.category.clear(); sourceFilters.type.clear(); sourceFilters.status.clear();
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [3]);
+for (const selected of Object.values(sourceFilters)) selected.clear();
+applySourceFilters();
+assert.equal(nodes.get('history-source-clear-filters').disabled, true);
+assert.equal(nodes.get('history-source-match-count').textContent, '3 / 3 sourceMatches');
+selectSourceSort('control');
+assert.deepEqual(drawn.at(-1), [2, 3, 1]);
+assert.equal(headers[0].heading.attrs['aria-sort'], 'ascending');
+selectSourceSort('control');
+assert.deepEqual(drawn.at(-1), [1, 3, 2]);
+assert.equal(headers[0].heading.attrs['aria-sort'], 'descending');
+for (const [field, ascending, descending] of [
+  ['state', [2, 1, 3], [3, 1, 2]],
+  ['status', [1, 3, 2], [2, 1, 3]],
+  ['events', [3, 1, 2], [2, 1, 3]],
+  ['size', [3, 1, 2], [1, 3, 2]],
+  ['period', [2, 1, 3], [1, 2, 3]],
+  ['actions', [2, 1, 3], [1, 3, 2]],
+]) {
+  selectSourceSort(field);
+  assert.deepEqual(drawn.at(-1), ascending);
+  selectSourceSort(field);
+  assert.deepEqual(drawn.at(-1), descending);
+}
+nodes.get('history-source-sort-mobile').listeners.change({target: {value: 'events'}});
+assert.deepEqual(drawn.at(-1), [3, 1, 2]);
+nodes.get('history-source-sort-direction').listeners.click();
+assert.deepEqual(drawn.at(-1), [2, 1, 3]);
+selectSourceSort('');
+assert.deepEqual(drawn.at(-1), [1, 2, 3]);
+assert.equal(nodes.get('history-source-sort-direction').disabled, true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    assert 'data-source-facet="room"' in page
+    assert 'data-source-facet="category"' in page
+    assert 'data-source-facet="type"' in page
+    assert 'data-source-facet="status"' in page
+    assert 'id="history-source-sort-mobile"' in page
+    assert page.count("data-source-sort=") == 7
+    assert 'id="history-source-match-count"' in page
+    for locale in ("de", "en"):
+        labels = (ROOT / f"templates/lang/language_{locale}.ini").read_text(encoding="utf-8")
+        assert "SOURCE_SIZE_ESTIMATED=" in labels
+        assert "SOURCE_NO_MATCHES=" in labels
+        assert "SORT_BY=" in labels
+        assert "SORT_ASC=" in labels
+        assert "SORT_DESC=" in labels
+
+
+def test_event_history_sections_use_native_disclosures_and_keep_actions_inside() -> None:
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    for name in ("sources", "add", "policy", "clear"):
+        assert f'<details id="history-{name}-section"' in page
+    assert (
+        '<details id="history-sources-section" class="mcp-card mcp-event-history-section" open>'
+        in page
+    )
+    assert (
+        'id="history-clear-section" class="mcp-card mcp-event-history-section '
+        'mcp-event-history-danger">' in page
+    )
+    assert page.index('id="history-message"') < page.index('id="history-sources-section"')
+    assert page.index('id="history-policy-form"') > page.index('id="history-policy-section"')
+    assert page.index('id="history-clear"') > page.index('id="history-clear-section"')
+    assert "<TMPL_VAR EVENT_HISTORY.CLEAR_SUMMARY>" in page
+    for language in ("de", "en"):
+        labels = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "CLEAR_SUMMARY=" in labels
+
+
+def test_event_history_disclosure_storage_and_action_feedback() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+const sections = new Map(['sources', 'add', 'policy', 'clear'].map((name) =>
+  [name, {open: name === 'sources', listeners: {}, addEventListener(event, fn) {
+    this.listeners[event] = fn;
+  }}]));
+const saved = new Map([['mcpserver.event-history.section.add.v1', 'true']]);
+let requests = 0;
+const message = {textContent: '', dataset: {}};
+const context = {
+  $: (id) => id === 'history-message' ? message
+    : sections.get(id.replace(/^history-|\-section$/g, '')),
+  window: {localStorage: {getItem: (key) => saved.get(key) ?? null,
+    setItem: (key, value) => saved.set(key, value)}},
+  root: {dataset: {}},
+  api: {request: () => { requests++; }},
+};
+vm.runInNewContext(`let actionMessagePinned = false;
+${section('  const sections = ', '  const errorLabel =')}
+let messageVersion = 0; const message = $('history-message');
+${section('  const setMessage = ', '  const date =')}
+globalThis.subject = {setMessage};`, context);
+assert.equal(sections.get('sources').open, true);
+assert.equal(sections.get('add').open, true);
+assert.equal(sections.get('policy').open, false);
+assert.equal(sections.get('clear').open, false);
+sections.get('policy').open = true;
+sections.get('policy').listeners.toggle();
+assert.equal(saved.get('mcpserver.event-history.section.policy.v1'), 'true');
+assert.equal(sections.get('clear').open, false);
+assert.equal(requests, 0);
+context.subject.setMessage('saved', 'success', true);
+context.subject.setMessage('loaded', 'success');
+assert.equal(message.textContent, 'saved');
+assert.equal(message.dataset.kind, 'success');
+let submit;
+vm.runInNewContext(`let activeCount = 64; const label = (name) => name;
+const startRecording = () => { throw Error('must not start'); };
+${section("  $('history-add-form').addEventListener", "  $('history-policy-form')")}`, {
+  $: () => ({addEventListener: (_event, handler) => { submit = handler; }}),
+  setMessage: context.subject.setMessage,
+});
+submit({preventDefault() {}});
+assert.equal(message.textContent, 'sourceLimit');
+assert.equal(message.dataset.kind, 'warning');
+context.subject.setMessage('loaded', 'success');
+assert.equal(message.textContent, 'sourceLimit');
+const blocked = new Map(['sources', 'add', 'policy', 'clear'].map((name) =>
+  [name, {open: name === 'sources', addEventListener() {}}]));
+vm.runInNewContext(`${section('  const sections = ', '  const errorLabel =')}`, {
+  $: (id) => blocked.get(id.replace(/^history-|\-section$/g, '')),
+  window: {localStorage: {getItem() { throw Error('blocked'); },
+    setItem() { throw Error('blocked'); }}},
+});
+assert.equal(blocked.get('sources').open, true);
+assert.equal(blocked.get('add').open, false);
+assert.equal(blocked.get('clear').open, false);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_mutation_refresh_waits_for_inflight_discovery() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+let finishDiscovery;
+const discovery = new Promise((resolve) => { finishDiscovery = resolve; });
+let calls = 0;
+const messages = [];
+const context = {
+  api: {request: async () => ({changed: true})},
+  refreshButton: {disabled: false},
+  addButton: {disabled: false},
+  stateSelect: {disabled: false, value: 'state'},
+  stateSearch: {disabled: false},
+  stateSearchWrap: {hidden: false},
+  performLoadControls: async () => {
+    calls += 1;
+    if (calls === 1) await discovery;
+    context.addButton.disabled = true;
+    context.stateSearch.disabled = true;
+  },
+  loadStatus: async () => {},
+  label: (value) => value,
+  errorLabel: () => 'error',
+  setMessage: (value) => messages.push(value),
+};
+vm.runInNewContext(`
+let busy = false;
+let controlsLoadPromise = null;
+let selectedControl = 'control';
+const drainSourceRevision = () => {};
+${section('  const mutate = async ', '  const facetSelection =')}
+${section('  const loadControls = (restore = null) => {', '  const checkSourceRevision =')}
+globalThis.subject = {mutate, loadControls};
+`, context);
+(async () => {
+  const first = context.subject.loadControls();
+  const mutation = context.subject.mutate('event_history_save_policy', {});
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  finishDiscovery();
+  await Promise.all([first, mutation]);
+  assert.equal(calls, 2);
+  assert.equal(messages.at(-1), 'saved');
+  assert.equal(context.addButton.disabled, false);
+  assert.equal(context.stateSearch.disabled, false);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_invalidation_removes_authorized_facet_names() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const invalidateSelector = () => {'),
+  source.indexOf('  const applyFilters ='));
+const fields = ['room', 'category', 'type'];
+const panels = Object.fromEntries(fields.map((field) => {
+  const search = {value: 'old', disabled: false, oninput: () => {}};
+  const list = {children: ['Secret name'], replaceChildren() {this.children = [];}};
+  return [field, {open: true, search, list,
+    querySelector(selector) {return selector.startsWith('input') ? search : list;}}];
+}));
+const nodes = new Map();
+const getNode = (id) => {
+  if (!nodes.has(id)) nodes.set(id, {hidden: false, disabled: false, textContent: ''});
+  return nodes.get(id);
+};
+const stateCache = new Map([['old', {name: 'Secret state'}]]);
+const facetSelection = Object.fromEntries(fields.map((field) => [field, new Set(['old'])]));
+const context = {root: {querySelector: (selector) => panels[selector.match(/"([^"]+)"/)[1]]},
+  stateCache, facetSelection, controlList: {replaceChildren() {}},
+  stateSelect: {replaceChildren() {}}, stateSearch: {value: 'Secret state'},
+  stateSearchWrap: {}, addButton: {}, $: getNode, Option: class {}, label: () => ''};
+vm.runInNewContext(`let selectorGeneration = 'old'; let controls = [{}];
+let selectedControl = 'old'; ${section}
+globalThis.invalidate = invalidateSelector;`, context);
+context.invalidate();
+assert.equal(stateCache.size, 0);
+for (const field of fields) {
+  assert.equal(facetSelection[field].size, 0);
+  assert.deepEqual(panels[field].list.children, []);
+  assert.equal(panels[field].search.oninput, null);
+  assert.equal(panels[field].search.disabled, true);
+}
+assert.equal(getNode('history-clear-filters').disabled, true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_local_overview_starts_revision_tracking() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
+  source.indexOf('  const loadQuickSummary ='));
+const nodes = new Map();
+const context = {
+  selectedCharts: new Set(), chartKey: () => '', updateChartSelection: () => {}, $: (id) => {
+  if (!nodes.has(id)) nodes.set(id, {});
+  return nodes.get(id);
+}, label: (key) => key, date: () => '', renderSourceFacets: () => {}, setMessage: () => {}};
+vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
+let selectorVerificationPending = false; let nextRevisionRefreshAt = 1;
+let revisionRefreshFailures = 1; let activeCount = 0; let savedPolicy = null;
+${section}
+globalThis.subject = {renderOverview, revision: () => knownSourceRevision,
+  pending: () => selectorVerificationPending};`, context);
+context.subject.renderOverview({store_status: 'available', visibility_status: 'unavailable',
+  source_revision: 'local-revision', active_source_count: 1, retention_days: 30,
+  maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
+assert.equal(context.subject.revision(), 'local-revision');
+assert.equal(context.subject.pending(), true);
+context.subject.renderOverview({store_status: 'available', visibility_status: 'available',
+  source_revision: 'local-revision', active_source_count: 1,
+  visible_active_count: 0, visible_removed_count: 0, retention_days: 30,
+  maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
+assert.equal(context.subject.pending(), false);
+assert.equal(nodes.get('history-sources-summary').textContent, '0 active · 0 removed');
+context.subject.renderOverview({store_status: 'unavailable', visibility_status: 'unavailable',
+  active_source_count: 1, retention_days: 30, maximum_mib: 64,
+  sources: [], unverified_sources: []});
+assert.equal(context.subject.revision(), 'local-revision');
+assert.equal(context.subject.pending(), true);
+assert.equal(nodes.get('history-sources-summary').textContent, 'unavailable');
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_background_overview_preserves_unsaved_policy_edits() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
+  source.indexOf('  const renderOverview = (data) => {'));
+const nodes = new Map();
+const context = {$: (id) => {
+  if (!nodes.has(id)) nodes.set(id, {value: '', textContent: ''});
+  return nodes.get(id);
+}};
+vm.runInNewContext(`let savedPolicy = null; ${section}
+globalThis.renderPolicy = renderPolicy;`, context);
+context.renderPolicy({retention_days: 30, maximum_mib: 64});
+nodes.get('history-retention').value = '45';
+context.renderPolicy({retention_days: 31, maximum_mib: 128});
+assert.equal(nodes.get('history-retention').value, '45');
+assert.equal(nodes.get('history-maximum').value, '128');
+assert.equal(nodes.get('history-policy').textContent, '31 d · 128 MiB');
+assert.equal(nodes.get('history-policy-summary').textContent, '31 d · 128 MiB');
+nodes.get('history-retention').value = '31';
+context.renderPolicy({retention_days: 32, maximum_mib: 128});
+assert.equal(nodes.get('history-retention').value, '32');
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_revision_retries_after_failed_visibility_refresh() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
+  source.indexOf('  const loadStates ='));
+const context = {document: {hidden: false}, api: {request: async () =>
+  ({availability: 'available', revision: 'new'})}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
+let knownSourceRevision = 'old';
+let knownPayloadPending = false;
+let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
+let revisionRefreshFailures = 0; let refreshes = 0;
+const loadControls = async () => { refreshes += 1; knownSourceRevision = 'new'; return false; };
+${section}
+globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
+  pending: () => selectorVerificationPending,
+  retryNow: () => { nextRevisionRefreshAt = 0; }};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+  assert.equal(context.subject.pending(), true);
+  context.subject.retryNow();
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 2);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_new_point_refreshes_visible_source_totals_without_discovery() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
+  source.indexOf('  const loadStates ='));
+const calls = [];
+let failRevision = false;
+const context = {document: {hidden: false}, api: {request: async (action) => {
+  calls.push(action);
+  if (action === 'event_history_source_revision' && failRevision) throw new Error('offline');
+  if (action === 'event_history_source_revision') return {availability: 'available',
+    revision: 'old', payload_pending: false};
+  if (action === 'event_history_visible_overview') return {store_status: 'available',
+    visibility_status: 'available', source_revision: 'old', sources: [{event_count: 2}]};
+  throw new Error(action);
+}}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
+let knownSourceRevision = 'old';
+let knownPayloadPending = false; let selectorVerificationPending = false;
+let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0;
+let fullLoads = 0; let shown = 0;
+const loadControls = async () => { fullLoads++; return true; };
+const renderOverview = (data) => { knownSourceRevision = data.source_revision;
+  shown = data.sources[0].event_count; };
+${section}
+globalThis.subject = {checkSourceRevision, drainSourceRevision,
+  setBusy: (value) => { busy = value; },
+  setInitial: (value) => { controlsLoading = value; knownSourceRevision = value ? '' : 'old'; },
+  result: () => ({fullLoads, shown})};`, context);
+(async () => {
+  await context.subject.checkSourceRevision(true);
+  assert.deepEqual(calls, ['event_history_source_revision', 'event_history_visible_overview']);
+  assert.equal(context.subject.result().fullLoads, 0);
+  assert.equal(context.subject.result().shown, 2);
+  context.subject.setBusy(true);
+  await context.subject.checkSourceRevision(true);
+  assert.equal(calls.length, 2, 'an in-progress action queues the wakeup');
+  context.subject.setBusy(false);
+  context.subject.drainSourceRevision();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 4, 'queued totals refresh runs after the action');
+  failRevision = true;
+  await context.subject.checkSourceRevision(true);
+  failRevision = false;
+  await context.subject.checkSourceRevision();
+  assert.deepEqual(calls.slice(-3), ['event_history_source_revision',
+    'event_history_source_revision', 'event_history_visible_overview'],
+    'failed wakeup is retried even when the source revision is unchanged');
+  const beforeInitial = calls.length;
+  context.subject.setInitial(true);
+  await context.subject.checkSourceRevision(true);
+  assert.equal(calls.length, beforeInitial);
+  context.subject.setInitial(false);
+  context.subject.drainSourceRevision();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, beforeInitial + 2,
+    'a wakeup during initial discovery is drained after the first overview');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_revision_refreshes_after_payload_backfill() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
+  source.indexOf('  const loadStates ='));
+let payloadPending = true;
+const context = {document: {hidden: false}, api: {request: async () =>
+  ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
+let knownSourceRevision = 'same';
+let knownPayloadPending = true; let selectorVerificationPending = false;
+let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;
+const loadControls = async () => { refreshes += 1; knownPayloadPending = false; return true; };
+${section}
+globalThis.subject = {checkSourceRevision, refreshes: () => refreshes};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 0);
+  payloadPending = false;
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_empty_local_fallback_keeps_selector_retry_pending() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const performLoadControls = async'),
+  source.indexOf('  const loadControls = (restore = null) => {'));
+const nodes = new Map();
+const context = {
+  $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+  api: {request: async (action) => {
+    if (action === 'event_history_prepare_selector') throw {code: 'temporarily_unavailable'};
+    if (action === 'event_history_local_overview') return {visibility_status: 'available'};
+    throw new Error(action);
+  }},
+  refreshButton: {disabled: false, textContent: ''}, stateSelect: {value: ''},
+  selectedFilters: () => ({room: [], category: [], type: []}),
+  invalidateSelector: () => {}, errorLabel: () => 'unavailable',
+  setMessage: () => {}, label: (key) => key,
+};
+vm.runInNewContext(`let controlsLoading = false; let busy = false;
+let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
+let catalogMode = ''; let stateGeneration = 0; let selectorVerificationPending = false;
+let knownSourceRevision = ''; const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
+const renderOverview = () => {
+  knownSourceRevision = 'empty-local-store';
+  selectorVerificationPending = false;
+};
+${section}
+globalThis.subject = {performLoadControls, pending: () => selectorVerificationPending,
+  revision: () => knownSourceRevision};`, context);
+(async () => {
+  assert.equal(await context.subject.performLoadControls(), false);
+  assert.equal(context.subject.revision(), 'empty-local-store');
+  assert.equal(context.subject.pending(), true);
+})().catch((error) => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_catalog_helpers_do_not_overlap_cache_decoding() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const performLoadControls = async'),
+  source.indexOf('  const loadControls = (restore = null) => {'));
+let active = 0; let maximum = 0;
+const nodes = new Map();
+const context = {
+  $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+  api: {request: async (action) => {
+    if (action === 'event_history_prepare_selector') return {
+      generation: 'g', overview: {store_status: 'unavailable', visibility_status: 'available'},
+      controls: [], total: 0, verified_at: 0,
+    };
+    if (action.startsWith('event_history_selector_')) {
+      active += 1; maximum = Math.max(maximum, active);
+      await new Promise(setImmediate);
+      active -= 1;
+      return action.endsWith('_catalog') ? {mode: 'local', controls: []} : {};
+    }
+    throw new Error(action);
+  }},
+  refreshButton: {disabled: false, textContent: ''}, stateSelect: {value: ''},
+  selectedFilters: () => ({room: [], category: [], type: []}),
+  invalidateSelector: () => {}, renderOverview: () => {},
+  renderControls: () => {}, renderFacets: () => {}, applyFilters: async () => {},
+  label: (key) => key, date: () => '',
+};
+vm.runInNewContext(`let controlsLoading = false; let busy = false;
+let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
+let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
+let pageOffset = 0; let visibleCount = 0; let controls = [];
+const facetSelection = {room: new Set(), category: new Set(), type: new Set()};
+const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
+${section}
+globalThis.performLoadControls = performLoadControls;`, context);
+(async () => {
+  assert.equal(await context.performLoadControls(), false);
+  assert.equal(maximum, 1);
+})().catch((error) => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_stale_catalog_restores_selection_after_invalidation() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const performLoadControls = async'),
+  source.indexOf('  const loadControls = (restore = null) => {'));
+let recovered;
+const nodes = new Map();
+const stateSelect = {value: 'state'};
+const context = {
+  $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+  api: {request: async (action) => {
+    if (action === 'event_history_prepare_selector') return {
+      generation: 'old', overview: {store_status: 'available', visibility_status: 'available'},
+      controls: [], total: 0, verified_at: 0,
+    };
+    if (action === 'event_history_selector_catalog') throw {code: 'stale_configuration'};
+    if (action === 'event_history_local_overview') return {};
+    throw new Error(action);
+  }},
+  refreshButton: {disabled: false, textContent: ''}, stateSelect,
+  selectedFilters: () => ({room: ['room'], category: [], type: []}),
+  invalidateSelector: () => {context.clearSelection(); stateSelect.value = '';},
+  renderOverview: () => {}, renderControls: () => {},
+  recoverStaleSelector: (selection) => {recovered = selection;},
+  errorLabel: () => 'stale', setMessage: () => {}, label: (key) => key, date: () => '',
+};
+vm.runInNewContext(`let controlsLoading = false; let busy = false;
+let discoveryGeneration = 0; let selectedControl = 'control'; let querySequence = 0;
+let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
+let pageOffset = 0; let visibleCount = 0; let selectorVerificationPending = false;
+const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
+globalThis.clearSelection = () => {selectedControl = '';};
+${section}
+globalThis.performLoadControls = performLoadControls;`, context);
+(async () => {
+  assert.equal(await context.performLoadControls(), false);
+  assert.equal(recovered.control, 'control');
+  assert.equal(recovered.state, 'state');
+  assert.deepEqual(Array.from(recovered.filters.room), ['room']);
+})().catch((error) => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_stale_generation_recovers_selected_pair() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const loadControls = (restore = null) => {'),
+  source.indexOf('  const checkSourceRevision ='));
+let finishFirst;
+const firstGate = new Promise((resolve) => { finishFirst = resolve; });
+const calls = [];
+const context = {performLoadControls: async (restore) => {
+  calls.push(restore);
+  if (calls.length === 1) await firstGate;
+}};
+vm.runInNewContext(`let controlsLoadPromise = null; let staleRecoveryScheduled = false;
+let discoveryGeneration = 0; let selectedControl = 'control';
+const stateSelect = {value: 'state'};
+const selectedFilters = () => ({room: ['room'], category: [], type: []});
+const invalidateSelector = () => { selectedControl = ''; stateSelect.value = ''; };
+${section}
+globalThis.subject = {loadControls, recoverStaleSelector};`, context);
+(async () => {
+  const first = context.subject.loadControls();
+  context.subject.recoverStaleSelector();
+  assert.equal(calls.length, 1);
+  finishFirst();
+  await first;
+  await new Promise(setImmediate);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].control, 'control');
+  assert.equal(calls[1].state, 'state');
+  assert.deepEqual(Array.from(calls[1].filters.room), ['room']);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
+
+    assert "} elsif (!@$emergency_stop_options) {" in cgi
+    assert "$emergency_stop_status_visible = 0;" in cgi
+    assert "EMERGENCY_STOP_NO_OPTIONS" in cgi
+    assert "EMERGENCY_STOP_NOT_CONFIGURED" in cgi
+    assert "$options_data->{failure_text}" in cgi
+    assert "if $options_data->{stale} && @$emergency_stop_options;" in cgi
+    assert "$L{'SETUP.EMERGENCY_STOP_STALE'}" in cgi
+    assert "EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text" in cgi
+    assert "EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind" in cgi
+    assert "EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible" in cgi
+    assert (
+        'id="emergency-stop-status" class="mcp-status" '
+        'data-kind="<TMPL_VAR EMERGENCY_STOP_STATUS_KIND ESCAPE=HTML>" '
+        "<TMPL_UNLESS EMERGENCY_STOP_STATUS_VISIBLE>hidden</TMPL_UNLESS>"
+    ) in template
+    assert "<TMPL_VAR EMERGENCY_STOP_STATUS_TEXT ESCAPE=HTML>" in template
+
+
+def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert "my $fallback_retry_result;" in cgi
+    assert "($action eq 'emergency_stop_retry' || $action eq 'emergency_stop_options')" in cgi
+    assert "$fallback_retry_result = $result;" in cgi
+    assert "$fallback_retry_result\n        // admin_call('emergency_stop_refresh', {});" in cgi
+    assert "$emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;" in cgi
+    assert 'name="fallback" value="1"' in template
+    assert 'name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"' in template
+    assert 'form="fallback-emergency-stop-retry-form"' in template
+    assert template.index('<form id="fallback-emergency-stop-retry-form"') > template.index(
+        "</form>", template.index('id="mcp-config-form"')
+    )
+    assert "<TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>" in template
+    assert 'href="index.cgi?fallback=1"' in template
+    assert "EMERGENCY_STOP_RELOAD=" in german
+    assert "EMERGENCY_STOP_RELOAD=" in english
+
+
+def test_server_rendered_option_names_escape_unicode_without_raw_bytes() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
+    assert "name_html => ascii_html_text($name)" in cgi
+    assert "<TMPL_VAR name_html></option>" in template
+    assert "<TMPL_VAR name ESCAPE=HTML></option>" not in template
+
+    perl = shutil.which("perl")
+    if perl is None:
+        return
+    helper = re.search(r"(?ms)^sub ascii_html_text \{\n.*?^\}", cgi)
+    assert helper is not None
+    program = (
+        helper.group(0)
+        + "\n"
+        + 'my $name = chr(0xFC) . q|<script>alert("x")</script> & \'|;\n'
+        + "my $escaped = ascii_html_text($name);\n"
+        + "utf8::upgrade($name);\n"
+        + "die q(Unicode flag changed escaping) if ascii_html_text($name) ne $escaped;\n"
+        + "my $source = q|<option><TMPL_VAR NAME_HTML></option>|;\n"
+        + "my $template = HTML::Template->new_scalar_ref(\\$source);\n"
+        + "$template->param(NAME_HTML => $escaped);\n"
+        + "print $template->output();\n"
+    )
+    result = subprocess.run(
+        [perl, "-MHTML::Template", "-e", program],
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == (
+        b"<option>&#xFC;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;</option>"
+    )
 
 
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
@@ -342,8 +2036,14 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert '<link rel="stylesheet" href="mcp-ui.css">' in template
-    assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
+    assert (
+        'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1"'
+        in template
+    )
+    assert (
+        '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>'
+        '-collapsible-v2">' in explorer
+    )
     assert "<style>" not in template
     assert "<style>" not in explorer
     assert ".mcp-page { display: grid; gap: 1rem;" in stylesheet
@@ -352,18 +2052,31 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     assert '<div class="mcp-field-stack">' in template
 
 
+def test_admin_top_notices_do_not_leave_empty_grid_rows() -> None:
+    template = _admin_source()
+    top = template[
+        template.index('<main class="mcp-page">') : template.index('<nav class="mcp-section-nav"')
+    ]
+
+    assert '<p><a id="configuration-fallback-link"' not in top
+    assert '<a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden>' in top
+    assert "<TMPL_UNLESS NOTIFICATIONS_HTML>hidden</TMPL_UNLESS>" in top
+    assert "loxberryNotifications.hidden = !loxberryNotifications.innerHTML.trim();" in template
+    assert "loxberryNotifications.hidden = false;" in template
+
+
 def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
-    assert template.index('id="status"') < template.index('id="setup"')
+    assert template.index('id="status"') < template.index('id="configuration"')
     assert 'data-ajax="service_status"' not in template
     for command in ("start", "stop", "restart"):
         assert f'data-service-command="{command}"' in template
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
-    assert "const pollServiceStatus = async ({initial = false} = {}) =>" in template
+    assert "const pollServiceStatus = async ({initial = false, suppliedResult} = {}) =>" in template
     assert "(!initial && document.hidden)" in template
     assert "|| serviceInteractionActive() || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
@@ -376,7 +2089,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
 
 def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'id="emergency-stop-runtime"' in template
     assert 'id="emergency-stop-runtime-uuid"' in template
@@ -395,23 +2108,291 @@ def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection
     assert "EMERGENCY_STOP_RUNTIME_MISMATCH" in template
 
 
-def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> None:
+def test_sessions_poll_while_visible_and_patch_changed_rows() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "admin_call('list_sessions', {})" in cgi
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
-    assert "const pollSessions = async ({initial = false} = {}) =>" in template
-    assert "(!initial && (document.hidden || !sessionsSection.open))" in template
+    assert "const pollSessions = async ({initial = false, suppliedResult} = {}) =>" in template
+    assert "(!initial && document.hidden)" in template
+    assert "if (!document.hidden && activeSessionActions.size === 0)" in template
     assert "|| activeSessionActions.size > 0 || sessionPollInFlight" in template
     assert "sessionsSection.addEventListener('toggle'" in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "sessionList.replaceChildren(fragment)" in template
 
 
+def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
+    template = _admin_source()
+    css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    for badge_id in (
+        "configuration-summary-badge",
+        "mqtt-summary-badge",
+        "certificate-summary-badge",
+        "sessions-summary-badge",
+        "approvals-summary-badge",
+    ):
+        assert f'id="{badge_id}"' in template
+    assert ".mcp-service-badge[hidden] { display: none; }" in css
+    assert "renderConfiguration(result.data.configuration);" in template
+    assert "renderConfigurationBadges(data.configuration);" in template
+    assert (
+        "if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();"
+        in template
+    )
+    assert "if (requestVersion !== certificateStatusVersion) return;" in template
+    assert "updateSessionSummaryBadges();" in template
+    for action in ("confirm_loxone_token", "allow_loxberry_read", "allow_loxberry_operate"):
+        assert f'tr[data-session-id] form[data-ajax="{action}"]' in template
+    assert (
+        "applySuccessfulSessionAction(form, action.descriptor, data);\n"
+        "    updateSessionSummaryBadges();"
+    ) in template
+    assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
+    assert "activeSessionActions.size > 0 || sessionPollInFlight" in template
+    for language in ("de", "en"):
+        translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        summary = translations.split("[SUMMARY]\n", 1)[1].split("\n[", 1)[0]
+        for key in (
+            "ENABLED",
+            "DISABLED",
+            "UNKNOWN",
+            "UNAVAILABLE",
+            "OK",
+            "WARNING",
+            "SESSIONS",
+            "APPROVALS",
+        ):
+            assert f"{key}=" in summary
+
+
+def test_admin_summary_badge_calculations() -> None:
+    template = _admin_source()
+    functions = []
+    for name in (
+        "setSummaryBadge",
+        "renderConfigurationBadges",
+        "certificateBadgeState",
+        "updateSessionSummaryBadges",
+        "scheduleSessionPoll",
+    ):
+        match = re.search(rf"  const {name} = .*?\n  }};", template, re.DOTALL)
+        assert match is not None
+        functions.append(match.group(0))
+    script = "\n".join(functions)
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    result = subprocess.run(
+        [
+            node,
+            "-e",
+            """
+const configurationSummaryBadge = {dataset: {}};
+const label = key => key.split('.').at(-1);
+const mqttSummaryBadge = {dataset: {}};
+const certificateSummaryBadge = {dataset: {}};
+const sessionsSummaryBadge = {dataset: {}};
+const approvalsSummaryBadge = {dataset: {}, hidden: true};
+let sessions = 3;
+let approvals = 4;
+const sessionList = {querySelectorAll: (selector) =>
+  Array(selector.includes('form[data-ajax=') ? approvals : sessions).fill({})};
+const document = {hidden: false};
+const activeSessionActions = new Map();
+let sessionPollTimer = null;
+let scheduledDelay = null;
+const pollSessions = () => {};
+const window = {clearTimeout: () => {}, setTimeout: (_callback, delay) => {
+  scheduledDelay = delay;
+  return 1;
+}};
+"""
+            + script
+            + """
+renderConfigurationBadges({server: {enabled: true}, mqtt: {enabled: false}});
+if (configurationSummaryBadge.textContent !== 'ENABLED'
+    || mqttSummaryBadge.textContent !== 'DISABLED') throw Error('saved configuration');
+renderConfigurationBadges(null);
+if (configurationSummaryBadge.textContent !== 'UNKNOWN'
+    || mqttSummaryBadge.textContent !== 'UNKNOWN') throw Error('unknown configuration');
+const good = {available: true, origin_configured: true, origin_matches: true,
+  hostname_matches: true, expires_at: 200};
+if (certificateBadgeState(good, 100)[0] !== 'OK') throw Error('certificate OK');
+for (const bad of [
+  {...good, origin_configured: false}, {...good, origin_matches: false},
+  {...good, hostname_matches: false}, {...good, expires_at: 100},
+]) if (certificateBadgeState(bad, 100)[0] !== 'WARNING') throw Error('certificate warning');
+if (certificateBadgeState({available: false}, 100)[0] !== 'UNAVAILABLE')
+  throw Error('certificate unavailable');
+if (certificateBadgeState({available: true}, 100)[0] !== 'UNKNOWN')
+  throw Error('incomplete certificate checks');
+updateSessionSummaryBadges();
+if (sessionsSummaryBadge.textContent !== 'SESSIONS: 3'
+    || approvalsSummaryBadge.textContent !== 'APPROVALS: 4'
+    || approvalsSummaryBadge.hidden) throw Error('session and approval counts');
+sessions = 0;
+approvals = 0;
+updateSessionSummaryBadges();
+if (sessionsSummaryBadge.textContent !== 'SESSIONS: 0'
+    || !approvalsSummaryBadge.hidden) throw Error('empty sessions');
+scheduleSessionPoll(10000);
+if (scheduledDelay !== 10000) throw Error('closed section did not poll');
+document.hidden = true;
+scheduledDelay = null;
+scheduleSessionPoll(10000);
+if (scheduledDelay !== null) throw Error('hidden page polled');
+document.hidden = false;
+activeSessionActions.set('running', {});
+scheduleSessionPoll(10000);
+if (scheduledDelay !== null) throw Error('poll overlapped an action');
+""",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_certificate_summary_discards_response_from_previous_origin() -> None:
+    template = _admin_source()
+    functions = []
+    for name in ("loadCertificateStatus", "refreshCertificateAfterOriginChange"):
+        match = re.search(rf"  const {name} = .*?\n  }};", template, re.DOTALL)
+        assert match is not None
+        functions.append(match.group(0))
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = "\n".join(functions)
+    result = subprocess.run(
+        [
+            node,
+            "-e",
+            """
+let certificateLoaded = false;
+let certificateLoadInFlight = false;
+let certificateStatusVersion = 0;
+const core = {unloading: false};
+const label = key => key.split('.').at(-1);
+let resolveOld;
+let calls = 0;
+const updates = [];
+const queued = [];
+const certificatePanel = {setAttribute: () => {}};
+const certificateUnavailable = {};
+const certificateSummaryBadge = {};
+const updateCertificate = certificate => updates.push(certificate.marker);
+const setSummaryBadge = (badge, text) => { badge.textContent = text; };
+const queueBackgroundHydration = tasks => queued.push(...tasks);
+const postAjax = () => calls++ === 0
+  ? new Promise(resolve => { resolveOld = resolve; })
+  : Promise.resolve({data: {certificate: {marker: 'current'}}});
+"""
+            + script
+            + """
+(async () => {
+  const stale = loadCertificateStatus();
+  refreshCertificateAfterOriginChange();
+  resolveOld({data: {certificate: {marker: 'stale'}}});
+  await stale;
+  while (queued.length) await queued.shift()();
+  if (updates.join(',') !== 'current' || !certificateLoaded || calls !== 2)
+    throw Error('stale certificate response replaced current origin checks');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+""",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_fallback_summary_badges_use_server_rendered_data() -> None:
+    template = _admin_source()
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    snippets = re.findall(r"<summary(?: [^>]*)?>.*?</summary>", template, re.DOTALL)
+    badge_markup = "\n".join(snippet for snippet in snippets if "-summary-badge" in snippet)
+    assert badge_markup.count("-summary-badge") == 5
+    for parameter in (
+        "FALLBACK_SUMMARY_CONFIGURATION_LOADED",
+        "FALLBACK_SUMMARY_SESSIONS_LOADED",
+        "FALLBACK_SESSION_COUNT",
+        "FALLBACK_APPROVAL_COUNT",
+        "FALLBACK_HAS_APPROVALS",
+    ):
+        assert f"{parameter} =>" in cgi
+    assert "$fallback_approval_count++ if $session->{loxone_token_confirmation_required};" in cgi
+    assert "$session->{loxberry_read_eligible} && !$session->{loxberry_read_approved}" in cgi
+    assert "$session->{loxberry_operate_eligible} && !$session->{loxberry_operate_approved}" in cgi
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    program = (
+        "use strict; use warnings; use HTML::Template; use JSON::PP; "
+        "my $source = do { local $/; <STDIN> }; "
+        "my $template = HTML::Template->new_scalar_ref(\\$source, die_on_bad_params => 0); "
+        "my $params = decode_json($ENV{SUMMARY_PARAMS}); "
+        "$template->param(%$params); print $template->output();"
+    )
+    translations = {
+        "SETUP.TITLE": "MCP configuration",
+        "ACCESS.TITLE": "MCP access & HTTPS",
+        "SESSIONS.TITLE": "Clients and sessions",
+        "MQTT.TITLE": "MQTT",
+        "SUMMARY.ENABLED": "Enabled",
+        "SUMMARY.DISABLED": "Disabled",
+        "SUMMARY.UNKNOWN": "Unknown",
+        "SUMMARY.SESSIONS": "Sessions",
+        "SUMMARY.APPROVALS": "Approval actions",
+        "AJAX.WORKING": "Working",
+    }
+    for parameters, expected, absent in (
+        (
+            {
+                "SERVER_RENDERED_FALLBACK": 1,
+                "FALLBACK_SUMMARY_CONFIGURATION_LOADED": 1,
+                "FALLBACK_SUMMARY_SESSIONS_LOADED": 1,
+                "FALLBACK_SESSION_COUNT": 3,
+                "FALLBACK_APPROVAL_COUNT": 2,
+                "FALLBACK_HAS_APPROVALS": 1,
+                "ENABLED": 1,
+                "MQTT_ENABLED": 0,
+            },
+            ("Enabled", "Disabled", "Sessions: 3", "Approval actions: 2", "Unknown"),
+            ("Working",),
+        ),
+        (
+            {"SERVER_RENDERED_FALLBACK": 1},
+            ("Unknown",),
+            ("Working", "Sessions: 0", "Approval actions: 0"),
+        ),
+        (
+            {"SERVER_RENDERED_FALLBACK": 0},
+            ("Working",),
+            ("Sessions: 3", "Approval actions: 2"),
+        ),
+    ):
+        result = subprocess.run(
+            [perl, "-e", program],
+            input=badge_markup,
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "SUMMARY_PARAMS": json.dumps(translations | parameters)},
+        )
+        assert result.returncode == 0, result.stderr
+        for value in expected:
+            assert value in result.stdout
+        for value in absent:
+            assert value not in result.stdout
+
+
 def test_session_action_coordinator_allows_only_non_conflicting_actions() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     coordinator = re.search(
         r"// session-action-coordinator-start\n(.*?)// session-action-coordinator-end",
         template,
@@ -420,46 +2401,145 @@ def test_session_action_coordinator_allows_only_non_conflicting_actions() -> Non
     assert coordinator is not None
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
-    script = f"""
+    script = (
+        """
 let sessionDataVersion = 0;
 let nextSessionActionToken = 0;
 const activeSessionActions = new Map();
 const sessionActionFailures = new Map();
-{coordinator.group(1)}
-const descriptor = (action, sessionId = '', bindingId = '') => ({{
+"""
+        + coordinator.group(1)
+        + """
+const descriptor = (action, sessionId = '', bindingId = '') => ({
   action, sessionId, bindingId, key: sessionActionKey(action, sessionId, bindingId),
-}});
+});
 const readA = descriptor('allow_loxberry_read', 'session-a');
 const operateA = descriptor('allow_loxberry_operate', 'session-a');
 const revokeA = descriptor('revoke_session', 'session-a');
 const readB = descriptor('allow_loxberry_read', 'session-b');
-const readBinding = descriptor('revoke_loxberry_read', '', 'binding-a');
-const otherBinding = descriptor('revoke_loxberry_read', '', 'binding-b');
 const first = beginSessionAction(readA, null);
 const operate = beginSessionAction(operateA, null);
 const otherSession = beginSessionAction(readB, null);
-const result = {{
+const result = {
   duplicateBlocked: beginSessionAction(readA, null) === null,
   sameSessionRevokeBlocked: beginSessionAction(revokeA, null) === null,
   readAndOperateAllowed: Boolean(first && operate),
   otherSessionAllowed: Boolean(otherSession),
   revokeAllBlockedWhileActive: beginSessionAction(descriptor('revoke_all'), null) === null,
-  bindingRevocationBlockedDuringSessionAction: beginSessionAction(readBinding, null) === null,
+  bindingRevocationBlockedDuringSessionAction: beginSessionAction(
+    descriptor('revoke_loxberry_read', '', 'binding-a'), null,
+  ) === null,
   finalFinishOnly: [
     finishSessionAction(operate), finishSessionAction(otherSession), finishSessionAction(first),
   ],
-}};
+};
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
-const binding = beginSessionAction(readBinding, null);
-result.duplicateBindingBlocked = beginSessionAction(readBinding, null) === null;
-result.otherBindingBlocked = beginSessionAction(otherBinding, null) === null;
-result.sessionActionBlockedDuringBindingRevocation = beginSessionAction(readA, null) === null;
+
+const createForm = (action, sessionId = '', bindingId = '') => {
+  const attributes = new Map();
+  const button = {
+    disabled: false,
+    setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: (name) => attributes.delete(name),
+    hasAttribute: (name) => attributes.has(name),
+  };
+  const rowAttributes = new Set();
+  const row = {
+    toggleAttribute: (name, enabled) => enabled
+      ? rowAttributes.add(name) : rowAttributes.delete(name),
+    hasAttribute: (name) => rowAttributes.has(name),
+  };
+  return {
+    button, row,
+    form: {
+      dataset: {ajax: action},
+      closest: (selector) => selector === 'tr' ? row : null,
+      querySelector: (selector) => {
+        if (selector === 'button[type="submit"]') return button;
+        if (selector === 'input[name="id"]') return action === 'revoke_session'
+          ? {value: sessionId} : null;
+        if (selector === 'input[name="session_id"]') return action === 'revoke_session'
+          ? null : {value: sessionId};
+        if (selector === 'input[name="binding_id"]') return bindingId
+          ? {value: bindingId} : null;
+        return null;
+      },
+    },
+  };
+};
+const readBindingA = createForm('revoke_loxberry_read', '', 'binding-a');
+const readBindingADuplicate = createForm('revoke_loxberry_read', '', 'binding-a');
+const readBindingB = createForm('revoke_loxberry_read', '', 'binding-b');
+const operateBindingA = createForm('revoke_loxberry_operate', '', 'binding-a');
+const operateBindingB = createForm('revoke_loxberry_operate', '', 'binding-c');
+const sessionForm = createForm('allow_loxberry_read', 'session-c');
+const revokeSessionForm = createForm('revoke_session', 'session-d');
+const revokeAllForm = createForm('revoke_all');
+const forms = [
+  readBindingA.form, readBindingADuplicate.form, readBindingB.form,
+  operateBindingA.form, operateBindingB.form,
+  sessionForm.form, revokeSessionForm.form, revokeAllForm.form,
+];
+const document = {querySelectorAll: () => forms};
+const bindingA = beginSessionAction(
+  sessionActionDescriptor(readBindingA.form), readBindingA.button,
+);
+updateSessionActionControls();
+result.activeBindingBusy = readBindingA.button.disabled
+  && readBindingA.button.hasAttribute('aria-busy');
+result.activeBindingRowDimmed = readBindingA.row.hasAttribute('data-revoking');
+result.sameBindingRowDimmed = readBindingADuplicate.row.hasAttribute('data-revoking')
+  && readBindingADuplicate.button.disabled
+  && !readBindingADuplicate.button.hasAttribute('aria-busy');
+result.otherBindingRowNotDimmed = !readBindingB.row.hasAttribute('data-revoking');
+result.otherScopeRowNotDimmed = !operateBindingA.row.hasAttribute('data-revoking');
+result.blockedSessionRowNotDimmed = !revokeSessionForm.row.hasAttribute('data-revoking');
+result.differentReadEnabled = !readBindingB.button.disabled
+  && !readBindingB.button.hasAttribute('aria-busy');
+result.differentOperateEnabled = !operateBindingB.button.disabled
+  && !operateBindingB.button.hasAttribute('aria-busy');
+result.sameBindingAcrossScopesBlocked = operateBindingA.button.disabled;
+result.revokeAllBlockedDuringBindingRevocation = revokeAllForm.button.disabled;
+result.sessionActionBlockedDuringBindingRevocation = sessionForm.button.disabled;
+result.duplicateBindingBlocked = beginSessionAction(
+  sessionActionDescriptor(readBindingA.form), readBindingA.button,
+) === null;
+result.sameBindingAcrossScopesRejected = beginSessionAction(
+  sessionActionDescriptor(operateBindingA.form), operateBindingA.button,
+) === null;
+const bindingB = beginSessionAction(
+  sessionActionDescriptor(readBindingB.form), readBindingB.button,
+);
+const operateB = beginSessionAction(
+  sessionActionDescriptor(operateBindingB.form), operateBindingB.button,
+);
+result.differentBindingsAllowed = Boolean(bindingA && bindingB && operateB);
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
-const revokeAll = beginSessionAction(descriptor('revoke_all'), null);
+updateSessionActionControls();
+result.controlsRecovered = forms.every(({querySelector}) => {
+  const button = querySelector('button[type="submit"]');
+  return !button.disabled && !button.hasAttribute('aria-busy');
+});
+result.bindingRowsRecovered = [readBindingA, readBindingADuplicate, readBindingB,
+  operateBindingA, operateBindingB]
+  .every(({row}) => !row.hasAttribute('data-revoking'));
+const sessionRevoke = beginSessionAction(
+  sessionActionDescriptor(revokeSessionForm.form), revokeSessionForm.button,
+);
+updateSessionActionControls();
+result.sessionRowDimmed = revokeSessionForm.row.hasAttribute('data-revoking');
+result.otherSessionRowNotDimmed = !sessionForm.row.hasAttribute('data-revoking');
+finishSessionAction(sessionRevoke);
+updateSessionActionControls();
+result.sessionRowRecovered = !revokeSessionForm.row.hasAttribute('data-revoking');
+const revokeAll = beginSessionAction(
+  sessionActionDescriptor(revokeAllForm.form), revokeAllForm.button,
+);
 result.revokeAllExclusive = Boolean(revokeAll) && beginSessionAction(readA, null) === null;
 result.version = sessionDataVersion;
 console.log(JSON.stringify(result));
 """
+    )
     result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
     assert result.stdout.strip() == (
@@ -468,15 +2548,24 @@ console.log(JSON.stringify(result));
         '"revokeAllBlockedWhileActive":true,'
         '"bindingRevocationBlockedDuringSessionAction":true,'
         '"finalFinishOnly":[false,false,true],'
-        '"duplicateBindingBlocked":true,"otherBindingBlocked":true,'
+        '"activeBindingBusy":true,"activeBindingRowDimmed":true,'
+        '"sameBindingRowDimmed":true,"otherBindingRowNotDimmed":true,'
+        '"otherScopeRowNotDimmed":true,"blockedSessionRowNotDimmed":true,'
+        '"differentReadEnabled":true,'
+        '"differentOperateEnabled":true,"sameBindingAcrossScopesBlocked":true,'
+        '"revokeAllBlockedDuringBindingRevocation":true,'
         '"sessionActionBlockedDuringBindingRevocation":true,'
-        '"revokeAllExclusive":true,"version":5}'
+        '"duplicateBindingBlocked":true,"sameBindingAcrossScopesRejected":true,'
+        '"differentBindingsAllowed":true,"controlsRecovered":true,'
+        '"bindingRowsRecovered":true,"sessionRowDimmed":true,'
+        '"otherSessionRowNotDimmed":true,"sessionRowRecovered":true,'
+        '"revokeAllExclusive":true,"version":8}'
     )
     assert "const activeSessionActions = new Map();" in template
     assert "const sessionActionsConflict = (left, right)" in template
-    assert "applySuccessfulSessionAction(form, sessionAction, result.data);" in template
-    assert "const refreshSessions = finishSessionAction(sessionActionToken);" in template
-    assert "if (refreshSessions) scheduleSessionPoll(0);" in template
+    assert "applySuccessfulSessionAction(form, action.descriptor, data);" in template
+    assert "const refresh = finishSessionAction(action.token);" in template
+    assert "if (refresh) scheduleSessionPoll(0);" in template
     assert "let sessionDataVersion = 0;" in template
     assert "const expectedSessionDataVersion = sessionDataVersion;" in template
     assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
@@ -493,8 +2582,9 @@ console.log(JSON.stringify(result));
     assert "const setAjaxStatus = (kind, message) =>" in template
     assert "const sessionActionFailures = new Map();" in template
     assert "const showSessionActionFailure = () =>" in template
-    assert "hideSuccess(status, () => activeSessionActions.size > 0);" in template
-    assert "if (leftIsBindingRevocation && rightIsBindingRevocation) return true;" in template
+    assert "hideSuccess(status, () => sessions.activeActions > 0);" in template
+    assert "return `binding:${bindingId}`;" in template
+    assert "if (leftIsBindingRevocation && rightIsBindingRevocation) return true;" not in template
     assert "if (Array.isArray(data.sessions)) updateSessions(data.sessions);" in template
     assert "pendingSessionActionButtons" not in template
 
@@ -512,17 +2602,270 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     assert "nosession => 1" not in cgi
     assert "LoxBerry::System::pluginloglevel($lbpplugindir)" in cgi
     assert "name => 'admin-ui'" in cgi
+    assert "$admin_log->LOGSTART(sprintf(" in cgi
+    assert "$admin_log->LOGEND(sprintf(" in cgi
     assert "ADMIN_LOG_MESSAGE_BYTES => 8 * 1024" in cgi
     assert "LOGSTART('Administrative action')" not in cgi
     assert "LOGEND('Administrative action finished')" not in cgi
     assert "action=service_$command outcome=completed" in cgi
     assert "component=admin_helper outcome=failed" in cgi
     assert "component=miniserver_config outcome=invalid" in cgi
+    assert "sub native_loglist_html" in cgi
+    assert "LoxBerry::Web::loglist_html()" in cgi
+    assert "DIAGNOSTICS.LOGLIST_EMPTY" in cgi
+    assert cgi.count("LoxBerry::Log->new") == 1
+
+
+def test_empty_native_log_list_has_localized_accessible_status() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert "return $html if defined($html) && $html =~ /logfile\\.cgi\\?/;" in cgi
+    assert '<p class="mcp-status" data-kind="%s" role="status">%s</p>' in cgi
+    assert "LOGLIST_EMPTY=Der LoxBerry LogManager hat derzeit keinen Logeintrag" in german
+    assert "LOGLIST_EMPTY=The LoxBerry LogManager currently has no log entry" in english
+    assert "LOGLIST_UNAVAILABLE=Der LoxBerry LogManager ist derzeit nicht erreichbar." in german
+    assert "LOGLIST_UNAVAILABLE=The LoxBerry LogManager is currently unavailable." in english
+    assert "LOGLIST_ERROR=Die Plugin-Logliste konnte nicht geladen werden." in german
+    assert "LOGLIST_ERROR=The plugin log list could not be loaded." in english
+    assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
+
+
+def test_unavailable_logmanager_warning_has_request_id_without_private_details(
+    tmp_path: Path,
+) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    body = "action=page_loglist&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=body,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+            "LB_TEST_PLUGIN_LOGLEVEL": "4",
+            "LB_TEST_LOGLIST_UNAVAILABLE": "private-detail",
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert re.search(
+        r"warning:component=logmanager request_id=[0-9a-f]+-[0-9a-f]+ "
+        r"outcome=unavailable attempts=2",
+        events,
+    )
+    assert "private-detail" not in events
+
+
+def test_weather_source_mutations_emit_sanitized_audit_events(tmp_path: Path) -> None:
+    from urllib.parse import urlencode
+
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "weather-audit.txt"
+    environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
+    environment["LB_TEST_PLUGIN_LOGLEVEL"] = "6"
+    private_payload = json.dumps(
+        {"source": {"state_uuid": "private-source", "fields": ["private-field"]}}
+    )
+    for action in ("weather_history_add_source", "weather_history_remove_source"):
+        for ok, payload in ((True, private_payload), (False, private_payload), (False, "[")):
+            marker.unlink(missing_ok=True)
+            response = (
+                {"ok": ok, "data": {}}
+                if ok
+                else {
+                    "ok": False,
+                    "error": {"code": "not_found", "message": "private-error"},
+                }
+            )
+            (tmp_path / "mcpserver-admin").write_text(
+                f"#!/usr/bin/env perl\nmy $request = <STDIN>;\nprint q({json.dumps(response)});\n",
+                encoding="utf-8",
+            )
+            body = urlencode({"action": action, "ajax": "1", "payload": payload})
+            result = subprocess.run(
+                [
+                    perl,
+                    f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                    str(ROOT / "webfrontend/htmlauth/index.cgi"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                input=body,
+                env={
+                    **environment,
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                    "CONTENT_LENGTH": str(len(body)),
+                    "HTTP_ORIGIN": "https://loxberry.example",
+                    "HTTP_HOST": "loxberry.example",
+                },
+            )
+            assert json.loads(result.stdout.partition("\n\n")[2])["ok"] is ok
+            events = marker.read_text(encoding="utf-8")
+            severity, outcome = ("info", "completed") if ok else ("warning", "rejected")
+            assert re.search(
+                rf"{severity}:component=weather_history request_id=[0-9a-f]+-[0-9a-f]+ "
+                rf"action={action} outcome={outcome}",
+                events,
+            )
+            assert "private-source" not in events
+            assert "private-field" not in events
+            assert "private-error" not in events
+
+
+def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
+    cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
+
+    def request(action: str, *, log_level: int = 3) -> None:
+        body = f"action={action}&ajax=1"
+        subprocess.run(
+            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=body,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+                "LB_TEST_PLUGIN_LOGLEVEL": str(log_level),
+            },
+        )
+
+    request("page_loglist", log_level=7)
+    request("service_status", log_level=7)
+    request("list_sessions", log_level=7)
+    assert not marker.exists()
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\nmy $request = <STDIN>;\n", encoding="utf-8"
+    )
+    request("status")
+    events = marker.read_text(encoding="utf-8").splitlines()
+    assert len(events) == 3
+    started = re.fullmatch(
+        r"start:component=admin_ui request_id=([0-9a-f]+-[0-9a-f]+) "
+        r"severity=info outcome=started",
+        events[0],
+    )
+    assert started is not None
+    assert events[1] == "error:component=admin_helper outcome=failed"
+    assert events[2] == (
+        f"end:component=admin_ui request_id={started.group(1)} severity=info outcome=finished"
+    )
+
+
+def test_snapshot_section_failure_is_logged_without_error_details(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    response = {
+        "ok": True,
+        "data": {
+            "get_config": {
+                "ok": False,
+                "error": {"code": "internal_error", "message": "private-detail"},
+            }
+        },
+    }
+    (tmp_path / "mcpserver-admin").write_text(
+        f"#!/usr/bin/env perl\nmy $request = <STDIN>;\nprint q({json.dumps(response)});\n",
+        encoding="utf-8",
+    )
+    body = "action=page_snapshot&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=body,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert "section=get_config outcome=rejected code=internal_error" in events
+    assert "private-detail" not in events
+
+
+def test_auxiliary_section_failures_are_logged_without_error_details(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    body = "action=page_auxiliary&ajax=1"
+    cgi = ROOT / "webfrontend/htmlauth/index.cgi"
+
+    for failure_flag, failed_section, healthy_section in (
+        ("LB_TEST_NOTIFICATIONS_DIE", "page_notifications", "page_loglist"),
+        ("LB_TEST_LOGLIST_DIE", "page_loglist", "page_notifications"),
+    ):
+        result = subprocess.run(
+            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=body,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+                "LB_TEST_LOG_EVENTS_PATH": str(marker),
+                failure_flag: "1",
+            },
+        )
+        payload = json.loads(result.stdout.partition("\n\n")[2])
+        assert payload["ok"] is True
+        assert payload["data"][failed_section]["error"]["code"] == "internal_error"
+        assert payload["data"][healthy_section]["ok"] is True
+        events = marker.read_text(encoding="utf-8")
+        assert f"section={failed_section} outcome=rejected code=internal_error" in events
+        assert "private-detail" not in events
+        marker.unlink()
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "admin_call('set_logging', {mode => ($q->{mode} // '')})" in cgi
     assert 'data-ajax="set_logging"' in template
@@ -561,11 +2904,11 @@ def test_first_setup_prefills_https_origin_from_loxberry_hostname() -> None:
 
 
 def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert '<dialog id="service-confirm"' in template
     assert 'aria-labelledby="service-confirm-title"' in template
-    assert "serviceConfirmMessages[confirmationKey]" in template
+    assert "serviceConfirmMessages[key]" in template
     assert "form.dataset.confirmed = 'true'" in template
     assert "form.requestSubmit()" in template
     assert "command === 'start' && !active" in template
@@ -587,7 +2930,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
         "serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
     )
-    assert "serviceEnabled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';" in template
+    assert "serviceEnabled.textContent = label('AJAX.ERROR');" in template
     assert (
         "serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
@@ -599,8 +2942,8 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "form.hidden = !visible" in template
     assert "serviceEnabledInput.checked = serviceEnabledSetting" in template
     assert "body.set('service_enabled', requestedServiceEnabled ? '1' : '0')" in template
-    assert "Boolean(service.enabled) !== requestedServiceEnabled" in template
-    assert "Boolean(service.active) !== requestedServiceEnabled" in template
+    assert "Boolean(value.enabled) !== requested" in template
+    assert "Boolean(value.active) !== requested" in template
     assert (
         "const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null"
         in template
@@ -613,23 +2956,415 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
 
 
 def test_admin_sections_are_native_persistent_collapsibles() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
 
-    for section in ("status", "setup", "mqtt", "help", "certificate", "sessions", "diagnostics"):
+    assert (
+        'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-help-v1-solar-recording-v1"'
+        in template
+    )
+    expected_sections = [
+        ("status", "STATUS.TITLE"),
+        ("configuration", "SETUP.TITLE"),
+        ("access", "ACCESS.TITLE"),
+        ("sessions", "SESSIONS.TITLE"),
+        ("mqtt", "MQTT.TITLE"),
+        ("diagnostics", "DIAGNOSTICS.TITLE"),
+        ("help", "HELP.TITLE"),
+    ]
+    for section, label_key in expected_sections:
         assert f'<details id="{section}" class="mcp-card" data-persist-collapse' in template
+        section_markup = template[template.index(f'id="{section}"') :]
+        assert re.search(
+            rf"<summary(?: [^>]*)?>.*?<TMPL_VAR {re.escape(label_key)}",
+            section_markup,
+            re.DOTALL,
+        )
     assert '<details id="status" class="mcp-card" data-persist-collapse open' in template
-    assert '<details id="setup" class="mcp-card" data-persist-collapse open' in template
-    assert "mcpserver.admin.sections.v1" in template
-    assert "window.localStorage.getItem(collapseStorageKey)" in template
+    assert '<details id="configuration" class="mcp-card" data-persist-collapse open' in template
+    assert "mcpserver.admin.sections.v2" in template
+    assert "const storedCollapseState = readCollapseState();" in template
     assert "window.localStorage.setItem(collapseStorageKey" in template
     assert "element.addEventListener('toggle', persistCollapsibles)" in template
-    assert "window.addEventListener('hashchange', openHashSection)" in template
+    assert "window.addEventListener('hashchange', () => openHashSection())" in template
     assert "target instanceof HTMLDetailsElement" in template
+    navbar = template[template.index('<nav class="mcp-section-nav"') : template.index("</nav>")]
+    assert 'aria-label="<TMPL_VAR NAV.SECTIONS ESCAPE=HTML>"' in navbar
+    assert (
+        re.findall(r'<a href="#([^"]+)"><TMPL_VAR ([A-Z.]+) ESCAPE=HTML></a>', navbar)
+        == expected_sections
+    )
+    assert "our %navbar" not in cgi
+    assert re.findall(
+        r'<details id="([^"]+)" class="mcp-card" data-persist-collapse', template
+    ) == [section for section, _label_key in expected_sections]
+    for section in ("access", "sessions", "diagnostics", "help"):
+        assert re.search(
+            rf'<details id="{section}" class="mcp-card" data-persist-collapse '
+            r"<TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>",
+            template,
+        )
+
+
+def test_admin_collapse_state_preserves_existing_preferences() -> None:
+    template = _admin_source()
+    migration = re.search(
+        r"// collapse-state-migration-start\n(.*?)// collapse-state-migration-end",
+        template,
+        re.DOTALL,
+    )
+    assert migration is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "const collapseStorageKey = 'mcpserver.admin.sections.v2';\n"
+        + migration.group(1)
+        + """
+const storage = (values) => ({ getItem: (key) => values[key] ?? null });
+const read = (values) => {
+  global.window = { localStorage: storage(values) };
+  return readCollapseState();
+};
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({
+    status: false, setup: false, certificate: true, sessions: true, mqtt: false, help: true,
+  }),
+}), {
+  status: false, setup: false, certificate: true, sessions: true, mqtt: false, help: true,
+  configuration: false, access: true,
+});
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ setup: false }),
+  'mcpserver.admin.sections.v2': JSON.stringify({ configuration: true, access: false }),
+}), { configuration: true, access: false });
+assert.equal(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ help: true, certificate: false }),
+}).access, true);
+assert.equal(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ help: false, certificate: false }),
+}).access, false);
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': 'null',
+}), {});
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': '{',
+}), {});
+global.window = { localStorage: { getItem: () => { throw new Error('disabled'); } } };
+assert.deepEqual(readCollapseState(), {});
+global.window = {};
+Object.defineProperty(window, 'localStorage', { get: () => { throw new Error('disabled'); } });
+assert.deepEqual(readCollapseState(), {});
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_admin_hash_navigation_preserves_closed_reload_and_opens_new_links() -> None:
+    core = _admin_script("core.js")
+    navigation = core[
+        core.index("  const openHashSection =") : core.index("  let pageIsUnloading =")
+    ]
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "class HTMLDetailsElement { constructor() { this.open = false; } }\n"
+        "class Element { closest() { return { hash: '#access' }; } }\n"
+        "const section = new HTMLDetailsElement();\n"
+        "const configuration = new HTMLDetailsElement();\n"
+        "const mqtt = new HTMLDetailsElement();\n"
+        "const status = new HTMLDetailsElement();\n"
+        "const sessions = new HTMLDetailsElement();\n"
+        "const diagnostics = new HTMLDetailsElement();\n"
+        "const help = new HTMLDetailsElement();\n"
+        "const storedCollapseState = {mqtt: false};\n"
+        "const listeners = {};\n"
+        "const window = { location: { hash: '#mqtt' }, "
+        "performance: {getEntriesByType: () => [{type: 'reload'}]}, "
+        "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
+        "const document = { getElementById: (id) => "
+        "({ access: section, configuration, mqtt, status, "
+        "sessions, diagnostics, help })[id] || null, "
+        "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
+        "let persistCount = 0;\n"
+        "const persistCollapsibles = () => { persistCount += 1; };\n"
+        + navigation
+        + """
+assert.equal(mqtt.open, false);
+listeners.click({ target: new Element() });
+assert.equal(section.open, true);
+section.open = false;
+window.location.hash = '#access';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(section.open, true);
+window.location.hash = '#setup';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(configuration.open, true);
+section.open = false;
+window.location.hash = '#certificate';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(section.open, true);
+assert.equal(persistCount, 4);
+openHashSection('#mqtt', true);
+assert.equal(mqtt.open, false);
+assert.equal(persistCount, 4);
+openHashSection('#mqtt');
+assert.equal(mqtt.open, true);
+assert.equal(persistCount, 5);
+storedCollapseState.mqtt = true;
+mqtt.open = false;
+openHashSection('#mqtt', true);
+assert.equal(mqtt.open, true);
+assert.equal(persistCount, 6);
+for (const id of ['status', 'configuration', 'access', 'sessions', 'mqtt', 'diagnostics', 'help']) {
+  const target = document.getElementById(id);
+  target.open = false;
+  storedCollapseState[id] = false;
+  const before = persistCount;
+  openHashSection(`#${id}`, true);
+  assert.equal(target.open, false, `${id} reopens on reload`);
+  assert.equal(persistCount, before);
+  openHashSection(`#${id}`);
+  assert.equal(target.open, true, `${id} does not open on a new link`);
+  assert.equal(persistCount, before + 1);
+}
+configuration.open = false;
+section.open = false;
+openHashSection('#setup', true);
+openHashSection('#certificate', true);
+assert.equal(configuration.open, false);
+assert.equal(section.open, false);
+openHashSection('#setup');
+openHashSection('#certificate');
+assert.equal(configuration.open, true);
+assert.equal(section.open, true);
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_admin_access_section_groups_connection_urls_and_certificate_controls() -> None:
+    template = _admin_source()
+
+    access = template[template.index('id="access"') : template.index('id="sessions"')]
+    help_section = template[template.index('id="help"') : template.index("</main>")]
+    assert 'id="mcp-url-hostname"' in access
+    assert 'id="mcp-url-ip"' in access
+    assert 'id="certificate-panel"' in access
+    assert 'data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"' in access
+    assert "idle: certificatePanel.dataset.stateIdle," in template
+    assert 'data-ajax="renew_certificate"' in access
+    assert 'id="explorer-link"' not in access
+    assert 'id="schema-reference-link"' not in access
+    assert 'id="explorer-link"' in help_section
+    assert 'id="schema-reference-link"' in help_section
+    assert (
+        '<summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE>'
+        in template
+    )
+    assert (
+        '<summary id="certificate"><span class="mcp-service-summary"><span><TMPL_VAR ACCESS.TITLE>'
+        in template
+    )
+    assert '<details id="setup"' not in template
+    assert '<details id="certificate"' not in template
+    assert "const accessSection = document.getElementById('access');" in template
+    assert "const certificatePanel = document.getElementById('certificate-panel');" in template
+
+
+def test_certificate_idle_status_does_not_use_failure_label() -> None:
+    template = _admin_source()
+    labels = re.search(
+        r"  const certificateStateLabels = certificatePanel \? \{.*?\} : \{\};",
+        template,
+        re.DOTALL,
+    )
+    assert labels is not None
+    assert 'data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"' in template
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "const certificatePanel = {dataset: {stateIdle: 'Not started', "
+        "stateError: 'Reissue failed'}};\n"
+        + labels.group(0)
+        + "\nassert.equal(certificateStateLabels.idle, 'Not started');\n"
+        "assert.notEqual(certificateStateLabels.idle, certificateStateLabels.error);\n"
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
+    for script_name, start, end, minimum_ms in (
+        (
+            "certificate.js",
+            "const loadCertificateStatus = async",
+            "const refreshCertificateAfterOriginChange",
+            10_000,
+        ),
+        (
+            "certificate.js",
+            "const pollCertificateRenewal = async",
+            "const onRenewScheduled",
+            10_000,
+        ),
+        (
+            "configuration.js",
+            "const loadEmergencyStopOptions = async",
+            "emergencyStopSelect.addEventListener",
+            160_000,
+        ),
+    ):
+        script = _admin_script(script_name)
+        section_start = script.index(start)
+        section = script[section_start : script.index(end, section_start + len(start))]
+        match = re.search(r"postAjax\(body, (\d+)(?:, suppliedResult)?\)", section)
+        assert match is not None
+        assert minimum_ms <= int(match.group(1)) <= 180_000
+
+
+def test_emergency_stop_load_keeps_retry_and_refresh_available() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    for language in ("de", "en"):
+        source = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "EMERGENCY_STOP_REFRESH=" in source
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const addEmergencyStopOption =');
+const end = source.indexOf("  emergencyStopSelect.addEventListener('change'", start);
+assert(start >= 0 && end > start);
+const options = [];
+const emergencyStopSelect = {
+  disabled: false,
+  setAttribute() {},
+  replaceChildren() { options.length = 0; },
+  append(option) { options.push(option); },
+};
+const emergencyStopValue = {value: 'saved'};
+const emergencyStopStatus = {dataset: {}, hidden: true, textContent: ''};
+const emergencyStopRetry = {dataset: {}, hidden: false, disabled: false, textContent: ''};
+let emergencyStopDiscoveryGeneration = 0;
+let emergencyStopListVerified = false;
+let emergencyStopRefreshTimer = null;
+let emergencyStopRefreshSeconds = 300;
+const document = {createElement: () => ({})};
+const timers = [];
+const window = {clearTimeout() {}, setTimeout: (callback) => { timers.push(callback); }};
+const core = {unloading: false};
+const label = (key) => key;
+let response = {data: {status: 'unavailable', options: [], failure_text: 'connection failed'}};
+const actions = [];
+let postAjax = async (body, _timeout, supplied) => {
+  if (supplied !== undefined) return supplied;
+  actions.push(body.get('action'));
+  return response;
+};
+eval(source.slice(start, end) + `
+(async () => {
+  resetEmergencyStopOptions();
+  response = {data: {status: 'unavailable', cached: true, stale: true,
+    options: [{uuid: 'saved', name: 'Unchecked cached signal'}]}};
+  await hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+  assert(!options.some((option) => option.textContent === 'Unchecked cached signal'));
+  assert(!emergencyStopStatus.textContent.includes('SETUP.EMERGENCY_STOP_STALE'));
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+  response = {data: {status: 'available', cached: true,
+    options: [{uuid: 'saved', name: 'Cached signal'}]}};
+  await loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, false, true);
+  assert.equal(actions.at(-1), 'emergency_stop_refresh');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'unavailable', stale: true,
+    options: [{uuid: 'saved', name: 'Cached signal'}], failure_text: 'connection failed'}};
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopStatus.textContent,
+    'connection failed SETUP.EMERGENCY_STOP_STALE');
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.dataset.retry, 'true');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'unavailable', options: [],
+    retry_not_before: Math.floor(Date.now() / 1000) + 60}};
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, true);
+  assert(timers.length >= 1);
+
+  postAjax = async () => { throw new Error('network'); };
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'available',
+    options: [{uuid: 'saved', name: 'Saved signal'}]}};
+  postAjax = async (body) => { actions.push(body.get('action')); return response; };
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.dataset.retry, 'false');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'available', options: []}};
+  await loadEmergencyStopOptions(
+    emergencyStopDiscoveryGeneration, emergencyStopRetry.dataset.retry === 'true',
+  );
+  assert.equal(actions.at(-1), 'emergency_stop_options');
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  // Do not display an unchecked cached label before the fresh marker result.
+  resetEmergencyStopOptions();
+  postAjax = async (body) => {
+    actions.push(body.get('action'));
+    assert(!options.some((option) => option.textContent === 'Cached signal'));
+    return {data: {status: 'available', options: [{uuid: 'saved', name: 'Updated signal'}]}};
+  };
+  await hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+  assert.equal(actions.at(-1), 'emergency_stop_refresh');
+  assert(options.some((option) => option.textContent === 'Updated signal' && option.selected));
+  assert.equal(emergencyStopStatus.hidden, true);
+  postAjax = async (body) => {
+    actions.push(body.get('action'));
+    return {data: {status: 'available', options: [{uuid: 'saved', name: 'Periodic update'}]}};
+  };
+  timers.at(-1)();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(actions.at(-1), 'emergency_stop_refresh');
+  assert(options.some((option) => option.textContent === 'Periodic update'));
+
+  const successfulTimers = timers.length;
+  postAjax = async () => ({data: {status: 'unavailable', options: []}});
+  await loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, false, true);
+  assert.equal(timers.length, successfulTimers); // No automatic retry after failure.
+  const requestsBeforeUnload = actions.length;
+  core.unloading = true;
+  timers.at(-1)();
+  assert.equal(actions.length, requestsBeforeUnload);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+`);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert template.index('id="loxone-permissions-heading"') < template.index(
         'id="loxberry-permissions-heading"'
@@ -653,7 +3388,7 @@ def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
 
 
 def test_cache_operation_checkbox_tracks_history_dependency() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'id="loxone-history-enabled"' in template
     assert 'id="loxberry-operate-enabled"' in template
@@ -687,7 +3422,7 @@ def test_permission_policy_is_localized_in_german_and_english() -> None:
 
 def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert '"$lbhomedir/config/system/general.json"' in cgi
     assert "LoxBerry::System::get_miniservers()" not in cgi
@@ -700,13 +3435,118 @@ def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     assert 'id="miniserver-select"' in template
     assert "<TMPL_LOOP MINISERVERS>" in template
     assert 'id="manual-endpoint-fields"' in template
-    assert "<TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>" in template
+    assert (
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_UNLESS MANUAL_ENDPOINT>"
+        "hidden</TMPL_UNLESS></TMPL_UNLESS>" in template
+    )
     assert 'id="miniserver-endpoint"' in template
-    assert "<TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>" in template
+    assert (
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_IF MANUAL_ENDPOINT>"
+        "required<TMPL_ELSE>readonly</TMPL_IF></TMPL_UNLESS>" in template
+    )
     assert "miniserverEndpoint.readOnly = Boolean(selectedEndpoint)" in template
     assert "miniserverEndpoint.required = !selectedEndpoint" in template
     assert "manualEndpointFields.hidden = Boolean(selectedEndpoint)" in template
-    assert "miniserverEndpoint.addEventListener('input', syncTestEndpoint)" in template
+    assert (
+        "const submittedAction = form === configuration.mcpConfigForm ? "
+        "button.value : form.dataset.ajax" in template
+    )
+
+
+def test_status_and_progressive_configuration_keep_existing_form_contracts() -> None:
+    template = _admin_source()
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    status = template[template.index('<details id="status"') : template.index("</details>")]
+    assert status.count('id="service-enable-form"') == 1
+    assert status.index('id="service-enable-form"') < status.index('id="service-actions"')
+    assert 'data-ajax="set_service_enabled"' in status
+    assert 'name="service_enabled"' in status
+    assert "SERVICE_ENABLED_SETTING_KNOWN" in status
+    assert "STATUS.ENABLED_SETTING" in status
+
+    configuration = template[
+        template.index('id="mcp-config-form"') : template.index(
+            'id="fallback-emergency-stop-retry-form"'
+        )
+    ]
+    advanced = configuration[configuration.index('<details class="mcp-persistent-section">') :]
+    assert configuration.count('<details class="mcp-persistent-section">') == 1
+    assert configuration.index("SETUP.CONNECTION") < configuration.index("SETUP.ACCESS_SAFETY")
+    assert configuration.index("SETUP.ACCESS_SAFETY") < configuration.index("SETUP.PERMISSIONS")
+    assert configuration.index("SETUP.PERMISSIONS") < configuration.index("SETUP.ADVANCED_SETTINGS")
+    assert configuration.index('name="event_history_enabled"') < configuration.index(
+        "SETUP.ADVANCED_SETTINGS"
+    )
+    for name in (
+        "connection_timeout",
+        "max_parallel_calls",
+        "requests_per_minute",
+        "control_requests_per_minute",
+        "loxberry_requests_per_minute",
+        "history_requests_per_minute",
+        "loxberry_operate_requests_per_minute",
+        "explorer_binding_retention_hours",
+        "structure_refresh_seconds",
+        "max_active_runtime_sessions",
+        "runtime_session_idle_seconds",
+        "max_structure_controls",
+        "max_structure_state_references",
+        "max_structure_depth",
+        "max_states_per_identity",
+        "statistics_memory_max_mib",
+    ):
+        assert configuration.count(f'name="{name}"') == 1
+        assert f'name="{name}"' in advanced
+        assert re.search(rf'name="{name}" type="number" min="\d+" max="\d+"', advanced)
+    assert 'name="action" value="save_mcp_config"' in configuration
+    assert 'name="action" value="test_connection" formnovalidate' in configuration
+    assert configuration.index('name="action" value="test_connection"') < configuration.index(
+        "SETUP.ACCESS_SAFETY"
+    )
+    assert 'id="test-connection-fields"' not in template
+    assert (
+        "if (form === configuration.mcpConfigForm) body.set('action', submittedAction)" in template
+    )
+    assert "if (submittedAction === 'save_mcp_config')" in template
+    for key in (
+        "CONNECTION",
+        "ACCESS_SAFETY",
+        "PERMISSIONS",
+        "ADVANCED_SETTINGS",
+        "ADVANCED_CONNECTION",
+        "ADVANCED_RATES",
+        "ENABLED_SETTING",
+    ):
+        assert re.search(rf"^{key}=", german, re.MULTILINE)
+        assert re.search(rf"^{key}=", english, re.MULTILINE)
+
+
+def test_connection_test_uses_unsaved_form_endpoint_in_fallback() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = _admin_source()
+    endpoint_function = re.search(r"sub requested_endpoint \{.*?^\}", cgi, re.MULTILINE | re.DOTALL)
+    assert endpoint_function is not None
+    assert 'name="miniserver_endpoint"' in template
+    assert 'name="endpoint" type="url"' in template
+    assert 'name="action" value="test_connection" formnovalidate' in template
+    assert "$result = admin_call('test_connection', {endpoint => requested_endpoint($q)})" in cgi
+    assert (
+        'id="manual-endpoint-fields" class="mcp-manual-endpoint" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>" in template
+    )
+    perl = shutil.which("perl")
+    assert perl is not None
+    script = (
+        f"{endpoint_function.group(0)}\n"
+        "print requested_endpoint({miniserver_endpoint => 'https://unsaved-selected', "
+        "endpoint => 'https://saved'}), \"\\n\";\n"
+        "print requested_endpoint({miniserver_endpoint => '', "
+        "endpoint => 'https://unsaved-manual'}), \"\\n\";\n"
+    )
+    result = subprocess.run([perl, "-e", script], capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == ["https://unsaved-selected", "https://unsaved-manual"]
 
 
 def test_miniserver_endpoint_builder_rejects_unsafe_metadata() -> None:
@@ -790,7 +3630,7 @@ for my $case (@cases) {{ print((local_mcp_url(@$case) // '') . "\n"); }}
 
 
 def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'class="mcp-expiry"' in template
     assert 'data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"' in template
@@ -801,7 +3641,7 @@ def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
 
 
 def test_sessions_show_client_name_before_the_stable_instance_identifier() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -828,6 +3668,74 @@ def test_sessions_show_client_name_before_the_stable_instance_identifier() -> No
             template.index('id="loxberry-binding-section"') : template.index('id="diagnostics"')
         ]
     )
+
+
+def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() -> None:
+    template = _admin_source()
+    css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    assert template.count('class="mcp-table mcp-session-table"') == 4
+    assert template.count('class="mcp-table-wrap mcp-session-table-wrap"') == 4
+
+    cases = (
+        (
+            "<TMPL_LOOP SESSIONS><tr",
+            "const createSessionRow =",
+            "const updateSessions =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "TOKEN", "SCOPES", "EXPIRES", "ACTION"),
+        ),
+        (
+            "<TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr",
+            "const loxberryBindingRows =",
+            "const updateLoxberryBindingTable =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "BINDING_ID", "ACTION"),
+        ),
+        (
+            "<TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr",
+            "const loxberryBindingRows =",
+            "const updateLoxberryBindingTable =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "BINDING_ID", "ACTION"),
+        ),
+    )
+    for fallback_start, js_start, js_end, expected in cases:
+        row = template[template.index(fallback_start) :]
+        row = row[: row.index("</tr>")]
+        fallback_labels = re.findall(
+            r'<td data-label="<TMPL_VAR SESSIONS\.(\w+) ESCAPE=HTML>"', row
+        )
+        js = template[template.index(js_start) : template.index(js_end)]
+        js_labels = re.findall(r"dataset\.label = label\('SESSIONS\.(\w+)'\)", js)
+        if js_start == "const createSessionRow =":
+            leading = js[
+                js.index("const labels = [") : js.index("];", js.index("const labels = ["))
+            ]
+            js_labels = re.findall(r"label\('SESSIONS\.(\w+)'\)", leading) + js_labels
+        assert tuple(fallback_labels) == expected
+        assert tuple(js_labels) == expected
+
+    assert "@media (max-width: 48rem)" in css
+    assert ".mcp-permission-table td, .mcp-permission-table td:first-child { width: 100%;" in css
+    assert "#sessions .mcp-session-table-wrap { box-sizing: border-box; width: 100%;" in css
+    assert '#sessions form[data-ajax^="revoke"] .lb-button' in css
+    assert "#sessions .mcp-session-table tr[data-revoking] { background: #e5e7eb; }" in css
+    assert "#sessions .mcp-session-table tr[data-revoking] { opacity:" not in css
+    assert "data-session-token-state" in template
+    assert "const updateSessionActionControls = () =>" in template
+
+
+def test_explorer_approval_retention_and_inactive_states_are_visible_in_both_languages() -> None:
+    template = _admin_source()
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert 'name="explorer_binding_retention_hours" type="number" min="1" max="720"' in template
+    assert "bindingRow.inactive_login_required" in template
+    assert "bindingRow.retention_expires_at" in template
+    assert "explorer_binding_retention_hours => 0 +" in cgi
+    assert "INACTIVE_LOGIN_REQUIRED=Inaktiv — erneute Anmeldung erforderlich" in german
+    assert "LEGACY_INACTIVE=Legacy inactive approval" in english
+    assert "OAuth-Sitzung trennen" in german
+    assert "Disconnect OAuth session" in english
 
 
 def test_perl_expiry_formatter_rejects_out_of_range_values_safely() -> None:
@@ -873,7 +3781,7 @@ print format_expiry(undef), "\\n";
 
 
 def test_browser_expiry_parser_uses_the_same_bounds() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     parser = re.search(
         r"const MAX_EXPIRY_EPOCH = .*?^  \};",
         template,
@@ -909,4 +3817,410 @@ console.log(JSON.stringify(process.argv.slice(1).map(parseExpiry)));
 
     assert result.stdout.strip() == (
         "[1900000000,4102444799,null,null,null,null,null,null,null,null,null]"
+    )
+
+
+def test_inactive_binding_rows_render_names_and_status_safely_for_both_capabilities() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    source = _admin_script("sessions.js")
+    start = source.index("const loxberryBindingRows =")
+    end = source.index("const updateLoxberryBindingTable =", start)
+    function = source[start:end]
+    script = r"""
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+class Element {
+  constructor(tag) { this.tag = tag; this.dataset = {}; this.children = []; this.textContent = ''; }
+  append(...children) { this.children.push(...children); }
+}
+const context = {
+  document: {createElement: (tag) => new Element(tag)},
+  label: (key) => key,
+  Date,
+};
+vm.createContext(context);
+vm.runInContext(process.argv[1] + 'this.renderRows = loxberryBindingRows;', context);
+for (const action of ['revoke_loxberry_read', 'revoke_loxberry_operate']) {
+  for (const [name, inactive, explorer] of [
+    ['<img src=x onerror=alert(1)>', true, false],
+    ['LoxBerry MCP Tool Explorer', true, true],
+    ['', true, false],
+    ['Codex', false, false],
+  ]) {
+    const rows = context.renderRows([{rows: [{
+      client_name: name, inactive, inactive_login_required: explorer,
+      binding_id: 'a'.repeat(64), retention_expires_at: explorer ? 2000000000 : null,
+    }]}], {dataset: {unnamedLabel: 'Unnamed', noIdentityLabel: 'No identity'}}, action);
+    const cell = rows[0].children[0];
+    assert.equal(cell.textContent, name || 'Unnamed');
+    assert.equal(cell.children.length, inactive ? (explorer ? 2 : 1) : 0);
+    assert(!cell.children.some((element) => element.tag === 'img'));
+    if (inactive) assert.equal(cell.children[0].textContent,
+      explorer ? 'SESSIONS.INACTIVE_LOGIN_REQUIRED' : 'SESSIONS.LEGACY_INACTIVE');
+    assert.equal(rows[0].children[4].children[0].dataset.ajax, action);
+  }
+}
+"""
+    completed = subprocess.run(
+        [node, "-e", script, function], check=False, text=True, capture_output=True
+    )
+    assert completed.returncode == 0, completed.stderr
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    for loop in ("LOXBERRY_BINDINGS", "LOXBERRY_OPERATE_BINDINGS"):
+        row = template[template.index(f"<TMPL_LOOP {loop}><TMPL_LOOP rows><tr") :]
+        row = row[: row.index("</tr>")]
+        assert "<TMPL_IF inactive><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML>" in row
+        assert '<div class="mcp-help"><TMPL_IF inactive_login_required>' in row
+
+
+def test_admin_lifecycle_bridge_accepts_only_bounded_fixed_fields() -> None:
+    perl = shutil.which("perl")
+    if perl is None:
+        return
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    function = (
+        "sub safe_admin_lifecycle_events"
+        + cgi.split("sub safe_admin_lifecycle_events", 1)[1].split("\nsub admin_call", 1)[0]
+    )
+    program = (
+        "use strict; use warnings; use JSON::PP; " + function + " local $/; my $input = <STDIN>; "
+        "print encode_json([safe_admin_lifecycle_events($input)]);"
+    )
+    safe = (
+        "mcpserver_auth_lifecycle=INFO component=auth_lifecycle event=family_revoked "
+        "trace_id="
+        + "a" * 24
+        + " family_ref="
+        + "a" * 24
+        + " client_ref=- binding_ref=- capability=- reason=admin_session "
+        "source=admin outcome=committed count=1"
+    )
+    invalid = [
+        safe.replace("admin_session", "private_reason"),
+        safe.replace("family_ref=" + "a" * 24, "family_ref=private-family"),
+        safe + " password=secret",
+        safe.replace("count=1", "count=10001"),
+        safe.replace("source=admin", "source=private"),
+        safe.replace("capability=-", "capability=private"),
+        "unrelated private stderr",
+    ]
+    result = subprocess.run(
+        [perl, "-e", program],
+        input="\n".join(invalid + [safe] * 20),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    events = json.loads(result.stdout)
+    assert len(events) == 7
+    assert all(
+        severity == "info" and message == safe.split("INFO ", 1)[1] for severity, message in events
+    )
+    assert "private" not in result.stdout and "secret" not in result.stdout
+    assert "my $child_status = $?;" in cgi
+    assert "admin_log($event->[0]," in cgi
+
+
+def test_native_admin_log_receives_helper_lifecycle_events(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    safe = (
+        "mcpserver_auth_lifecycle=INFO component=auth_lifecycle event=family_revoked "
+        "trace_id="
+        + "a" * 24
+        + " family_ref="
+        + "a" * 24
+        + " client_ref=- binding_ref=- capability=- reason=admin_session "
+        "source=admin outcome=committed count=1"
+    )
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\nmy $request = <STDIN>; print STDERR q("
+        + safe
+        + ') . qq(\\n); print q({"ok":true,"data":{}});\n',
+        encoding="utf-8",
+    )
+    body = "action=status&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests/perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        input=body,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+            "LB_TEST_PLUGIN_LOGLEVEL": "6",
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert "event=family_revoked" in events and "reason=admin_session" in events
+    assert "request_id=" in events
+
+
+def test_diagnostic_download_serializes_masked_document_and_releases_blob() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    function = re.search(
+        r"  const downloadDiagnostic = \(data\) => \{.*?\n  \};",
+        _admin_script("page.js"),
+        re.DOTALL,
+    )
+    assert function is not None
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        + function.group(0)
+        + r"""
+const label = (key) => key;
+let blobs = [], links = [], timers = [], revoked = [];
+let failClick = false;
+global.document = {
+  body: {append: (link) => links.push(link)},
+  createElement: (tag) => {
+    assert.equal(tag, 'a');
+    return {click() {
+      this.clicked = true;
+      if (failClick) throw new Error('synthetic click failure');
+    },
+      remove() { this.removed = true; }};
+  },
+};
+global.window = {setTimeout: (callback) => timers.push(callback)};
+URL.createObjectURL = (blob) => { blobs.push(blob); return 'blob:synthetic'; };
+URL.revokeObjectURL = (url) => revoked.push(url);
+(async () => {
+  const data = {schema_version: 2,
+    auth_lifecycle: {availability: 'available', retained_revoked: 1}};
+  for (failClick of [false, true]) {
+    if (failClick) assert.throws(() => downloadDiagnostic(data), /synthetic click failure/);
+    else downloadDiagnostic(data);
+    const link = links.at(-1);
+    assert.equal(link.download, 'mcpserver-diagnostic.json');
+    assert.equal(link.href, 'blob:synthetic');
+    assert.equal(link.hidden, true);
+    assert.equal(link.clicked, true);
+    assert.equal(link.removed, true);
+    assert.equal(blobs.at(-1).type, 'application/json');
+    assert.deepEqual(JSON.parse(await blobs.at(-1).text()), data);
+    timers.shift()();
+    assert.equal(revoked.at(-1), 'blob:synthetic');
+  }
+  const prior = blobs.length;
+  for (const invalid of [null, undefined, [], true, 'private-detail']) {
+    assert.throws(() => downloadDiagnostic(invalid), /AJAX.ERROR/);
+  }
+  assert.equal(blobs.length, prior);
+  assert.equal(timers.length, 0);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    assert 'data-ajax="diagnostic"><input type="hidden" name="action" value="diagnostic"' in markup
+
+
+def test_diagnostic_cgi_keeps_native_attachment_and_ajax_envelope(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    document = {
+        "schema_version": 2,
+        "auth_lifecycle": {"availability": "available", "retained_revoked": 1},
+    }
+    reply = {"ok": True, "data": document}
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\nmy $request = <STDIN>; print q(" + json.dumps(reply) + ");\n",
+        encoding="utf-8",
+    )
+    for ajax in (False, True):
+        body = "action=diagnostic" + ("&ajax=1" if ajax else "")
+        result = subprocess.run(
+            [perl, f"-I{ROOT / 'tests/perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+            input=body,
+            capture_output=True,
+            text=True,
+            check=True,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+            },
+        )
+        headers, _, payload = result.stdout.partition("\n\n")
+        assert ("Content-Disposition: attachment" in headers) is (not ajax)
+        assert json.loads(payload) == (reply if ajax else document)
+        _assert_admin_security_headers(result.stdout)
+
+
+def test_admin_help_navigation_explains_each_destination_in_order() -> None:
+    template = _admin_source()
+    section = template[template.index('id="help"') : template.index("</main>")]
+    destinations = (
+        (
+            "project-help-link",
+            "https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server",
+            "PROJECT",
+            True,
+        ),
+        ("explorer-link", "<TMPL_VAR EXPLORER_URL ESCAPE=HTML>", "EXPLORER", True),
+        ("schema-reference-link", "<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>", "SCHEMA", True),
+        ("event-history-help-link", "event_history.cgi", "HISTORY", False),
+        ("knx-help-link", "knx.cgi", "KNX", False),
+        ("profile-help-link", "profile.cgi", "PROFILE", False),
+        (
+            "message-approval-help-link",
+            "<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>",
+            "MESSAGES",
+            False,
+        ),
+    )
+    positions = []
+    for link_id, target, key, external in destinations:
+        marker = f'id="{link_id}"'
+        assert template.count(marker) == 1
+        positions.append(section.index(marker))
+        start = section.index(marker)
+        link = section[start : section.index("</a>", start)]
+        assert f'href="{target}"' in link
+        assert f'aria-describedby="{link_id}-description"' in link
+        assert ('target="_blank" rel="noopener"' in link) is external
+        assert template.count(f'id="{link_id}-description"') == 1
+        assert f"<TMPL_VAR HELP.{key}_HELP>" in section
+    assert positions == sorted(positions)
+    assert "HELP.TOOL_ACCESS" not in template
+    assert section.count("<details") == 0
+    for key in ("KNX", "PROFILE"):
+        assert template.count(f"<TMPL_VAR HELP.{key}_HELP>") == 2
+    assert 'href="message-approval.cgi"><TMPL_VAR SETUP.MESSAGES_APPROVAL>' in template
+
+
+def test_admin_help_explanations_have_matching_localized_keys() -> None:
+    expected = {
+        "PROJECT_HELP",
+        "EXPLORER_HELP",
+        "SCHEMA_HELP",
+        "HISTORY_HELP",
+        "KNX_HELP",
+        "PROFILE_HELP",
+        "MESSAGES_HELP",
+        "HISTORY",
+        "MESSAGES",
+    }
+    for language in ("de", "en"):
+        text = (ROOT / "templates" / "lang" / f"language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("[HELP]", 1)[1].split("[ACCESS]", 1)[0]
+        values = dict(line.split("=", 1) for line in section.splitlines() if "=" in line)
+        assert expected <= values.keys()
+        assert all(values[key].strip() for key in expected)
+        assert "TOOL_ACCESS" not in values
+
+
+def test_admin_message_help_link_preserves_effective_page_language(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    wrapper = (
+        'no warnings "redefine"; '
+        "*LoxBerry::System::read_file = sub { return q("
+        '<a id="approval" href="<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>">'
+        "approval</a>); }; "
+        "$LoxBerry::System::lang = $ENV{LB_TEST_SYSTEM_LANG}; "
+        "do $ARGV[0]; die $@ if $@;"
+    )
+    for configured, query, expected in (
+        ("de", "", "de"),
+        ("en", "", "en"),
+        ("de", "lang=en", "en"),
+        ("en", "lang=de", "de"),
+        ("en", "lang=fr", "en"),
+    ):
+        response = subprocess.run(
+            [
+                perl,
+                f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                "-MLoxBerry::System",
+                "-e",
+                wrapper,
+                str(ROOT / "webfrontend/htmlauth/index.cgi"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                **environment,
+                "LB_TEST_SYSTEM_LANG": configured,
+                "REQUEST_METHOD": "GET",
+                "QUERY_STRING": query,
+            },
+            timeout=10,
+        )
+        assert f'href="message-approval.cgi?lang={expected}"' in response.stdout
+
+
+def test_authentication_history_only_reads_on_click_and_renders_text():
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const authHistory =');
+const block = source.slice(start, source.indexOf('  let authProbeRunning', start));
+class Element {
+  constructor() { this.children = []; this.events = {}; this.dataset = {}; this.disabled = false; }
+  addEventListener(name, callback) { this.events[name] = callback; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children = children; }
+  setAttribute(name, value) { this[name] = value; }
+  set innerHTML(value) { throw Error('HTML injection sink'); }
+}
+const elements = new Map();
+const document = {
+  getElementById(id) {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id);
+  },
+  createElement() { return new Element(); },
+  createTextNode(text) { return {textContent: text}; },
+};
+const calls = [];
+const hostile = '<img src=x onerror=alert(1)>';
+const postAjax = async body => {
+  calls.push(Object.fromEntries(body));
+  return {data: {history_status: 'bounded',
+    events: [{outcome: 'unknown', connection_owner: hostile}], bindings: []}};
+};
+const context = vm.createContext({document, postAjax, URLSearchParams});
+vm.runInContext(block, context);
+assert.equal(calls.length, 0);
+(async () => {
+  const button = document.getElementById('authentication-history-refresh');
+  await button.events.click();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, 'list_authentication_events');
+  const target = document.getElementById('authentication-history-content');
+  assert.equal(target.children[1].children[0].textContent, hostile);
+  assert.equal(button.disabled, false);
+  assert.equal(target['aria-busy'], 'false');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/sessions.js")], check=True
     )

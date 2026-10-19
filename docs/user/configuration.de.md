@@ -4,15 +4,106 @@
 
 ## Grundeinstellungen
 
-Der Schalter **Dienst aktivieren** ist die gespeicherte Betriebsfreigabe. Nach einer Neuinstallation ist er aktiviert, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Aktivieren startet den Dienst sofort und beim nächsten Systemstart. Deaktivieren stoppt ihn sofort und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. Die Statusaktionen **Starten**, **Stoppen** und **Neu starten** sind nur bei aktivierter Betriebsfreigabe verfügbar und ändern ausschließlich den aktuellen Laufzeitstatus, nicht das Verhalten beim Systemstart.
+### Lokale Strahlungsprognosen
+
+Die [lokale Strahlungsorientierung](local-solar-forecast.de.md) nutzt eine separat
+bestätigte Weather4Lox-Quelle. `solar_forecast.enabled` ist standardmäßig `false`,
+`maximum_age_minutes` 180 (1–1440). Der private Fingerprint wird ausschließlich
+durch eine ausdrückliche lokale Administratorbestätigung der Quelle erfasst;
+ein mitgelieferter Fingerprint belegt keine Zuordnung. Die unabhängige LoxBerry-
+Lesefreigabe ist erforderlich. Aufzeichnungs-/Archiveinstellungen bleiben
+erhalten; diese Funktion ist kein PV-Ertragsmodell.
+
+### MCP-Profilpflege
+
+Die eigene [Profilseite](installation-profile.de.md) verwaltet
+`tools.installation_profile_write_enabled` (Standard: `false`) und die maximal
+64 exakten Freigaben in `policies.installation_profile_write_bindings`.
+Diese Freigaben ergänzen die allgemeinen Betriebsrechte; sie werden bei normalen
+Konfigurationsänderungen erhalten. Widerruf wirkt beim nächsten Schreibzugriff,
+auch auf eine bereits laufende Anfrage vor deren Persistenz. Ein bereits begonnener
+atomarer Schreibvorgang kann nicht rückgängig gemacht werden; bei ungewissem Ausgang
+den gespeicherten Profilstand prüfen.
+
+### Admin-Zugriff und Reverse-Proxys
+
+Admin- und Ereignishistorie-Aktionen benötigen einen POST mit einer Origin, deren
+Schema, Host und effektiver Port zur Browseradresse der Anfrage passen. Direkte
+HTTP- und HTTPS-Zugriffe bleiben unterstützt; ein fehlender Port bedeutet 80 bei
+HTTP und 443 bei HTTPS. Schemafremde Anfragen sowie fehlende oder ungültige Origins
+werden abgelehnt.
+
+Das Plugin ignoriert `Forwarded`- und `X-Forwarded-*`-Header. Bei TLS-Terminierung
+durch einen Reverse-Proxy muss der Administrator eingehende Weiterleitungsheader
+bereinigen und über eine ausdrücklich vertrauenswürdige Webserver-Konfiguration
+den externen Host samt Port als `HTTP_HOST` und das externe Schema als konsistente
+CGI-Metadaten bereitstellen: `HTTPS=on/1` für HTTPS beziehungsweise `off/0` für HTTP
+und/oder `REQUEST_SCHEME=https/http`. Widersprüchliche oder ungültige Angaben
+werden abgelehnt; fehlen beide Schemaangaben, gilt die native Apache-Konvention
+HTTP. Backend-TLS-Angaben müssen gegebenenfalls überschrieben werden. Die
+konfigurierte MCP-Origin ersetzt diese Request-Metadaten nicht. Prüfe beide
+Admin-Seiten nach einer Proxy-Änderung; daraus folgt keine allgemeine Zusage zur
+Kompatibilität mit Reverse-Proxys.
+
+### Persistenz und Speicherfehler
+
+Auf unterstützten LoxBerry/Linux-Dateisystemen synchronisieren Änderungen an
+Konfiguration und MQTT-Zugangsdaten die Datei vor dem atomaren Austausch und
+anschließend das Elternverzeichnis. Das Löschen von MQTT-Zugangsdaten und bestehende
+Konfigurationsmigrationen synchronisieren ebenfalls das Verzeichnis. Die
+Windows-Entwicklung überspringt den Verzeichnis-Sync; daraus folgt keine gleichwertige
+Stromausfallfestigkeit. Neu angelegte Verzeichnisbäume und Installationsschlüssel,
+Caches und Diagnosesnapshots sind von dieser Zusage ausgenommen.
+
+Eine gespeicherte Änderung ist von ihrer Anwendung im laufenden Dienst zu
+unterscheiden. Gelingt die Dateiänderung, kann ihre Dauerhaftigkeit aber nicht
+bestätigt werden, meldet die Admin-Seite `persistence_uncertain` und wiederholt,
+restauriert oder schaltet den Dienst nicht automatisch um. Laden Sie den
+gespeicherten Zustand erneut, bevor Sie weitere Schritte ausführen. MQTT-Einstellungen
+und Zugangsdaten liegen in getrennten Dateien und können teilweise aktualisiert
+sein. Eine fehlgeschlagene Wiederherstellung wird als Rollback-Fehler gemeldet.
+Eine Upgrade-Migration mit Verzeichnis-Sync-Fehler bricht mit Fehler ab, auch wenn
+die migrierte Datei bereits sichtbar ist.
+Auch eine idempotente Wiederholung synchronisiert das Verzeichnis und gelingt erst
+nach erfolgreicher Synchronisierung.
+
+Diese Synchronisierung verkleinert eine Lücke bei der Dauerhaftigkeit von
+Dateisystemmetadaten; sie garantiert keinen Schutz vor beliebigen Hardwaredefekten
+oder Speicherkorruption.
+
+Im Bereich **Status & Betrieb** zeigt **Dienstbetrieb und Autostart** die gespeicherte Betriebsfreigabe. Nach einer Neuinstallation ist sie aktiviert, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Das Anwenden der aktivierten Freigabe startet den Dienst sofort und beim nächsten Systemstart. Das Deaktivieren stoppt ihn sofort und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. Die Statusaktionen **Starten**, **Stoppen** und **Neu starten** sind nur bei aktivierter Betriebsfreigabe verfügbar und ändern ausschließlich den aktuellen Laufzeitstatus, nicht das Verhalten beim Systemstart.
 
 ## MCP-Konfiguration
 
-Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. Erst **MCP-Zugriff aktivieren** gibt den MCP- und OAuth-Zugriff frei.
+Mit `?lang=de` oder `?lang=en` am URL der Admin-Seite lässt sich die Sprache für diesen Seitenaufruf einschließlich der AJAX-Rückmeldungen vorübergehend anzeigen. Ohne Parameter gilt weiterhin die LoxBerry-Systemsprache; die Vorschau ändert diese Einstellung nicht.
+
+Die Überschriften der Admin-Bereiche zeigen den zuletzt erfolgreich geladenen, gespeicherten MCP- und MQTT-Status sowie die aktuelle Sitzungszahl und Zahl ausstehender Freigabeaktionen. Auch bei geschlossenem Sitzungsbereich wird die Liste alle zehn Sekunden aktualisiert, solange die Seite sichtbar ist. Der HTTPS-Hinweis beruht auf den Zertifikats-, Origin- und Hostnamenprüfungen; während des Ladens oder bei fehlenden Daten erscheint ein neutraler Status. Ein geänderter Formularwert beeinflusst die Badges erst nach erfolgreichem Speichern.
+
+Konfiguriere unter **Verbindung** eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. **Verbindung testen** verwendet das aktuell ausgewählte oder manuell eingegebene Ziel, ohne die Konfiguration zu speichern. Erst **MCP-Endpunktzugriff aktivieren** gibt den MCP- und OAuth-Zugriff frei. Die Berechtigungen und die Aktivierung der lokalen Ereignishistorie bleiben direkt sichtbar; Aufrufgrenzen, Laufzeit-, Struktur- und Cache-Einstellungen stehen unter **Erweiterte Einstellungen**. Deren Werte werden auch bei geschlossenem Abschnitt gespeichert.
 
 ### Wiederherstellung der Authentifizierung
 
-Die erweiterten Grenzen enthalten eine erste und eine maximale Wartezeit für genau einen bedarfsgetriebenen Wiederherstellungsversuch der Miniserver-Authentifizierung. Standard sind 15 Minuten und 24 Stunden. Bestätigt der Miniserver eine Sperre der Quell-IP, startet der Dienst bis zum Ablauf der Frist keine weitere Anmeldung; erst ein tatsächlicher Tool- oder Laufzeitbedarf darf dann einen Versuch auslösen. Bei einer erneuten Sperre verdoppelt sich die Frist bis zum konfigurierten Maximum. Diese Werte sind Plugin-Policy und keine behauptete Sperrdauer des Miniservers; eine Änderung startet selbst keinen Loginversuch. Die Admin-Oberfläche zeigt Minuten, die kompatible Konfiguration speichert weiterhin Sekunden. Ein lokaler Administrator kann einen vorgezogenen Probeversuch für genau eine aktive OAuth-Sitzung freigeben; andere Clients werden dadurch nicht entsperrt.
+Die erweiterten Grenzen enthalten eine erste und eine maximale Wartezeit für genau einen bedarfsgetriebenen Wiederherstellungsversuch der Miniserver-Authentifizierung. Standard sind 15 Minuten und 24 Stunden. Bestätigt der Miniserver eine Sperre der Quell-IP, startet der Dienst bis zum Ablauf der Frist keine weitere Anmeldung; erst ein tatsächlicher Tool- oder Laufzeitbedarf darf dann einen Versuch auslösen. Bei einer erneuten Sperre verdoppelt sich die Frist bis zum konfigurierten Maximum. Diese Werte sind Plugin-Policy und keine behauptete Sperrdauer des Miniservers; eine Änderung startet selbst keinen Loginversuch.
+
+## Lokale Ereignishistorie
+
+Bei einem nativen Plugin-Upgrade bleibt die lokale Ereignisdatenbank durch eine SQLite-Sicherung erhalten. Bestehende Aufbewahrungsgrenzen gelten weiterhin.
+
+Die Hauptseite zeigt Aktivierung, Anzahl konfigurierter aktiver Quellen, aktuelle Größe von SQLite-Datenbank und WAL-Datei sowie Links zur **Lokalen Ereignishistorie** in der Konfiguration und unter **Hilfe und Entwicklerwerkzeuge**. Die eigene Ansicht zeigt lokale Messwerte zuerst und lädt die Control-Auswahl im Hintergrund. Bei jedem Öffnen prüft sie die sichtbaren Controls frisch; bis dahin werden keine gespeicherten Control-Namen angezeigt. Die begrenzte Liste lässt sich nach Name oder UUID sowie nach Raum, Kategorie und Typ filtern; pro Filtergruppe sind höchstens 100 ausgewählte Werte möglich. **Controls laden** erzwingt eine neue Abfrage. Wähle danach einen gemeldeten Zustand des Controls; höchstens 64 Control/State-Paare können aktiv sein.
+
+Die vier Bereiche der eigenen Ansicht lassen sich unabhängig öffnen und schließen. Beim ersten Besuch sind nur die Aufzeichnungsquellen geöffnet; die Auswahl wird pro Browser gespeichert. Die lokale Status- und Speicherübersicht sowie Rückmeldungen zu Aktionen bleiben auch bei geschlossenen Bereichen sichtbar.
+
+In der Quellenliste lassen sich bis zu vier aktuell sichtbare Quellen auswählen und mit **Ausgewählte Diagramme öffnen** in einem eigenen Admin-Tab anzeigen. Der Zeitraum beginnt mit den letzten 24 Stunden; Vorgaben umfassen 1 Stunde, 7 und 30 Tage und laufen bei sichtbarem Tab mit der Uhr mit. Ein eigener Zeitraum ist fest und umfasst höchstens 90 Tage. Jede Quelle besitzt eine eigene Werteskala; Zeitbereich und Cursor sind synchronisiert. Auf breiten Ansichten stehen Name, Raum, Kategorie, Typ und Erfassungsintervalle links neben dem jeweiligen Diagramm; auf schmalen Ansichten stehen sie darüber. Die Diagrammansicht nutzt die verfügbare Breite des Admin-Inhaltsbereichs. Der Hinweis zur nötigen Aufzeichnung und zu unbekannten Lücken erscheint einmal oberhalb aller Diagramme; fehlende Ereignisse oder reduzierte Details werden weiterhin je Quelle angezeigt. Strg+Mausrad über der Diagrammfläche zoomt die Zeitachse um den Zeiger; normales Mausrad scrollt die Seite. Zoomen innerhalb geladener Zeiträume bleibt lokal; bei „Früher/Später“ und darüber hinausgehendem Zoom werden nur fehlende Zeitstücke ergänzt. Zahlen erscheinen als Linie, Boolesche Werte als Stufen und Textänderungen in der Ereignisliste. Enthält ein Zeitraum Zahlen und boolesche Werte derselben Quelle, zeigt das Diagramm beide mit getrennten Werteskalen. Genaue Diagrammwerte sind mit dem Cursor oder bei fokussiertem Diagramm mit Pfeiltasten, Pos1 und Ende lesbar. Die Werte sind lokal gespeicherte Beobachtungen, keine Rekonstruktion früherer Zustände; Erfassungslücken und Perioden entfernter Quellen bleiben unbekannt. Bei dichten Zeiträumen wird reduzierte Anzeigedetailtiefe gekennzeichnet. Ein engerer Zeitraum zeigt genaue Ereignisse. Beim Öffnen und regelmäßig im sichtbaren Tab prüft die Ansicht die aktuelle Miniserver-Sichtbarkeit und löscht Diagrammwerte, wenn der Zugriff nicht bestätigt werden kann. Neue Ereignisse ergänzt sie nur im sichtbaren Tab, auch bei einem festen Zeitraum; nur ein laufender Zeitraum verschiebt seine Achse. Der Aufzeichnungsdienst weckt sichtbare Diagramm- und Quellenfenster nach gespeicherten Änderungen. Die Fenster laden dann nur neue Werte beziehungsweise aktualisierte lokale Quellenzahlen über berechtigungsgeprüfte Abfragen; bei Dienstunterbrechung greifen zeitlich begrenzte Hintergrundprüfungen. Eine vorübergehende Erneuerung der Sichtbarkeitsprojektion lässt vorhandene Diagramme bis zur erneuten Prüfung stehen. Beim Neuladen kann der Tab einen begrenzten Zwischenspeicher bis zu fünf Minuten nutzen. Erst nach erneuter Sichtbarkeitsprüfung und Abgleich der History-Änderungskennung werden fehlende und neue Werte nachgeladen; bei Rechteentzug oder geänderter History wird der Zwischenspeicher verworfen. Die Quellenübersicht lädt keine Werte. Bei einem vorübergehenden Abfragefehler bleiben bereits autorisiert geladene Werte mit einem Veraltet-Hinweis sichtbar; fehlgeschlagene Sichtbarkeitsprüfung löscht sie. Eine angezeigte Referenznummer hilft beim Abgleich mit dem Admin-Log. Pro Quelle werden höchstens 4.000 Ereignisse zwischengespeichert. Überschreiten neue Ereignisse diese Grenze, lädt nur der betroffene Graph seinen aktuellen Zeitraum neu, bei Bedarf mit reduzierter Detailtiefe. Bisherige Werte bleiben bis zum erfolgreichen Austausch sichtbar; andere Graphen behalten ihre geladenen Daten. Scheitert der Austausch, erscheint ein quellenbezogener Hinweis; beim nächsten sichtbaren Update kann ein neuer Versuch erfolgen. Reduzierte Detailtiefe bedeutet keine Erfassungslücke und kann Zwischenübergänge auslassen; für genaue gespeicherte Ereignisse einen kürzeren Zeitraum wählen.
+
+Wenn sich eine andere Plugin-Anfrage gerade am Miniserver anmeldet, wartet die Event-History-Strukturabfrage innerhalb eines gemeinsamen Budgets von 15 Sekunden auf die Authentifizierungskoordination. Das Gesamtzeitlimit der Strukturabfrage gilt weiterhin. Bleibt die Koordination belegt oder ist die Authentifizierung unterdrückt, bleibt die Sichtbarkeit nicht verfügbar; vorhandene Quelldetails gelten nicht als frische Autorisierung.
+
+Bei wenigen Zuständen genügt die Auswahlliste; bei längeren Listen erscheint zusätzlich ein Textfilter. Während des Ladens ist die Zustandseingabe gesperrt. Die Miniserver-Struktur nennt keine verlässlichen Werttypen: Ein sichtbarer Zustand kann Werte liefern, die sich nicht aufzeichnen lassen. Der Recorder unterstützt nur skalare Werte und meldet nicht unterstützte Werte im Laufzeitstatus. **Aufzeichnung starten** zeigt den laufenden Vorgang und danach die aktualisierte Quellenübersicht an. Eine aktivierte Quelle beweist noch keine erfassten Ereignisse.
+
+Eine geöffnete Ansicht prüft bei sichtbarem Tab regelmäßig einen lokalen Änderungsmarker. Wenn ein anderer Browser Quellen hinzufügt, beendet, deren gespeicherte Daten oder die gesamte Historie löscht, lädt sie die autorisierte Quellenübersicht erneut, ohne ungespeicherte Änderungen an Aufbewahrung oder Maximalgröße zu verwerfen. Nach einer fehlgeschlagenen Sichtbarkeitsprüfung versucht sie die Prüfung mit begrenztem Abstand erneut. Wechselt die Control-Generation in einem anderen Tab, lädt sie die Auswahl erneut und erhält ein weiterhin sichtbares Control-/Zustandspaar. Gleichzeitige Seitenaufrufe teilen sich eine abgeschlossene Strukturabfrage auch bei unverändertem Control-Katalog. Bei bestätigter Sichtbarkeit und unverändertem Marker erfolgt keine zusätzliche Miniserver-Strukturabfrage. **Übersicht aktualisieren** ist während des Ladens gesperrt und zeigt danach fünf Sekunden lang eine Erfolgsmeldung; Fehler bleiben sichtbar.
+
+Die Übersicht trennt konfigurierte Aufbewahrung und Größengrenze von gemessener Dateigröße und gespeicherter Evidenz. Ereigniszeiten bezeichnen den ältesten und jüngsten gespeicherten Wechsel, keine vollständige Historie. Letzte Erfassungsintervalle erscheinen getrennt; eine Lücke bleibt auch nach erneutem Hinzufügen bestehen. Aktuell sichtbare Quellen zeigen Raum, Kategorie und Typ aus der frisch autorisierten Struktur. Die eigenen Quellenfilter für Raum, Kategorie, Typ und Aufzeichnungsstatus kombinieren ausgewählte Werte innerhalb eines Filters mit ODER und zwischen Filtern mit UND; fehlende Raum- und Kategoriezuordnung ist auswählbar. Die Tabellenspalten lassen sich auf- und absteigend sortieren; auf schmalen Bildschirmen gibt es dafür eine eigene Sortierauswahl. Unverifizierte Quellen bleiben getrennt am Ende. Die angezeigten Ereigniszahlen beziehen sich nur auf aktuell sichtbare Quellen; historische Details verborgener Quellen werden nicht ausgegeben. Für konfigurierte Quellen ohne prüfbare Sichtbarkeit zeigt die Ansicht nur die gespeicherten Kennungen und bietet das bestätigte Beenden der Aufzeichnung an. Die geschätzten logischen Werte-Nutzdaten pro Quelle umfassen nur die UTF-8-JSON-Ereigniswerte, keine UUIDs, Zeitstempel, SQLite-Seiten, Indizes oder WAL. Altbestände bleiben bis zum Abschluss ihrer begrenzten Hintergrundmessung nicht verfügbar. Die Quellwerte ergeben nicht die physische Datenbankgröße. Können Speicher, Miniserver-Struktur oder laufender Recorder nicht geprüft werden, erscheinen die betroffenen Angaben als nicht verfügbar oder unbekannt.
+
+**Aufzeichnung beenden** erhält gespeicherte Evidenz innerhalb der globalen Grenzen. **Gespeicherte Daten löschen** ist eine getrennt bestätigte Aktion für eine inaktive, sichtbare Quelle. **Gesamte Historie löschen** benötigt eine eigene Bestätigung und löscht Ereignisse und Abdeckung, während die Quellenauswahl erhalten bleibt. Nach unklarem Löschresultat prüfe die aktualisierte Übersicht vor einer weiteren Aktion.
 
 ## Notaus-Signal (virtueller Status)
 

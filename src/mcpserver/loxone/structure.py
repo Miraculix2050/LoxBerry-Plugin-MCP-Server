@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 
+from mcpserver.loxone.efm import normalize as normalize_efm
+from mcpserver.loxone.energy_manager import normalize as normalize_energy_manager
 from mcpserver.loxone.models import (
     Control,
     GlobalMetadata,
@@ -22,7 +25,9 @@ from mcpserver.loxone.models import (
     VentilationTimerProfile,
     WeatherMetadata,
     WindowMonitorItem,
+    WindowMonitorSummary,
 )
+from mcpserver.loxone.system_messages import identifier
 
 _REFERENCED_ONLY_INTERNAL = 1 << 0
 _READ_ONLY_INTERNAL = 1 << 1
@@ -259,35 +264,69 @@ def _ventilation_profiles(value: object) -> tuple[VentilationTimerProfile, ...]:
     return tuple(result)
 
 
-def _window_monitor_items(value: object) -> tuple[WindowMonitorItem, ...]:
-    entries: list[tuple[str | None, object]]
-    if isinstance(value, list) and len(value) <= 100:
-        entries = [(None, item) for item in value]
-    elif isinstance(value, Mapping) and len(value) <= 100:
-        entries = [(key if isinstance(key, str) else None, item) for key, item in value.items()]
+def _window_monitor_items(
+    value: object,
+) -> tuple[tuple[WindowMonitorItem, ...], WindowMonitorSummary]:
+    """Retain a source-order prefix without materializing the omitted tail."""
+    if value is None:
+        return (), WindowMonitorSummary()
+    entries: Iterator[tuple[object, object]]
+    if isinstance(value, list):
+        entries = ((None, item) for item in islice(value, 100))
+    elif isinstance(value, Mapping):
+        entries = islice(value.items(), 100)
     else:
-        return ()
+        return (), WindowMonitorSummary(
+            total=None, omitted=None, diagnostics=("invalid_window_monitor_collection",)
+        )
     result: list[WindowMonitorItem] = []
-    for index, (mapped_uuid, item) in enumerate(entries):
+    field_codes = {
+        "name": "invalid_name",
+        "room": "invalid_room_reference",
+        "uuid": "invalid_control_reference",
+        "installPlace": "invalid_install_place",
+    }
+    for index, (mapped_key, item) in enumerate(entries):
         if not isinstance(item, Mapping):
-            result.append(WindowMonitorItem(index, None, None, None, None))
+            result.append(
+                WindowMonitorItem(index, None, None, None, None, ("invalid_window_monitor_entry",))
+            )
             continue
         window: Mapping[str, object] = item
+        diagnostics: set[str] = set()
 
-        def text(key: str, source: Mapping[str, object] = window) -> str | None:
+        def text(
+            key: str, source: Mapping[str, object] = window, issues: set[str] = diagnostics
+        ) -> str | None:
             candidate = source.get(key)
-            return candidate if isinstance(candidate, str) and len(candidate) <= 200 else None
+            if isinstance(candidate, str) and len(candidate) <= 200:
+                return candidate
+            if key in source:
+                issues.add(field_codes[key])
+            return None
 
+        name = text("name")
+        room_uuid = text("room")
+        control_uuid = text("uuid") or None
+        install_place = text("installPlace")
+        if not control_uuid and isinstance(value, Mapping):
+            if isinstance(mapped_key, str) and len(mapped_key) <= 200:
+                control_uuid = mapped_key
+            else:
+                diagnostics.add("invalid_control_reference")
         result.append(
             WindowMonitorItem(
                 index,
-                text("name"),
-                text("room"),
-                text("uuid") or mapped_uuid,
-                text("installPlace"),
+                name,
+                room_uuid,
+                control_uuid,
+                install_place,
+                tuple(sorted(diagnostics)),
             )
         )
-    return tuple(result)
+    total = len(value)
+    omitted = total - len(result)
+    return tuple(result), WindowMonitorSummary(total, len(result), omitted, omitted > 0)
 
 
 def _room_groups(
@@ -487,6 +526,21 @@ def _weather_metadata(document: Mapping[str, object]) -> WeatherMetadata:
     return WeatherMetadata(tuple(formats), tuple(type_texts))
 
 
+def _status_optional_metadata_valid(item: Mapping[str, object]) -> bool:
+    """Distinguish absent optional metadata from malformed published values."""
+    for name in ("uuid", "room"):
+        value = item.get(name)
+        if value not in (None, "") and (not isinstance(value, str) or len(value) > 200):
+            return False
+    place = item.get("installPlace")
+    if place is not None and (not isinstance(place, str) or len(place) > 200):
+        return False
+    color = item.get("color")
+    return color is None or (
+        isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is not None
+    )
+
+
 def _status_monitor_details(
     details: Mapping[str, object],
 ) -> tuple[tuple[StatusMonitorInput, ...], tuple[StatusMonitorStatus, ...]]:
@@ -509,8 +563,8 @@ def _status_monitor_details(
                     index=index,
                     name=name,
                     install_place=install_place,
-                    uuid=_optional_uuid(item.get("uuid")),
-                    room_uuid=_optional_uuid(item.get("room")),
+                    uuid=_bounded_text(item.get("uuid")),
+                    room_uuid=_bounded_text(item.get("room")),
                 )
             )
     statuses_value = details.get("status")
@@ -523,7 +577,7 @@ def _status_monitor_details(
             if (
                 not isinstance(status_id, int)
                 or isinstance(status_id, bool)
-                or not 0 <= status_id <= 255
+                or not 0 <= status_id < 255
                 or not isinstance(name, str)
                 or len(name) > 200
                 or not isinstance(priority, int)
@@ -534,31 +588,37 @@ def _status_monitor_details(
             color = item.get("color")
             if not isinstance(color, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is None:
                 color = None
+            if len(statuses) == 100:
+                break
             statuses.append(
                 StatusMonitorStatus(
                     status_id=status_id,
                     name=name,
                     priority=priority,
                     color=color,
+                    uuid=_bounded_text(item.get("uuid")),
                 )
             )
     return tuple(inputs), tuple(sorted(statuses, key=lambda status: status.status_id))
 
 
-def _statistic_series(item: Mapping[str, object]) -> tuple[StatisticSeries, ...]:
+def _statistic_series(item: Mapping[str, object]) -> tuple[tuple[StatisticSeries, ...], bool]:
     value = item.get("statisticV2")
     if isinstance(value, Mapping):
         return _statistic_v2_series(value)
-    return _legacy_statistic_series(item.get("statistic"))
+    return _legacy_statistic_series(item.get("statistic")), False
 
 
-def _statistic_v2_series(value: Mapping[str, object]) -> tuple[StatisticSeries, ...]:
+def _statistic_v2_series(value: Mapping[str, object]) -> tuple[tuple[StatisticSeries, ...], bool]:
     groups = value.get("groups")
     if not isinstance(groups, list) or len(groups) > 64:
-        return ()
+        return (), False
     result: list[StatisticSeries] = []
     for group in groups:
         if not isinstance(group, Mapping):
+            continue
+        mode = group.get("mode")
+        if not isinstance(mode, int) or isinstance(mode, bool) or mode <= 0:
             continue
         group_id = group.get("id")
         normalized_group = (
@@ -597,14 +657,19 @@ def _statistic_v2_series(value: Mapping[str, object]) -> tuple[StatisticSeries, 
                     title=title,
                     format=format_value,
                     accumulated=accumulated,
+                    recording_mode=mode if mode <= 16 else None,
+                    accumulated_metadata_valid=isinstance(group.get("accumulated", False), bool),
                 )
             )
-    return tuple(result[:128])
+    return tuple(result[:128]), len(result) > 128
 
 
 def _legacy_statistic_series(value: object) -> tuple[StatisticSeries, ...]:
     """Expose documented legacy statistic outputs when StatisticV2 is absent."""
     if not isinstance(value, Mapping):
+        return ()
+    frequency = value.get("frequency")
+    if not isinstance(frequency, int) or isinstance(frequency, bool) or frequency <= 0:
         return ()
     outputs = value.get("outputs")
     if not isinstance(outputs, list) or not 1 <= len(outputs) <= 16:
@@ -637,6 +702,7 @@ def _legacy_statistic_series(value: object) -> tuple[StatisticSeries, ...]:
                 format=format_value,
                 legacy_output_index=index,
                 legacy_output_count=len(outputs),
+                state_uuid=_optional_uuid(output.get("uuid")),
             )
         )
     return tuple(result)
@@ -689,7 +755,7 @@ def _monitor_referenced_control_uuids(value: object, *, maximum_controls: int) -
             continue
         result.update(
             entry.control_uuid
-            for entry in _window_monitor_items(details.get("windows"))
+            for entry in _window_monitor_items(details.get("windows"))[0]
             if entry.control_uuid is not None
         )
     return frozenset(result)
@@ -775,6 +841,67 @@ def _controls(
         status_monitor_inputs, status_monitor_statuses = (
             _status_monitor_details(details) if item.get("type") == "StatusMonitor" else ((), ())
         )
+        statistic_series, statistic_series_truncated = _statistic_series(item)
+        window_monitor_items, window_monitor_summary = _window_monitor_items(details.get("windows"))
+        semantics_invalid_fields: list[str] = []
+        meter_type = None
+        meter_type_defaulted = False
+        if item.get("type") == "Meter":
+            # Structure File 17.1 p.105 explicitly defines the missing-field default.
+            candidate = details.get("type", "unidirectional")
+            if isinstance(candidate, str) and candidate in {
+                "unidirectional",
+                "bidirectional",
+                "storage",
+                "legacy",
+            }:
+                meter_type = candidate
+                meter_type_defaulted = "type" not in details
+                if meter_type == "unidirectional" and any(
+                    name == "storage" or name.startswith("totalNeg") for name, _ in states
+                ):
+                    meter_type = None
+                    semantics_invalid_fields.append("meter_type")
+            else:
+                semantics_invalid_fields.append("meter_type")
+        format_total_length = (
+            len(details["format"]) if isinstance(details.get("format"), str) else None
+        )
+        if "format" in details and not isinstance(details["format"], str):
+            semantics_invalid_fields.append("format")
+        if any(key in details for key in ("min", "max", "step")) and minimum is None:
+            semantics_invalid_fields.append("range")
+        raw_statuses, raw_inputs = details.get("status"), details.get("inputs")
+        status_total = len(raw_statuses) if isinstance(raw_statuses, Mapping) else None
+        input_total = len(raw_inputs) if isinstance(raw_inputs, list) else None
+        status_complete = status_total is not None and status_total == len(status_monitor_statuses)
+        input_complete = input_total is not None and input_total == len(status_monitor_inputs)
+        input_labels_valid = not isinstance(raw_inputs, list) or all(
+            isinstance(v, Mapping)
+            and ("name" not in v or (isinstance(v["name"], str) and len(v["name"]) <= 200))
+            and _status_optional_metadata_valid(v)
+            for v in raw_inputs[:100]
+        )
+        status_optional_valid = not isinstance(raw_statuses, Mapping) or all(
+            _status_optional_metadata_valid(v)
+            for v in islice(raw_statuses.values(), 100)
+            if isinstance(v, Mapping)
+        )
+        input_complete = input_complete and input_labels_valid
+        status_complete = (
+            status_complete
+            and status_optional_valid
+            and len({s.status_id for s in status_monitor_statuses}) == len(status_monitor_statuses)
+        )
+        if item.get("type") == "StatusMonitor" and (
+            ("status" in details and not isinstance(raw_statuses, Mapping))
+            or (status_total is not None and len(status_monitor_statuses) < status_total)
+            or len({s.status_id for s in status_monitor_statuses}) != len(status_monitor_statuses)
+            or ("inputs" in details and not isinstance(raw_inputs, list))
+            or not input_labels_valid
+            or not status_optional_valid
+        ):
+            semantics_invalid_fields.append("status_monitor")
         controls.append(
             Control(
                 uuid=uuid,
@@ -807,14 +934,28 @@ def _controls(
                 maximum=maximum,
                 step=step,
                 is_analog=analog,
-                statistic_series=_statistic_series(item),
+                statistic_series=statistic_series,
+                statistic_series_truncated=statistic_series_truncated,
+                efm=normalize_efm(details) if item.get("type") == "EFM" else None,
+                energy_manager=normalize_energy_manager(str(item.get("type")), details),
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,
                 format=format_value,
+                semantics_invalid_fields=tuple(semantics_invalid_fields),
+                format_total_length=format_total_length,
+                meter_type=meter_type,
+                meter_type_defaulted=meter_type_defaulted,
+                status_monitor_status_total=status_total,
+                status_monitor_status_complete=status_complete,
+                status_monitor_input_total=input_total,
+                status_monitor_input_complete=input_complete,
                 timer_modes=_named_options(details.get("timerModes")),
                 ventilation_modes=_named_options(details.get("modes")),
                 ventilation_timer_profiles=_ventilation_profiles(details.get("timerProfiles")),
-                window_monitor_items=_window_monitor_items(details.get("windows")),
+                window_monitor_items=window_monitor_items,
+                window_monitor_summary=(
+                    window_monitor_summary if item.get("type") == "WindowMonitor" else None
+                ),
                 connected_inputs=connected_inputs,
                 alarm_clock_has_night_light=(
                     _optional_flag(details.get("hasNightLight"))
@@ -876,6 +1017,7 @@ def _controls(
                     not referenced
                     and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
                     and uuid in monitor_referenced_control_uuids
+                    and uuid not in linked_control_uuids
                 ),
                 is_hidden=is_hidden,
             )
@@ -938,6 +1080,16 @@ def normalize_structure(
         budget=budget,
     )
     room_groups, room_group_uuids = _room_groups(document)
+    # Preserve only the exact source capability and permission bits, not user metadata.
+    user = ms_info.get("currentUser")
+    rights = user.get("userRights") if isinstance(user, Mapping) else None
+    admin = user.get("isAdmin") if isinstance(user, Mapping) else None
+    centers = document.get("messageCenter")
+    center = (
+        next(iter(centers.values())) if isinstance(centers, Mapping) and len(centers) == 1 else None
+    )
+    center_uuid = center.get("uuidAction") if isinstance(center, Mapping) else None
+    center_uuid = identifier(center_uuid)
     return LoxoneStructure(
         identity=LoxoneIdentity(
             username=username,
@@ -969,4 +1121,7 @@ def normalize_structure(
         global_metadata=_global_metadata(document, room_groups=room_groups),
         room_groups=room_groups,
         weather=_weather_metadata(document),
+        message_center_uuid=center_uuid,
+        user_rights=rights if type(rights) is int and 0 <= rights < 2**32 else None,
+        caller_is_admin=admin if type(admin) is bool else None,
     )

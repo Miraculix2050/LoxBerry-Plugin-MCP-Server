@@ -11,18 +11,51 @@ Nutze für jeden Assistenten ein eigenes Loxone-Konto. Der Server zeigt nur Elem
 | `loxone:read` | immer | Struktur, aktuelle Zustände und begrenzte Project Intelligence mit derselben Loxone-Identität lesen |
 | `loxone:history` | optional | Historie und Statistiken lesen |
 | `loxone:control` | optional | dokumentierte sichtbare Controls bedienen |
-| `loxberry:read` | optional, lokal freigeben | maskierte Plugin- und Systemdiagnosen |
-| `loxberry:operate` | optional, mit `loxone:history` und lokaler Freigabe | nur plugin-eigenen Statistik-Cache löschen |
+| `loxberry:read` | optional, lokal freigeben | maskierte Plugin- und Systemdiagnosen lesen; mit `loxone:read` und `loxone:history` alle lokalen Quellen der Ereignishistorie auflisten |
+| `loxberry:operate` | optional, mit `loxone:history` und lokaler Freigabe | plugin-eigenen Statistik-Cache löschen, Quellen der lokalen Ereignishistorie auflisten und verwalten sowie gespeicherte Historie einer inaktiven Quelle ausdrücklich endgültig löschen |
 
-Steuerung ist standardmäßig deaktiviert. Lokale LoxBerry-Freigaben sind exakt an Client, Loxone-Identität und Miniserver gebunden und ersetzen weder Loxone-Rechte noch OAuth-Zustimmung.
+Steuerung ist standardmäßig deaktiviert. Lokale LoxBerry-Freigaben sind an Client-Anwendung, Loxone-Identität, Miniserver und die konkrete Capability gebunden und ersetzen weder Loxone-Rechte noch OAuth-Zustimmung. Beim streng geprüften lokalen Tool Explorer kann eine neue OAuth-Anmeldung dessen Anwendungsfreigabe bis zur angezeigten Aufbewahrungsfrist wiederverwenden. Andere dynamisch registrierte Clients bleiben an ihre exakte OAuth-Clientkennung gebunden.
 
-Project Intelligence ergänzt keinen Scope. Bei jedem Aufruf wird das Projekt erneut mit der
-gebundenen Loxone-Identität abgerufen, um den Zugriff zu prüfen; zwischengespeicherte
-Verarbeitungsergebnisse gewähren keinen Zugriff. Sie stellt begrenzten Graphstatus, Suche,
+Die beiden Freigabetabellen zeigen auch bei inaktiven Bindungen den gespeicherten ursprünglichen Anwendungsnamen. Der Name dient nur der Anzeige und überträgt keine Rechte auf eine neue Clientkennung. Alte Freigaben ohne Namensmetadaten können über eine exakt passende, noch gespeicherte OAuth-Sitzung benannt werden; ohne diese Daten bleibt die Anwendung unbenannt. Neue Freigaben speichern den Namen dauerhaft; dabei werden auch exakt zuordenbare Alteinträge ergänzt. Beim Widerruf der Freigabe wird ihr gespeicherter Name entfernt.
+
+Project Intelligence ergänzt keinen Scope. Bei jedem Aufruf werden die gebundene Identität
+geprüft und die aktuell sichtbare Loxone-Struktur über eine authentifizierte Sitzung gelesen.
+Ihr Projektänderungsmarker und die frische Sichtbarkeitsprüfung bestimmen die Gültigkeit des Caches.
+Bei unverändertem Marker kann ein begrenzter Graph im Arbeitsspeicher wiederverwendet
+werden; bei geändertem oder nicht verfügbarem Marker wird er verworfen. Das Projekt wird erneut
+geladen, wenn der Graph neu aufgebaut werden muss. Zwischengespeicherte Ergebnisse gewähren
+keinen OAuth-Zugriff. Sie stellt begrenzten Graphstatus, Suche,
 Objektbeschreibungen sowie vor- und nachgelagerte Signal- oder Referenzpfade bereit, aber keine
 rohen Projektdateien und keine Projektänderung.
+Folgeseiten der Projektsuche und -analyse verwenden begrenzte geordnete Ergebnisse bis zu fünf Minuten lang.
+Ein Cursor verfällt, wenn dieses Ergebnis verdrängt wird oder sich Projekt, sichtbare Struktur,
+Identität oder Analyseauswahl ändern. In diesem Fall muss die erste Seite erneut geladen werden.
 KNX/EIB-Metadaten sind eine erlaubnisgebundene, begrenzte Projektion desselben autorisierten
 Projekts. Sie geben weder beliebige Projektattribute noch ETS-Daten, Busmonitoring oder
 Konfigurationsschreibzugriffe frei.
+Native Loxone-Historie und Statistiken laden vor jeder Datenausgabe die aktuelle,
+benutzergefilterte Struktur frisch, auch bei einem Treffer im Statistik-Cache.
+Ein unveränderter Projektmarker allein genügt nicht als Nachweis aktueller
+Sichtbarkeit. Die lokale Ereignishistorie prüft die Sichtbarkeit ebenfalls durch
+einen frischen Strukturabruf.
+
+## Eigene Authentifizierungsereignisse
+
+`loxone_list_authentication_events(cursor=None, limit=20)` benötigt eine aktuell
+gültige `loxone:read`-Autorisierung. Es liest nur belegbar zugeordnete Ereignisse
+für die exakte registrierte App (`client_id`), Loxone-Identität und den Miniserver,
+auch aus früheren Anmeldungen derselben Kombination. Anwendungsnamen erlauben
+keinen Zugriff. Eine widerrufene oder abgelaufene Autorisierung darf auch keine
+Folgeseite lesen. Eine zusätzliche LoxBerry-Freigabe ist nicht erforderlich;
+globale Ereignisse bleiben lokalen Administratoren vorbehalten.
+
+`limit` beträgt 1–50, die Antwort höchstens 64 KiB. Neueste Ereignisse stehen zuerst;
+`next_cursor` unverändert übernehmen. Bei geänderter Historie, Neustart, anderer
+OAuth-Familie oder ungültigem Cursor muss die Abfrage neu beginnen. Der getrennt
+gekennzeichnete gemeinsame Schutzstatus identifiziert keine fremden Clients und
+belegt keinen Verursacher einer Sperre. Das Lesen öffnet keine Miniserver-Verbindung
+und startet keinen Wiederherstellungsversuch. Die Historie ist begrenzt: Fehlende
+oder nicht verfügbare Ereignisse beweisen keine Fehlerfreiheit. Alte Ereignisse
+ohne belegte Herkunft bleiben unzugeordnet.
 
 Weiter: [Funktionsumfang](capabilities.de.md).

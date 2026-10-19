@@ -15,6 +15,7 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
 )
 from mcpserver.config import PluginConfig
@@ -193,6 +194,47 @@ def test_internal_emergency_stop_status_is_separate_from_health() -> None:
     }
 
 
+def test_internal_event_history_status_is_bounded_and_kept_for_disabled_service() -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        service_enabled=False,
+    )
+    app = create_server(settings).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get("/internal/event-history-status")
+
+    assert response.status_code == 200
+    assert response.json()["event_history"]["status"] == "disabled"
+    assert set(response.json()["event_history"]) == {
+        "status",
+        "observed_at",
+        "capture_started_at",
+    }
+
+
+def test_existing_history_store_keeps_maintenance_monitor_when_recording_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store_path = (tmp_path / "history.sqlite3").resolve()
+    store_path.touch()
+    monkeypatch.setenv("MCPSERVER_EVENT_HISTORY_STORE", str(store_path))
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        plugin_config=PluginConfig(event_history_enabled=False),
+    )
+
+    server = create_server(settings)
+
+    assert server.event_history is not None
+    assert server.event_history.status == "disabled"
+
+
 def test_streamable_app_starts_the_configured_emergency_stop_monitor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -218,6 +260,30 @@ def test_streamable_app_starts_the_configured_emergency_stop_monitor(
         pass
 
     assert started is True
+
+
+def test_disabled_service_monitor_uses_the_shared_authentication_breaker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth" / "sessions.json").resolve()))
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        service_enabled=False,
+        plugin_config=PluginConfig(
+            enabled=False,
+            loxone_endpoint="http://192.168.255.254",
+            emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff",
+        ),
+    )
+
+    server = create_server(settings)
+
+    assert server.emergency_stop is not None
+    assert server.emergency_stop.auth_coordinator is not None
+    assert server.auth_coordinator is server.emergency_stop.auth_coordinator
 
 
 @pytest.mark.parametrize(
@@ -275,6 +341,16 @@ def test_internal_emergency_stop_status_rejects_unknown_host() -> None:
         response = client.get("/internal/emergency-stop-status")
 
     assert response.status_code == 421
+
+
+def test_event_history_updates_reject_remote_clients_and_bad_tokens() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as remote:
+        assert remote.get("/internal/event-history-updates").status_code == 403
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://testserver", client=("127.0.0.1", 5000)) as loopback:
+        assert loopback.get("/internal/event-history-updates?token=bad%20token").status_code == 400
+        assert loopback.get("/internal/event-history-updates").status_code == 503
 
 
 def test_health_rejects_unknown_origin() -> None:
@@ -378,7 +454,7 @@ def test_mcp_initialize_uses_expected_protocol() -> None:
     assert "loxone_get_skill_guide" in instructions
 
 
-def test_exact_default_read_only_tools_are_published() -> None:
+def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
     app = create_server(_settings()).streamable_http_app()
     request = {
         "jsonrpc": "2.0",
@@ -398,6 +474,19 @@ def test_exact_default_read_only_tools_are_published() -> None:
     tools = response.json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
         "loxone_get_skill_guide",
+        "loxberry_get_knx_catalog",
+        "loxberry_get_knx_correction_drafts",
+        "loxberry_prepare_knx_corrections",
+        "loxberry_apply_knx_corrections",
+        "loxone_get_installation_profile",
+        "loxberry_save_installation_profile",
+        "loxberry_delete_installation_profile",
+        "loxone_preview_system_message_confirmation",
+        "loxone_confirm_system_message",
+        "loxone_get_notifications",
+        "loxone_get_system_messages",
+        "loxone_get_attention_overview",
+        "loxone_analyze_opening_contacts",
         "loxone_get_system_status",
         "loxone_get_structure_overview",
         "loxone_list_rooms",
@@ -408,10 +497,37 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_find_controls",
         "loxone_describe_control",
         "loxone_get_control_notes",
+        "loxone_read_controls",
+        "loxone_get_state_semantics",
+        "loxone_get_active_alerts",
         "loxone_get_states",
+        "loxone_list_event_history_sources",
+        "loxone_get_event_history",
+        "loxone_analyze_history",
+        "loxone_plan_loads",
     ]
-    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
-    assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)
+    mutations = {
+        "loxberry_prepare_knx_corrections",
+        "loxberry_apply_knx_corrections",
+        "loxberry_save_installation_profile",
+        "loxberry_delete_installation_profile",
+        "loxone_confirm_system_message",
+    }
+    assert all(
+        tool["annotations"]["readOnlyHint"] is (tool["name"] not in mutations) for tool in tools
+    )
+    assert all(
+        tool["annotations"]["destructiveHint"]
+        is (
+            tool["name"]
+            in {
+                "loxberry_delete_installation_profile",
+                "loxone_confirm_system_message",
+                "loxberry_apply_knx_corrections",
+            }
+        )
+        for tool in tools
+    )
     assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)
     assert all(tool["outputSchema"].get("$defs") for tool in tools)
 
@@ -422,7 +538,23 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
 
     resources = await server.list_resources()
     assert [(str(item.uri), item.mimeType) for item in resources] == [
-        ("skill://using-loxberry-mcp/SKILL.md", "text/markdown")
+        ("skill://using-loxberry-mcp/SKILL.md", "text/markdown"),
+        *[
+            (f"skill://using-loxberry-mcp/{section}.md", "text/markdown")
+            for section in (
+                "core",
+                "states",
+                "history",
+                "project",
+                "knx",
+                "modbus",
+                "lighting",
+                "energy",
+                "operations",
+                "diagnostics",
+                "alerts",
+            )
+        ],
     ]
 
     contents = await server.read_resource("skill://using-loxberry-mcp/SKILL.md")
@@ -487,8 +619,12 @@ def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) 
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        "loxberry:knx:read",
+        "loxberry:knx:drafts",
+        "loxberry:knx:write",
     ]
     assert unauthenticated.status_code == 401
     assert all(response.status_code == 404 for response in aliases)
@@ -521,8 +657,12 @@ def test_protected_resource_metadata_advertises_optional_control_scope(tmp_path:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        "loxberry:knx:read",
+        "loxberry:knx:drafts",
+        "loxberry:knx:write",
     ]
     assert unauthenticated.status_code == 401
     assert "scope=" not in unauthenticated.headers["www-authenticate"]

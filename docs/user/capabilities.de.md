@@ -1,10 +1,341 @@
 # Funktionsumfang und Grenzen
 
+Die lokale Event History akzeptiert exakt entdeckte Runtime-Control-IDs mit
+Subcontrol-Suffix. Vollständige Schreibweise und Groß-/Kleinschreibung bleiben
+erhalten; State-IDs bleiben UUIDs. Abfragen und die bestehende Quellenauswahl
+verwenden ausschließlich das sichtbare Child/State-Paar, ohne Rückfall auf Parent
+oder Geschwister. Ohne aufbewahrte lokale Historie liefert ein sichtbares Child
+`not_found`; das beweist keine Inaktivität. Aufzeichnungs- und LoxBerry-Freigaben
+bleiben unverändert. Die Chart-Auswahl reicht begrenzte Control-IDs unverändert
+an dieselbe serverseitige Prüfung weiter.
+
 [English](capabilities.en.md)
+
+`loxone_analyze_history` berechnet kompakte Temperatur-Stichprobenmittel,
+belegte Energie und beobachtete Zustandsdauer mit `loxone:read` und
+`loxone:history`. Wählen Sie exakte Quellen oder bestätigte Profilbindungen,
+einen halboffenen Zeitraum und eine explizite IANA-Zeitzone. Unbekannte Einheiten,
+Resets, Anfangswerte und Erfassungslücken bleiben ausdrücklich eingeschränkt.
+Zustandsdauer ist keine gemessene Energie; ein Stichprobenmittel ist kein
+zeitgewichteter Mittelwert. Rohdaten werden nur auf ausdrücklichen Wunsch in
+Seiten zu höchstens 100 Elementen übertragen. Grenzen: 16 Quellen, 31 lokale
+Tage, 100.000 Eingabepunkte, 30 Sekunden und 64 KiB Ergebnis. Für rohe Statistiken
+gilt weiterhin die strengere Grenze von sieben Tagen.
+
+Dasselbe Tool bietet `consumer_ranking`, `pv_load_overlap`, `operating_phases`
+und `baseload`. Ranking benötigt bestätigte Verbraucherbindungen, vergleichbare
+Messgrenzen und die ausdrücklich erklärte Vergleichbarkeit über
+`comparison_options.comparable_boundaries_confirmed`; Eltern-/Kindzähler müssen
+ausgeschlossen sein und werden nicht summiert. PV-/Lastvergleich nutzt bestätigte
+Rollen und gemeinsame ganze Stundenintervalle, optional innerhalb belegter
+Ein-Phasen. Zeitliche Überschneidung und eine Energieobergrenze beweisen keinen
+exakten PV-Eigenverbrauch. Betriebsphasen erhalten Lücken und verteilen keine
+Teilintervallenergie. Die Nachtlastschätzung nutzt den zeitgewichteten Median
+belegter Stundenmittel der Leistung aus Stundenenergie im lokalen Fenster
+00:00–05:00; `night_start_hour` und `night_end_hour` überschreiben es in ganzen
+Stunden. Die Tageshochrechnung bleibt eine Schätzung des gewählten Kanals.
+Unbelegte Leistungsstichproben reichen dafür nicht aus.
+
+Statistik- und lokale Event-History-Antworten liefern `coverage_evidence` mit
+UTC-Zeitbasis, halboffenen belegbaren Intervallen beziehungsweise Punktbelegen
+und ausdrücklichen Grenzen. Bestehende inklusive Zeitfilter und Cursor bleiben
+erhalten. Stichproben beweisen keine lückenlose Aufzeichnung; fehlende Werte
+werden nicht interpoliert. Nur dokumentierte stündliche Differenzwerte erhalten
+ein eindeutiges Stundenintervall. Legacy-Lokalzeiten bleiben ohne bestätigte
+Miniserver-Zeitzone ungeklärt.
+
+Neue Event-History-Erfassungsphasen speichern den beobachteten Anfangswert samt
+Zeitpunkt. `capture_intervals` zeigt diese Evidenz; sie gilt am Phasenanfang und
+muss für spätere Randwerte mit den Übergängen fortgeschrieben werden. Alte oder
+gekürzte Phasen können keinen Anfangswert liefern. Reconnect-Lücken bleiben
+Lücken; keine Übergänge beweisen keine Inaktivität. Metadaten sind begrenzt und
+melden Kürzung ausdrücklich. Lokale Tagesgrenzen benötigen eine explizite
+IANA-Zeitzone; Zeitumstellung kann 23 oder 25 Stunden ergeben. Native Control
+History bleibt eine separate Ereignisquelle.
 
 ## Unterstützter Umfang
 
+Das [bestätigte Anlagenprofil](installation-profile.de.md) speichert minimale
+Zuordnungen über die Admin-Seite. MCP liest sie mit aktueller Sichtbarkeit und
+kann sie mit separater lokaler Profilfreigabe, erwarteter Revision und ausdrücklicher
+Nutzerbestätigung pflegen. Nutzerrollen bleiben von technischer Semantik getrennt.
+Genaue Wetterbindungen und optionale PV-Geometrie-/Leistungsangaben nutzen dasselbe
+Profil mit getrenntem Herkunftsnachweis. Eine unabhängig aktivierbare
+[lokale Wetteraufzeichnung](weather-history.de.md) liefert begrenzte Historie nach
+Empfangszeit; ungeprüfte Strahlungskodierungen werden nicht numerisch interpretiert.
+
+WindowMonitor `windowStates` wird über gewöhnliche Zustandsleser, Zustandssemantik
+und optionale Semantik kompakter Abfragen dekodiert. Nutzen Sie
+`semantic_value.contacts`: Jeder ursprüngliche Index erhält Roh-Token,
+dokumentierte Bitmaskenlabels und verfügbare Kontaktmetadaten/Referenzen.
+Bits 1/2/4/8/16 bedeuten geschlossen/gekippt/offen/verriegelt/unverriegelt;
+Null bedeutet `unknown_or_offline`. Kombinierte Bits bleiben ohne Alarmpriorität
+kombiniert. Prüfen Sie Dekodierungs-/Zuordnungsvollständigkeit, Vektorausrichtung,
+Kürzung und Beobachtungsqualität getrennt. Fehlende, ungültige oder veraltete Werte
+belegen keinen aktuell geschlossenen Kontakt. Grenzen: 100 Positionen, 65.536
+Eingabezeichen und 16 KiB Semantikanreicherung. Die Öffnungskontaktanalyse nutzt
+dasselbe optionale `decoded_state` und maskiert weiterhin nichtnumerische Tokens.
+
+Prüfen Sie für Historie die native Historienverfügbarkeit in der vollständigen
+Control-Beschreibung und `loxone_list_event_history_sources`. Nutzen Sie dann
+`loxone_get_control_history` oder `loxone_get_event_history` nur für eine verfügbare
+Quelle. Melden Sie tatsächliche Quelle, angefragten Zeitraum, Beobachtungszeitpunkte
+und ausgewiesene Abdeckung; native Historie verspricht keine vollständige
+Zeitraumabdeckung. Aktuelle Werte, Ereignistext und heutige Konfiguration können
+frühere Kontaktzustände oder historische Positionen nicht rekonstruieren.
+Vergleichen Sie getrennt gelesene Scharfschaltungs-/Heizungs-/Temperatur-/
+Abwesenheitsevidenz mit ihren eigenen Zeitpunkten und Lücken. Solche KI-Bewertungen
+sind keine WindowMonitor-Alarme, physische Öffnungsabdeckung oder Belege für
+Verbraucherverdrahtung. Es wird keine Aufzeichnung automatisch aktiviert.
+
+`loxone_get_state_semantics` liest Semantikevidenz und gecachte Werte für ein
+sichtbares Control mit `loxone:read` und frischer Sichtbarkeitsprüfung. Wählen Sie
+1–100 eindeutige exakte `state_names` oder lassen Sie sie weg und paginieren Sie
+alle normalisierten Zustände mit `offset` und `limit` (Standard/Maximum 100).
+Folgen Sie `next_offset` mit derselben Auswahl. Unbekannte ausgewählte Zustände
+führen gemeinsam zum Fehler; versteckte Controls sind ausgeschlossen.
+
+Bei Runtime-Controls vom Typ `Meter` nennt die vollständige Beschreibung
+`model.meter_type` aus dem dokumentierten `details.type`: `unidirectional`
+(auch dokumentierter Standard bei fehlendem Feld), `bidirectional`, `storage`
+oder `legacy`. Unbekannte, ungültige oder widersprüchliche Typmetadaten erhalten
+keine Ausgangssemantik. `powerName`, Projektfeld `PwrN`, Symbole, Einheiten und
+Anlagenbezeichnungen bestimmen den Typ nicht. Für das ausgewiesene `actual`
+liefern Zustandssemantik und passende rohe StatisticV2-Semantik `sign_convention`:
+`non_negative` für Uni (einschließlich null),
+`positive_consumption_negative_delivery` für Bi und
+`positive_discharge_negative_charge` für Speicher. Gültige Zustandswerte erhalten
+`semantic_value.kind=meter_output` mit `output_direction`; null bedeutet nur
+`zero`, keinen belegten physischen Stillstand. Zählerkanäle `total`, `totalNeg`
+und deren dokumentierte Tages-/Wochen-/Monats-/Jahresvarianten sind nichtnegativ;
+`totalNeg` ist ein eigener Zähler, kein negativer Nettowert. Unbelegte
+Zähler-Aliase werden nicht zugeordnet. Einheiten und physische Messgrenzen bleiben
+getrennt qualifiziert, die Zustandsdeskriptoren deshalb partiell. Alte `legacy`-
+Zähler behalten ihr bisheriges Verhalten. Ungültige Zahlen oder negative Werte
+auf nichtnegativen Kanälen ergeben keinen Semantikwert; Rohwerte bleiben erhalten.
+Die Eingangspolarität muss für diese dokumentierten Ausgänge nicht bekannt sein.
+Native EFM-Aggregate übernehmen diese Regeln nicht. Siehe
+[Zählerevidenz](../development/meter-output-semantics.md).
+
+Jeder Eintrag trennt den ursprünglichen `value`, optionalen `semantic_value`,
+Beobachtungsqualität `quality` und `semantics`. `known` bedeutet, dass die
+Interpretation durch die angegebene bestehende Decoderregel belegt ist;
+`partial`, `unknown` und `invalid` erhalten Wissenslücken, fehlende Begleitwerte
+und ungültige Quellkodierungen. Ein aktueller Wert kann eine unbekannte Bedeutung
+haben; ein veralteter Wert kann weiterhin eine bekannte Interpretation besitzen.
+Fehlende Dokument- oder Firmwareversionen bleiben null. Quellen je Feld benennen
+Structure-Metadaten, begleitende Runtime-Zustände oder Decoderregeln;
+Structure-Änderungszeiten sind keine Firmwareversion. Formate über 64 Zeichen
+werden mit ursprünglicher/zurückgegebener Länge und expliziter Kürzungsangabe
+weggelassen, ohne den Text zu verändern.
+
+Exakte `IRoomControllerV2.tempActual` und `tempTarget` unterscheiden Ist- und
+Solltemperatur über `measurement_quantity`, `measurement_role` und
+`semantic_value.kind=temperature`. Nur ein vollständiges Temperaturformat mit
+ausdrücklichem Celsius/Fahrenheit belegt die Einheit; bei `%.1f°` bleibt sie
+unbekannt. `InfoOnlyDigital.active` und `Hourcounter.active` dekodieren numerische
+Null/Eins als `semantic_value.kind=binary_state` und unterscheiden Anzeige von
+Zähleraktivität. Fehlende Werte bleiben teilweise; ungültige Codes, Strings,
+Boolesche Werte und nicht endliche Zahlen bleiben ungültig. Daraus entstehen
+keine physischen Verbraucherrollen, Heizaktivität, Energie oder historische
+Abdeckung. Siehe die [versionierte Evidenzmatrix](../development/analysis-semantic-evidence.md).
+
+Native Reihen liefern jetzt `semantics` in Beschreibung, Observability und
+Statistikabruf. Ausdrückliche Akkumulationsmetadaten unterscheiden Zählerstände,
+Stichproben und die aggregierten Differenzsummen des Adapters. Exakte Meter-Kanäle
+können quellendeklarierte Leistungs-/Energieeinheiten kennzeichnen; Richtung,
+physische Messgrenze, Messverfahren und Reset-/Überlaufkorrektur bleiben ohne
+Belege unbekannt. Temperaturreihen behalten Ist-/Sollrollen und ausdrückliche
+Einheiten; widersprüchliche Einheiten bleiben unbekannt. Der Aufzeichnungsmodus
+belegt keine durchgehende Abdeckung oder Mittel-/Min-/Max-Werte. Die Umrechnung
+lokaler Legacy-Zeit bleibt ungeprüft. Versionierte Regelreferenzen im Profil
+setzen betroffene Zuordnungen bei neuer oder geänderter Evidenz auf Prüfbedarf.
+
+V1 umfasst bestehende Irrigation-/AlarmClock-Decoder, `value`-Anzeigeformate für
+InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog-Bereiche und positionsgebundene
+StatusMonitor `inputStates`-Tupelzuordnung und Status-Count-Semantik. Allgemeine Analogformate belegen keine
+Einheit, Präzision oder Richtung; konfigurierte Bezeichnungen belegen keine
+Schweregrade oder Haushaltsrollen. Kodierungs- und Positionslisten behalten
+höchstens 100 Einträge, Quellen höchstens acht, jeweils mit Anzahl und
+Vollständigkeit. Seitenvollständigkeit ist von Semantik- und Metadatenvollständigkeit
+unabhängig. Es gibt keinen Projekt-Join, Download von Dokumentationsinhalten,
+Hidden-Diagnose, Alarmquittierung oder installationsweite Semantikabdeckung.
+Weitere Energie-, Zähler- oder Controllerbedeutungen können unbekannt bleiben.
+Diese Abdeckung ist mit Fixtures geprüft und begründet keine neue Hardware- oder
+Firmwarekompatibilität.
+
+
+Für WindowMonitor-Controls behält die vollständige Beschreibung die ersten 100
+konfigurierten Positionen in der Quellreihenfolge der Liste oder des Mappings bei,
+einschließlich fehlerhafter Platzhalter. `capabilities.model.window_monitor_summary`
+meldet `total`, `returned`, `omitted` und `truncated`; nur erhaltene explizite Referenzen
+können interne Controls zusätzlich zum Lesen sichtbar machen. Explizite unabhängige
+Benutzerlinks behalten ihre bestehende Autorisierung; die reine Monitor-Lesefreigabe
+übersteuert weder diese Links noch andere Nur-Lese-Beschränkungen. Fehlende/null-Sammlungen
+sind leer. Ungültige Sammlungsformen melden `invalid_window_monitor_collection` mit
+unbekannter (`null`) Gesamtzahl und ausgelassener Anzahl. Ordnen Sie `windowStates`
+über den ursprünglichen nullbasierten Index zu; ausgelassene Positionen belegen keine
+fehlenden Kontakte. Kompakte Ansichten enthalten diese Felder nicht. Eine vollständige
+Konfigurationsdarstellung belegt keine physische Öffnungsabdeckung.
+
+Jeder erhaltene Eintrag enthält eine sortierte Liste fester `diagnostics`-Codes ohne
+zurückgewiesene Quellwerte. Die Codes unterscheiden fehlerhafte Einträge
+(`invalid_window_monitor_entry`), ungültige Felder (`invalid_name`,
+`invalid_install_place`, `invalid_control_reference`, `invalid_room_reference`),
+fehlende Referenzen (`missing_control_reference`, `missing_room_reference`), nicht
+verfügbare sichtbare Referenzen (`control_reference_unavailable`,
+`room_reference_unavailable`) und explizite Raumkonflikte (`room_reference_mismatch`).
+Fehlende optionale Namen/Installationsorte sind gültig; ungültige vorhandene Werte,
+einschließlich null, werden diagnostiziert. Eine zurückgewiesene Referenz ohne gültigen
+Fallback kann zusätzlich fehlen. Ein gültiger Mapping-Schlüssel bleibt als Fallback
+nutzbar, auch wenn das explizite UUID-Feld ungültig ist.
+
+`resolution_status` ist `resolved`, wenn Control und Eintragsraum aufgelöst sind,
+`partially_resolved`, wenn genau eine Referenz aufgelöst ist, andernfalls `unresolved`.
+Das Summary zählt diese Zustände ausschließlich für erhaltene Positionen; ihre Summe
+entspricht `returned`. `room_consistency` ist separat `match`, `mismatch` oder `unknown`
+und vergleicht ausschließlich explizite UUIDs bei sichtbarem Control und zwei sichtbaren
+Räumen. Ein Konflikt ändert den Auflösungsstatus nicht. Verborgene und unbekannte Ziele
+sind gleichermaßen nicht verfügbar; Namen belegen weder Identität noch Kontaktrollen
+oder die physische Richtigkeit.
+
+### Prüfung der Öffnungskontakt-Zuordnung
+
+`loxone_analyze_opening_contacts` verbindet Monitorreferenzen mit exakten
+Verbraucherpfaden in einem begrenzten Nur-Lese-Aufruf (`loxone:read`). Wählen Sie
+`scope_type=monitor|room|contact|consumer` und eine exakte sichtbare `scope_uuid`.
+Zusätzliche Kandidaten sind bis zu 100 eindeutige sichtbare `candidate_contact_uuids`;
+ihre physische Kontaktrolle wird nicht bestätigt. `include_current_state=false`
+ist der Standard. Die Trace-Grenzen sind standardmäßig Tiefe 6 und 100 Knoten/Kanten,
+maximal 16 und 200. Ein Aufruf untersucht höchstens 100 Monitore, 100 Kontaktkandidaten,
+100 Verbraucher und 200 Trace-Starts; die Antwort bleibt unter 65.536 Bytes.
+Höchstens 200 Verbindungen und 200 Befunde werden materialisiert; weitere Einträge
+werden getrennt gezählt und verhindern ein vollständiges Ergebnis.
+Prüfen Sie getrennte Vollständigkeit für Monitore, Mapping, Graph und Zustände,
+Warnungen und Auslassungszahlen. Zähler gelten für untersuchte erhaltene Positionen,
+nicht für die gesamte Installation. Duplikate beruhen auf identischen Referenz-UUIDs.
+Ohne Projektzugriff bleiben Monitorbefunde verfügbar. Angeforderte Zustände melden
+Originalindizes, Vektorlänge und separate Zustandsfrische; `state_value` ist ein
+uninterpretiertes numerisches Quelltoken. Die Zustandszeit ist eine Unix-Zeit und
+unabhängig von der Analysezeit und dem verifizierten Projektmarker.
+
+Jeder gerichtete Evidenz-Trace liefert maximal 20 `gaps`, insgesamt maximal 200
+je Aufruf. Ein Gap nennt den erreichten opaken Projektknoten, Richtung, sicheren
+technischen Blocktyp und Connector-Key, festen Grund, Connector-Regelversion und
+vorhandene Regelreferenzen. Ungültige oder zu lange Tokens sind null; Namen und
+rohe Attribute fehlen. `gaps_omitted` zählt ausgelassene Fälle je Trace;
+`max_gap_evidence` erhält die unvollständige Graph-Evidenz.
+`parent_boundary_incomplete` beschreibt die bestehende konservative Parent-Prüfung;
+daraus folgen weder die Relevanz eines benachbarten Ports noch ein Konfigurationsfehler.
+Die bestehende Warning `unmodeled_internal_flow` bleibt erhalten.
+
+Die erste Verbraucherregel ist exakt `AutoJalousie.Window`; `Dwc` wird nicht als
+Alias angenommen. `Or.I1/I2 -> Q` und die Projektion einer aufgelösten expliziten
+`InputRef`-Referenz auf einen eindeutigen `AQ` sind markierte abgeleitete Regeln.
+Die begrenzten Trace-Starts berücksichtigen alle exakt zugeordneten Vorkommen
+eines logischen KNX-Kontakts über interne Modellquellen hinweg; eine dabei erreichte
+Grenze verhindert eine vollständige Graphaussage.
+Zwischenlogik, Sperrquellen und Anschlusskontext bleiben in den Belegen sichtbar.
+Unbekannte Semantik, Mehrdeutigkeit und erreichte Grenzen verhindern negative
+Verbindungsaussagen. Verdrahtete Ein- oder Ausgänge außerhalb der geprüften
+Anschlussregeln kennzeichnen die Blockevidenz ebenfalls als unvollständig;
+unverdrahtete Zusatzanschlüsse dagegen nicht.
+Ein `cross_assignment_review_candidate` vergleicht einen
+belegt speisenden Kontakt mit einem weiteren nicht speisenden Kandidaten desselben
+Raums; er entscheidet keine physische Zuordnung. `physical_opening_coverage`
+bleibt `not_assessable`. Monitorumfang untersucht dessen erhaltene Einträge;
+Raumumfang wählt Monitore über Monitor-/Eintragsraum und Kandidaten über exakte
+Eintrags-/Controlräume. Kontaktumfang findet direkte oder explizit verlinkte
+Monitorzuordnungen; Verbraucherumfang verwendet dessen Raum als Monitorkontext.
+Raum- und Verbraucherumfang begrenzen auch die Verbraucher, Monitor- und
+Kontaktumfang vergleichen die sichtbaren unterstützten Verbraucher.
+
+Der kanonische Skill trennt Monitorabdeckung, konfigurierte Verbraucherverdrahtung
+und physische Öffnungsabdeckung. Suchen Sie exakte sichtbare `WindowMonitor`-Controls,
+verfolgen Sie Discovery-Seiten und verwenden Sie `loxone_describe_control(view="full")`.
+Trennen Sie direkte Eintragsreferenzen von `relationships.linked_controls` (auch
+Links aus Aggregatobjekten), exakten Project-Intelligence-Pfaden und reinen Namens-/
+Raumkandidaten. Eine direkte Eintragsreferenz ist normalisiert und kann aus einem
+expliziten UUID-Feld oder einem Mapping-Schlüssel als Fallback stammen; die
+Auflösung allein identifiziert die Quelle nicht. Beschreiben Sie jedes aufgelöste
+referenzierte Control separat mit `loxone_describe_control(control_uuid=..., view="full")`,
+bevor Sie dessen `relationships.linked_controls` prüfen; der Monitor enthält nur
+kompakte Eintragsreferenzen. Ein expliziter Link belegt eine indirekte Verknüpfung, keine direkte
+Monitorzuordnung. Verwenden Sie Diagnosen und Originalindizes; fehlerhafte, nicht
+verfügbare, raumwidersprüchliche und ausgelassene Einträge begrenzen Aussagen.
+`partially_resolved` kann ausschließlich einen aufgelösten Raum bedeuten.
+Auflösungszähler gelten nur für erhaltene Positionen. Wenn aktuelle Zustände relevant
+sind, lesen Sie `windowStates` und melden Sie Index-/Vektorabweichungen.
+
+Prüfen Sie bei Fragen zur richtigen Zuordnung `loxone_get_project_status`, lösen Sie
+Kontakte und Verbraucher exakt mit `loxone_describe_project_object` auf, verfolgen
+Sie Kontakte mit `loxone_trace_project_logic` downstream und den exakten
+Verbraucheranschluss upstream, zunächst `AutoJalousie.Window`. Ermitteln Sie den
+Anschluss über zurückgegebene Kindknoten-IDs und deren Beschreibungen; vergleichen
+Sie exakte Graphknoten-IDs und Kantenendpunkte. Erhalten Sie `InputRef`, `Or`,
+Sperrschalter und Anschlussnamen. Hierarchie und gemeinsame Erreichbarkeit sind
+kein Signalfluss; erfinden Sie keine internen Kanten durch nicht modellierte
+Bausteine. Prüfen Sie mehrdeutige Mappings, `truncated_fields`, Trace-Begrenzungen,
+ungelöste Beziehungen und Aktualität. Fehlende Pfade bei unvollständiger Evidenz
+beweisen keine fehlende Verdrahtung. Dieser manuelle Ablauf ergänzt die Belege
+des Analyzers und hilft beim Verfeinern unvollständiger Ergebnisse.
+
+Generisches Beispiel: `Dachfensterkontakt -> InputRef -> Or mit Sperrschalter ->
+als Fenster benannte Jalousie.Window`, während ein anderer Fensterkontakt desselben
+Raums im Monitor enthalten ist. Zeigen vollständige relevante Traces, dass dieser
+den Anschluss nicht speist, melden Sie einen `cross_assignment_review_candidate`
+mit exakten Belegen. Falsche Kontaktverdrahtung und irreführende Verbraucherbenennung
+sind beide möglich; weder Namen noch Monitorzuordnung rechtfertigen eine physische
+Korrektur. Sind nur einzelne Segmente verfügbar, melden Sie die Lücke. Verwenden Sie
+klare Formulierungen wie „nicht aufgelöst“ und „indirekt verknüpft“. Ohne autoritatives
+Inventar und exakte Identitätsverknüpfungen ist die physische Vollständigkeit „nicht
+beurteilbar“ (`not_assessable`). Leiten Sie weder eine Öffnung pro Jalousie noch
+Kontaktrollen aus Namen, Kategorien oder Raumzahlen ab.
+
+### Laufzeit- und Projektfunktionen
+
+Der Projektstatus enthält optional ein paginiertes Mapping-Inventar mit
+`include_mapping_inventory=true`, `mapping_status`, `runtime_control_uuid`,
+`cursor` und `limit` (Standard 20, maximal 100). Filter bei Fortsetzungen
+wiederholen; Filter und Cursor benötigen das aktivierte Inventar.
+`mapping_breakdown` trennt `independent_unmapped`, `derived_from_parent`,
+`derived_parent_unmapped` und `derived_parent_ambiguous`; die bisherigen
+`mapping`-Zähler behalten ihre Definition. Im Inventar bezeichnet `unmapped`
+unabhängig ungemappte Einträge.
+
+Ableitungen benötigen eine explizite sichtbare Runtime-Parent-Beziehung. Ein
+Suffix belegt weder einen Parent noch einen Config-Connector. Die Herkunft nennt
+den unmittelbaren Parent, den exakten Vorfahren als Projektanker, die begrenzte
+Parent-Kette, Quellreferenzen und die Regel `explicit_runtime_parent_v1`.
+Parent-Ketten sind auf 16 Schritte begrenzt; fehlende, widersprüchliche oder
+zyklische Beziehungen ergeben keine erfolgreiche Zuordnung. Eigene exakte oder
+mehrdeutige UUID-Zuordnungen haben Vorrang. Projektsuche, Beschreibung und Trace
+kennzeichnen das ausgewählte Child durch `runtime_target_mapping` und liefern
+die Projekttopologie des Parents.
+
+Bei einem ausgewählten abgeleiteten Ziel enthält Observability separat
+`target_runtime_evidence` mit Zustandsverfügbarkeit, Statistikmetadaten und
+lokaler History-Abdeckung dieses Childs. Dessen `project_node_ids` bleibt leer;
+Parent-Referenzen sind Herkunftsbelege. Bestehende Controls und Summary-Zähler
+bleiben Exact-only. Geschwister werden nicht automatisch aufgenommen.
+Strukturelle Erreichbarkeit belegt keine Kausalität.
+
+
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
+
+Für bekannte sichtbare UUIDs bevorzugt `loxone_read_controls` für Identität und aktuelle Werte in einem Call nutzen, wie unten beschrieben. Für reine Referenzauswahl, explizite Diagnose versteckter Controls oder Server ohne dieses Tool nach der Suche `loxone_describe_control(view="state_refs")` verwenden. Die Ansicht liefert nur Control-Identität, Sichtbarkeit und die vollständige normalisierte `states`-Liste mit Namen und UUIDs, ohne Raum-/Kategorie-Kontext, Fähigkeiten, Statistiken, Historie, Darstellung oder Beziehungen. Sie lädt die nutzergefilterte Struktur neu und liefert bei fehlgeschlagener Aktualisierung einen Fehler statt zwischengespeicherter Referenzen. `stale` kennzeichnet einen getrennten Ereignisstream; `observed_at` ist der Beschreibungszeitpunkt, kein Messzeitpunkt eines State-Werts. Nur benötigte UUIDs auswählen, Duplikate entfernen und `loxone_get_states` in Gruppen von höchstens 100 aufrufen; bei leerer Auswahl keinen Werte-Read ausführen. Für versteckte Controls bleibt `include_hidden=true` sowohl bei der Diagnose als auch beim Werte-Read erforderlich. `history_targets` dient der Historien-/Statistikauswahl, `operation_targets` der Bedienvorbereitung und `full` der weiterführenden Diagnose.
+
+Nach der Suche mit `loxone_find_controls` kann `loxone_describe_control` mit `view="history_targets"` nur die Control-Identität, State-Namen und -UUIDs, das Kennzeichen für native Control-Historie sowie IDs und Metadaten beworbener Statistikserien liefern. Der Standardwert `view="full"` behält die ausführliche Antwort bei. `native_statistics_truncated=true` in der kompakten Ansicht bedeutet, dass mehr als 128 gültige StatisticV2-Serien gefunden und einige ausgelassen wurden. Ein aufgeführtes Ziel belegt weder eine lokale Ereignisaufzeichnung noch die Abdeckung eines angefragten Zeitraums durch native Historie oder Statistik; dafür ist die jeweilige Historienantwort zu prüfen.
+
+Für eine Control-Bedienung unmittelbar vor `loxone_operate_control` `view="operation_targets"` verwenden. Die Ansicht liefert nur die Control-Identität, aktuell sichtbare zulässige Aktionen und aktionsspezifische Ziele für die Parameter: Radio-Ausgänge, Szenen-IDs, Analogbereich, Override-Modi, Mood-List-State-Referenz und gegebenenfalls Temperaturgrenzen. Leere Zielfelder bedeuten, dass das Control diese Auswahlwerte nicht bewirbt. Für numerische Operationsparameter gelten weiterhin die Grenzen im Tool-Schema. State-Listen, Statistiken, Historie, Beziehungen und Darstellungsmetadaten entfallen; für Diagnosen bleibt `full` verfügbar. Diese Ansicht lädt die aktuelle nutzergefilterte Struktur neu; schlägt die Aktualisierung fehl, werden keine zwischengespeicherten Bedienziele zurückgegeben.
+
+Wenn ein Administrator sie aktiviert, kann der Server ausgewählte State-UUIDs zusätzlich als begrenzte lokale Ereignishistorie aufzeichnen. Sie ergänzt die native Loxone-Historie für kurzlebige Wechsel und erweitert nie die Sichtbarkeit der aufrufenden Identität.
+
+`loxone_list_event_history_sources` listet aktive und entfernte Quellen mit vorhandener Historie nur dann auf, wenn Control und State für den Aufrufer aktuell sichtbar sind. Dafür sind `loxone:read` und `loxone:history` nötig; ist die aktuelle Loxone-Sicht nicht verfügbar, liefert das Tool einen Fehler. `loxberry_list_event_history_sources` liefert den vollständigen Quellenbestand im selben seitenweisen Antwortschema und benötigt zusätzlich entweder aktiviertes `loxberry:read` mit genauer lokaler Read-Freigabe oder aktiviertes `loxberry:operate` mit genauer lokaler Operate-Freigabe. Scopes und Freigaben bleiben unabhängig. Beide Listen melden `recording_status` und einen bekannten `recording_ended_at`; mit `next_cursor` lassen sich alle Quellen abrufen. Das Auflisten erlaubt keine Änderungen: Add, Remove und Purge behalten ihre Operate-Anforderungen.
+
+Das Entfernen einer Quelle beendet die Aufzeichnung; gespeicherte Ereignisse bleiben lesbar, solange Control und State für den Aufrufer aktuell sichtbar sind. `loxone_get_event_history` meldet `recording_status`, `recording_ended_at`, `recording_notice` und die `coverage` des angefragten Zeitraums getrennt. `active` bedeutet für die Aufzeichnung konfiguriert; nur `coverage` belegt eine Erfassung im angefragten Zeitraum. Die Pause nach dem Entfernen gilt nie als durchgehend erfasst. Die globalen Alters- und Datenbankgrößenlimits gelten weiter. Ein freigegebener Client kann Ereignisse und Abdeckung einer inaktiven Quelle mit `loxberry_purge_event_history_source` und `confirm=true` endgültig löschen. Ist das Purge-Ergebnis unbekannt, etwa nach einem Timeout oder einem Nachpflegefehler nach dem Commit, darf der Aufruf nicht automatisch wiederholt werden.
+
+Falls das Ergebnis zum Speichern der Entfernungsmarkierung unbekannt ist, vor einem manuellen erneuten `remove` die Quellenliste und Historie prüfen. Der erneute Aufruf kann die Markierung nachtragen; `recording_ended_at` bleibt leer, wenn der ursprüngliche Endzeitpunkt nicht belegbar ist.
 
 `loxone_get_project_status`, `loxone_find_project_objects`,
 `loxone_describe_project_object`, `loxone_trace_project_logic` und
@@ -15,30 +346,198 @@ strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse s
 melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen bleiben ohne
 erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
 dies über `unresolved_truncated`.
+Exakte `ModbusASensor`- und `ModbusAActor`-Objekte ergänzen optionale, schreibgeschützte `modbus`-Evidenz in
+Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`, ohne neuen
+Technologiefilter. Die Sensor-Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
+`ModbusDataType`, `ModbusPollingCycle`, `SourceValHigh`, `DestValHigh`; beobachtete
+`ModbusDev`-Vorfahren zeigen den roh konfigurierten `Channel`, `ModbusServer` zeigt `Timeout`,
+`Comm485` zeigt `RxTimeout`, `Baudrate`, `Databits`, `Parity`, `Pause`, `Protocol`.
+Comm485 wird nur als beobachteter Quelltyp dieser Ancestry genannt und für sich nicht als
+Modbus klassifiziert. `source_read` folgt dem exakten Sensortyp; Aktoren zeigen mit
+`configured_write` ihre konfigurierte Richtung, ohne Schreibzugriff zu gewähren.
+Aktor-Felder sind `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `SourceValHigh`,
+`DestValHigh`, `Channel`, `RepeatRate` und `ModbusCoilQuantity`; Wiederholung und Anzahl behalten
+unbekannte Einheiten/Semantik und sind kein Sensor-Polling oder decodierter Registerbereich.
+Der beobachtete `ActorCaption`-Vorfahr erhält seine Containment-Identität ohne Zusatzfelder.
+Containment ist Hierarchie,
+keine Signalkausalität. Bestehende Connector- und Beziehungsevidenz bleibt in Describe verfügbar.
+
+Jedes Feld enthält `explicit`, `absent`, `ambiguous` oder `invalid`, Quellfeld,
+Rohvorkommen und opake Modellquellen-/Projektknoten-Provenienz. Widersprüchliche Werte haben
+keinen einzelnen `raw_value`; identische doppelte Vorkommen bleiben sichtbar. Numerische
+Quellstrings sind auf 64 Zeichen und acht Vorkommen je Feld begrenzt, mit `occurrences_omitted`.
+Fehlerhafte oder überlange Strings bleiben interne Quellevidenz; öffentliche Vorkommen markieren
+sie als ungültig und lassen ihren Inhalt aus. Einheiten, Enums und Datentypsemantik bleiben
+`unresolved`. Channel ist keine belegte Unit-ID. Defaults, Skalierungsformeln, Bit-/Wortreihenfolge,
+Aktoroperationen, Laufzeitfrische oder erfolgreiche Transaktionen werden nicht abgeleitet.
+Konfiguriertes Polling ist statische Evidenz. Die Suche zeigt höchstens einen Vorfahren,
+Describe höchstens `min(limit, 16)`, mit `ancestry_status` und `ancestry_truncated`.
+Nicht unterstützte Modbus-Typen erhalten eine Describe-Diagnose.
+Aktoren bleiben in diesem Analog-Sensor-Analyzer nicht unterstützt; rohe Aktormetadaten
+erweitern weder die Analyseabdeckung noch belegen sie physische Aktorkompatibilität.
+`loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
+`inventory`, `configured_register_mappings`, `direct_consumers`,
+`configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
+Standard-Scope (Version 13). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
+Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
+Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
+keine Defekte.
+Vergleichsausschlüsse erhalten den konkreten Grund sowie das betroffene Rohfeld,
+seinen Wert und Evidenzstatus. Ein expliziter unbekannter Befehl bleibt explizit;
+er wird weder als fehlender Wert noch als ungültige Gerätekonfiguration behandelt.
+Pollingwerte haben unbekannte Einheiten und belegen weder erreichte
+Raten noch Buslast. Direkte Signalkanten und verschiedene Verbraucher werden getrennt
+gezählt; Referenzen bleiben separat und fehlende direkte Verbraucher beweisen keine Nichtnutzung.
+Prüfstatus, Abdeckung, Lücken, Auslassungen und Pagination beachten. Diese Prüfungen
+erzeugen keinen Busverkehr und belegen weder aktuelle Messwerte noch Gerätefunktion.
+Gemeinsame Sensor-/Aktorregister können beabsichtigt sein. Registerbreite, Überlappung,
+Geräteadressierung, Skalierung und Byte-Reihenfolge benötigen Registerdokumentation.
+Describe führt begrenzte Parser-Diagnosen beobachteter Vorfahren mit und begrenzt den
+strukturierten Envelope auf 65.536 UTF-8-Bytes: Die Ancestry wird mit explizitem Kürzungsflag
+verkürzt; passt die verbleibende Beschreibung nicht, folgt `response_too_large`.
+`coverage_complete=false` vermeidet ausdrücklich eine vollständige Installationsinventur;
+Registernummern, Namen und
+quellenübergreifende IDs führen keine Vorkommen zusammen. Bestehende Identitäts-, Berechtigungs-,
+Marker-, Cursor- und Antwortbyte-Prüfungen gelten weiter. Der Explorer zeigt die optionalen
+typisierten Felder einschließlich Quellfeld-Labels in Arrays. Bereinigte öffentliche historische
+RTU- und Hersteller-TCP-Fixtures belegen nur die Quellform; Live-Sensor-/Gerätekompatibilität
+ist nicht verifiziert (Issues #350/#352).
+
 Bestätigte KNX/EIB-Projektobjekte ergänzen begrenzte, quellengestützte Metadaten für Buslinien,
 Endpunkte und KNX-Logikblöcke. Die Endpunktrichtung lautet `bus_to_loxone` oder
 `loxone_to_bus`; sie ist keine Aussage über die physische Gerätefunktion. Gruppenadressen
 behalten ihren Originaltext und erhalten nur bei gültigem Format eine kanonische Form. `EIBType`
-bleibt ein unaufgelöster Quellcode, keine geratene DPT. Gleiche Gruppenadressen erzeugen keine
-Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern nur eine kompakte
-KNX-Zusammenfassung; den Originalwert, Segmente, Namen und den DPT-Rohwert liefert gezielt
-`loxone_describe_project_object`. Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
+bleibt als Rohcode erhalten. Nur die versionierte, mit Config-Objekten abgeglichene
+Zuordnung ergänzt belegte DPT-Haupttypen. `EIBextsensor` und `EIBtextsensor`
+führen vom Bus zu Loxone; `EIBextactor` und `EIBtextactor` führen von Loxone zum Bus.
+Gültige Adressvarianten `:0` und `:1` bleiben für die beiden externen Typen getrennt;
+die Adresse nennt `EibAddr` oder nur bei `EIBextsensor`, falls dieses Feld fehlt,
+`EibAddrPulse` als Quelle. Das Suffix
+belegt keine physische Flankenrichtung. Eine exakte Variantensuche findet nur diese Variante;
+die Suche nach der kanonischen Basis kann beide liefern. Gleiche Gruppenadressen erzeugen keine
+Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern eine kompakte
+KNX-Zusammenfassung mit Original- und kanonischer Adresse, Quellfeld und Variante. Segmente,
+Namen, einen vorhandenen Rohdatentyp sowie begrenzte Connector-IDs und -Schlüssel mit
+Anzahlen ein- und ausgehender Signalverbindungen liefert `loxone_describe_project_object`.
+Im verifizierten Format erhalten Sensor/Aktor ohne `EIBType` separat den impliziten
+DPT1-Standard ohne EIS-Typ; Textobjekte erhalten DPT16 über den Objekttyp.
+Ungeprüfte Versionen und erweiterte Typen bleiben ohne belegte Zuordnung.
+Der Filter `knx_group_address` akzeptiert gültige zwei- oder dreistufige Adressen und die
+Varianten `:0`/`:1`. Ungültige Syntax oder Zahlenbereiche liefern `invalid_input`; eine gültige
+Adresse ohne Treffer ergibt eine erfolgreiche leere Suchseite. Auch gültige Originalformen
+werden nur exakt mit Original- oder kanonischer Adresse verglichen.
+Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
 begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reason`.
+`project_parts` zählt intern eingelesene Modellquellen, nicht Loxone-Config-Projekte. Status
+liefert opake `model_sources`; identische KNX-Quellvorkommen aus getrennten Modellquellen werden
+einmal als logisches Objekt mit `source_occurrence_count` und `model_source_ids` dargestellt.
+Gleiche Titel oder Gruppenadressen führen nie zu einer solchen Zusammenführung.
+Für `SysVar`, `DigitalIn`, `Actor`, `Online`, `Mode` und `VoltageOut` löst Modellversion
+15 außerdem belegte quellenübergreifende UUID-Vorkommen mit gleicher oder ergänzender
+expliziter Anschlusstopologie auf. Konflikte und unzureichende Belege bleiben mehrdeutig.
+`source_project_node_ids` erhält physische Referenzen; `logical_identity` erklärt die
+Klassifikation mit einem festen Grund und begrenzten Kandidatenreferenzen. Beschreibung
+und Trace berücksichtigen alle bestätigten Vorkommen innerhalb ihrer üblichen Grenzen.
+Dies belegt nur statische Identität und Verdrahtung, keine Berechtigung oder physische Wirkung.
+Exakte Quell-ID-Filter prüfen jedes dargestellte Vorkommen.
+Die Textsuche prüft ebenfalls alle dargestellten physischen Knoten- und Quell-IDs.
+Projektmodellversion 13 erlaubt einem `OutputRef` ohne lokales Ziel, über eine
+exakte normalisierte UUID auf einen
+eindeutigen `VirtualOutCmd` in einer anderen Modellquelle desselben autorisierten
+Bündels verweisen. Lokale Ziele behalten Vorrang; mehrdeutige, fehlende oder andere
+quellenübergreifende Referenzen bleiben offen. Dies ist statische Referenzevidenz,
+kein Live-Ausgabebefehl.
 Wenn eine exakt geprüfte Block-/Connector-Regel vorliegt, liefert Describe zusätzlich eine oder
 mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markierte abgeleitete
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 2 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 13 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
-Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden
+Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
+rohen Kantengrad und zeigen Signal- und Referenzkanten sowie getrennt abgeleitete semantische
+Kanten mit begrenzten Konnektorbelegen. Ein Konnektivitätsbefund unterscheidet direkte
+Signalverdrahtung von Referenzen und nennt die geprüften Konnektoren. „Kein direkt konfigurierter
+Verbraucher gefunden“ (bei einem Ausgang: „keine direkt konfigurierte Eingangsquelle gefunden“)
+bezieht sich nur auf die statische Projektverdrahtung; daraus folgt weder eine unbenutzte
+Gruppenadresse noch ein inaktives Gerät. Runtime-Namen und Control-Typen werden
 nur bei exaktem UUID-Mapping verwendet; Namen erzeugen nie ein Mapping.
 Findings sind Prüffakten, keine Qualitätsurteile. Feste Limitierungs-Codes kennzeichnen fehlende
 normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappings. Die Analyse
 behauptet weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
 Geräteverwendung; die Evidenz eines zurückgegebenen Projektknotens lässt sich mit Describe oder
 Trace vertiefen.
+Projektstatus und Analyse liefern außerdem `coverage_by_source_type`. Rohe
+Quellobjekt-Vorkommen werden getrennt von logischen Endpunkt-, Logikblock- und
+Linienzahlen gezählt; zusätzliche, über Modellquellen zusammengefasste Vorkommen
+sind eigens ausgewiesen. Unklare KNX-Kandidaten und ausgelassene Typgruppen machen
+die Abdeckung unvollständig. Objektdetails kennzeichnen `EIBType` als rohen
+Loxone-Config-Wert. Die separate `normalized_dpt_evidence` nennt belegte Haupttypen,
+EIS, Format-/Config-Version, Mappingversion und Herkunft; ETS-Untertypen bleiben
+unabhängig. Haupttypübereinstimmung bestätigt keine Geräte-/Telegrammkompatibilität.
+Mit `address_hierarchy` lassen sich gemessene ein-, zwei- und dreistufige
+Adresspräfixe seitenweise abrufen. Jeder Präfixeintrag trennt logische Endpunkte,
+rohe Modellquellenvorkommen, kanonische Adressen und Flankenvarianten und zeigt
+begrenzte Beispiele der Originaladressen. Direkte Verdrahtung bedeutet eine
+beobachtete Signal- oder Referenzbeziehung im Projekt; ungeklärte Beziehungen
+bleiben getrennt. Muster und Ausreißer nennen ihre lokale Vergleichsgruppe,
+bewerten aber keine Konfiguration. Optionale KNX-Adresslabels aus der
+Admin-Konfiguration gelten nur für den konfigurierten Miniserver, erscheinen als
+`admin_configured`-Metadaten, erfordern ein explizites zwei- oder dreistufiges
+Adressformat und ändern keine Projektfakten. Bei dreistufigen Gruppenadressen
+kennzeichnet `3:6/2=Label` eine Mittelgruppe;
+`2:6/2=Label` kennzeichnet dagegen eine vollständige zweistufige Adresse.
+Die Admin-Seite kann den aktuellen Text als UTF-8-Datei exportieren und eine
+solche Datei ins Eingabefeld laden. Erst „KNX-Adresslabels speichern“ übernimmt
+geladene Labels. Die Datei enthält nur den Labeltext und keine Miniserver-Adresse.
+Namen und
+Adressformen belegen weder Etagen, Funktionen, DPTs, ETS-Bedeutung noch Busaktivität.
+`loxone_analyze_observability` bewertet getrennt einen begrenzten, ausdrücklich angefragten
+Zeitraum für ein Projektziel. Es verbindet nur exakte UUID-gemappte strukturelle Erreichbarkeit,
+Verfügbarkeit aktueller States, beworbene native Statistikserien und die Abdeckung der lokalen
+Ereignishistorie. Erreichbarkeit beweist keine historische Ursache; konfigurierte Statistikserien
+sind zeitlich nicht geprüft, und fehlende oder partielle lokale Abdeckung beweist nicht, dass ein
+State nicht eingetreten ist. Pro Control werden höchstens 20 Statistikserien zurückgegeben;
+ausgelassene Metadaten markiert `native_statistics_truncated`. State-Namen sind auf 200 UTF-8-
+Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Namen und -Typen
+haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
+`mapping_coverage` zählt die exakten Runtime-Controls sowie mehrdeutig zugeordnete
+und ohne Zuordnungsevidenz gebliebene Bausteine innerhalb derselben begrenzten Suche.
+Kanonische Bausteine zählen einmal; Konnektoren und Container zählen nicht als Lücken.
+`exact_runtime_controls` entspricht `summary.relevant_controls`. Die separate Evidenz
+eines abgeleiteten Runtime-Ziels erhöht diesen exakten Zähler nicht. `complete` ist nur
+ohne Mapping-Lücken, ungelöste Beziehungen oder Such-/Diagnoseabschneidung wahr;
+`truncated` kennzeichnet die Abschneidung. Fehlende Zuordnungsevidenz beweist keine
+physische Abwesenheit. Die Zähler gelten für die gesamte Analyse und bleiben von
+`next_cursor` und `page_truncated` unabhängig; sie belegen keine historische Vollständigkeit.
+Die mitgelieferte Anleitung `using-loxberry-mcp` verbindet diese vorhandenen Tools
+zu einem Diagnoseablauf: Ziel bestimmen, aktuelle Beobachtungen samt Zeitstempel
+prüfen, historische Abdeckung für den angefragten Zeitraum belegen und strukturelle
+Pfade von Ereignisbelegen und möglichen Ursachen trennen. Ein nach der
+Wiederverbindung beobachteter Wert verrät nicht, wann er während der Unterbrechung
+gewechselt hat.
+Für jeden State ohne vollständige lokale Abdeckung empfiehlt `recommendations`
+anhand beobachtbarer Werte und Control-Metadaten native Statistik, lokale
+Aufzeichnung bei Änderung oder `undetermined`.
+Für dokumentierte Schaltzustände von `InfoOnlyDigital`, `Switch`, `Pushbutton`,
+`PresenceDetector` und weiteren unterstützten Control-Typen kann bei beobachtetem
+Wert 0/1 eine Aufzeichnung bei Änderung auch ohne `is_analog` empfohlen werden.
+Der dokumentierte `value`-State von `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog` und `Slider` wird auch ohne `details.analog` als analog
+behandelt; ein kleiner Wertebereich macht ihn nicht zu einem digitalen State.
+Widerspricht ein ausdrücklich gesetztes `details.analog=false`, bleibt die
+Empfehlung unbestimmt.
+Beim `Daytimer` gilt `is_analog` nur für den State `value`, nicht für Modus oder
+Zeitwerte. Für `Daytimer` wird keine lokale Aufzeichnung empfohlen, weil lokale
+Event-History-Quellen diesen Control-Typ nicht unterstützen. Eine aktive native Serie hat nur dann Vorrang, wenn ihr Output dem
+State zugeordnet werden kann. Fehlt bei einer Legacy-Serie die State-UUID,
+bleibt die Empfehlung unbestimmt. Die zeitliche Abdeckung muss weiterhin geprüft
+werden. Teilweise lokale Aufzeichnung ist eine Abdeckungslücke,
+kein Anlass für eine zweite Quelle. Ohne Nachweis der Signaldynamik nennt die
+Intervall-Empfehlung keine festen Minutenwerte. Das Tool ändert keine
+Aufzeichnungseinstellungen.
 `source_diagnostics` meldet begrenzte Quelllücken wie Parseranomalien, ungültige KNX-Felder und
 nicht modellierte Attribute. Dies sind keine Konfigurationsurteile; unbekannte Quellwerte werden
 nicht ausgegeben, sondern nur feste Codes, Feldnamen, Wertformen und Projektknotenreferenzen.
@@ -53,6 +552,23 @@ oder Config-Projektdaten; Details liefern die gezielten Discovery-Tools. Jede
 Aufschlüsselung enthält höchstens 50 Einträge, und das vollständige Ergebnis-
 Envelope ist mit expliziten Vollständigkeitsangaben auf 64 KiB begrenzt.
 
+`counts.rooms` und `counts.categories` zählen sichtbare Definitionen, die der
+normalisierte Discovery-Korpus referenziert, ohne den synthetischen
+`unassigned`-Bucket. Das `total` jeder Gruppe enthält einen solchen Bucket,
+wenn Controls fehlende oder innerhalb der sichtbaren Struktur nicht auflösbare
+Referenzen besitzen:
+`total = definitions_count + (unassigned_bucket_present ? 1 : 0)`.
+Bei zwei zugewiesenen Räumen ohne unzugeordnete Controls gilt `counts.rooms=2`
+und `rooms.total=2`; mit unzugeordneten Controls gilt `counts.rooms=2` und
+`rooms.total=3`. Dasselbe gilt für Kategorien. Typen besitzen keinen synthetischen
+unassigned-Bucket. `returned` zählt ausgelieferte Einträge; Gesamtzahlen bleiben
+bei Kürzung unverändert, auch wenn der unassigned-Bucket entfällt. `complete`
+beschreibt die Auslieferung, keine Aktualität oder Anlagenvollständigkeit.
+Vollständige `control_count`-Summen entsprechen `counts.controls` einschließlich
+normalisierter Subcontrols; gekürzte Summen können kleiner sein. Leere
+Config-Definitionen und nur von versteckten Controls referenzierte Definitionen
+bleiben ausgeschlossen.
+
 Für die erste Orientierung ersetzt dies getrennte Aufrufe von
 `loxone_list_rooms`, `loxone_list_categories` und einem ungefilterten
 `loxone_find_controls`-Aufruf, die nur deren aggregierte Verteilung ermitteln
@@ -62,6 +578,170 @@ Kategorien enthält, und anschließend `loxone_find_controls` nur für den
 gewählten Raum, die Kategorie oder den Typ verwenden. Die gezielten Aufrufe
 bleiben nötig, wenn einzelne Controls, Beschreibungen oder aktuelle Zustände
 benötigt werden.
+
+### StatusMonitor
+
+StatusMonitor dekodiert kommagetrennte `inputStates` in positionsstabile
+Tupel je Eingang: Roh-Token, konfigurierte ID/Text/Farbe/Priorität/Status-UUID,
+Eingangsreferenz und expliziter Zuordnungsstatus. `loxone_describe_control`
+liefert begrenzte Mengen- und Vollständigkeitsangaben für Definitionen/Eingänge;
+`loxone_get_state_semantics`, `loxone_get_states` und die Semantikprojektionen
+von `loxone_read_controls` verwenden denselben Decoder. State-Lesungen prüfen
+die Sicht frisch; ein fehlgeschlagener Refresh nutzt keine gecachte Autorisierung.
+Höchstens 100 Positionen und 16 KiB Semantik-Enrichment
+werden ausgegeben; leere, fehlerhafte, nicht zugeordnete oder fehlende Positionen
+verschieben keine späteren Eingänge. Prüfen Sie `decoding_complete`,
+`mapping_complete` und `truncated` getrennt von der Freshness. Stale Werte sind
+historische Zuordnungen, kein bestätigter aktueller Status. IDs sind konfigurierte
+Ausgangsindizes, keine ursprünglichen Eingangswerte. `numState0`–`numState9`/
+`numDef` sind Counts zu IDs 0–10; ein positiver Count ist kein Gesamtstatus oder
+Alarm. Aggregation integrierter Monitore wird nur anhand eines bereits sichtbaren
+referenzierten StatusMonitor erkannt; Referenzen werden nicht erweitert und deren
+States nicht gelesen. Für mehrgliedrige Monitore wird kein einzelnes aktuelles
+Tupel abgeleitet.
+
+Nutzen Sie diese Quellfakten für eine kontextuelle KI-Prüfung von Text/Rechtschreibung,
+Farb- und Wertegruppierung sowie Konsistenz. Fehlende Zustände lassen sich nur mit
+belegter Projektlogik und Zweckbestimmung beurteilen; Visualisierungsmetadaten
+beweisen keine vollständige Verdrahtung oder Absicht. Bezeichnungen, Prioritäten
+und Farben belegen keine intrinsische Alarmbedeutung. Quelle: Structure File 17.1,
+Seiten 130–131.
+
+## Kompakte Reads bekannter Controls
+
+Nutze `loxone_read_controls`, wenn sichtbare Control-UUIDs bereits bekannt sind;
+ermittle sie sonst zuerst mit `loxone_find_controls`. Beispiel:
+
+Optional liest `native_result_view` (`actual`, `day`, `week`, `month`, `year`,
+`lifetime`) ein natives EFM-Ergebnis für einen frisch bestätigten **Loxone-
+Administrator** auf Firmware **17.2.8.28**. Verwende genau ein Ziel ohne
+`state_names` und `include_semantics=false`. Perioden benötigen zusätzlich
+`loxone:history` und aktivierte Historie. Ein LoxBerry-Admin-Login belegt diese
+Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
+leeren `values` und null gelesenen States. Für `Gpwr`, `Ppwr`, `Spwr` und `Cpwr` werden
+Leistungsgröße und W/kW aus dem unveränderten, belegten EFM-Format ergänzt.
+`Cpwr` ist belegte Lastleistung; natives `Rest` bleibt
+unqualifiziert. Bei der bestehenden W/kW-Ergänzung kennzeichnet
+`unit_origin="configured_display_format"` eine deklarierte Anzeigeeinheit,
+keine geprüfte Sensorskalierung oder physikalische Kalibrierung. Ein Anzeigetext
+löst keine Zahlenumrechnung aus. Fehlende, ungeeignete oder geänderte Formate
+lassen Einheit und Herkunft null; dasselbe gilt für Rest und Periodenfelder,
+solange deren einzelne Zuordnung nicht belegt ist.
+Die [Semantikprüfung für Firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
+bestätigt diese Grenze: Die Loxone-KB beschreibt den Bausteinausgang `Rest` als
+berechnete Restleistung der Spitzengruppe. Eine belegte Zuordnung zum nativen
+Ergebnis fehlt weiterhin. Die dokumentierte Bausteinfunktion von Rest ist damit
+bekannt; offen ist die native Zuordnung. Restanteile können ungemessene Verbraucher
+und Messabweichungen enthalten. Unterschiedliche Messzeitpunkte, Toleranzen und
+gerundete Anzeigen rechtfertigen weder eine erzwungene Nullbilanz noch das
+Abschneiden eines Restwerts oder den Schluss auf einen ungemessenen Verbraucher
+allein aus einem Restwert ungleich null. Vorzeichen von Zähler- oder Knotenwerten und deren
+Einheiten werden nicht auf native Gesamtergebnisse übertragen.
+Im Ergebnis bleiben Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische
+und Periodengrenzen unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
+Herkunft; bei geändertem Format bleiben Einheiten unbekannt.
+Fehlende Felder einschließlich `Rest` dürfen nicht als Wert 0 interpretiert werden.
+Kalenderansichten sind laufende native Perioden, keine beliebigen historischen
+Zeiträume; Eigenverbrauchs- oder Bilanzrechnung wird nicht angeboten. Ohne die
+Option bleiben zwischengespeicherte State-Lesungen unverändert. Andere Firmware
+und native Nicht-Admin-Lesungen bleiben nicht unterstützt; Geräteabnahme wird
+getrennt ausgewiesen.
+
+Ein rein lesender Vergleich auf einer Anlage mit Firmware **17.2.8.28** hat
+inzwischen negative, Null- und positive native `Spwr`-Werte passend zum explizit
+verknüpften Speicherzähler und EFM-Teilnehmerzustand belegt. Das stützt für diese
+Anlage die dokumentierte Zähler-Ausgangskonvention: positiv beim Entladen,
+negativ beim Laden. Die konfigurierte Eingangspolarität und eine tatsächliche
+Invertierung sind damit nicht nachgewiesen. Diese begrenzte Gerätebeobachtung
+ändert weder die allgemeine Vorzeichensemantik noch den Decoder.
+
+Ein weiterer [rein lesender Rest-/Anzeigevergleich](../development/efm-rest-display-observations.md)
+auf dieser Firmware bestätigte die Zuordnung aller fünf expliziten Teilnehmer-
+und Zählerreferenzen, einschließlich vorzeichenbehafteter Werte des separat
+referenzierten Zählers mit Anzeigename Rest. Natives Rest fehlte in allen drei
+Actual-Antworten. Die deklarierte Anzeigeeinheit von Cpwr ist nun durch die
+verbrauchsspezifische Dokumentation und das stabile EFM-Format qualifiziert,
+Semantikregel v2. Passende benachbarte Verbrauchswerte stützen die geprüfte Anlage,
+keine allgemeine Einschlussformel oder physisch gleichzeitige Messung. Gecachte
+Produktionsaggregate können von einem einzelnen Produktionsteilnehmer abweichen.
+Für diesen Vergleich wurde kein neuer Code auf das Zielgerät übertragen.
+
+Verfügbare Restwerte werden unverändert **ohne Einheit** ausgegeben. Ein natives
+`Rest` behält seinen Rohwert; ein fehlendes natives Feld bleibt fehlend. Der exakt
+zugeordnete Rest-Zähler kann separat über den bestehenden State-Lesepfad
+(`actual`, ohne `native_result_view`) gelesen werden. Sein Wert wird als eigener
+Zählerwert mit Quelle ausgewiesen und ersetzt kein fehlendes natives EFM-Feld.
+
+Die abschließende [Aggregat-/Periodenprüfung](../development/efm-semantic-matrix.v1.md#final-aggregateperiod-disposition)
+übernimmt keine weiteren Bedeutungen aus ähnlichen Feldern: `totalFormat` gilt
+belegt für `total/totalNeg`, nicht automatisch für die sieben nativen
+Periodenfelder. Die KB-Formel für den Bausteinausgang `Yd` ist kein belegter
+Vertrag für natives `Income`. Projektwährung und Zeitzone definieren weder
+dessen Einheit noch Periodengrenzen oder Lifetime-Beginn. Diese Werte bleiben
+lesbar als Rohwerte; die genannten Metadaten bleiben unbekannt. Aktuelle
+App-/Config-Änderungslisten liefern Versionshinweise, keine zusätzliche
+Kompatibilitätszusage oder native Berechnungsformel.
+
+Für datierte Energieberichte verwende bestätigte Historienbindungen und
+`loxone_analyze_history(operation="energy")` mit deren Semantik und Abdeckung.
+Aktuelle native Leistungswerte bleiben getrennte Momentaufnahmen; `get/day`
+liefert keine Werte für gestern. Fehlende Eigenverbrauchs-, Speicher- oder
+Restlastkomponenten bleiben unbekannt. `report_applicability` und
+`report_limitations` nennen die Eignung und Grenzen der nativen Komponenten.
+
+Nativer Energiemanager-Kontext ist über
+`loxone_describe_control(view="energy_context")` für einen frisch sichtbaren
+Baustein und einen frisch bestätigten Loxone-Administrator verfügbar.
+Versteckte Bausteine sind ausgeschlossen. Generation 1 und Generation 2 behalten
+getrennte Listen belegter Fähigkeiten und fehlender Nachweise. Andere Familien
+bleiben nicht unterstützt; der dokumentierte Vertrag allein belegt keine
+Gerätekompatibilität.
+
+Die lesende Geräteprüfung [#533](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/533)
+vom 18.10.2026 fand auf dem Testziel (Firmware 17.2.8.28) keine der beiden Familien
+im autorisierten sichtbaren Bestand. Die Geräteabnahme bleibt für Generation 1
+und Generation 2 jeweils **unverifiziert**. Das belegt keine Abwesenheit in
+unzugänglichen Bereichen oder anderen Anlagen; positive Kontext- und
+Lastzustandsbelege fehlen weiterhin.
+
+Generation 1 liefert deklarierte Lastmetadaten getrennt von zwischengespeicherten
+Lastzuständen; Namen belegen keine Zuordnung. Eine Mindestlaufzeit von null
+bedeutet, dass der dokumentierte Trigger nicht verfügbar ist. Generation 2
+trennt Parametersperren zum Bearbeiten von Lastbedingungen. Ihre dokumentierten
+globalen Leistungszustände verwenden kW, SOC-Zustände Prozent; Einheiten der
+Lastleistung und die Richtung der Priorität bleiben unbekannt. `hasActual`
+belegt keinen Leistungszähler, und native Aktivierung belegt keinen physischen
+Verbrauchszyklus. Aktualität wird getrennt ausgewiesen. Nativer Regelalgorithmus
+und historische Sperren werden nicht rekonstruiert.
+
+Beispiel für zwischengespeicherte States:
+
+```json
+{"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
+```
+
+Die Antwort verbindet `identity` (Name, Typ, Sichtbarkeit, Raum und Kategorie) mit
+benannten `values` (UUID, Rohwert, Freshness und Beobachtungszeit) in einem Call.
+Ohne `state_names` werden alle States des ausgewählten Controls gelesen. Namen
+müssen exakt passen. Erlaubt sind 1–25 eindeutige Controls und insgesamt höchstens
+100 benannte States; Identifier/Namen sind auf 128 Zeichen begrenzt. Aliase zählen
+einzeln. Versteckte/unbekannte Controls oder unbekannte State-Namen weisen den
+gesamten Batch zurück.
+
+`include_semantics=true` ergänzt optional dasselbe Evidenz- und Qualitätsmodell
+wie `loxone_get_state_semantics`. Beziehungen, Notizen, Historie, Statistiken,
+Aktionen und Projektdaten werden nicht expandiert. Bestehende Detailtools bleiben
+verfügbar. `complete` und angeforderte/zurückgegebene Anzahlen beschreiben die
+Auslieferung der Auswahl einschließlich unverfügbarer oder veralteter Werte;
+sie beweisen weder Aktualität noch vollständige Semantikkenntnis. Semantikmetadaten
+besitzen eigene Completeness-Felder. Die strukturierte Antwort ist auf 64 KiB
+begrenzt; `response_too_large` liefert keine Teilwerte. Teile die Targets auf oder
+wähle weniger States.
+
+Gegenüber vollständigen Beschreibungen sinkt die Antwortgröße bei Controls mit
+vielen Beziehungen deutlich. Für ein einzelnes kleines Control kann
+`describe_control(view="state_refs")` plus `get_states` weniger Bytes benötigen,
+braucht aber weiterhin zwei Calls.
 
 ## Grenzen
 
@@ -81,3 +761,328 @@ Testfixtures bestätigt: `Switch.on`, `Switch.off`, `Dimmer.set_level`,
 Controls, Aktionen oder Installationen.
 
 Die aktuelle Zuordnung von Plattformen, Clients und Nachweisstatus steht in der [Support-Matrix](../development/support-matrix.md).
+
+
+### Aktive sichtbare Alarme
+
+Für Alarmdiagnosen nach den Core-Regeln `section="alerts"` laden (oder
+`skill://using-loxberry-mcp/alerts.md`). Der kurze Abschnitt enthält Statusprüfung,
+gezielte Projekt-Folgeaufgaben und überprüfbare Abnahmekriterien. Der vollständige
+Guide bleibt vor Schreibaktionen und für andere Abläufe erforderlich.
+
+Für Fehler- und Optimierungsprüfungen relevante sichtbare Quelltypen mit
+`loxone_find_controls` ermitteln, einschließlich inaktiver Quellen und weiterer
+Ergebnisseiten. Vollständig belegte Projektpfade mit der gewünschten Funktion
+vergleichen; ein leerer gekürzter Trace beweist keine fehlende Verdrahtung.
+Unbekannte Parameter, Einheiten und Eskalationseinstellungen benötigen einen
+autorisierten Leser oder eine Übergabe an Projektwerkzeuge vor einem konkreten
+Änderungsvorschlag.
+
+Für den aktuellen Status zuerst Aktualität, Abdeckung und Kürzung prüfen;
+eine unbekannte Gesamtzahl oder ein leeres Teilergebnis bedeutet keine
+Alarmfreiheit. Exakte Quellenreferenzen für gezielte Zustandsabfragen nutzen.
+Für die Projektdiagnose das Runtime-Control eindeutig zuordnen, die
+Projektbeschreibung prüfen und relevante Eingangs-/Ausgangspfade verfolgen.
+Statische Verdrahtung beweist weder Auslösung noch Ursache. Optimierungskandidaten
+betreffen belegte Pfade und Aufzeichnungslücken gegenüber der gewünschten
+Funktion; sie belegen weder ausreichende Sensorabdeckung noch Anlagensicherheit.
+Beobachtungen, statische Fakten, Hypothesen und Vorschläge getrennt berichten.
+Der Projektanalysator unterstützt KNX und Modbus, keinen Alarm-Scope.
+Scharfschaltung ist eine eigene Frage; der Ablauf quittiert oder testet keine Alarme.
+
+`loxone_get_active_alerts` liefert einen begrenzten read-only Überblick aus einer
+frisch autorisierten sichtbaren Struktur und erfassten Cache-Beobachtungen.
+Unterstützt werden `AalEmergency.status` (0 Normalbetrieb, 1 Alarm, 2 Reset,
+3 deaktiviert), `AalSmartAlarm.alarmLevel` (0 inaktiv, 1 sofortig, 2 verzögert)
+und `AlarmChain.activeAlarmType` (Bits 2/4/8 aktive Alarmarten, Bit 1 Quittierung).
+Ganzzahlige numerische Werte werden akzeptiert; Booleans, Strings und unbekannte
+Codes sind ungültig. AlarmChain akzeptiert Kombinationen 0–15: Quittierung allein
+ist inaktiv; Quittierung hebt aktive Alarmbits nicht auf. Grundlage ist Structure
+File 17.1, Seiten 26–30; daraus folgt keine Firmware-Kompatibilitätszusage.
+Nur aktuelle verfügbare primäre States belegen Aktivität/Inaktivität.
+
+`Alarm.level` akzeptiert zusätzlich ganzzahlige numerische Codes 0–6: 1 still,
+2 akustisch, 3 optisch, 4 intern, 5 extern, 6 fern. Code 0 bedeutet gemäß der
+expliziten Entscheidung des Eigentümers (#346, 11. Oktober 2026) keinen laufenden
+Alarm; dies ist eine Annahme und keine Loxone-Garantie. Regel `Alarm.level.v1`
+trennt die Provenienz von Structure File 17.0 S.28 (Stufen) und Issue-Entscheidung
+(Nullwert/Aktivität und akzeptiertes Format), mit `reason=owner_approved_decoder`.
+Eine widerlegte Annahme wird als Bug korrigiert. Stufen sind keine Gefahrenbewertung.
+Quittierung setzt die digitalen Alarmausgänge zurück und erhält die Scharfschaltung;
+der API-Level-Übergang und die Testmodus-Abbildung sind nicht spezifiziert.
+Test-, Quittierungs- und Unterdrückungskontext bleiben unbekannt; armed,
+nextLevelAt und startTime überschreiben die Aktivität nicht. Fehlende, ungültige
+oder veraltete Levels belegen niemals Inaktivität.
+
+SmokeAlarm.level akzeptiert 0 (inaktiv), 1 (Voralarm) und 2 (Hauptalarm). Level 1/2 und numerisches testAlarm 0/1 stammen aus Structure File 17.1 S.126; level=0 ist eine freigegebene Annahme des Owners aus Issue #347 (2026-10-11), separat in der Decoder-Provenienz mit reason=owner_approved_decoder ausgewiesen. Wird sie widerlegt, ist dies ein Bug. Optionales testAlarm überschreibt keine Aktivität; fehlender, stale oder ungültiger Testkontext bleibt unbekannt. Quittierung und Signalsuppression bleiben unbekannt; acousticAlarm=0 belegt keine Inaktivität. Daraus folgt keine Aussage zu Befehlsübergängen oder Hardware-Kompatibilität.
+
+`semantic_value` enthält dekodierte Quell-Level/-Arten und Kontext ohne weitere
+Tool-Interpretation. Aktive Befunde enthalten optional `context`: `test_alarm`, `acknowledged` und
+`signals_suppressed` sind true/false/null. Null bedeutet unbekannt oder von der
+Quelle nicht bereitgestellt. Sperrung, Abwesenheit und Deaktivierungszeit von
+AalSmartAlarm sind optionale Kontextquellen und überschreiben keinen aktiven Level.
+`context.source_states` erhält Begleitwerte, UUIDs, Freshness und Beobachtungszeit;
+stale oder ungültiger Kontext wird nicht interpretiert. Befehle beweisen keinen
+Test- oder Unterdrückungsstatus. Aktive Testalarme und quittierte aktive
+Quellzustände bleiben enthalten und werden mitgezählt.
+
+Prüfen Sie `coverage.complete` unabhängig von `truncated`/`complete`. Leere
+partielle Ergebnisse belegen keine Alarmfreiheit. Das Tool klassifiziert StatusMonitor-
+und WindowMonitor-Zustände nicht als Alarme. Verwenden Sie Quell-Control und
+State-Referenzen für gezielte Lesungen; Namen/Farben belegen weder Gefahr noch
+Ursache oder Schweregrad. Der Snapshot ist kein Alarmierungsdienst und quittiert
+keine Alarme. `limit` erlaubt 1–50 Befunde (Standard 50), ohne Cursor/Familienfilter.
+Die Abdeckung gilt nur für bekannte Kandidatenfamilien, nie für die physische
+Installation; `total_active` bleibt bei partieller Auswertung null.
+
+### Versionsgebundener State-Signalfluss
+
+Project-Trace und Opening-Contact-Analyse leiten mögliche Einflüsse von
+`State.I1` bis `State.I8` auf AQ aus vollständigen Tabellen mit festen Operanden
+für ConfigVersion 17020828, XML 274 und State-Revision 178 ab. Die Regel
+`state_table_aq_v3` erkennt Gleichheit durch fehlenden Operator sowie belegte
+Operatorcodes 1–9 (`>`, `>=`, `<`, `<=`, `!=`, `*=`, `!*`, `:=`, `!:`).
+Bis zu vier Bedingungen je Zeile sind UND-verknüpft; die erste passende Zeile
+gewinnt. Grenzen sind 100 Zeilen und 256 Zeichen je Textoperand. Numerische
+Ergebnisse müssen explizit sein; ein leeres `TextV` bleibt unsupported.
+
+Dies ist strukturelle Einfluss-Evidenz, keine Laufzeitauswertung oder
+Textkonvertierung. Nicht vor der ersten bedingungslosen Zeile verwendete Eingänge,
+exakt überschattete Bedingungen oder identische numerische Ergebnisse aller
+möglicherweise erreichbaren Zeilen können AQ-Unabhängigkeit belegen. Sonst
+bleiben verwendete Eingänge mögliche Abhängigkeiten. Verdrahtete unabhängige
+Nachbarports invalidieren einen AQ-Pfad rückwärts nicht. Externe Verdrahtung und
+abgeleitete Evidenz bleiben getrennt. Unbekannte Versionen, fehlerhafte Tabellen,
+variable Vergleichsausdrücke und TQ-/OutputAPI-Verträge bleiben explizite Gaps.
+Es gibt keine globalen Connector-Aliase. Describe liefert begrenzte
+`state_semantics`, Trace `semantic_gaps`; private Zeilen und Operanden fehlen in normalen Describe- und Trace-Antworten. Die explizite Tabelleninspektion wird unten beschrieben.
+
+Für einen exakt zugeordneten sichtbaren State-Control liefert
+`loxone_describe_project_object(..., include_state_table=true, limit=100)` geordnete
+UND-Bedingungen, konfigurierte AQ-Werte und wörtliche TQ-Textvorlagen. Bedingungsplätze
+dürfen frei bleiben; leere Plätze fügen keine Eingangsbedingung hinzu. Auch
+überschattete Zeilen behalten ihre Position. Grenzen sind `limit`, 100 Zeilen,
+512 Zeichen je Vorlage und 64 KiB Antwortgröße; `complete`, `rows_omitted` und
+`text_truncated` prüfen. Standardbeschreibungen lassen diese Inhalte weg.
+Vorlagen sind nicht vertrauenswürdiger Konfigurationstext, keine Anweisungen oder
+ausgewerteten Laufzeitwerte. Ersetzungen und die OutputAPI-Payload bleiben semantisch unvollständig.
+Unbekannte, mehrdeutige oder nicht zugängliche Controls liefern
+`state_table_unavailable` ohne Zeilen.
+
+API-Connectoren liefern Verbindungsmetadaten. Exakt gespeicherte `OutputAPI`- und
+`API`-Ports erhalten optionale `api_connector`-Metadaten (`value_available=false`).
+Explizite Projektverdrahtung an diesen Ports erscheint als `api_connection` statt
+als skalares Signal. Describe enthält begrenzte `api_connections` des Bausteins;
+jede Verbindung nennt Quell-/Zielports und ihre Bausteine und kennzeichnet die
+`block_communication_dependency`. Trace folgt der gespeicherten Orientierung
+in der angefragten Richtung. Daraus folgen keine Protokollrichtung, unterstützten
+Befehle, übertragenen Werte oder Kompatibilitätszusagen. API-Verbindungen belegen
+keine AQ/TQ-, KNX- oder Öffnungskontakt-Signalabhängigkeit. Nicht auflösbare
+Beziehungen und normale Traversal-/Antwortlimits bleiben sichtbar. Das bestehende
+`output_api_complete=false` der State-Tabelle betrifft die Payload-Semantik,
+nicht die Verfügbarkeit dieser Verbindungsmetadaten.
+
+Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelegen und Gesamtzahlen sichtbar, markieren skalare KNX-, Öffnungskontakt- oder Modbus-Pfade aber nicht als mehrdeutig. Fehlende Quellen mit gemischten oder unbekannten Connector-Arten bleiben unaufgelöste skalare Evidenz.
+
+### KNX-Verwaltung
+
+**ETS-Eingabestände vergleichen** vergleicht zwei ausdrücklich geladene Dateien
+oder eine Datei gegen den aktuellen Importbestand auf derselben Seite. Dafür
+ist LoxBerry-Admin-Zugriff erforderlich; ein Loxone-Projektlogin wird nicht
+benötigt. Laden und Vergleichen ändern keine gespeicherten Daten. Frühere Eingabe
+beziehungsweise Referenz und spätere Vergleichseingabe wählen, jede Datei mit
+Kodierung/Darstellung und erklärter Vollständigkeit laden und dann vergleichen.
+Ergebnisse zeigen Adressen und Präfixgruppen nur in einer Eingabe, geänderte
+Quellenfelder und bei Bestandsvergleichen separate manuelle Adress-Overrides
+und Präfixlabels. Rein manuelle Datensätze sind keine entfernten Importadressen.
+Ein Datei-/Dateivergleich bewertet keine lokalen Overrides. Es wird keine
+Importhistorie erfunden oder dauerhaft gespeichert.
+
+Die numerische Adressidentität ignoriert zwei-/dreistufige Schreibweisen.
+Präfixgruppen behalten ihre Format-/Präfixidentität. Namen und Beschreibungen
+behalten ihre genaue Schreibweise; DPT-Angaben werden als Mengen normalisierter
+Kennungen verglichen, unbekannte Kennungen bleiben erhalten. Dateireihenfolge,
+gleichwertige DPT-Schreibweisen und DPT-Reihenfolge erzeugen keine Quellenänderung.
+Fehlend, bewusst leer und false unterscheiden sich; optionale Angaben nur in
+einem Format bleiben eine tatsächliche Informationslücke. Fehlen in einer
+Teileingabe belegt keine Löschung in ETS. Der aktuelle Bestand kann mehrere
+Importe enthalten und hat unbekannte Projektvollständigkeit. Der Vergleich
+übernimmt keine Änderung; ein Import nutzt seinen eigenen geprüften Speichervorgang.
+
+Ergebnisse erscheinen auf 50er-Seiten. Ein geändertes Ziel oder eine neue Revision
+verlangen neu geladene Eingaben. Widersprüchliche Duplikate müssen vor dem Vergleich
+in der Datei geklärt werden; identische Duplikate werden zusammengeführt. Temporäre
+Vergleichsentwürfe verfallen nach zehn Minuten, teilen sich das bestehende Gesamtbudget
+von 32 MiB und erlauben höchstens 16 MiB je Datei. Sie ersetzen keine offene
+Importvorschau. **Vergleichsdateien und Ergebnisse verwerfen** entfernt die
+Vergleichsentwürfe dieser Admin-Sitzung und erhält ihre Importvorschau sowie alle
+bestätigten KNX-Metadaten.
+
+**ETS/Loxone-Projektabgleich** benötigt eine separate Loxone-Anmeldung mit
+Projektzugriff. Für eigenständige lokale ETS-/manuelle Adressen und aktive
+Präfixlabels sowie alle gespeicherten importierten Haupt-/Mittelgruppen
+(`kind="imported_groups"`, unabhängig von aktiven Labels) benötigt
+`loxberry_get_knx_catalog` eine separate, standardmäßig
+ausgeschaltete und zielgebundene Admin-Freigabe sowie Zustimmung zu
+`loxberry:knx:read`. [KNX über MCP](knx-mcp.de.md) erläutert begrenzte Ansichten,
+Filter, Quelleninterpretation und Folgeseiten.
+
+Der Projektabgleich zeigt gemeinsame Adressen, Adressen nur im Importbestand
+und Adressen, die nur im autorisierten eingelesenen Projekt beobachtet wurden.
+Alle relevanten primären Loxone-Namen bleiben von ETS-Namen und manuellen
+Metadaten getrennt; begrenzte Objektlisten weisen ausgelassene Einträge aus.
+Unterschiedliche Namen sind Benennungsabweichungen, keine belegten Fehler.
+Fehlende oder gekürzte Namen begrenzen den Vergleich. Originale zwei- und
+dreistufige Adressen sowie `:0`/`:1`-Varianten bleiben sichtbar. Nur im Import
+belegt keine ungenutzte Busadresse; nur im Projekt belegt keinen
+Konfigurationsfehler. Die deklarierte Vollständigkeit der letzten Datei belegt
+keine Vollständigkeit eines Bestands, der mehrere Importe vereinigen kann.
+Quelllücken, Aktualität, Modellversion und Folgeseiten prüfen. Der Abgleich
+ändert keine Daten. MCP-Clients wählen ausdrücklich
+`scope="knx", analyses=["ets_project_comparison"]`; Standardanalysen bleiben
+unverändert. Ziel- oder Metadatenänderungen erfordern einen neuen Abgleich.
+
+Die eigene KNX-Seite ist aus der Administration erreichbar. Sie verwaltet Präfixlabels und manuelle Gruppenadressen getrennt je konfiguriertem Miniserver. Adresse, Darstellungsformat und zusätzlicher Name sind erforderlich; Beschreibung und DPT-Angaben sind optional. Diese Angaben ändern keine Loxone-Namen oder Projektfakten.
+
+Die Hauptabschnitte sind einklappbar. **ETS-Import** steht als erster Unterabschnitt unter **Gruppenadressen**; deren Badge zählt die zur aktuellen Suche passenden Adressen über alle Seiten. **ETS/Loxone-Projektabgleich** zeigt den Verbindungsstatus, das späteste Sitzungsende und die aus der Sitzung bestätigten OAuth-Scopes. Unbekannte Scopes werden nicht als gewährt dargestellt. Der Vergleich lokaler ETS-Eingabestände benötigt diese OAuth-Verbindung nicht. Tabellen und Desktop-Buttons sind kompakter; bei Touch-Eingabe bleiben die Buttons mindestens 44 CSS-Pixel hoch.
+
+Beim ersten Seitenaufruf und beim erneuten Laden zeigen die betroffenen Abschnittsüberschriften Ladehinweise, auch bei eingeklappten Karten. Lese- und Entwurfsfreigaben, Korrekturentwürfe und die Wiederherstellung der Projektvergleichssitzung zeigen zusätzlich ihren lokalen Status. Die Hinweise enden nach Erfolg oder Fehler; Fehlermeldungen bleiben sichtbar.
+
+Die lokale Suche findet Teiltexte in importierten und manuellen Namen/Beschreibungen, einschließlich vom Override verdeckter Importwerte. Adressen werden auch in der entsprechenden zwei-/dreistufigen Darstellung gefunden. Quellenfilter unterscheiden Importwerte, manuelle Angaben und beide Quellen. **Abweichende lokale und importierte Werte** zeigt ausdrücklich unterschiedliche Angaben, keine belegten Fehler. Präfixlabels bleiben separat. Ergebnisse sind nach Adresse sortiert und auf 50 Einträge pro Seite begrenzt. Änderungen am Ziel oder Datenstand verlangen eine neue Suche; Folgeseiten vermischen keine Stände. Der JSON-Seitenexport verwendet die aktuell angezeigten Filter und Revision.
+
+**Quellen und DPT-Angaben** trennt Importwerte und manuelle Angaben je Feld, einschließlich unbekannter und bewusst leerer Werte. Importformat, Zeitpunkt und Importkennung zeigen die Herkunft, soweit sie vorhanden ist. Mehrere DPT-Kennungen bleiben erhalten; ETS-Kennungen wie `DPST-1-1` werden zusätzlich als `1.001` dargestellt, `DPT-1` bezeichnet nur den Haupttyp. Nicht erkannte Kennungsformate bleiben sichtbar. Ein erkanntes Format bestätigt weder die Registrierung/Bedeutung des Typs noch Telegrammtyp oder Geräteprogrammierung. Es wird kein Typ ausgewählt und kein Loxone-`EIBType` umgedeutet. Die Zuordnung zur Gruppenadresse beziehungsweise zu Kommunikationsobjekten ist hier nicht belegt; CSV kann diese Zuordnung abflachen. Lokale Suche und Quellenansicht benötigen keinen Loxone-Projektzugriff. Die autorisierte Projektsuche berücksichtigt zusätzliche ETS-/manuelle Namen und Beschreibungen, einschließlich vom Override verdeckter Importwerte. Loxone-Namen und Projektbeschreibungen bleiben primär; getrennte Quellenfelder stehen unter `knx.metadata`. Describe erhält den ursprünglichen `EIBType`; mehrere DPT-Angaben behalten ihren Syntaxstatus ohne bevorzugten Typ. Der Explorer zeigt eine aufklappbare Quellenansicht. Eine geänderte KNX-Revision macht Such-/Analysefortsetzungen ungültig; eine neue Anfrage starten. Ausgewählte importierte Gruppenlabels ergänzen die Hierarchieanalyse unterhalb manueller Labels.
+
+ETS-Gruppenadressen lassen sich als modernes XML importieren: In ETS „Gruppenadressen exportieren“ öffnen und **XML** wählen, nicht „XML (ETS4 Format)“. Zwei- und dreistufige Adressen werden erkannt. Bei einer leeren Datei das Adressformat ausdrücklich auswählen. Freie Hierarchien, andere Namespaces, DTDs und externe Entitäten werden abgelehnt. UTF-8 mit/ohne BOM und Windows-1252 werden unterstützt; die Vorschau zeigt die erkannte Kodierung, eine ausdrückliche Auswahl ist möglich.
+
+Alternativ **CSV**, ohne ETS3-Kompatibilität, **3/1**, **mit Kopfzeilen** und **Tabulator** wählen. Auch **3/3** wird unterstützt; die wiederholten Spaltennamen werden anhand ihrer Position ausgewertet. Die modernen Kopfzeilen müssen `Description` und `DatapointType` enthalten; deren Werte bleiben optional. Komma-/Semikolon-Trennzeichen, fehlende oder mehrdeutige Kopfzeilen und ältere Kompatibilitätsformate werden abgelehnt. Die [ETS-Exportdokumentation](https://support.knx.org/hc/en-us/articles/360022237580-Group-Address-Export) beschreibt die Formate. Die Dateiart wird automatisch erkannt oder ausdrücklich ausgewählt; die Vorschau zeigt XML beziehungsweise CSV 3/1 oder 3/3 und die Kodierung.
+
+CSV-Gruppenzeilen werden von Einzeladressen unterschieden; mehrere DPTs bleiben getrennte, geordnete Angaben. Leere optionale CSV-Zellen bedeuten „nicht angegeben“; sie können keine bewusst leere Importbeschreibung ausdrücken. Ein lokaler Override kann weiterhin bewusst leer sein. Explizite Angaben werden ohne Defaults übernommen. XML und CSV können unterschiedliche optionale Informationen enthalten, etwa ein Sicherheitsfeld nur in CSV; das ist eine Quellenabweichung. Für spätere ETS-Rekonstruktion ersetzt CSV keinen ursprünglichen XML-Nachweis. Dreistufige Original-CSV-Dateien sind auf Loxberry-Test geprüft; zweistufige CSV-Varianten sind synthetisch geprüft und noch nicht durch einen echten zweistufigen ETS-Export bestätigt.
+
+Für einen vollständigen Export den obersten Gruppenadressen-Knoten in ETS auswählen. Der Import prüft die Datei, kann ihre Vollständigkeit für das ETS-Projekt aber nicht selbst nachweisen. Die Zuordnung zum angezeigten konfigurierten Miniserver erfolgt durch den Administrator.
+
+Datei laden, Ziel und Umfang prüfen, widersprüchliche Duplikate entscheiden und erst dann **Geprüften Import speichern** wählen. Identische Duplikate werden zusammengeführt. Vorschau, Abbruch und ungültige Dateien verändern keine gespeicherten Adressdaten. Ein gültiger neuer Importentwurf ersetzt den bisherigen Importentwurf derselben Admin-Sitzung; ein ungültiger Upload erhält ihn. Entwürfe verfallen nach zehn Minuten und sind an Sitzung, Miniserver, Adressrevision und manuelle Präfixlabels gebunden. Geänderte Daten verlangen eine neue Vorschau.
+
+Der Standard ergänzt/aktualisiert Importwerte enthaltener Adressen. Fehlende optionale Felder werden dort unbekannt, nicht bewusst leer; feldweise manuelle Overrides bleiben erhalten. **Importwert verwenden** entfernt den jeweiligen Override beim Speichern der Adresse. ETS- und manuelle Namen erscheinen getrennt. Die lokale Auswahl ist kein Vorrang vor Loxone-Namen. Mehrere DPT-Angaben und explizite ETS-Flags bleiben Quellenangaben; sie ersetzen keinen Loxone-`EIBType`.
+
+Nur nach Bestätigung, dass die Datei den vollständigen Projektbestand enthält, ist **Importbestand vollständig ersetzen** verfügbar. Nicht mehr enthaltene Importadressen werden entfernt, manuelle Datensätze bleiben erhalten. Overrides entfernter Importadressen werden als manuelle Angaben erhalten und in der Vorschau ausgewiesen. Fehlt dabei ein manueller Name, ist die Übernahme des bisherigen zusätzlichen ETS-Namens als manuelle Angabe vorausgewählt. Die Vorschau zeigt den erhaltenen Namen vor dem ausdrücklichen Speichern. Alternativ kann ausdrücklich nur der Override mit unbekanntem Namen erhalten werden. Das ändert keine Loxone-Konfiguration.
+
+Importierte Gruppen lassen sich ausdrücklich als Präfixlabels auswählen. Manuelle Labels haben bei gleichem Format/Präfix Vorrang. Insgesamt sind maximal 128 aktive Labels mit höchstens 80 Zeichen erlaubt. Nicht ausgewählte Gruppenmetadaten bleiben gespeichert. Die ausgewählten Importlabels erscheinen bereits auf dieser Seite; ihre Einbindung in die Projektanalyse folgt mit der Projektintegration.
+
+Grenzen pro Miniserver: 65.536 Einzeladressen, 1.024 importierte Gruppen, Namen mit höchstens 255 und Beschreibungen mit höchstens 4.096 Zeichen, bis zu 16 DPT-Angaben je Adresse. Jede Importdatei ist auf 16 MiB begrenzt. Überschreitungen werden abgelehnt, nicht abgeschnitten.
+
+Upgrades migrieren die KNX-Datenbank idempotent; Neustarts erhalten bestätigte Daten. Vor einer Deinstallation die Plugin-Konfiguration und `data/plugins/mcpserver/knx/metadata.sqlite3` separat sichern. JSON und Labeltext übertragen die dokumentierten lokalen Metadaten, sichern aber nicht die ursprünglichen XML-Attribute und Hierarchie als ETS-Rekonstruktionsnachweis. Originale ETS-Exportdateien deshalb ebenfalls behalten. Temporäre Entwürfe gehören nicht zum bestätigten Bestand.
+
+Labeltext lässt sich weiterhin laden und exportieren. Der versionierte JSON-Austausch enthält nur Adressmetadaten, keine Miniserver-Adresse oder Secrets, und ist kein ETS-Importformat. Laden zeigt eine Vorschau; erst die ausdrückliche Übernahme ergänzt/aktualisiert Datensätze. Nicht enthaltene Adressen bleiben erhalten. Gleichzeitige Änderungen oder ein Zielwechsel können die Übernahme ablehnen; dann neu laden.
+
+Der JSON-Export enthält die angezeigte Adressseite. Größere Bestände lassen sich seitenweise übertragen, damit jede Datei innerhalb der Importgrenze bleibt.
+
+Löschen und das Verwerfen von Eingaben werden in einem Dialog innerhalb der Seite bestätigt. Abbrechen und Escape erhalten die Eingaben. Vor dem Neuladen oder Schließen des Browser-Tabs speichern: Nicht gespeicherte Eingaben werden dabei verworfen.
+
+
+## Experimenteller ETS-XML-Korrekturexport
+
+In der KNX-Verwaltungsseite nach einem autorisierten ETS/Loxone-Abgleich einzelne
+importierte Adressen der aktuellen Ergebnisseite auswählen (höchstens 50).
+Name und Beschreibung getrennt wählen: vorhandenen ETS-Wert behalten, einen
+konkret gezeigten Loxone-Wert übernehmen oder ausdrücklich eingeben. Mehrere
+Loxone-Namen erfordern eine eigene Auswahl; keine automatische Sammelübernahme.
+Diese Entscheidung verändert keine lokalen Overrides oder Loxone-Daten.
+
+Vorschau und Download prüfen Ziel, Datenrevision und den frisch autorisierten
+Projektstand. Der XML-Serializer verwendet ausschließlich nachgewiesene Daten
+aus dem jüngsten XML-Import einschließlich zugehöriger Elternhierarchie. Nach
+CSV- oder älteren XML-Importen die ursprüngliche XML-Datei gegebenenfalls erneut
+importieren. Gemischte Herkunft und nicht sicher erhaltbare Angaben sperren den
+Export. Führende Dokumentkommentare werden erhalten; andere Kommentarpositionen
+können bei ausgewählten Adressen nicht sicher rekonstruiert werden und sperren
+Version 1. Es gibt keinen CSV-Korrekturexport.
+
+Nur Namen und nichtleere Beschreibungen dürfen geändert werden. Keine neuen
+Adressen, Löschungen, Umadressierung oder Änderungen an Gruppenstruktur/-namen,
+DPTs, Flags und Sicherheit. Ein Download ändert weder ETS noch den Importbestand.
+Vorher/Nachher und unverändert mitgeführte XML-Attribute stehen in der Vorschau.
+Vorschau und Download sind auf jeweils 20 MiB JSON-Antwort begrenzt. Auch eine
+kleinere XML-Datei kann durch Unicode-Escapes oder doppelte Vorher-/Nachher-Angaben
+die Grenze erreichen; dann weniger Adressen auswählen.
+
+**Experimentell, noch nicht durch echten ETS-Import bestätigt:** Vor dem Import
+Projektsicherung erstellen und an einer Projektkopie testen. Parser-Roundtrips,
+Browser, MCP und SSH belegen ausschließlich Dateierzeugung und Plugin-Ablauf.
+Sie beweisen weder ETS-Verhalten bei fehlenden Attributen noch den Erhalt von
+Kommunikationsobjekt-Zuordnungen. #419 und das Gesamttracking #411 bleiben offen,
+bis unveränderter und gezielt korrigierter Import, DPTs/Flags/Sicherheit,
+Gruppenhierarchie und Objektzuordnungen für zwei-/dreistufigen Stil in ETS
+nachgewiesen sind; ETS-Version dokumentieren und frischen Export vergleichen.
+
+## Systemmeldungen
+
+Die Bestätigung genau einer Meldung ist eine separate, standardmäßig deaktivierte
+Funktion mit eigenem optionalem OAuth-Scope, befristeter Vorschau und ausdrücklicher
+Freigabe. Das geprüfte „Okay“ einer manuellen Warnung historisiert; die native
+Bestätigung bleibt davon getrennt. Keine Sammelbestätigung, Löschung oder Reparatur.
+
+Siehe [Systemmeldungen](system-messages.de.md) für experimentelle aktuelle und
+historische Lesezugriffe, Quellenrechte, Grenzen und belegte Folgeaufgaben.
+
+## EFM-Teilnehmerreferenzen (#363)
+
+Full Describe ergänzt für den exakten Quelltyp `EFM` das Feld
+`capabilities.model.efm`. Geordnete Pfade und Elternpfade beschreiben Vorkommen
+getrennt von kausaler Verdrahtung und Subcontrols. Verweise werden gegen die
+frische Sichtbarkeit des Aufrufers aufgelöst; nicht verfügbare Ziele geben keine
+Identität preis. Wiederverwendete Controls behalten getrennte Vorkommen. Titel,
+Icons und Rest-Metadaten sind Anzeigeinformationen, keine Messwerte. Rollen
+bleiben rohe begrenzte Tokens mit unbekannter Interpretation ohne passende
+Versionsregel; numerische XML-Rollen werden nicht umgedeutet. Grenzen: 100
+Vorkommen, acht Ebenen und 32 KiB erhaltene Metadaten. Ausgelassene
+Teilbaumwurzeln werden gezählt; deren unbesuchte Nachfolger bleiben unbekannt.
+Topologie-, Referenz- und Rollenvollständigkeit sind getrennt. Kompakte Views
+bleiben unverändert. Bindings gehören zum separaten #364; es werden weder
+Werte noch entfernte Node-Daten abgerufen.
+
+Aufgelöste Control-Anzeigenamen und -Typen sind auf 200/64 Zeichen begrenzt und
+kennzeichnen Kürzungen. Auch die gesamte serialisierte EFM-Projektion passt in
+32 KiB. `projection_omitted` zählt bereits normalisierte Vorkommen, die das
+abschließende Budget am Ende der Tiefensuchfolge auslässt; erhaltene Eltern und
+Quellpfade bleiben stabil.
+
+## EFM-State-Referenzbindungen (#364)
+
+Full EFM Describe ergänzt `capabilities.model.efm_bindings`, zugeordnet über
+den Teilnehmerpfad aus #363. Die einzige Regel verbindet explizite UUID-förmige
+`actualEfmState`-Strings durch exakte Gleichheit mit Werten der State-Namens-/UUID-
+Map desselben autorisierten Monitors. Sie verlangt einen frischen Firmware-Probe
+für **17.2.8.28** mit derselben Miniserver-Identität wie die frisch autorisierte
+Struktur. Unbekannte/andere Versionen und fehlgeschlagene oder abweichende Probes
+bleiben ununterstützt. Es gibt weder Versionsbereiche noch Positions-/actualN-
+Vermutungen, Namensdecoder oder XML-Aliase. Kompakte Views machen keinen
+zusätzlichen Probe; Messwerte und entfernte Node-Daten werden nicht abgerufen.
+
+Quellfeld, JSON-Typ, Encoding, exakte Quellnamen und validierte State-UUIDs bleiben
+von Node-/Control-Identitäten getrennt. Der Status unterscheidet fehlende und
+fehlerhafte Metadaten, ununterstütztes Encoding/Version, nicht gefundenen Verweis,
+Konflikt, Teilabdeckung und Map-Grenze. Aliase und widersprüchliche Quellfakten
+bleiben innerhalb der Grenzen erhalten. Eine fehlende Bindung entfernt keinen
+verschachtelten Teilnehmer. Referenzvollständigkeit belegt keine Semantik,
+Einheiten, Beobachtungen oder Energiebilanzen. Die Config-Version bleibt unbekannt.
+Doppelte JSON-Property-Namen werden nicht geprüft; synthetische widersprüchliche
+normalisierte Paare belegen keine Erkennung solcher Wire-Duplikate.
+
+Grenzen: 1.000 Map-Einträge, insgesamt 100 Kandidaten pro Monitor und 32 KiB
+serialisierte Binding-Projektion. Ausgelassene Kandidaten behalten Zähler und
+unvollständigen Status. Structure File 17.1 beschreibt Namensreferenzen; die
+beobachtete UUID-Form weicht davon ab. Nur die UUID-Form des Specimens wird
+implementiert. Negativ-, Alias-, Hierarchie-, Umordnungs-, Konflikt- und
+Namensformtests sind ausdrücklich synthetisch. Automatisierte Tests und diese
+Regel belegen keine allgemeine Kompatibilität.
+
+Bindings enthalten nur die von der begrenzten #363-Projektion ausgegebenen
+Teilnehmerpfade. `projection_omitted` zählt dort ausgelassene normalisierte
+Vorkommen getrennt. `firmware_verification` unterscheidet verifizierte
+Versionsmetadaten, abweichende Identität, ungültige Versionsdaten, nicht verfügbare
+Probes und nicht angeforderte/unbekannte Anwendbarkeit.
+
+Die Quellidentität nutzt die etablierte strikte MAC-Kanonisierung für Seriennummern
+(nur Großschreibung und Doppelpunkt-/Bindestrichdarstellung). Ungültige Identitäten
+bleiben `invalid_identity`; beliebige Strings oder Installationsnamen begründen
+keine Gleichheit oder Anwendbarkeit.

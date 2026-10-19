@@ -23,6 +23,7 @@ dev = [
     "pytest==8.4.2",
     "pytest-asyncio==1.2.0",
     "ruff==0.12.12",
+    "tzdata==2026.5",
 ]
 
 [project.scripts]
@@ -37,6 +38,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 mcpserver = [
     "skills/using-loxberry-mcp/SKILL.md",
+    "skills/using-loxberry-mcp/frontmatter.txt",
+    "skills/using-loxberry-mcp/modules/*.md",
     "skills/using-loxberry-mcp/agents/openai.yaml",
 ]
 

@@ -1,18 +1,186 @@
+import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
+from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE
+from mcpserver.config import ConfigError
+from mcpserver.loxone.event_history import EventHistoryCoverage
+from mcpserver.loxone.models import (
+    Control,
+    Freshness,
+    LoxoneIdentity,
+    LoxoneStructure,
+    StateRecord,
+    StatisticSeries,
+)
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQueryError
-from mcpserver.tools import PROJECT_RESPONSE_MAX_BYTES, register_project_tools
+from mcpserver.loxone.runtime import RuntimeUnavailable
+from mcpserver.tools import (
+    PROJECT_RESPONSE_MAX_BYTES,
+    register_observability_tools,
+    register_project_tools,
+)
+
+
+def test_knx_edge_variant_survives_public_project_schemas():
+    address = {
+        "original": "6/2/27:1",
+        "canonical": "6/2/27",
+        "format": "three_level",
+        "segments": [6, 2, 27],
+        "source_field": "EibAddrPulse",
+        "variant": {"kind": "edge", "value": "1"},
+    }
+    detail = tools_module.ProjectKnxGroupAddressData.model_validate(address)
+    summary = tools_module.ProjectKnxSummaryData.model_validate(
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "bus_to_loxone",
+            "source_type": "EIBextsensor",
+            "group_address": address,
+        }
+    )
+    assert detail.model_dump()["source_field"] == "EibAddrPulse"
+    assert summary.model_dump()["group_address"]["variant"] == {"kind": "edge", "value": "1"}
+    finding = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:fixture",
+            "analysis": "project_connectivity",
+            "finding_type": "no_project_signal_relationship",
+            "group_address": "6/2/27",
+            "address_variant": "1",
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert finding.address_variant == "1"
+
+
+def test_project_analysis_edge_and_connectivity_evidence_survive_public_schema():
+    finding = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:fixture",
+            "analysis": "graph_outliers",
+            "finding_type": "graph_metric_outlier",
+            "graph_metric": "fan_out",
+            "graph_value": 9,
+            "edge_summary": {
+                "metric": "raw_out_degree",
+                "raw_degree": 9,
+                "signal_edges": 6,
+                "reference_edges": 3,
+                "derived_semantic_edges": 3,
+                "logical_consumers": 3,
+            },
+            "edge_evidence": [
+                {
+                    "kind": "signal",
+                    "provenance": "configured_input",
+                    "source_project_node_id": "p:1",
+                    "target_project_node_id": "p:2",
+                    "source_connector_key": "AQ",
+                    "source_connector_key_truncated": False,
+                    "target_connector_key": "Tg",
+                    "target_connector_key_truncated": False,
+                    "semantic_rule_id": None,
+                }
+            ],
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert finding.model_dump()["edge_summary"]["logical_consumers"] == 3
+
+    connectivity = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:reference",
+            "analysis": "project_connectivity",
+            "finding_type": "no_direct_configured_signal_relationship",
+            "connectivity_scope": "inspected_project_endpoint_connectors",
+            "description": (
+                "No direct configured consumer found in the inspected project connectors."
+            ),
+            "inspected_connectors": [
+                {"project_node_id": "p:1", "connector_key": "AQ", "connector_key_truncated": False}
+            ],
+            "direct_configured_relationship_count": 0,
+            "reference_relationship_count": 1,
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert connectivity.model_dump()["inspected_connectors"][0]["connector_key"] == "AQ"
+
+
+def test_knx_connector_evidence_survives_public_describe_schema():
+    detail = tools_module.ProjectKnxData.model_validate(
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "loxone_to_bus",
+            "source_type": "EIBextactor",
+            "title": None,
+            "description": None,
+            "internal_name": None,
+            "group_address": None,
+            "datatype": None,
+            "truncated_fields": [],
+            "connector_evidence": [
+                {
+                    "project_node_id": "p:2",
+                    "connector_key": "I",
+                    "connector_key_truncated": False,
+                    "incoming_signals": 1,
+                    "outgoing_signals": 0,
+                }
+            ],
+            "connector_evidence_truncated": True,
+        }
+    )
+    assert detail.model_dump()["connector_evidence"][0]["incoming_signals"] == 1
+    assert detail.connector_evidence_truncated is True
+
+
+def test_project_status_trims_coverage_groups_to_response_limit(monkeypatch):
+    status = Query().status()
+    status["structure_generation"] = 1
+    status["coverage_by_source_type"]["entries"] = [
+        {
+            "source_type": f"EIBunknown{index:02d}" + "x" * 80,
+            "source_type_truncated": False,
+            "source_objects": 1,
+            "modeled_endpoints": 0,
+            "modeled_logic_blocks": 0,
+            "modeled_lines": 0,
+            "unsupported": 1,
+            "invalid_or_missing_address": 0,
+            "duplicate_source_occurrences": 0,
+        }
+        for index in range(20)
+    ]
+    envelope = tools_module._result(tools_module.ProjectStatusEnvelope, status)
+    monkeypatch.setattr(tools_module, "PROJECT_RESPONSE_MAX_BYTES", 2_000)
+
+    assert tools_module._fit_project_status(envelope)
+    assert len(envelope.model_dump_json().encode("utf-8")) <= 2_000
+    assert envelope.data.coverage_by_source_type.groups_omitted > 0
+    assert envelope.data.coverage_by_source_type.complete is False
 
 
 class Query:
-    view = SimpleNamespace(mapping=SimpleNamespace(structure_fingerprint="b" * 64))
+    def derived_target(self, _identifier, _identifier_type):
+        return None
+
+    view = SimpleNamespace(
+        marker="revision",
+        mapping=SimpleNamespace(structure_fingerprint="b" * 64),
+        snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1, content_identity="content"),
+    )
 
     def status(self):
         return {
@@ -28,6 +196,12 @@ class Query:
                 "complete": True,
                 "groups_omitted": 0,
                 "labels_truncated": False,
+            },
+            "coverage_by_source_type": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "ambiguous_source_objects": 0,
             },
         }
 
@@ -70,6 +244,29 @@ class Query:
             "unresolved_truncated": False,
         }
 
+    def observable_controls(self, _node, **_kwargs):
+        return {
+            "target": self.find()[0],
+            "mapping_coverage": {
+                "exact_runtime_controls": 1,
+                "ambiguous_project_objects": 0,
+                "unmapped_project_objects": 0,
+                "complete": True,
+                "truncated": False,
+            },
+            "controls": [
+                {
+                    "control_uuid": "control",
+                    "project_node_ids": ["p:1"],
+                    "directions": ["upstream"],
+                }
+            ],
+            "truncated": False,
+            "truncation_reasons": [],
+            "unresolved_relationships": 0,
+            "unresolved_truncated": False,
+        }
+
 
 @pytest.mark.asyncio
 async def test_project_tools_publish_bounded_read_only_contracts(monkeypatch):
@@ -77,8 +274,13 @@ async def test_project_tools_publish_bounded_read_only_contracts(monkeypatch):
         return Query(), SimpleNamespace(connected=True, structure_generation=7)
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
     server = FastMCP("project-tools")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     status = await server._tool_manager.get_tool("loxone_get_project_status").fn()  # type: ignore[union-attr]
     found = await server._tool_manager.get_tool("loxone_find_project_objects").fn()  # type: ignore[union-attr]
@@ -100,8 +302,13 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
         return Query(), SimpleNamespace(connected=True, structure_generation=1)
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
     server = FastMCP("project-tool-errors")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     describe = await server._tool_manager.get_tool("loxone_describe_project_object").fn(  # type: ignore[union-attr]
         "ambiguous"
@@ -116,13 +323,809 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_project_find_validates_address_before_loading_or_caching(monkeypatch):
+    class FilterQuery(Query):
+        def __init__(self):
+            self.find_calls = 0
+
+        def find(self, **kwargs):
+            self.find_calls += 1
+            return [] if kwargs["knx_group_address"] == "31/7/255" else super().find()
+
+    project = FilterQuery()
+    project_query = AsyncMock(return_value=(project, SimpleNamespace(connected=True)))
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    server = FastMCP("project-find-address-validation")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn  # type: ignore[union-attr]
+
+    invalid = await find(knx_group_address="6/2/27:2")
+    assert invalid.ok is False
+    assert invalid.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project_query.await_count == 0
+    assert project.find_calls == 0
+
+    absent = await find(knx_group_address="31/7/255")
+    assert absent.ok is True
+    assert absent.data.items == []  # type: ignore[union-attr]
+    assert project.find_calls == 1
+
+    present = await find(knx_group_address="6/2/27:0")
+    assert present.ok is True
+    assert [item.project_node_id for item in present.data.items] == ["p:1"]  # type: ignore[union-attr]
+    assert project.find_calls == 2
+
+    def unauthenticated():
+        raise PermissionError("authentication is required")
+
+    monkeypatch.setattr(tools_module, "_access", unauthenticated)
+    denied = await find(knx_group_address="6/2/27:2")
+    assert denied.data.error == "unauthenticated"  # type: ignore[union-attr]
+    assert project_query.await_count == 2
+    assert project.find_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_project_find_reuses_one_ordered_result_and_rejects_changed_marker(monkeypatch):
+    class PagedQuery(Query):
+        view = SimpleNamespace(
+            marker="v1",
+            mapping=SimpleNamespace(structure_fingerprint="b" * 64),
+            snapshot=SimpleNamespace(
+                fingerprint="a" * 64, model_version=1, content_identity="content"
+            ),
+        )
+
+        def __init__(self):
+            self.find_calls = 0
+
+        def find(self, **_kwargs):
+            self.find_calls += 1
+            first = super().find()[0]
+            return [first, {**first, "project_node_id": "p:2"}]
+
+    project = PagedQuery()
+
+    async def project_query(_runtime):
+        return project, SimpleNamespace(connected=True)
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    server = FastMCP("project-find-pages")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
+    tool = server._tool_manager.get_tool("loxone_find_project_objects")
+    first, repeated = await asyncio.gather(
+        tool.fn(limit=1),
+        tool.fn(limit=1),  # type: ignore[union-attr]
+    )
+    assert repeated.data.items[0].project_node_id == "p:1"  # type: ignore[union-attr]
+    second = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert [first.data.items[0].project_node_id, second.data.items[0].project_node_id] == [  # type: ignore[union-attr]
+        "p:1",
+        "p:2",
+    ]
+    assert second.data.next_cursor is None  # type: ignore[union-attr]
+    assert project.find_calls == 1
+    project.view.marker = "v2"
+    changed = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert changed.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project.find_calls == 1
+    project.view.marker = "v1"
+    project.view.mapping.structure_fingerprint = "c" * 64
+    changed_visibility = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert changed_visibility.data.error == "invalid_input"  # type: ignore[union-attr]
+    project.view.mapping.structure_fingerprint = "b" * 64
+    monkeypatch.setattr(tools_module, "time", SimpleNamespace(monotonic=lambda: float("inf")))
+    expired = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project.find_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_fresh_visibility_invalidates_project_graph(monkeypatch):
+    access = SimpleNamespace(family_id="family")
+
+    class Runtime:
+        projects = SimpleNamespace(invalidate=Mock(), query=AsyncMock())
+
+        @asynccontextmanager
+        async def project_call_slot(self, _access):
+            yield
+
+        async def snapshot(self, _access, *, fresh_visibility):
+            assert fresh_visibility is True
+            raise RuntimeUnavailable("structure failed")
+
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    with pytest.raises(RuntimeUnavailable):
+        await tools_module._project_query(Runtime())
+    Runtime.projects.invalidate.assert_called_once_with("family")
+
+
+@pytest.mark.asyncio
+async def test_observability_reports_current_sources_and_explicit_history_gaps(monkeypatch):
+    control = Control(
+        "control",
+        "Temperature",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state-complete"), ("window", "state-missing")),
+        statistic_series=tuple(
+            StatisticSeries(
+                f"series-{index}", "statistic_v2", "group", "window", f"Trend {index}", "°C"
+            )
+            for index in range(21)
+        ),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, access):
+        assert HISTORY_SCOPE in access.scopes
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(
+                state_uuid,
+                21.5 if state_uuid == "state-complete" else None,
+                Freshness.CURRENT if state_uuid == "state-complete" else Freshness.UNKNOWN,
+                100.0 if state_uuid == "state-complete" else None,
+            )
+
+    class EventHistory:
+        async def coverage(self, _access, _sources, **_kwargs):
+            return True, {
+                ("control", "state-complete"): EventHistoryCoverage(1.0, 1.0, "complete", True)
+            }
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability")
+    register_observability_tools(server, Runtime(), EventHistory())  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    data = result.data
+    assert data.controls[0].current_states[0].available is True
+    assert data.controls[0].native_statistics[0].temporal_coverage == "not_checked"
+    assert len(data.controls[0].native_statistics) == 20
+    assert data.controls[0].native_statistics_truncated is True
+    assert data.controls[0].local_event_history[0].status == "complete"
+    assert data.controls[0].local_event_history[1].status == "not_configured"
+    assert data.controls[0].historical_status == "partial"
+    assert data.controls[0].recommendations[0].strategy == "reuse_configured_statistics"
+    assert data.controls[0].recommendations[0].native_statistics_configured_for_control
+    assert "statistics_period_not_checked" in data.controls[0].recommendations[0].limitations
+    assert "series_state_mapping_unverified" not in data.controls[0].recommendations[0].limitations
+    assert data.controls[0].recommendations[0].state_uuid == "state-missing"
+    assert "minute" not in data.controls[0].recommendations[0].interval_guidance
+    assert data.summary.local_history_partial == 1
+    assert data.mapping_coverage.model_dump() == {
+        "exact_runtime_controls": data.summary.relevant_controls,
+        "ambiguous_project_objects": 0,
+        "unmapped_project_objects": 0,
+        "complete": True,
+        "truncated": False,
+    }
+    assert result.stale is True
+
+
+@pytest.mark.parametrize(
+    ("value", "analog", "status", "expected_source", "expected_strategy"),
+    [
+        (
+            21.5,
+            True,
+            "not_configured",
+            "native_statistics",
+            "configure_native_statistics_for_diagnostic_need",
+        ),
+        (True, False, "not_configured", "local_on_change", "record_on_change"),
+        (1.0, False, "not_configured", "local_on_change", "record_on_change"),
+        (True, True, "not_configured", "undetermined", "inspect_signal_metadata"),
+        (None, None, "not_configured", "undetermined", "inspect_signal_metadata"),
+        (21.5, True, "partial_coverage", "local_on_change", "continue_local_recording"),
+        (21.5, True, "not_recorded", "local_on_change", "continue_local_recording"),
+    ],
+)
+def test_observability_recommendations_use_value_and_control_metadata(
+    value, analog, status, expected_source, expected_strategy
+):
+    control = Control(
+        "control",
+        "Window temperature",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state"),),
+        is_analog=analog,
+        minimum=0.0,
+        maximum=100.0,
+        step=0.5,
+    )
+    record = StateRecord("state", value, Freshness.CURRENT, 100.0)
+    result = tools_module._observability_recommendation(control, "state", record, status)
+    assert result is not None
+    assert result["history_source"] == expected_source
+    assert result["strategy"] == expected_strategy
+    assert result["control_uuid"] == "control"
+    assert result["state_uuid"] == "state"
+    assert result["minimum"] == 0.0
+    assert result["maximum"] == 100.0
+    assert result["step"] == 0.5
+    assert tools_module._observability_recommendation(control, "state", record, "complete") is None
+
+
+def test_observability_recommendation_uses_small_numeric_range_and_unknown_coverage():
+    control = Control(
+        "control",
+        "Measurement",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state"),),
+        minimum=0.0,
+        maximum=1.0,
+        step=1.0,
+    )
+    record = StateRecord("state", 1.0, Freshness.CURRENT, 100.0)
+    discrete = tools_module._observability_recommendation(
+        control, "state", record, "not_configured"
+    )
+    unavailable = tools_module._observability_recommendation(
+        control, "state", record, "unavailable"
+    )
+    assert discrete["history_source"] == "local_on_change"
+    assert unavailable["history_source"] == "undetermined"
+    assert "local_coverage_unavailable" in unavailable["limitations"]
+
+
+@pytest.mark.parametrize(
+    ("state_name", "value", "analog", "expected_source"),
+    [
+        ("active", 0.0, None, "local_on_change"),
+        ("value", 1.0, None, "local_on_change"),
+        ("active", 2.0, None, "undetermined"),
+        ("active", 1.0, True, "undetermined"),
+        ("other", 1.0, None, "undetermined"),
+    ],
+)
+def test_observability_recommendation_uses_documented_digital_state_only(
+    state_name, value, analog, expected_source
+):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        "InfoOnlyDigital",
+        None,
+        None,
+        None,
+        ((state_name, "state"),),
+        is_analog=analog,
+    )
+    result = tools_module._observability_recommendation(
+        control,
+        "state",
+        StateRecord("state", value, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["history_source"] == expected_source
+    assert result["strategy"] == (
+        "record_on_change" if expected_source == "local_on_change" else "inspect_signal_metadata"
+    )
+    if value == 2.0:
+        ranged_control = Control(
+            "control",
+            "Arbitrary label",
+            "InfoOnlyDigital",
+            None,
+            None,
+            None,
+            ((state_name, "state"),),
+            minimum=0.0,
+            maximum=2.0,
+            step=1.0,
+        )
+        ranged = tools_module._observability_recommendation(
+            ranged_control,
+            "state",
+            StateRecord("state", value, Freshness.CURRENT, 100.0),
+            "not_configured",
+        )
+        assert ranged["history_source"] == "undetermined"
+
+
+@pytest.mark.parametrize(
+    ("control_type", "state_name", "value", "analog", "expected"),
+    [
+        ("Switch", "active", 1.0, None, "local_on_change"),
+        ("Switch", "lockedOn", 0.0, None, "local_on_change"),
+        ("Pushbutton", "active", 1.0, None, "local_on_change"),
+        ("PresenceDetector", "active", 1.0, None, "local_on_change"),
+        ("PresenceDetector", "locked", 0.0, None, "local_on_change"),
+        ("PresenceDetector", "activeSince", 1.0, None, "undetermined"),
+        ("Hourcounter", "active", 1.0, None, "local_on_change"),
+        ("PulseAt", "isActive", 1.0, None, "local_on_change"),
+        ("Daytimer", "value", 1.0, False, "undetermined"),
+        ("Daytimer", "value", 22.5, True, "native_statistics"),
+        ("Daytimer", "mode", 1.0, True, "undetermined"),
+        ("Daytimer", "override", 120.0, False, "undetermined"),
+        ("Daytimer", "resetActive", 1.0, True, "undetermined"),
+        ("Daytimer", "needsActivation", 0.0, False, "undetermined"),
+        ("Switch", "active", 2.0, None, "undetermined"),
+    ],
+)
+def test_observability_uses_documented_state_semantics(
+    control_type, state_name, value, analog, expected
+):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        control_type,
+        None,
+        None,
+        None,
+        ((state_name, "state"),),
+        is_analog=analog,
+    )
+    result = tools_module._observability_recommendation(
+        control,
+        "state",
+        StateRecord("state", value, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["history_source"] == expected
+
+
+@pytest.mark.parametrize(
+    "control_type", ["InfoOnlyAnalog", "UpDownAnalog", "Slider", "LeftRightAnalog"]
+)
+def test_observability_uses_documented_analog_value_with_small_range(control_type):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        control_type,
+        None,
+        None,
+        None,
+        (("value", "value-state"), ("error", "error-state")),
+        minimum=0.0,
+        maximum=1.0,
+        step=1.0,
+    )
+    value = tools_module._observability_recommendation(
+        control,
+        "value-state",
+        StateRecord("value-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    error = tools_module._observability_recommendation(
+        control,
+        "error-state",
+        StateRecord("error-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert value["history_source"] == "native_statistics"
+    assert value["is_analog"] is True
+    assert error["history_source"] == "undetermined"
+
+    conflicting = tools_module._observability_recommendation(
+        Control(
+            "control",
+            "Arbitrary label",
+            control_type,
+            None,
+            None,
+            None,
+            (("value", "value-state"),),
+            is_analog=False,
+            minimum=0.0,
+            maximum=1.0,
+            step=1.0,
+        ),
+        "value-state",
+        StateRecord("value-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert conflicting["history_source"] == "undetermined"
+    assert "analog_metadata_conflict" in conflicting["limitations"]
+
+
+def test_observability_statistics_match_the_state_before_reuse():
+    series = (StatisticSeries("v2:1:actual", "statistic_v2", "1", "actual", "Actual", "kW"),)
+    control = Control(
+        "control",
+        "Arbitrary label",
+        "Meter",
+        None,
+        None,
+        None,
+        (("actual", "actual-uuid"), ("total", "total-uuid")),
+        statistic_series=series,
+    )
+
+    def recommendation(state_uuid):
+        return tools_module._observability_recommendation(
+            control,
+            state_uuid,
+            StateRecord(state_uuid, 2.0, Freshness.CURRENT, 100.0),
+            "not_configured",
+        )
+
+    assert recommendation("actual-uuid")["strategy"] == "reuse_configured_statistics"
+    unmatched = recommendation("total-uuid")
+    assert unmatched["history_source"] == "undetermined"
+    assert unmatched["native_statistics_configured_for_control"] is True
+
+    legacy = Control(
+        "control",
+        "Arbitrary label",
+        "Meter",
+        None,
+        None,
+        None,
+        (("actual", "actual-uuid"), ("total", "total-uuid")),
+        statistic_series=(
+            StatisticSeries(
+                "legacy:0",
+                "legacy",
+                "0",
+                "0",
+                "Actual",
+                "kW",
+                state_uuid="actual-uuid",
+            ),
+        ),
+    )
+    result = tools_module._observability_recommendation(
+        legacy,
+        "actual-uuid",
+        StateRecord("actual-uuid", 2.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["strategy"] == "reuse_configured_statistics"
+
+    unknown_mapping = Control(
+        "control",
+        "Arbitrary label",
+        "Meter",
+        None,
+        None,
+        None,
+        (("actual", "actual-uuid"),),
+        statistic_series=(StatisticSeries("legacy:0", "legacy", "0", "0", "Actual", "kW"),),
+    )
+    unknown = tools_module._observability_recommendation(
+        unknown_mapping,
+        "actual-uuid",
+        StateRecord("actual-uuid", 2.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert unknown["history_source"] == "undetermined"
+    assert "series_state_mapping_unverified" in unknown["limitations"]
+    partial = tools_module._observability_recommendation(
+        unknown_mapping,
+        "actual-uuid",
+        StateRecord("actual-uuid", 2.0, Freshness.CURRENT, 100.0),
+        "partial_coverage",
+    )
+    assert partial["strategy"] == "continue_local_recording"
+
+
+@pytest.mark.asyncio
+async def test_observability_state_truncation_without_history_remains_missing(monkeypatch):
+    control = Control(
+        "control",
+        "Many states",
+        "Switch",
+        None,
+        None,
+        None,
+        tuple((f"state-{index}", f"uuid-{index}") for index in range(21)),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, _access):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+
+    class EventHistory:
+        async def coverage(self, _access, _sources, **_kwargs):
+            return False, {}
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-state-truncation")
+    register_observability_tools(server, Runtime(), EventHistory())  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    data = result.data
+    assert data.controls[0].states_truncated is True
+    assert data.controls[0].historical_status == "missing"
+    assert data.summary.local_history_missing == 1
+    assert data.summary.historical_missing == 1
+
+
+@pytest.mark.asyncio
+async def test_observability_unavailable_history_remains_unverified(monkeypatch):
+    control = Control(
+        "control", "Unavailable history", "Switch", None, None, None, (("value", "state"),)
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, _access):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-unavailable-history")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    data = result.data
+    assert data.controls[0].local_event_history[0].status == "unavailable"
+    assert data.controls[0].historical_status == "unverified"
+    assert data.summary.historical_unverified == 1
+
+
+@pytest.mark.asyncio
+async def test_observability_bounds_control_and_state_metadata(monkeypatch):
+    state_name = "ä" * 101
+    control = Control("control", "ö" * 101, "ü" * 101, None, None, None, ((state_name, "state"),))
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, _access):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-state-name")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    state = result.data.controls[0].current_states[0]
+    assert len(state.name.encode("utf-8")) == 200
+    assert result.data.controls[0].state_names_truncated is True
+    assert len(result.data.controls[0].control_name.encode("utf-8")) == 200
+    assert len(result.data.controls[0].control_type.encode("utf-8")) == 200
+    assert result.data.controls[0].control_metadata_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_observability_requires_history_scope(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE,)), family_id="family"),
+    )
+    server = FastMCP("observability-scope")
+    register_observability_tools(server, None, None)
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is False
+    assert result.data.error == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_observability_recommendations_remain_bounded_and_paginated(monkeypatch):
+    controls = tuple(
+        Control(
+            f"control-{index}",
+            "measurement",
+            "value",
+            None,
+            None,
+            None,
+            tuple((f"state-{part}", f"uuid-{index}-{part}") for part in range(20)),
+            is_analog=True,
+        )
+        for index in range(30)
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), controls)
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    class ManyQuery(Query):
+        def observable_controls(self, _node, **_kwargs):
+            result = super().observable_controls(_node, **_kwargs)
+            result["controls"] = [
+                {
+                    "control_uuid": control.uuid,
+                    "project_node_ids": ["p:1"],
+                    "directions": ["upstream"],
+                }
+                for control in controls
+            ]
+            return result
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, 21.5, Freshness.CURRENT, 100.0)
+
+        async def get_statistics(self, *_args, **_kwargs):
+            pytest.fail("analysis must not fetch statistics")
+
+    async def history_project_query(_runtime, _access):
+        return ManyQuery(), snapshot
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-pages")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+    tool = server._tool_manager.get_tool("loxone_analyze_observability")
+    arguments = (
+        "control-0",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+    first = await tool.fn(*arguments, limit=50)  # type: ignore[union-attr]
+    assert first.ok
+    assert 0 < len(first.data.controls) < 30
+    assert len(first.data.controls[0].recommendations) == 20
+    assert first.data.next_cursor is not None
+    assert len(first.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    second = await tool.fn(*arguments, cursor=first.data.next_cursor, limit=50)  # type: ignore[union-attr]
+    assert second.ok
+    assert second.data.controls[0].control_uuid != first.data.controls[0].control_uuid
+    assert len(second.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    assert first.data.page_truncated is True
+    assert first.data.mapping_coverage == second.data.mapping_coverage
+    assert first.data.mapping_coverage.exact_runtime_controls == 30
+    assert (
+        first.data.mapping_coverage.exact_runtime_controls == first.data.summary.relevant_controls
+    )
+    assert first.data.mapping_coverage.complete is True
+    assert first.data.mapping_coverage.truncated is False
+    small_page = await tool.fn(*arguments, limit=1)  # type: ignore[union-attr]
+    assert small_page.ok
+    assert len(small_page.data.controls) == 1
+    assert small_page.data.next_cursor is not None
+    assert small_page.data.page_truncated is False
+    assert small_page.data.mapping_coverage == first.data.mapping_coverage
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("ambiguous", "unmapped", "truncated"), [(0, 0, False), (2, 0, False), (0, 1, True)]
+)
+async def test_observability_coverage_keeps_gaps_without_exposing_invisible_controls(
+    monkeypatch, ambiguous, unmapped, truncated
+):
+    class CoverageQuery(Query):
+        def observable_controls(self, _node, **_kwargs):
+            analysis = super().observable_controls(_node, **_kwargs)
+            analysis["mapping_coverage"] = {
+                "exact_runtime_controls": 1,
+                "ambiguous_project_objects": ambiguous,
+                "unmapped_project_objects": unmapped,
+                "complete": not (ambiguous or unmapped or truncated),
+                "truncated": truncated,
+            }
+            return analysis
+
+    async def history_project_query(_runtime, _access):
+        structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), ())
+        return CoverageQuery(), SimpleNamespace(connected=True, structure=structure)
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-hidden")
+    register_observability_tools(server, None, None)
+    tool = server._tool_manager.get_tool("loxone_analyze_observability")
+    result = await tool.fn(  # type: ignore[union-attr]
+        "p:1", "project_node_id", "both", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"
+    )
+    assert result.ok
+    assert result.data.controls == []
+    assert result.data.summary.relevant_controls == 0
+    assert result.data.mapping_coverage.model_dump() == {
+        "exact_runtime_controls": 0,
+        "ambiguous_project_objects": ambiguous,
+        "unmapped_project_objects": unmapped,
+        "complete": not (ambiguous or unmapped or truncated),
+        "truncated": truncated,
+    }
+
+
+@pytest.mark.asyncio
 async def test_project_tools_publish_fixed_source_failure_diagnostics(monkeypatch):
     async def project_query(_runtime):
         raise ProjectError("project_xml_invalid")
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
     server = FastMCP("project-source-errors")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     result = await server._tool_manager.get_tool("loxone_get_project_status").fn()  # type: ignore[union-attr]
 
@@ -168,8 +1171,13 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
         return LargeQuery(), SimpleNamespace(connected=True, structure_generation=1)
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
     server = FastMCP("project-tool-size-limit")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     found = await server._tool_manager.get_tool("loxone_find_project_objects").fn(limit=100)  # type: ignore[union-attr]
     traced = await server._tool_manager.get_tool("loxone_trace_project_logic").fn(  # type: ignore[union-attr]
@@ -186,11 +1194,40 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_project_analysis_reports_invalid_taxonomy_config_as_unavailable(monkeypatch):
+    async def project_query(_runtime):
+        return SimpleNamespace(), SimpleNamespace(connected=True)
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    runtime = SimpleNamespace(
+        projects=object(), endpoint=SimpleNamespace(origin="http://miniserver.example")
+    )
+    config_store = SimpleNamespace(load=Mock(side_effect=ConfigError("invalid configuration")))
+    server = FastMCP("project-analysis-config-error")
+    register_project_tools(server, runtime, config_store)
+
+    tool = server._tool_manager.get_tool("loxone_analyze_project")
+    result = await tool.fn(analyses=["address_hierarchy"])  # type: ignore[union-attr]
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
 async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypatch):
+    analysis_calls = 0
+
     class Runtime:
         def __init__(self):
             self.active_workers = 0
-            self.projects = SimpleNamespace(authorize=AsyncMock())
+            self.projects = SimpleNamespace(
+                authorize=AsyncMock(),
+            )
 
         @asynccontextmanager
         async def worker_slot(self):
@@ -205,10 +1242,12 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     runtime = Runtime()
 
-    async def analysis(_view, _selected):
+    async def analysis(_view, _selected, _taxonomy=()):
+        nonlocal analysis_calls
+        analysis_calls += 1
         assert runtime.active_workers == 1
         return {
-            "analysis_version": 2,
+            "analysis_version": 5,
             "project_fingerprint": "a" * 64,
             "model_version": 3,
             "scope": "knx",
@@ -219,6 +1258,12 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
                 "raw_datatypes": 0,
                 "reviewed_signal_usage": 0,
                 "unresolved_relationships": 0,
+            },
+            "coverage_by_source_type": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "ambiguous_source_objects": 0,
             },
             "summaries": {"project_connectivity": {"unconnected": 1, "ambiguous": 0}},
             "limitations": [],
@@ -237,7 +1282,16 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
                     "group_address": "1/2/3",
                     "affected_project_node_ids": ["p:1"],
                     "affected_omitted": 0,
-                }
+                },
+                {
+                    "finding_id": "knx:2",
+                    "analysis": "project_connectivity",
+                    "finding_type": "no_project_signal_relationship",
+                    "classification": "fact",
+                    "group_address": "1/2/4",
+                    "affected_project_node_ids": ["p:2"],
+                    "affected_omitted": 0,
+                },
             ],
             "analysis_truncated": False,
             "truncation_reasons": [],
@@ -245,14 +1299,206 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
     monkeypatch.setattr(tools_module, "process_analysis", analysis)
-    monkeypatch.setattr(tools_module, "_access", lambda: SimpleNamespace())
+    access = SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity")
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
     server = FastMCP("project-analysis")
     register_project_tools(server, runtime)
 
-    result = await server._tool_manager.get_tool("loxone_analyze_project").fn()  # type: ignore[union-attr]
+    tool = server._tool_manager.get_tool("loxone_analyze_project")
+    result = await tool.fn(limit=1)  # type: ignore[union-attr]
 
     assert result.ok is True
     assert runtime.active_workers == 0
     assert result.data.findings[0].finding_id == "knx:1"  # type: ignore[union-attr]
-    assert result.data.next_cursor is None  # type: ignore[union-attr]
-    runtime.projects.authorize.assert_awaited_once()
+    assert result.data.next_cursor is not None  # type: ignore[union-attr]
+    second = await tool.fn(limit=1, cursor=result.data.next_cursor)  # type: ignore[union-attr]
+    assert second.data.findings[0].finding_id == "knx:2"  # type: ignore[union-attr]
+    assert second.data.next_cursor is None  # type: ignore[union-attr]
+    assert analysis_calls == 1
+    access.family_id = "different-family"
+    invalid = await tool.fn(limit=1, cursor=result.data.next_cursor)  # type: ignore[union-attr]
+    assert invalid.ok is False
+    assert invalid.data.error == "invalid_input"  # type: ignore[union-attr]
+    access.family_id = "family"
+    monkeypatch.setattr(tools_module, "time", SimpleNamespace(monotonic=lambda: float("inf")))
+    expired = await tool.fn(limit=1, cursor=result.data.next_cursor)  # type: ignore[union-attr]
+    assert expired.ok is False
+    assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert analysis_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", list(tools_module.AvailabilityReason))
+async def test_registered_project_description_preserves_availability_contract(monkeypatch, reason):
+    async def project_query(_runtime):
+        raise RuntimeUnavailable(
+            "Miniserver structure refresh failed",
+            reason=reason,
+            phase=tools_module.AvailabilityPhase.LOAD,
+            retry_after_seconds=9,
+        )
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    server = FastMCP("availability-contract")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
+    tool = server._tool_manager.get_tool("loxone_describe_project_object")
+    result = await tool.fn(identifier="visible-object", identifier_type="project_node_id")
+    assert not result.ok
+    assert result.data.error == "temporarily_unavailable"
+    assert result.data.message == "Miniserver structure refresh failed"
+    assert result.data.diagnostic_code == reason.value
+    assert result.data.availability_phase == "structure_load"
+    assert result.data.retry_after_seconds == (9 if reason.value == "local_rate_limit" else None)
+    assert result.trace_id
+    schema = tool.output_schema["$defs"]["ErrorData"]["properties"]
+    assert schema["retry_after_seconds"]["anyOf"][0]["maximum"] == 60
+    assert schema["retry_after_seconds"]["anyOf"][0]["minimum"] == 1
+    assert "availability_phase" in schema
+
+
+@pytest.mark.asyncio
+async def test_project_find_shares_results_but_not_family_cursors(monkeypatch):
+    project = Query()
+    project.find = Mock(
+        return_value=[
+            {**Query().find()[0], "project_node_id": "p:1"},
+            {**Query().find()[0], "project_node_id": "p:2"},
+        ]
+    )
+    loader = AsyncMock(return_value=(project, SimpleNamespace(connected=True)))
+    access = SimpleNamespace(family_id="first", miniserver_id="server", identity_id="identity")
+    authorize = AsyncMock()
+    monkeypatch.setattr(tools_module, "_project_query", loader)
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    server = FastMCP("shared-find")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=authorize)))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    first = await find(query=" Switch ", limit=1)
+    access.family_id = "second"
+    second = await find(query="switch", limit=1)
+    assert first.ok and second.ok
+    assert first.data.next_cursor != second.data.next_cursor
+    foreign = await find(query="switch", cursor=first.data.next_cursor, limit=1)
+    assert foreign.data.error == "invalid_input"
+    own = await find(query="switch", cursor=second.data.next_cursor, limit=1)
+    assert own.data.items[0].project_node_id == "p:2"
+    assert project.find.call_count == 1
+    assert loader.await_count == 4
+    assert authorize.await_count == 3
+    second.data.items[0].project_node_id = "mutated"
+    repeated = await find(query="switch", limit=1)
+    assert repeated.data.items[0].project_node_id == "p:1"
+    authorize.side_effect = ProjectError("project_permission_denied")
+    denied = await find(query="switch", limit=1)
+    assert not denied.ok
+    assert project.find.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_project_find_failed_authorization_does_not_publish(monkeypatch):
+    project = Query()
+    project.find = Mock(side_effect=lambda **kwargs: Query().find(**kwargs))
+    monkeypatch.setattr(
+        tools_module,
+        "_project_query",
+        AsyncMock(return_value=(project, SimpleNamespace(connected=True))),
+    )
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    authorize = AsyncMock(side_effect=ProjectError("project_permission_denied"))
+    server = FastMCP("failed-find")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=authorize)))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    assert not (await find()).ok
+    authorize.side_effect = None
+    assert (await find()).ok
+    assert project.find.call_count == 2
+
+
+@pytest.mark.parametrize("changed", ["server", "content", "model", "visibility", "filter"])
+@pytest.mark.asyncio
+async def test_project_find_different_inputs_do_not_share(monkeypatch, changed):
+    project = Query()
+    project.view = SimpleNamespace(
+        marker="view",
+        snapshot=SimpleNamespace(content_identity="content", model_version=1),
+        mapping=SimpleNamespace(structure_fingerprint="visible-names-and-controls"),
+    )
+    project.find = Mock(side_effect=lambda **kwargs: Query().find(**kwargs))
+    access = SimpleNamespace(family_id="first", identity_id="identity", miniserver_id="server")
+    monkeypatch.setattr(
+        tools_module,
+        "_project_query",
+        AsyncMock(return_value=(project, SimpleNamespace(connected=True))),
+    )
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    server = FastMCP("isolated-find")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    assert (await find()).ok
+    access.family_id = "second"
+    if changed == "server":
+        access.miniserver_id = "other-server"
+    elif changed == "content":
+        project.view.snapshot.content_identity = "other-bytes"
+    elif changed == "model":
+        project.view.snapshot.model_version = 2
+    elif changed == "visibility":
+        project.view.mapping.structure_fingerprint = "changed-visible-name"
+    assert (await find(kind="block" if changed == "filter" else None)).ok
+    assert project.find.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_project_find_hit_evicted_during_authorization_keeps_usable_cursor(monkeypatch):
+    from mcpserver.loxone.project.result_cache import ProjectResultCache
+
+    project = Query()
+    project.find = Mock(
+        return_value=[
+            Query().find()[0],
+            {**Query().find()[0], "project_node_id": "p:2"},
+        ]
+    )
+    monkeypatch.setattr(
+        tools_module,
+        "_project_query",
+        AsyncMock(return_value=(project, SimpleNamespace(connected=True))),
+    )
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    observed = {}
+    original_get = ProjectResultCache.get
+
+    def capture(cache, key):
+        observed["cache"] = cache
+        return original_get(cache, key)
+
+    monkeypatch.setattr(ProjectResultCache, "get", capture)
+    authorize = AsyncMock()
+    server = FastMCP("evicted-find-hit")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=authorize)))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    assert (await find(limit=1)).ok
+
+    async def evict(_access):
+        cache = observed["cache"]
+        for index in range(cache.max_entries):
+            cache.put(
+                f"concurrent-{index}", [], expires=tools_module.time.monotonic() + 300, size=1
+            )
+
+    authorize.side_effect = evict
+    hit = await find(limit=1)
+    assert hit.ok and hit.data.next_cursor
+    authorize.side_effect = None
+    continuation = await find(limit=1, cursor=hit.data.next_cursor)
+    assert continuation.ok and continuation.data.items[0].project_node_id == "p:2"
+    assert project.find.call_count == 1
+    assert len(observed["cache"].entries) <= 8

@@ -77,6 +77,54 @@ def test_explorer_session_is_encrypted_and_removed_with_its_oauth_family(tmp_pat
     assert store.get_explorer_session("browser-session") is None
 
 
+def test_explorer_refresh_cannot_restore_a_deleted_or_rebound_session(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    original = ExplorerSession(
+        "browser-session",
+        "family",
+        "client",
+        "https://example/mcp",
+        "loxone:read",
+        "access-secret",
+        2_000_000_000,
+        "refresh-secret",
+        2_000_010_000,
+    )
+    rotated = ExplorerSession(
+        "browser-session",
+        "family",
+        "client",
+        "https://example/mcp",
+        "loxone:read",
+        "new-access",
+        2_000_000_100,
+        "new-refresh",
+        2_000_010_000,
+    )
+    store.put_explorer_session(original)
+
+    assert store.update_explorer_session(rotated) is True
+    assert store.get_explorer_session("browser-session") == rotated
+    store.delete_explorer_family("family")
+    assert store.update_explorer_session(rotated) is False
+    assert store.get_explorer_session("browser-session") is None
+
+    rebound = ExplorerSession(
+        "browser-session",
+        "other-family",
+        "client",
+        "https://example/mcp",
+        "loxone:read",
+        "other-access",
+        2_000_000_000,
+        "other-refresh",
+        2_000_010_000,
+    )
+    store.put_explorer_session(rebound)
+    assert store.update_explorer_session(rotated) is False
+    assert store.get_explorer_session("browser-session") == rebound
+
+
 def test_remote_revocation_keeps_token_until_confirmed(tmp_path: Path) -> None:
     store = _store(tmp_path)
     token = LoxoneToken("token-secret", "user", "key", "SHA256", 2_000_000_000)

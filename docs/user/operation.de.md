@@ -8,15 +8,150 @@ Der Plugin Manager erkennt reguläre Updates über die stabile Releasequelle. Vo
 
 ## Sitzungen und Freigaben
 
-Unter **Clients und Sitzungen** können Administratoren Sitzungen und lokale Diagnose- oder Operate-Freigaben prüfen und widerrufen. Ein Widerruf beendet passende Sitzungen.
+Unter **Clients und Sitzungen** können Administratoren Sitzungen und lokale Diagnose- oder Operate-Freigaben prüfen und widerrufen. Auf schmalen Bildschirmen erscheinen alle Angaben und Aktionen je Sitzung oder Freigabe untereinander. Während eines Widerrufs wird die betroffene Zeile ausgegraut. Der Widerruf einer Freigabe beendet passende Sitzungen. Das Trennen des Tool Explorers widerruft nur dessen OAuth-Sitzung; seine lokale Freigabe kann für dieselbe Loxone-Identität und denselben Miniserver bis zur angezeigten Frist reaktiviert werden. Die inaktive Aufbewahrung ist von 1 bis 720 Stunden konfigurierbar und beträgt standardmäßig 72 Stunden.
+
+Ein Sitzungswiderruf sperrt den MCP-Zugriff sofort. Die anschließende Loxone-Tokenbereinigung läuft im Hintergrund. Der Abschnitt zeigt aggregierte Warnungen, wenn die Bereinigung aussteht, der Miniserver Anmeldungen blockiert oder der Remote-Widerruf nach begrenzten Versuchen unbestätigt bleibt. Bei unbestätigtem Ergebnis kann ein Administrator die Loxone-Benutzerverwaltung prüfen; die Warnung nennt keine betroffene Identität.
+
+Die zuletzt geladenen Notaus-Signale erscheinen beim Seitenaufruf sofort aus dem lokalen Cache; dabei wird keine neue Miniserver-Anmeldung gestartet. **Notaus-Signale aktualisieren** lädt die Liste ausdrücklich mit den in LoxBerry hinterlegten Zugangsdaten neu. Das kann einige Sekunden dauern. Gleichzeitige Admin-Anfragen warten auf dasselbe Ladeergebnis. Wenn eine Miniserver-Anmeldesperre die Aktualisierung verhindert, zeigt die Oberfläche den frühesten erneuten Versuch an. **Erneut versuchen** wird danach freigeschaltet und führt höchstens einen koordinierten Anmeldeversuch aus. Die zuletzt geladenen Signale werden als möglicherweise veraltet gekennzeichnet; der gespeicherte Notaus-Wert bleibt bei jedem Ladefehler erhalten.
+Ist lediglich eine andere Anmeldung im Gange, erscheint stattdessen ein kurzer Wiederholungszeitpunkt. Auch die servergerenderte Fallback-Ansicht zeigt aggregierte Bereinigungswarnungen.
+
+## Diagnose und Logs
+
+Das Service-Log bleibt unter **Diagnose und Logs** direkt erreichbar. Der LoxBerry LogManager zeigt native Plugin-Logs erst, wenn ein tatsächliches Admin-Ereignis protokolliert und registriert wurde. Die Admin-Seite unterscheidet einen leeren LogManager-Eintrag von einem nicht erreichbaren LogManager und einem fehlgeschlagenen Nachladeaufruf. Das Öffnen der Logliste erzeugt keinen Logeintrag.
 
 ## Tool Explorer
 
+Objektlisten wie targets zeigen einzelne Einträge mit **Eintrag hinzufügen** und **Eintrag entfernen**. Eine UUID lässt sich über **Übernehmen** in targets[].control_uuid übernehmen; dabei wird die ausgewählte Liste wie bei einfachen Listen ersetzt. Andere Parameter des Entwurfs bleiben erhalten. Optionale state_names können je Eintrag aktiviert werden; ohne sie werden alle States gelesen. Die vollständigen Argumente bleiben im JSON-Editor bearbeitbar.
+
 Der [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) ist ein lokaler administrativer Testclient. Er meldet sich mit einem Loxone-Benutzer an und erhält keine Rechte aus der LoxBerry-Admin-Sitzung. Ersetze `loxberry` im Link bei Bedarf durch den Hostnamen deiner Installation. Ändernde Aufrufe verlangen vor dem Senden eine Bestätigung.
+Nach der Anmeldung zeigt die Verbindungskarte die tatsächlich gewährten OAuth-Scopes der Sitzung. Als **Nicht gewährt** markierte Scopes wurden dieser Sitzung nicht gewährt; lokale LoxBerry-Freigaben und weitere Berechtigungsprüfungen bleiben getrennt. Beim Ende der Sitzung verschwindet die Liste.
+Die Verbindungskarte ist zunächst geöffnet, damit die Anmeldung sofort sichtbar ist. Nach der Anmeldung lässt sie sich für mehr Platz einklappen. Ihre OAuth-Scope-Liste ist zunächst geschlossen; die Links zur Einrichtung und Schema-Referenz bleiben oberhalb der Karte sichtbar. Beide Aufklappzustände bleiben bei einem Reload und in neuen Tabs desselben Browsers erhalten.
 RFC-3339-Zeitfelder werden als lokale Datum-/Zeitfelder angezeigt und als UTC übermittelt.
 Zeitbereich-Schnellwahl und Referenzen aus bisherigen Ergebnissen erleichtern häufige
 Abfragen; technische Seitenparameter stehen unter **Erweiterte Optionen**.
+Die verfügbaren Werkzeuge lassen sich nach Name oder Beschreibung durchsuchen
+und im aufklappbaren Filter nach einer oder mehreren Gruppen filtern. **Alle**
+setzt die Gruppenauswahl zurück. Die Filterung erfolgt lokal;
+das ausgewählte Werkzeug und sein ungesendeter Entwurf bleiben erhalten.
+Werkzeuge ohne bekannten Explorer-Darstellungshinweis erscheinen unter **Weitere Tools**;
+Formular und Aufruf verwenden weiterhin die Schemas aus `tools/list`.
+Beim ausgewählten Werkzeug zeigt der Explorer die Lese-/Schreib-Einstufung und
+explizit gemeldete MCP-Hinweise. Bei unvollständigen oder widersprüchlichen Angaben
+erscheint vorsichtig **Schreibzugriff möglich**. Die Hinweise sind keine
+Sicherheitsgarantie; die vollständigen Annotationen stehen unter
+**Technische MCP-Metadaten**.
+Daneben stehen die für bekannte Werkzeuge benötigten OAuth-Scopes. Die tatsächlich
+gewährten Scopes dieser Sitzung bleiben in der Verbindungskarte sichtbar.
+Lange Werkzeugbeschreibungen lassen sich in der kompakten Zusammenfassung aufklappen.
+**Ausgewähltes Tool** und **Ergebnis** lassen sich einklappen und öffnen sich bei
+einer passenden Auswahl beziehungsweise einem neuen Ergebnis wieder. Bei einem
+Verlaufsergebnis stehen **Verwendete Parameter** in einem eigenen Aufklappbereich.
+Ergebnisse und Verlaufseinträge erscheinen als aufklappbarer Baum. Große Zweige zeigen
+jeweils 100 Einträge; **Weitere anzeigen** lädt die nächsten. Der Pfeil öffnet einen
+Zweig, die separate Wert-Schaltfläche übernimmt dessen unveränderten Wert und Pfad.
+Objekte in Listen zeigen nach Möglichkeit einen kurzen Namen, Typ (auch `source_type`),
+Bezeichner oder
+bei Beziehungen Quelle und Ziel. Zeitangaben sind der letzte Ersatz, wenn nichts
+Aussagekräftigeres vorhanden ist. `null` erscheint im Baum als `-`; beim Kopieren
+und Übernehmen bleibt der ursprüngliche Wert erhalten.
+Die vollständige Antwort bleibt unter **JSON** sichtbar und über **JSON kopieren** verfügbar.
+Der Aufrufverlauf zeigt lokale Uhrzeit, Dauer, Ergebnis und eine kurze,
+geschwärzte Parameterübersicht, soweit das Werkzeugschema sie erlaubt. Die
+Auswahl eines Eintrags öffnet weiterhin sein Ergebnis und erlaubt, den Aufruf
+als Entwurf zu laden. Fortschritt und Ergebnis des aktuellen Aufrufs erscheinen
+bei **Aufruf ausführen**; der Verbindungsstatus bleibt in der Verbindungskarte.
+Der separate Bereich **MCP-Protokoll / Debug** enthält das begrenzte Anfrage-
+und Antworttranskript zur Fehlersuche. Aufgeklappte Einträge zeigen kompakt
+**Datum/Uhrzeit** über HTTP-Status und Dauer. Verlauf und Transkript bleiben im
+aktuellen Tab und werden beim Ende seiner Sitzung gelöscht.
 
 MCP-Clients erhalten die auf der konkreten Installation veröffentlichten Werkzeugbeschreibungen sowie deren Ein- und Ausgabeschemas über die MCP-Methode `tools/list`. Der Tool Explorer liest genau diese Antwort und visualisiert sie. Unter **Hilfe** stehen außerdem eine statische HTML-Referenz des vollständigen Werkzeugvertrags dieser Plugin-Version und dieselben Daten als JSON-Download bereit.
 
 Weiter: [Fehlerbehebung](troubleshooting.de.md).
+
+Unter **Hilfe und Entwicklerwerkzeuge** finden Sie Links zu Projekt und Anleitungen, Tool Explorer, Schema-Referenz, lokaler Ereignishistorie, KNX-Adressverwaltung, bestätigtem Anlagenprofil und der Freigabe einzelner Meldungen. Jeder Link erklärt kurz Zweck und Grenzen der jeweiligen Seite. KNX-Adressverwaltung und Anlagenprofil bleiben zusätzlich unter **MCP Konfiguration** erreichbar und zeigen dort dieselben Erklärungen. Die Meldungsfreigabe aus dem Hilfebereich übernimmt die aktuelle Seitensprache.
+
+
+Zuerst core und danach nur die im Aufgabenindex gewählten Workflow-Module laden. Vor Schreibaktionen core und operations abrufen; Lesemodule nur bei Bedarf für die jeweiligen Belege hinzunehmen. Bei fehlendem Modul den Vollguide verwenden; scheitert auch dieser, den betroffenen Ablauf stoppen. Der bisherige Tool-Default und die URI des Vollguides bleiben verfügbar.
+
+Tool-Beschreibungen nennen Zweck, entscheidende Voraussetzungen und Grenzen. Parametergrenzen und Auswahlregeln stehen an den Schemafeldern; ausführliche Abläufe sind über den Aufgabenindex in core erreichbar. Statistikserien sind keine Energiebilanz, angebotene Historien-Metadaten belegen keinen abgefragten Zeitraum, und strukturelle Erreichbarkeit belegt keine historische Ursache.
+
+Zur Auswahl bestätigter Quellen dient `loxone_get_installation_profile(view="summary")`.
+Die kompakte Seite enthält genaue Quellen, Bestätigungs-/Prüfstatus, Herkunft und
+Nutzbarkeitshinweise. Für Begründungen, Anzeigenamen oder vollständige PV-/Lastparameter
+`view="full"` verwenden, insbesondere vor der Bestätigung einer Ersetzung oder Löschung.
+Beide Ansichten prüfen die Sichtbarkeit je Seite frisch und verwenden dieselbe
+Pagination und Größenbegrenzung; ausgelassene Summary-Felder sind keine fehlenden
+gespeicherten Angaben.
+
+Mit `include_outputs=true` bei `view="lighting_context"` lassen sich genaue
+sichtbare Runtime-Lichtausgänge lesen. Die begrenzte Projektion erhält die explizite
+Elternkennung, Strukturversion und Zustandsreferenzen sowie Auslassungen. Eine
+Runtime-Unterordnung identifiziert keinen Projektanschluss und keine physische
+Leuchte; ColorPicker-Unterstützung beweist keine installierte Tunable-White-Leuchte.
+Es werden keine Aktionen ausgeführt.
+
+Für eine begrenzte Lichtprüfung `loxone_analyze_project(scope="lighting",
+lighting_selection={"controller_uuids":["genaue-sichtbare-controller-id"]})`
+verwenden oder stattdessen eine genaue `room_uuid` auswählen. Ein Raum wählt
+höchstens 16 sichtbare LightControllerV2 aus und meldet Auslassungen. Standardmäßig
+werden Inventar, Namenskandidaten, konfigurierte Präsenzbeziehungen, Szenenrollen
+und fehlender Planungskontext geprüft. `next_cursor` mit unveränderten Eingaben
+folgen; eine Seite enthält höchstens 50 Befunde.
+
+Im Explorer `scope=lighting` wählen, um `lighting_selection` und den optionalen `lighting_context` einzublenden; ETS-Felder sind nur bei KNX sichtbar und werden beim Wechsel zu Modbus oder Licht entfernt. Die Scope-Auswahl im Formular entfernt unpassende Felder, gewählte Prüfungen und Cursor, erhält aber das normale Seitenlimit. Ein Scope-Wechsel im JSON entfernt ebenfalls unpassende Felder/Prüfungen und Cursor; explizite zum neuen Scope passende Prüfungen bleiben erhalten. Fehlerhaftes JSON oder falsche Parametertypen bleiben Validierungsfehler. Die vollständige sichtbare LightControllerV2-Ergebniszeile aus `loxone_find_controls` auswählen, um ihre genaue ID in einen Analyzer-Entwurf zu übernehmen; es wird kein Werkzeug automatisch aufgerufen. Den Entwurf ausdrücklich prüfen und ausführen. Die Ergebnisübersicht zählt Beobachtungen, Prüfkandidaten, Kontextlücken und bedingte Hinweise der aktuellen Seite. Vollständigkeit des Namensvergleichs getrennt von der Auswahlabdeckung lesen; genaue Bezüge, Herkunft und Grenzen im Belegbaum oder JSON öffnen. Siehe die [sechs Lichtfälle](analysis-support.de.md).
+
+Der optionale `lighting_context` verwendet
+`schema_version="lighting_analysis_context.v1"`. Genaue Controller-Mood-Paare,
+Präsenzquellen, wörtliche Namenspräfixe und Raumnutzung/Absicht/Leuchten/Zonen mit
+`origin` und `rationale` deklarieren. Jedes Raumfeld und jede Zone hat eine eigene
+Herkunft. Bestehende Profil-Binding-IDs verwenden nur bestätigte Quellen erneut;
+ein bestätigtes Binding bestätigt keine hypothetische Rolle oder installierte
+Leuchte. Präsenzquellen dürfen außerhalb des gewählten Raums liegen, müssen aber
+sichtbar bleiben. Doppelte aufgelöste Identitäten und überlappende Präfixe werden
+abgewiesen. Es werden keine Profile oder Konfigurationen gespeichert.
+Szenen ohne deklarierte Rolle bleiben fehlender Kontext. Nicht aktuelle
+Mood-Namen werden mit sichtbarer Aktualitätslücke aus Namensvergleichen
+ausgeschlossen. Ein nicht verfügbares Profil ist ein Quell-/Wiederholungsproblem
+und kein Anlass, gültige Eingaben zu ändern.
+Direkte Quellen benötigen weder Profil noch Installationsseriennummer; explizite
+Binding-Verweise behalten Installations- und Inhaltsänderungsprüfungen. Child-Ziele
+behalten die Herkunft ihres Elternankers. Gekürzte Anzahlen ungeklärter Beziehungen
+bleiben ausdrücklich teilweise.
+
+Befunde behalten Quellversionen, Aktualität, Auslassungen und Raum-/Controller-/
+Szenenbezüge. Namensabweichungen sind Prüfkandidaten; konfigurierte Erreichbarkeit
+ist keine beobachtete Ursache. Unbekannte Pfade und gekürzte Namen bleiben
+unvollständig. Kelvin-Defaults eines Controllers belegen weder installierte
+Tunable-White-Leuchten noch einen Planungsbedarf. Die Gesamtberatung bleibt
+bedingt und ersetzt keine professionelle physische Lichtprüfung.
+
+Für eine Präsenz-Licht-Beziehung genaue Quell- und Controller-IDs belegen;
+Namen oder ein gemeinsamer Raum beweisen keine Zuordnung. Projekt-Mapping und
+Quellabdeckung prüfen, genaue Objekte suchen/beschreiben und dann die passende
+Richtung mit `include_internal_flow_gaps=true` verfolgen. Rohverdrahtung, geprüfte
+interne Kanten, nicht modellierte interne Logik und mehrdeutige Eltern getrennt
+halten. Child-Identität getrennt von Elterntopologie und alle Grenzen erhalten;
+ein fehlender begrenzter Pfad beweist keine physische Abwesenheit. Konfigurations-
+oder Steuerungsschreibzugriffe sind dafür nicht erforderlich.
+
+Mit `loxone_describe_control(view="lighting_context")` lassen sich begrenzt
+Quell-IDs und Namen der Lichtstimmungen eines sichtbaren LightControllerV2 lesen.
+Status, Quellzustand, Zeitstempel, Aktualität und Auslassungen beachten; fehlende
+oder ungültige Daten sind kein leeres Szeneninventar. Namen belegen weder
+Szenenrollen noch Präsenzverbindungen oder physische Leuchten. Der Full-Default
+und alle bestehenden Schutzregeln für Operationen bleiben erhalten. Die gesamte
+kompakte Antwort ist auf 64 KiB begrenzt (`response_too_large` bei zu großen
+beibehaltenen Control-Metadaten).
+
+## Authentifizierungsdiagnose unter Clients und Sitzungen
+
+Lokale Administratoren können die begrenzte Authentifizierungshistorie und die
+Zusammenfassung je App/Identität/Miniserver-Bindung ausdrücklich öffnen und
+aktualisieren. Sitzungen derselben Bindung zeigen dieselbe Historie; dies ist
+keine Zuordnung zu einer einzelnen Sitzung. Details werden nicht periodisch im
+Hintergrund abgefragt. Die Ansicht trennt beobachtete Ablehnung, bestätigte
+Quell-IP-Sperre, unterdrückte Versuche, bestätigte Wiederherstellung und nicht
+verfügbare Historie. Eine Sperrbeobachtung belegt keinen Verursacher. Fehlende
+oder leere Historie beweist keinen fehlerfreien Betrieb. Es gibt keine zusätzliche
+Recovery-Aktion; die bestehende Admin-Probe behält ihre Schutz- und Frequenzgrenzen.

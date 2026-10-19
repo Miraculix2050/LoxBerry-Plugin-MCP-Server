@@ -1,0 +1,848 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const {test} = require('node:test');
+const {createHarness, readTool, writeTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
+
+test('comparable days keeps declared site context and shows evidence notice', async (t) => {
+  const tool = {...readTool, name: 'loxone_analyze_history', inputSchema: {
+    type: 'object', properties: {analysis_context: {type: 'object'}},
+  }};
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    day_context: {site: {site_id: '<img src=x>', timezone: 'Europe/Berlin'}},
+    comparable_days: {production_sources: [{source_index: 2, complete_hours: 0}]},
+  }}});
+  t.after(h.close);
+  await h.ready();
+  const args = {analysis_context: {day_context: {site: {site_id: 'roof', timezone: 'Europe/Berlin'}}}};
+  await h.click(h.byId('json-tab'));
+  h.byId('json').value = JSON.stringify(args);
+  h.byId('json').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('HISTORY_CONTEXT'));
+  assert.equal(h.byId('result-tree').querySelector('img'), null);
+  assert.deepEqual(h.requests.filter((r) => r.body?.method === 'tools/call').at(-1).body.params.arguments, args);
+});
+
+test('history context preserves JSON/form input and labels conditional absorption', async (t) => {
+  const tool = {...readTool, name: 'loxone_analyze_history', inputSchema: {
+    type: 'object', properties: {analysis_context: {anyOf: [{type: 'object'}, {type: 'null'}]}},
+  }};
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {comparison: {context_analysis: {
+    method_version: 'context_history.v1', allocations: [{load_id: '<img src=x>', kind: 'hypothetical'}],
+    conditional_export_absorption_upper_bound_wh: 700,
+  }}}}});
+  t.after(h.close);
+  await h.ready();
+  assert.match(h.byId('tool-summary').textContent, /HISTORY_CONTEXT/);
+  const args = {analysis_context: {schema_version: 'history_analysis_context.v1',
+    associations: [{association_id: 'meter', source_index: 0}], loads: []}};
+  await h.click(h.byId('json-tab'));
+  h.byId('json').value = JSON.stringify(args);
+  h.byId('json').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('700 Wh'));
+  assert.match(h.byId('result-tree').textContent, /HISTORY_ABSORPTION/);
+  assert.equal(h.byId('result-tree').querySelector('img'), null);
+  assert.deepEqual(h.requests.filter((r) => r.body?.method === 'tools/call').at(-1).body.params.arguments, args);
+});
+
+test('future planning keeps conditional guidance and energy results visible', async (t) => {
+  const tool = {...readTool, name: 'loxone_plan_loads',
+    inputSchema: {type: 'object', properties: {}},
+  };
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    method_version: 'conditional_load_planning.v1', status: 'conditional',
+    allocations: [{binding_id: '<script>load</script>', start: 1792396800,
+      end: 1792400400, conditional_pv_wh: 800, additional_grid_wh: 200}],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  assert.match(h.byId('tool-summary').textContent, /PLANNING_NOTICE/);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('800 Wh'));
+  assert.match(h.byId('result-tree').textContent, /200 Wh/);
+  assert.match(h.byId('result-tree').textContent, /UTC/);
+  assert.equal(h.byId('result-tree').querySelector('script'), null);
+  assert.equal(h.calls().length, 1);
+  assert.equal(h.window.McpExplorerAdapters.toolGroup('loxone_plan_loads'), 'loxoneRead');
+});
+
+test('request-local planning separates hypothetical loads and unresolved associations safely', async (t) => {
+  const tool = {...readTool, name: 'loxone_plan_loads', inputSchema: {type: 'object', properties: {}}};
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    method_version: 'conditional_context_planning.v1', status: 'conditional',
+    scope: {kind: 'scenario', description: '<img src=x onerror=alert(1)>'},
+    unresolved_associations: ['running_feedback_missing_confirm_program_description'],
+    allocations: [{load_id: 'scenario-pump', load_kind: 'hypothetical', start: 1792396800,
+      end: 1792400400, conditional_pv_wh: 600, additional_grid_wh: 400}],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  assert.match(h.byId('tool-summary').textContent, /PLANNING_CONTEXT/);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('600 Wh'));
+  assert.match(h.byId('result-tree').textContent, /PLANNING_HYPOTHETICAL/);
+  assert.match(h.byId('result-tree').textContent, /PLANNING_CLARIFY/);
+  assert.match(h.byId('result-tree').textContent, /scenario-pump/);
+  assert.equal(h.byId('result-tree').querySelector('img'), null);
+});
+
+for (const reason of ['source', 'requested_future_forecast_hours_unavailable', 'requested_scenario_hour_coverage_unavailable']) {
+test(`unavailable planning explains source or coverage: ${reason}`, async (t) => {
+  const tool = {...readTool, name: 'loxone_plan_loads',
+    inputSchema: {type: 'object', properties: {}},
+  };
+  const h = createHarness({tools: [tool], callResult: {ok: true, data: {
+    method_version: 'conditional_load_planning.v1', status: 'unavailable', allocations: [],
+    forecast: {status: reason === 'source' ? 'not_ready' : 'available'},
+    limitations: reason === 'source' ? [] : [reason],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('PLANNING_UNAVAILABLE'));
+  assert.equal(h.calls().length, 1);
+});
+}
+
+test('object alternatives reuse JSON fields without dropping source rows or branch validation', async (t) => {
+  const choice = {anyOf: [
+    {type: 'object', additionalProperties: false, required: ['method'], properties: {method: {const: 'classes'}}},
+    {type: 'object', additionalProperties: false, required: ['method'], properties: {method: {const: 'numerical'}}},
+    {type: 'null'},
+  ]};
+  const tool = {...readTool, name: 'object_union', inputSchema: {type: 'object', required: ['sources', 'options'],
+    properties: {sources: {type: 'array', items: choice}, options: choice}}};
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('json-tab'));
+  h.byId('json').value = JSON.stringify({sources: [{method: 'classes'}], options: {method: 'numerical'}});
+  h.byId('json').dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  const fields = [...h.byId('form').querySelectorAll('textarea')];
+  assert.equal(fields.length, 2);
+  assert.deepEqual(JSON.parse(fields[0].value), [{method: 'classes'}]);
+  assert.deepEqual(JSON.parse(fields[1].value), {method: 'numerical'});
+  await h.click(h.byId('run'));
+  assert.deepEqual(h.requests.filter((item) => item.body?.method === 'tools/call').at(-1).body.params.arguments,
+    {sources: [{method: 'classes'}], options: {method: 'numerical'}});
+  fields[1].value = JSON.stringify({method: 'unrecognized'});
+  fields[1].dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(h.byId('run'));
+  assert.equal(h.requests.filter((item) => item.body?.method === 'tools/call').length, 1);
+});
+
+test('shipped scripts restore a session and execute an unknown read-only tool', async (t) => {
+  const h = createHarness({deferLogout: true});
+  t.after(h.close);
+  await h.ready();
+  assert.deepEqual(SCRIPT_NAMES, [
+    'explorer-adapters.js', 'explorer-core.js', 'explorer-state.js',
+    'explorer-auth.js', 'explorer-client.js', 'explorer-views.js', 'explorer.js',
+  ]);
+  assert.deepEqual(h.requests.filter((item) => item.body?.method)
+    .map((item) => item.body.method),
+  ['initialize', 'notifications/initialized', 'tools/list']);
+  assert.equal(h.byId('connection-badge').dataset.kind, 'success');
+  assert.match(h.byId('scope-list').textContent, /loxone:read/);
+
+  const search = h.byId('tool-search');
+  search.value = 'future';
+  search.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  assert.deepEqual([...h.byId('tools').querySelectorAll('button')]
+    .map((button) => button.querySelector('strong').textContent), ['future_read']);
+  search.value = '';
+  search.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const other = h.byId('tool-filters').querySelector('[data-tool-group="other"]');
+  other.checked = true;
+  other.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.equal(h.byId('tools').querySelectorAll('button').length, 2);
+
+  await h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('future_read')));
+  const fields = h.byId('form');
+  const query = [...fields.querySelectorAll('input[type="text"]')]
+    .find((input) => input.labels?.[0]?.textContent.includes('query'));
+  assert.ok(query);
+  query.value = 'sample';
+  query.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const optional = [...fields.querySelectorAll('input[type="checkbox"]')]
+    .find((input) => input.labels?.[0]?.textContent.includes('optional'));
+  assert.ok(optional);
+  optional.checked = true;
+  optional.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.equal(JSON.parse(h.byId('json').value).query, 'sample');
+  assert.ok(Object.hasOwn(JSON.parse(h.byId('json').value), 'optional'));
+  await h.click(h.byId('json-tab'));
+  assert.equal(h.byId('json-panel').hidden, false);
+  await h.click(h.byId('form-tab'));
+  assert.equal(h.byId('form-panel').hidden, false);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1 && h.byId('history').querySelector('button'));
+  assert.deepEqual(h.calls()[0].body.params, {
+    name: 'future_read', arguments: {query: 'sample', optional: ''},
+  });
+  assert.match(h.byId('result-tree').textContent, /items/);
+  const expand = h.byId('result-tree').querySelector('[aria-expanded="false"]');
+  assert.ok(expand);
+  await h.click(expand);
+  assert.equal(expand.getAttribute('aria-expanded'), 'true');
+  await h.click(h.byId('history').querySelector('button'));
+  assert.equal(h.byId('history-arguments').hidden, false);
+  assert.match(h.byId('result-context').textContent, /future_read/);
+
+  await h.click(h.byId('disconnect'));
+  assert.equal(h.requests.some((item) => item.body?.action === 'logout'), true);
+  assert.equal(h.byId('connection-badge').dataset.kind, 'inactive');
+  assert.equal(h.byId('history').querySelector('button'), null);
+  assert.equal(h.byId('result-raw').textContent, '');
+  assert.equal(h.byId('scope-list').textContent, '');
+  assert.equal(h.byId('json').value, '{}');
+  h.resolveLogout();
+  assert.doesNotMatch(JSON.stringify({...h.window.localStorage}), /synthetic-token|sample/);
+  assert.equal(JSON.stringify({...h.window.sessionStorage}), '{}');
+  assert.doesNotMatch(h.byId('transcript').textContent, /synthetic-token/);
+});
+
+test('write flow rejects missing scope, then requires explicit confirmation', async (t) => {
+  const denied = createHarness({scope: 'loxone:read'});
+  t.after(denied.close);
+  await denied.ready();
+  await denied.click([...denied.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('loxone_operate_control')));
+  denied.byId('json').value = JSON.stringify({control_uuid: 'test-control', action: 'on'});
+  await denied.click(denied.byId('run'));
+  assert.equal(denied.calls().length, 0);
+  assert.equal(denied.byId('confirm').open, false);
+  assert.equal(denied.byId('call-feedback').dataset.kind, 'error');
+
+  const allowed = createHarness();
+  t.after(allowed.close);
+  await allowed.ready();
+  await allowed.click([...allowed.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('loxone_operate_control')));
+  allowed.byId('json').value = JSON.stringify({control_uuid: 'test-control', action: 'on'});
+  await allowed.click(allowed.byId('run'));
+  assert.equal(allowed.byId('confirm').open, true);
+  assert.equal(allowed.calls().length, 0);
+  allowed.byId('confirm').close('cancel');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(allowed.calls().length, 0);
+  await allowed.click(allowed.byId('run'));
+  assert.equal(allowed.calls().length, 0);
+  allowed.byId('confirm').close('confirm');
+  await allowed.waitFor(() => allowed.calls().length === 1);
+  assert.deepEqual(allowed.calls()[0].body.params, {
+    name: 'loxone_operate_control',
+    arguments: {control_uuid: 'test-control', action: 'on'},
+  });
+});
+
+test('an unknown mutating tool requires confirmation before its first call', async (t) => {
+  const unknownWrite = {
+    name: 'future_write',
+    inputSchema: {type: 'object', properties: {value: {type: 'string'}}, required: ['value']},
+  };
+  const h = createHarness({tools: [unknownWrite]});
+  t.after(h.close);
+  await h.ready();
+  const toolButton = h.byId('tools').querySelector('button');
+  assert.equal(toolButton.querySelector('.mcp-explorer-badge').dataset.kind, 'danger');
+  h.byId('json').value = JSON.stringify({value: 'new-value'});
+  await h.click(h.byId('run'));
+  assert.equal(h.byId('confirm').open, true);
+  assert.equal(h.calls().length, 0);
+  h.byId('confirm').close('confirm');
+  await h.waitFor(() => h.calls().length === 1);
+  assert.deepEqual(h.calls()[0].body.params, {
+    name: 'future_write', arguments: {value: 'new-value'},
+  });
+});
+
+test('filters preserve selection and drafts; JSON edits update the form', async (t) => {
+  const h = createHarness();
+  t.after(h.close);
+  await h.ready();
+  const select = async (name) => h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes(name)));
+  await select('future_read');
+  const query = [...h.byId('form').querySelectorAll('input[type="text"]')]
+    .find((input) => input.labels?.[0]?.textContent.includes('query'));
+  query.value = 'draft-kept';
+  query.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const search = h.byId('tool-search');
+  search.value = 'another';
+  search.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  assert.equal(h.byId('selected-tool').textContent.includes('future_read'), true);
+  assert.equal(JSON.parse(h.byId('json').value).query, 'draft-kept');
+  assert.equal(h.requests.filter((item) => item.body?.method === 'tools/list').length, 1);
+  await select('another_read');
+  search.value = '';
+  search.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  await select('future_read');
+  assert.equal(JSON.parse(h.byId('json').value).query, 'draft-kept');
+  await h.click(h.byId('json-tab'));
+  h.byId('json').value = JSON.stringify({query: 'json-edited'});
+  h.byId('json').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  const updated = [...h.byId('form').querySelectorAll('input[type="text"]')]
+    .find((input) => input.labels?.[0]?.textContent.includes('query'));
+  assert.equal(updated.value, 'json-edited');
+});
+
+test('protocol view redacts schema secrets and never shows the Authorization header', async (t) => {
+  const h = createHarness({tools: [readTool]});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({query: 'public', password: 'private-password'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1 && h.byId('history').querySelector('button'));
+  assert.equal(h.calls()[0].body.params.arguments.password, 'private-password');
+  const entries = h.byId('transcript').querySelectorAll('details');
+  entries[entries.length - 1].open = true;
+  entries[entries.length - 1].dispatchEvent(new h.window.Event('toggle'));
+  const visible = h.byId('transcript').textContent;
+  assert.match(visible, /\[redacted\]/);
+  assert.doesNotMatch(visible, /private-password|synthetic-token|Authorization/);
+  assert.doesNotMatch(h.byId('history').textContent, /private-password/);
+  assert.doesNotMatch(JSON.stringify({...h.window.localStorage}), /private-password|synthetic-token/);
+  assert.equal(h.requests.find((item) => item.pathname.endsWith('/explorer-session')).credentials,
+    'same-origin');
+});
+
+test('token refresh updates the displayed granted scopes', async (t) => {
+  const h = createHarness();
+  t.after(h.close);
+  await h.ready();
+  const controlScope = () => [...h.byId('scope-list').querySelectorAll('li')]
+    .find((item) => item.querySelector('code')?.textContent === 'loxone:control');
+  assert.match(controlScope().textContent, /SCOPE_GRANTED/);
+  h.setScope('loxone:read');
+  h.advance(285000);
+  await h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('future_read')));
+  h.byId('json').value = JSON.stringify({query: 'refresh'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1);
+  assert.match(controlScope().textContent, /SCOPE_NOT_GRANTED/);
+  assert.equal(h.requests.filter((item) => item.body?.action === 'access').length, 2);
+});
+
+test('expiry and logout discard sensitive state and late call results', async (t) => {
+  const h = createHarness({deferCall: true, sessionMs: 60000});
+  t.after(h.close);
+  await h.ready();
+  await h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('future_read')));
+  h.byId('json').value = JSON.stringify({query: 'private-value'});
+  await h.click(h.byId('run'));
+  assert.equal(h.calls().length, 1);
+  h.advance(60000);
+  assert.equal(h.byId('connection-badge').dataset.kind, 'inactive');
+  h.resolveCall();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.byId('history').querySelector('button'), null);
+  assert.doesNotMatch(h.byId('result-tree').textContent, /result/);
+  assert.doesNotMatch(h.byId('transcript').textContent, /private-value|synthetic-token/);
+
+  const expired = createHarness({sessionMs: 60000});
+  t.after(expired.close);
+  await expired.ready();
+  expired.advance(60000);
+  assert.equal(expired.byId('connection-badge').dataset.kind, 'inactive');
+  assert.equal(expired.byId('scope-list').textContent, '');
+  assert.equal(expired.byId('run').disabled, true);
+  assert.equal(expired.calls().length, 0);
+});
+
+test('logout clears another Explorer tab before logout and its pending call settle', async (t) => {
+  const channelBus = new Set();
+  const first = createHarness({channelBus, deferLogout: true});
+  const second = createHarness({channelBus, deferCall: true});
+  t.after(first.close);
+  t.after(second.close);
+  await Promise.all([first.ready(), second.ready()]);
+  await second.click([...second.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('future_read')));
+  second.byId('json').value = JSON.stringify({query: 'private-other-tab'});
+  await second.click(second.byId('run'));
+  assert.equal(second.calls().length, 1);
+
+  await first.click(first.byId('disconnect'));
+  assert.equal(first.requests.some((item) => item.body?.action === 'logout'), true);
+  assert.equal(second.byId('connection-badge').dataset.kind, 'inactive');
+  assert.equal(second.byId('scope-list').textContent, '');
+  assert.equal(second.byId('json').value, '{}');
+  assert.equal(second.byId('run').disabled, true);
+  assert.doesNotMatch(second.byId('transcript').textContent, /private-other-tab/);
+  second.resolveCall();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(second.byId('history').querySelector('button'), null);
+  assert.doesNotMatch(second.byId('result-tree').textContent, /result/);
+  first.resolveLogout();
+});
+
+test('session expiry closes an open mutation confirmation and erases its arguments', async (t) => {
+  const h = createHarness({tools: [writeTool], sessionMs: 60000});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({control_uuid: 'private-control', action: 'on'});
+  await h.click(h.byId('run'));
+  assert.equal(h.byId('confirm').open, true);
+  assert.match(h.byId('confirm-arguments').textContent, /private-control/);
+  assert.equal(h.calls().length, 0);
+  h.advance(60000);
+  assert.equal(h.byId('confirm').open, false);
+  assert.equal(h.byId('confirm-tool').textContent, '');
+  assert.equal(h.byId('confirm-arguments').textContent, '');
+  assert.equal(h.byId('connection-badge').dataset.kind, 'inactive');
+  assert.equal(h.calls().length, 0);
+});
+
+test('failed restore stays disconnected without MCP calls', async (t) => {
+  const h = createHarness({restoreFailure: true});
+  t.after(h.close);
+  await h.ready();
+  await h.waitFor(() => h.byId('connection-badge').dataset.kind === 'inactive');
+  assert.equal(h.requests.some((item) => item.pathname === '/plugins/mcpserver/mcp'), false);
+  assert.equal(h.byId('run').disabled, true);
+});
+
+const compactReadTool = {
+  name: 'loxone_read_controls', description: 'Compact reads',
+  annotations: {readOnlyHint: true, destructiveHint: false},
+  inputSchema: {type: 'object', required: ['targets'], $defs: {
+    Target: {type: 'object', additionalProperties: false, required: ['control_uuid'],
+      properties: {control_uuid: {type: 'string', minLength: 1, maxLength: 128},
+        state_names: {anyOf: [{type: 'array', minItems: 1, maxItems: 100, items: {type: 'string'}}, {type: 'null'}], default: null}}},
+  }, properties: {targets: {type: 'array', minItems: 1, maxItems: 2, items: {$ref: '#/$defs/Target'}},
+    include_semantics: {type: 'boolean', default: false},
+    native_result_view: {anyOf: [{type: 'string', enum: ['actual', 'day', 'week', 'month', 'year', 'lifetime']}, {type: 'null'}], default: null}}},
+};
+
+test('native EFM selector uses the additive schema without allowing commands', () => {
+  const core = require('../../webfrontend/htmlauth/explorer-core.js');
+  const targets = [{control_uuid: 'visible-efm'}];
+  for (const native_result_view of [null, 'actual', 'day', 'week', 'month', 'year', 'lifetime']) {
+    assert.deepEqual(core.validateArguments({targets, native_result_view}, compactReadTool.inputSchema), []);
+  }
+  assert.notDeepEqual(core.validateArguments({targets, native_result_view: 'get/day/other'}, compactReadTool.inputSchema), []);
+});
+
+test('object-list form edits rows and optional states, preserves drafts and bounds adds', async (t) => {
+  const h = createHarness({tools: [compactReadTool, readTool]});
+  t.after(h.close);
+  await h.ready();
+  const select = (name) => h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.querySelector('strong')?.textContent === name));
+  await select(compactReadTool.name);
+  const add = () => h.byId('form').querySelector('.mcp-explorer-object-list > button');
+  await h.click(add());
+  const editUuid = (index, value) => {
+    const input = h.byId('form').querySelectorAll('fieldset input[type="text"]')[index];
+    input.value = value;
+    input.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  };
+  editUuid(0, 'first');
+  editUuid(0, 'first-edited');
+  let entry = h.byId('form').querySelector('fieldset');
+  await h.click(entry.querySelector('input[type="checkbox"]'));
+  entry = h.byId('form').querySelector('fieldset');
+  const states = entry.querySelector('textarea');
+  states.value = '["position"]';
+  states.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(add());
+  editUuid(1, 'second');
+  assert.equal(add().disabled, true);
+  assert.deepEqual(JSON.parse(h.byId('json').value).targets, [
+    {control_uuid: 'first-edited', state_names: ['position']}, {control_uuid: 'second'},
+  ]);
+  await select(readTool.name);
+  await select(compactReadTool.name);
+  assert.equal(h.byId('form').querySelectorAll('.mcp-explorer-list-entry').length, 2);
+  await h.click(h.byId('form').querySelector('fieldset button'));
+  assert.deepEqual(JSON.parse(h.byId('json').value).targets, [{control_uuid: 'second'}]);
+  assert.equal(add().disabled, false);
+  assert.equal(h.calls().length, 0);
+});
+
+test('UUID result transfer builds a schema-valid nested target without submitting it', async (t) => {
+  const core = require('../../webfrontend/htmlauth/explorer-core.js');
+  const candidate = core.compatibleTargets([compactReadTool], 'visible-control', {sourcePath: ['data', 'uuid']});
+  assert.deepEqual(candidate, [{tool: compactReadTool.name, field: 'targets', mode: 'object-array:control_uuid'}]);
+  const draft = core.transferArguments(compactReadTool, 'targets', 'visible-control',
+    candidate[0].mode, null, {include_semantics: true, targets: [{control_uuid: 'old'}], cursor: 'old'});
+  assert.deepEqual(draft, {include_semantics: true, targets: [{control_uuid: 'visible-control'}]});
+  assert.deepEqual(core.validateArguments(draft, compactReadTool.inputSchema), []);
+  assert.deepEqual(core.compatibleTargets([compactReadTool], ''), []);
+  const h = createHarness({tools: [compactReadTool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  h.byId('json').value = JSON.stringify(draft);
+  h.byId('json').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  assert.equal(h.byId('form').querySelector('fieldset input[type="text"]').value, 'visible-control');
+  assert.equal(h.calls().length, 0);
+});
+
+test('nested transfer refuses missing required siblings and unknown schema constraints', () => {
+  const core = require('../../webfrontend/htmlauth/explorer-core.js');
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.$defs.Target.required.push('other_required');
+  tool.inputSchema.$defs.Target.properties.other_required = {type: 'string', minLength: 1};
+  assert.deepEqual(core.compatibleTargets([tool], 'control'), []);
+  tool.inputSchema.$defs.Target.required.pop();
+  tool.inputSchema.$defs.Target.properties.control_uuid.format = 'unsupported-format';
+  // Unrecognized formats are not offered as reusable targets.
+  assert.deepEqual(core.compatibleTargets([tool], 'control'), []);
+});
+
+test('response UUID can be transferred through the actual dialog into targets', async (t) => {
+  const h = createHarness({tools: [readTool, compactReadTool],
+    callResult: {ok: true, data: {uuid: 'visible-control'}}});
+  t.after(h.close);
+  await h.ready();
+  await h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.querySelector('strong')?.textContent === readTool.name));
+  h.byId('json').value = JSON.stringify({query: 'control'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').querySelector('.mcp-explorer-value') && h.calls().length === 1);
+  const uuid = [...h.byId('result-tree').querySelectorAll('.mcp-explorer-value')]
+    .find((button) => button.textContent.startsWith('uuid:'));
+  assert.ok(uuid);
+  await h.click(uuid);
+  h.byId('transfer-tool').value = compactReadTool.name;
+  h.byId('transfer-tool').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.match(h.byId('transfer-field').selectedOptions[0].textContent, /targets\[\]\.control_uuid/);
+  h.byId('transfer').close('apply');
+  await h.waitFor(() => h.byId('form').querySelector('fieldset input[type="text"]'));
+  assert.deepEqual(JSON.parse(h.byId('json').value).targets, [{control_uuid: 'visible-control'}]);
+  assert.equal(h.calls().length, 1);
+});
+
+test('optional object-list omission disables its entire group and preserves other arguments', async (t) => {
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.required = [];
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  let group = h.byId('form').querySelector('.mcp-explorer-object-list');
+  assert.equal(group.disabled, true);
+  let toggle = group.parentElement.querySelector('input[type="checkbox"]');
+  await h.click(toggle);
+  group = h.byId('form').querySelector('.mcp-explorer-object-list');
+  assert.equal(group.disabled, false);
+  assert.equal(group.ownerDocument.activeElement, group.querySelector(':scope > button'));
+  await h.click(group.querySelector(':scope > button'));
+  group = h.byId('form').querySelector('.mcp-explorer-object-list');
+  toggle = group.parentElement.querySelector('input[type="checkbox"]');
+  await h.click(toggle);
+  assert.equal(group.disabled, true);
+  assert.equal(Object.hasOwn(JSON.parse(h.byId('json').value), 'targets'), false);
+  assert.equal(h.calls().length, 0);
+});
+
+test('root action changes still remove old operation fields after valid draft edits', async (t) => {
+  const tool = JSON.parse(JSON.stringify(writeTool));
+  tool.inputSchema.properties.action = {type: 'string', enum: ['set_level', 'off'], default: 'set_level'};
+  tool.inputSchema.properties.level = {type: 'number', default: 50};
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  const uuid = h.byId('form').querySelector('input[type="text"]');
+  uuid.value = 'visible-control';
+  uuid.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const action = h.byId('form').querySelector('select');
+  action.value = JSON.stringify('off');
+  action.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {control_uuid: 'visible-control', action: 'off'});
+  assert.equal(h.calls().length, 0);
+});
+
+
+test('adding an object row focuses an enabled control when its first field is optional', async (t) => {
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.properties.targets.items.properties = {
+    state_names: {type: 'array', items: {type: 'string'}},
+    control_uuid: {type: 'string'},
+  };
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  await h.click(h.byId('form').querySelector('.mcp-explorer-object-list > button'));
+  const entry = h.byId('form').querySelector('.mcp-explorer-list-entry');
+  const focused = entry.ownerDocument.activeElement;
+  assert.equal(entry.contains(focused), true);
+  assert.equal(focused.disabled, false);
+  assert.notEqual(focused.tagName, 'FIELDSET');
+  assert.equal(entry.querySelector('textarea').disabled, true);
+});
+
+const modbusAnalysisTool = {
+  name: 'loxone_analyze_project', description: 'Static project analysis',
+  annotations: {readOnlyHint: true, destructiveHint: false},
+  inputSchema: {type: 'object', properties: {
+    scope: {type: 'string', enum: ['knx', 'modbus'], default: 'knx'},
+    analyses: {anyOf: [{type: 'array', items: {type: 'string'}}, {type: 'null'}],
+      default: null, 'x-analyses-by-scope': {
+        knx: ['address_patterns'], modbus: ['inventory', 'configured_register_mappings',
+          'direct_consumers', 'configured_polling', 'evidence_gaps'],
+      }},
+    cursor: {type: 'string'},
+  }},
+};
+
+test('analysis scope changes clear stale selections and cursor and retain keyboard focus', async (t) => {
+  const h = createHarness({tools: [modbusAnalysisTool]});
+  t.after(h.close);
+  await h.ready();
+  const field = (name) => [...h.document.querySelectorAll('.mcp-explorer-field')]
+    .find((row) => [...row.querySelectorAll('label')].some((label) => label.textContent === name));
+  const toggle = field('scope').querySelector('input[type=checkbox]');
+  if (!toggle.checked) await h.click(toggle);
+  const scope = field('scope').querySelector('select');
+  scope.focus();
+  scope.value = JSON.stringify('modbus');
+  scope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.equal(h.document.activeElement.id, scope.id);
+  const analyses = field('analyses').querySelector('select');
+  assert.equal(analyses.multiple, true);
+  assert.deepEqual([...analyses.options].map((option) => option.value),
+    modbusAnalysisTool.inputSchema.properties.analyses['x-analyses-by-scope'].modbus);
+  await h.click(field('analyses').querySelector('input[type=checkbox]'));
+  const selection = field('analyses').querySelector('select');
+  selection.options[0].selected = true;
+  selection.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'modbus', analyses: ['inventory']});
+  await h.click(field('cursor').querySelector('input[type=checkbox]'));
+  const cursor = field('cursor').querySelector('input:not([type=checkbox])');
+  cursor.value = 'synthetic-old-cursor';
+  cursor.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const nextScope = field('scope').querySelector('select');
+  nextScope.value = JSON.stringify('knx');
+  nextScope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'knx'});
+  assert.deepEqual([...field('analyses').querySelector('select').options].map((option) => option.value),
+    ['address_patterns']);
+});
+
+test('Modbus results keep facts, review candidates, gaps and partial coverage visible', async (t) => {
+  const h = createHarness({tools: [modbusAnalysisTool], callResult: {ok: true, data: {
+    scope: 'modbus', findings: [
+      {classification: 'fact', finding_type: 'direct_consumer_summary'},
+      {classification: 'review_candidate', finding_type: 'configured_mapping_repeated'},
+      {classification: 'evidence_gap', finding_type: 'modbus_evidence_gap'},
+    ], coverage: {presentation_complete: true, candidate_scan_complete: true,
+      source_ingestion_complete: true, supported_type_coverage_complete: true},
+    check_status: {direct_consumers: {status: 'partial'}},
+  }}});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({scope: 'modbus'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1 && h.byId('result-tree').firstChild?.className === 'mcp-explorer-stack');
+  const summary = h.byId('result-tree').firstChild;
+  assert.equal(summary.querySelectorAll('p').length, 3);
+  assert.match(summary.firstChild.textContent, /1.*1.*1/);
+  assert.ok(summary.querySelector('.mcp-explorer-warning'));
+  assert.doesNotMatch(summary.textContent, /unused|healthy|fault/);
+});
+
+// Synthetic output, not an observed Miniserver UI capture.
+test('EFM occurrence previews retain reference uncertainty and render titles safely', async (t) => {
+  const h = createHarness({tools: [{...readTool, name: 'loxone_describe_control'}], callResult: {ok: true, data: {
+    participants: [{reference_status: 'unavailable', role_token: 'Grid'},
+      {title: '<script>synthetic</script>', reference_status: 'absent'}],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({query: 'synthetic'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('participants'));
+  await h.click([...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((summary) => summary.textContent.includes('participants')));
+  assert.match(h.byId('result-tree').textContent, /unavailable/);
+  assert.match(h.byId('result-tree').textContent, /<script>synthetic<\/script>/);
+  assert.equal(h.byId('result-tree').querySelector('script'), null);
+});
+
+// Synthetic binding output; no numeric observation or compatibility evidence.
+test('EFM binding previews expose unsupported and conflicting source status', async (t) => {
+  const h = createHarness({tools: [{...readTool, name: 'loxone_describe_control'}],
+    callResult: {ok: true, data: {bindings: [{status: 'unsupported_version'}, {status: 'conflict'}]}}});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({query: 'synthetic'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('bindings'));
+  await h.click([...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((button) => button.textContent.includes('bindings')));
+  assert.match(h.byId('result-tree').textContent, /unsupported_version/);
+  assert.match(h.byId('result-tree').textContent, /conflict/);
+});
+
+
+test('KNX apply without write scope directs to KNX consent without calling MCP', async (t) => {
+  const tool = {name:'loxberry_apply_knx_corrections',
+    annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true},
+    inputSchema:{type:'object',properties:{action:{type:'string'}}}};
+  const h = createHarness({scope:'loxone:read loxberry:knx:read loxberry:knx:drafts', tools:[tool]});
+  t.after(h.close);
+  await h.ready();
+  h.document.getElementById('mcp-explorer').dataset.knxWriteRequired='KNX write consent required';
+  await h.click(h.byId('tools').querySelector('button'));
+  h.byId('json').value=JSON.stringify({action:'apply'});
+  await h.click(h.byId('run'));
+  assert.equal(h.calls().length,0);
+  assert.equal(h.byId('confirm').open,false);
+  assert.equal(h.byId('call-feedback').textContent,'KNX write consent required');
+});
+
+
+const analyzer={name:'loxone_analyze_project',description:'Bounded analyzer',annotations:{readOnlyHint:true,destructiveHint:false},inputSchema:{type:'object',properties:{
+ scope:{type:'string',enum:['knx','modbus','lighting'],default:'knx'},
+ analyses:{anyOf:[{type:'array',items:{type:'string'}},{type:'null'}],default:null,'x-analyses-by-scope':{knx:['address_patterns'],modbus:['inventory'],lighting:['inventory','naming_consistency','presence_relationships','scene_roles','planning_context']}},
+ cursor:{type:'string'},limit:{type:'integer',default:20},view:{type:'string',enum:['full','summary'],default:'full'},source_details:{type:'boolean',default:false},
+ lighting_selection:{anyOf:[{type:'object'},{type:'null'}],default:null},lighting_context:{anyOf:[{type:'object'},{type:'null'}],default:null}
+}}};
+const field=(h,name)=>[...h.document.querySelectorAll('.mcp-explorer-field')].find(x=>[...x.querySelectorAll('label')].some(l=>l.textContent===name));
+async function json(h,args){await h.click(h.byId('json-tab'));h.byId('json').value=JSON.stringify(args);h.byId('json').dispatchEvent(new h.window.Event('input',{bubbles:true}));await h.click(h.byId('form-tab'));}
+test('lighting scope prunes incompatible drafts both ways and preserves focus/limit',async t=>{
+ const h=createHarness({tools:[analyzer]});t.after(h.close);await h.ready();assert.equal(field(h,'lighting_selection'),undefined);
+ await json(h,{scope:'knx',view:'summary',source_details:true,limit:2,analyses:['address_patterns'],cursor:'old'});
+ let scope=field(h,'scope').querySelector('select');scope.focus();scope.value=JSON.stringify('lighting');scope.dispatchEvent(new h.window.Event('change',{bubbles:true}));
+ assert.equal(h.document.activeElement.id,scope.id);assert.deepEqual(JSON.parse(h.byId('json').value),{scope:'lighting',limit:2});
+ assert.equal(field(h,'view'),undefined);assert.equal(field(h,'source_details'),undefined);assert.ok(field(h,'lighting_selection'));assert.match(h.byId('tool-summary').textContent,/LIGHTING_NOTICE/);
+ assert.deepEqual([...field(h,'analyses').querySelectorAll('option')].map(x=>x.value),analyzer.inputSchema.properties.analyses['x-analyses-by-scope'].lighting);
+ await json(h,{scope:'lighting',limit:2,lighting_selection:{controller_uuids:['exact/AI1']},lighting_context:{schema_version:'lighting_analysis_context.v1'}});
+ scope=field(h,'scope').querySelector('select');scope.value=JSON.stringify('modbus');scope.dispatchEvent(new h.window.Event('change',{bubbles:true}));assert.deepEqual(JSON.parse(h.byId('json').value),{scope:'modbus',limit:2});assert.equal(field(h,'lighting_selection'),undefined);assert.equal(field(h,'view'),undefined);assert.equal(h.calls().length,0);
+});
+test('lighting transfer retains exact child and rejects unsupported/hidden/failed source evidence',async t=>{
+ const h=createHarness({tools:[analyzer]});t.after(h.close);await h.ready();const api=h.window.McpExplorerAdapters;
+ const row={uuid:'exact/AI1',type:'LightControllerV2',visibility:'linked',name:'Do not use as identity'},displayed={ok:true,data:{items:[row]}};
+ const transfer=()=>api.transferRecipe('loxone_find_controls',displayed,['data','items',0],row,[analyzer]);
+ assert.deepEqual(JSON.parse(JSON.stringify(transfer().arguments)),{scope:'lighting',lighting_selection:{controller_uuids:['exact/AI1']}});assert.equal(h.calls().length,0);
+ displayed.ok=false;assert.equal(transfer(),null);displayed.ok=true;row.visibility='hidden';assert.equal(transfer(),null);row.visibility='direct';row.type='Dimmer';assert.equal(transfer(),null);row.type='LightControllerV2';
+ assert.equal(api.transferRecipe('loxone_find_controls',displayed,['data','items',0],{...row},[analyzer]),null);
+ assert.equal(api.transferRecipe('loxone_describe_control',displayed,['data','items',0],row,[analyzer]),null);
+ const old={...analyzer,inputSchema:{properties:{scope:{enum:['knx','modbus']}}}};assert.equal(api.transferRecipe('loxone_find_controls',displayed,['data','items',0],row,[old]),null);
+});
+test('lighting result counts this page and retains conditional gaps without HTML injection',async t=>{
+ const findings=['technical_observation','review_candidate','context_gap','conditional'].map(classification=>({classification,code:'<img src=x onerror=alert(1)>',references:[{controller_uuid:'exact/AI1'}]}));
+ const h=createHarness({tools:[analyzer],callResult:{ok:true,data:{scope:'lighting',findings,analyses:['naming_consistency'],coverage:{selected:2,supported:1,selection_complete:false,naming_comparison_complete:false},analysis_truncated:true}}});t.after(h.close);await h.ready();await json(h,{scope:'lighting',lighting_selection:{controller_uuids:['exact/AI1']}});await h.click(h.byId('run'));
+ await h.waitFor(()=>h.byId('result-tree').firstChild?.className==='mcp-explorer-stack');const summary=h.byId('result-tree').firstChild;assert.match(summary.textContent,/LIGHTING_NOTICE/);assert.match(summary.textContent,/LIGHTING_CONDITIONAL.*1/);assert.match(summary.textContent,/LIGHTING_NAMING_INCOMPLETE/);assert.match(summary.textContent,/ANALYSIS_LIMITED/);assert.equal(h.byId('result-tree').querySelector('img'),null);
+});
+test('lighting context roundtrips JSON/form through existing read-only call',async t=>{
+ const args={scope:'lighting',lighting_selection:{controller_uuids:['exact/AI1']},lighting_context:{schema_version:'lighting_analysis_context.v1',rooms:[{room_uuid:'room',usage:{value:'Kitchen',origin:'scenario_assumption',rationale:'Explicit hypothetical use'}}]}};
+ const h=createHarness({tools:[analyzer],callResult:{ok:true,data:{scope:'lighting',findings:[],analyses:['inventory'],coverage:{selected:1,supported:1,selection_complete:true,naming_comparison_complete:true},analysis_truncated:false}}});t.after(h.close);await h.ready();await json(h,args);await h.click(h.byId('run'));await h.waitFor(()=>h.calls().length===1);assert.deepEqual(h.requests.filter(x=>x.body?.method==='tools/call').at(-1).body.params.arguments,args);
+});
+
+
+test('lighting row transfer through dialog discards stale analyzer context without auto-run', async (t) => {
+  const find = {...readTool, name: 'loxone_find_controls', inputSchema: {type: 'object', properties: {}}};
+  const row = {uuid: 'exact/AI1', name: 'Independent', type: 'LightControllerV2', visibility: 'direct'};
+  const h = createHarness({tools: [find, analyzer], callResult: {ok: true, data: {items: [row]}}});
+  t.after(h.close);
+  await h.ready();
+  const chooseTool = async (name) => h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.querySelector('strong')?.textContent === name));
+  await chooseTool(analyzer.name);
+  await json(h, {scope: 'knx', view: 'summary', source_details: true, analyses: ['address_patterns'],
+    cursor: 'old', limit: 2, lighting_context: {schema_version: 'lighting_analysis_context.v1'}});
+  await chooseTool(find.name);
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1 && h.byId('result-tree').querySelector('.mcp-explorer-tree-toggle'));
+  const items = [...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((button) => button.textContent.includes('items ['));
+  assert.ok(items);
+  await h.click(items);
+  const entry = [...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((button) => button.textContent.includes('0 {'));
+  assert.ok(entry);
+  await h.click(entry.parentElement.querySelector('.mcp-explorer-tree-select'));
+  assert.match(h.byId('transfer-context').textContent, /LIGHTING_TRANSFER_CONTEXT/);
+  h.byId('transfer').close('apply');
+  await h.waitFor(() => h.byId('tool-summary').textContent.includes('LIGHTING_NOTICE'));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(h.calls().length, 1);
+});
+
+
+test('JSON scope changes discard hidden old parameters and preserve compatible explicit checks', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await json(h, {scope: 'knx', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2});
+  await json(h, {scope: 'lighting', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(field(h, 'view'), undefined);
+  assert.ok(field(h, 'lighting_selection'));
+  await json(h, {scope: 'knx', analyses: ['address_patterns'], cursor: 'old', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']},
+    lighting_context: {schema_version: 'lighting_analysis_context.v1'}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'knx', analyses: ['address_patterns'], limit: 2});
+  assert.equal(field(h, 'lighting_selection'), undefined);
+  assert.ok(field(h, 'view'));
+  await json(h, {scope: 'lighting', analyses: ['inventory'], limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', analyses: ['inventory'], limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(h.calls().length, 0);
+});
+
+test('JSON scope cleanup never repairs malformed check types before request validation', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('json-tab'));
+  const malformed = {scope: 'lighting', analyses: 'inventory',
+    lighting_selection: {controller_uuids: ['exact/AI1']}};
+  h.byId('json').value = JSON.stringify(malformed);
+  await h.click(h.byId('run'));
+  assert.deepEqual(JSON.parse(h.byId('json').value), malformed);
+  assert.equal(h.calls().length, 0);
+  assert.equal(h.byId('validation').hidden, false);
+});
+
+
+test('Modbus scope removes ETS parameters in form and JSON without running a request', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await json(h, {scope: 'knx', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2});
+  const scope = field(h, 'scope').querySelector('select');
+  scope.value = JSON.stringify('modbus');
+  scope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'modbus', limit: 2});
+  assert.equal(field(h, 'view'), undefined);
+  assert.equal(field(h, 'source_details'), undefined);
+  await json(h, {scope: 'knx', view: 'summary', source_details: true, limit: 2});
+  await json(h, {scope: 'modbus', view: 'summary', source_details: true,
+    analyses: ['inventory'], cursor: 'old', limit: 2});
+  assert.deepEqual(JSON.parse(h.byId('json').value),
+    {scope: 'modbus', analyses: ['inventory'], limit: 2});
+  const api = h.window.McpExplorerAdapters;
+  const ets = {view: 'summary', relation: 'linked', names_differ: true,
+    ambiguous_names: true, address: '1/2/3', source_details: true};
+  assert.deepEqual(JSON.parse(JSON.stringify(api.changeAnalysisScope({scope: 'modbus', ...ets}))),
+    {scope: 'modbus'});
+  for (const name of Object.keys(ets)) {
+    assert.equal(api.fieldVisible(analyzer, name, {scope: 'modbus'}), false);
+    assert.equal(api.fieldVisible(analyzer, name, {scope: 'knx'}), true);
+  }
+  assert.equal(h.calls().length, 0);
+});

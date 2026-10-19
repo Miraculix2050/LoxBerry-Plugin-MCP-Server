@@ -6,7 +6,7 @@ import logging
 import secrets
 import time
 from collections.abc import Callable
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 from urllib.parse import parse_qs, urlsplit
 
 from mcp.server.auth.provider import (
@@ -21,22 +21,28 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
 
-from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
-
-READ_SCOPE: Final = "loxone:read"
-CONTROL_SCOPE: Final = "loxone:control"
-LOXBERRY_READ_SCOPE: Final = "loxberry:read"
-HISTORY_SCOPE: Final = "loxone:history"
-LOXBERRY_OPERATE_SCOPE: Final = "loxberry:operate"
-# Retained as the Phase 1 source-level alias used by existing integrations.
-SCOPE: Final = READ_SCOPE
-SUPPORTED_SCOPES: Final = (
-    READ_SCOPE,
-    HISTORY_SCOPE,
-    CONTROL_SCOPE,
-    LOXBERRY_READ_SCOPE,
-    LOXBERRY_OPERATE_SCOPE,
+from mcpserver.auth.scopes import CONTROL_SCOPE as CONTROL_SCOPE
+from mcpserver.auth.scopes import HISTORY_SCOPE as HISTORY_SCOPE
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
 )
+from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE as LOXBERRY_OPERATE_SCOPE
+from mcpserver.auth.scopes import LOXBERRY_READ_SCOPE as LOXBERRY_READ_SCOPE
+from mcpserver.auth.scopes import MESSAGE_CONFIRM_SCOPE as MESSAGE_CONFIRM_SCOPE
+from mcpserver.auth.scopes import READ_SCOPE as READ_SCOPE
+from mcpserver.auth.scopes import SCOPE as SCOPE
+from mcpserver.auth.scopes import SUPPORTED_SCOPES as SUPPORTED_SCOPES
+from mcpserver.auth.store import (
+    AtomicJsonAuthStore,
+    lifecycle_client_reference,
+    lifecycle_event,
+    mark_family_revoked,
+    revocation_details,
+    token_digest,
+)
+
 _LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
@@ -52,6 +58,7 @@ _MAX_FAMILIES_PER_CLIENT: Final = 16
 # sustained unauthenticated registration flood cannot consume all 256 slots.
 # A client becomes durable once it is referenced by an authorization flow.
 _UNUSED_CLIENT_TTL: Final = 60 * 60
+_Result = TypeVar("_Result")
 
 
 class StoredAuthorizationCode(AuthorizationCode):
@@ -90,8 +97,11 @@ def normalize_scopes(
     requested = value.split() if value else [READ_SCOPE]
     if len(requested) != len(set(requested)) or set(requested) - set(SUPPORTED_SCOPES):
         raise ValueError("unsupported scope")
-    if READ_SCOPE not in requested or (
-        LOXBERRY_OPERATE_SCOPE in requested and HISTORY_SCOPE not in requested
+    if (
+        READ_SCOPE not in requested
+        or (LOXBERRY_OPERATE_SCOPE in requested and HISTORY_SCOPE not in requested)
+        or (LOXBERRY_KNX_DRAFTS_SCOPE in requested and LOXBERRY_KNX_READ_SCOPE not in requested)
+        or (LOXBERRY_KNX_WRITE_SCOPE in requested and LOXBERRY_KNX_DRAFTS_SCOPE not in requested)
     ):
         raise ValueError("unsupported scope")
     return tuple(scope for scope in SUPPORTED_SCOPES if scope in requested)
@@ -141,12 +151,17 @@ class Phase0OAuthProvider(
         resource: str,
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
+        on_family_ended: Callable[[str, str], None] | None = None,
+        on_family_started: Callable[[dict[str, Any]], None] | None = None,
+        on_family_expired: Callable[[dict[str, Any]], None] | None = None,
         control_enabled: bool = False,
         loxberry_read_enabled: bool = False,
         loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
+        explorer_loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
         history_enabled: bool = False,
         loxberry_operate_enabled: bool = False,
         loxberry_operate_allowed: Callable[[str, str, str], bool] | None = None,
+        explorer_loxberry_operate_allowed: Callable[[str, str, str], bool] | None = None,
         explorer_origins: tuple[str, ...] = (),
     ) -> None:
         self.store = store
@@ -154,35 +169,98 @@ class Phase0OAuthProvider(
         self.resource = resource
         self._clock = clock
         self._on_family_revoked = on_family_revoked
+        self._on_family_ended = on_family_ended
+        self._on_family_started = on_family_started
+        self._on_family_expired = on_family_expired
         self.control_enabled = control_enabled
         self.loxberry_read_enabled = loxberry_read_enabled
         self._loxberry_read_allowed = loxberry_read_allowed
+        self._explorer_loxberry_read_allowed = explorer_loxberry_read_allowed
         self.history_enabled = history_enabled
         self.loxberry_operate_enabled = loxberry_operate_enabled
         self._loxberry_operate_allowed = loxberry_operate_allowed
+        self._explorer_loxberry_operate_allowed = explorer_loxberry_operate_allowed
         canonical_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self.explorer_origins = frozenset((canonical_origin, *explorer_origins))
-        self.store.mutate(self._garbage_collect)
+        self._mutate_with_cleanup(lambda document: None)
 
     def now(self) -> int:
         return int(self._clock())
 
     def loxberry_read_allowed(self, client_id: str, identity_id: str, miniserver_id: str) -> bool:
         """Evaluate the locally administered Phase 3 binding live."""
-        return bool(
-            self.loxberry_read_enabled
-            and self._loxberry_read_allowed is not None
-            and self._loxberry_read_allowed(client_id, identity_id, miniserver_id)
+        document = self.store.snapshot()
+        client = document.get("clients", {}).get(client_id, {})
+
+        def observed(allowed: bool, *, disabled: bool = False) -> bool:
+            lifecycle_event(
+                "approval_match",
+                capability="read",
+                client_ref=lifecycle_client_reference(document, client_id),
+                reason="capability_disabled"
+                if disabled
+                else "exact_match"
+                if allowed
+                else "no_exact_match",
+                source="oauth",
+                outcome="matched" if allowed else "unmatched",
+                debug=True,
+            )
+            return allowed
+
+        if not self.loxberry_read_enabled:
+            return observed(False, disabled=True)
+        explorer_origin = self._explorer_origin(client)
+        if (
+            explorer_origin is not None
+            and self._explorer_loxberry_read_allowed is not None
+            and self._explorer_loxberry_read_allowed(explorer_origin, identity_id, miniserver_id)
+        ):
+            return observed(True)
+        return observed(
+            bool(
+                self._loxberry_read_allowed
+                and self._loxberry_read_allowed(client_id, identity_id, miniserver_id)
+            )
         )
 
     def loxberry_operate_allowed(
         self, client_id: str, identity_id: str, miniserver_id: str
     ) -> bool:
         """Evaluate the locally administered Phase 4 binding live."""
-        return bool(
-            self.loxberry_operate_enabled
-            and self._loxberry_operate_allowed is not None
-            and self._loxberry_operate_allowed(client_id, identity_id, miniserver_id)
+        document = self.store.snapshot()
+        client = document.get("clients", {}).get(client_id, {})
+
+        def observed(allowed: bool, *, disabled: bool = False) -> bool:
+            lifecycle_event(
+                "approval_match",
+                capability="operate",
+                client_ref=lifecycle_client_reference(document, client_id),
+                reason="capability_disabled"
+                if disabled
+                else "exact_match"
+                if allowed
+                else "no_exact_match",
+                source="oauth",
+                outcome="matched" if allowed else "unmatched",
+                debug=True,
+            )
+            return allowed
+
+        if not self.loxberry_operate_enabled:
+            return observed(False, disabled=True)
+        explorer_origin = self._explorer_origin(client)
+        if (
+            explorer_origin is not None
+            and self._explorer_loxberry_operate_allowed is not None
+            and self._explorer_loxberry_operate_allowed(explorer_origin, identity_id, miniserver_id)
+        ):
+            return observed(True)
+        return observed(
+            bool(
+                self._loxberry_operate_allowed
+                and self._loxberry_operate_allowed(client_id, identity_id, miniserver_id)
+            )
         )
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
@@ -190,10 +268,9 @@ class Phase0OAuthProvider(
 
         def load(document: dict[str, Any]) -> None:
             nonlocal record
-            self._garbage_collect(document)
             record = document["clients"].get(client_id)
 
-        self.store.mutate(load)
+        self._mutate_with_cleanup(load)
         return OAuthClientInformationFull.model_validate(record) if record is not None else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -225,7 +302,6 @@ class Phase0OAuthProvider(
         record["scope"] = scope_text(list(scopes))
 
         def insert(document: dict[str, Any]) -> None:
-            self._garbage_collect(document)
             if client_info.client_id in document["clients"]:
                 raise RegistrationError(
                     "invalid_client_metadata", "Client identifier already exists"
@@ -236,16 +312,48 @@ class Phase0OAuthProvider(
                 )
             document["clients"][client_info.client_id] = record
 
-        self.store.mutate(insert)
+        self._mutate_with_cleanup(insert)
+
+    def _mutate_with_cleanup(
+        self,
+        operation: Callable[[dict[str, Any]], _Result],
+        *,
+        preserve_client_ids: frozenset[str] = frozenset(),
+    ) -> _Result:
+        expired: list[dict[str, Any]] = []
+
+        def apply(document: dict[str, Any]) -> _Result:
+            expired.extend(self._garbage_collect(document, preserve_client_ids=preserve_client_ids))
+            return operation(document)
+
+        try:
+            return self.store.mutate(apply, lifecycle_now=self.now())
+        finally:
+            # The callback may read the auth store to derive Explorer binding IDs.
+            # Run it only after mutate has released the store's file lock.
+            if self._on_family_expired is not None:
+                for family in expired:
+                    try:
+                        self._on_family_expired(family)
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "component=explorer_binding severity=WARNING "
+                            "outcome=expiration_record_failed error_type=%s",
+                            type(exc).__name__,
+                        )
 
     def _garbage_collect(
         self, document: dict[str, Any], *, preserve_client_ids: frozenset[str] = frozenset()
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         now = self.now()
+        expired: list[dict[str, Any]] = []
         for family in document["families"].values():
             client = document["clients"].get(family.get("client_id"), {})
             if family.get("client_kind") == "tool_explorer" or self._is_explorer_client(client):
                 family["client_kind"] = "tool_explorer"
+                explorer_origin = self._explorer_origin(client)
+                if explorer_origin is not None:
+                    family["explorer_origin"] = explorer_origin
                 family["expires_at"] = min(
                     int(family.get("expires_at", 0)), now + EXPLORER_REFRESH_FAMILY_TTL
                 )
@@ -255,9 +363,17 @@ class Phase0OAuthProvider(
             if record.get("expires_at", 0) <= now
         }
         for family_id in expired_families:
+            family = document["families"].get(family_id)
+            if isinstance(family, dict):
+                expired.append(dict(family))
             document["families"].pop(family_id, None)
-            if self._on_family_revoked is not None:
-                self._on_family_revoked(family_id)
+            try:
+                self._notify_family_ended(family_id, "family_expired")
+            except Exception:
+                _LOGGER.warning(
+                    "component=oauth severity=WARNING outcome=token_cleanup_failed "
+                    "reason=family_expired"
+                )
         document["codes"] = {
             digest: record
             for digest, record in document["codes"].items()
@@ -286,6 +402,7 @@ class Phase0OAuthProvider(
             or client_id in preserve_client_ids
             or int(record.get("client_id_issued_at", now)) + _UNUSED_CLIENT_TTL > now
         }
+        return expired
 
     def _is_explorer_client(self, client: dict[str, Any]) -> bool:
         redirects = client.get("redirect_uris")
@@ -301,6 +418,15 @@ class Phase0OAuthProvider(
             and not redirect.fragment
             and origin in self.explorer_origins
         )
+
+    def _explorer_origin(self, client: dict[str, Any]) -> str | None:
+        if not self._is_explorer_client(client):
+            return None
+        redirects = client.get("redirect_uris")
+        if not isinstance(redirects, list) or not isinstance(redirects[0], str):
+            return None
+        redirect = urlsplit(redirects[0])
+        return f"{redirect.scheme}://{redirect.netloc}"
 
     def is_explorer_client(self, client: OAuthClientInformationFull) -> bool:
         """Return whether a registered public client is the fixed local Explorer."""
@@ -376,7 +502,6 @@ class Phase0OAuthProvider(
             # The browser validated this client at authorization start. Preserve
             # it through the short consent flow even if its unused-registration
             # lifetime elapses before the authorization code is committed.
-            self._garbage_collect(document, preserve_client_ids=frozenset({client_id}))
             client_record = document["clients"].get(client_id)
             if client_record is None:
                 raise TokenError("invalid_client", "Client registration is unavailable")
@@ -392,6 +517,7 @@ class Phase0OAuthProvider(
                 raise TokenError("invalid_request", "Client session capacity reached")
             document["codes"][digest] = record
             is_explorer = self._is_explorer_client(client_record)
+            explorer_origin = self._explorer_origin(client_record)
             family_ttl = EXPLORER_REFRESH_FAMILY_TTL if is_explorer else REFRESH_FAMILY_TTL
             document["families"][family_id] = {
                 "client_id": client_id,
@@ -400,13 +526,26 @@ class Phase0OAuthProvider(
                 "scope": scope_text(list(validated_scopes)),
                 "resource": resource,
                 "expires_at": now + family_ttl,
+                "created_at": now,
                 "revoked": False,
                 "pending_loxberry_read": pending_loxberry_read,
                 "pending_loxberry_operate": pending_loxberry_operate,
                 **({"client_kind": "tool_explorer"} if is_explorer else {}),
+                **({"explorer_origin": explorer_origin} if explorer_origin is not None else {}),
             }
 
-        self.store.mutate(insert)
+        self._mutate_with_cleanup(insert, preserve_client_ids=frozenset({client_id}))
+        if self._on_family_started is not None:
+            family = self.store.snapshot()["families"].get(family_id)
+            if isinstance(family, dict):
+                try:
+                    self._on_family_started(family)
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "component=explorer_binding severity=WARNING "
+                        "outcome=reactivation_failed error_type=%s",
+                        type(exc).__name__,
+                    )
         return raw_code
 
     @staticmethod
@@ -486,7 +625,6 @@ class Phase0OAuthProvider(
 
         def exchange(document: dict[str, Any]) -> None:
             nonlocal access_expires_at, raw_access, raw_refresh
-            self._garbage_collect(document)
             digest = token_digest(authorization_code.code)
             record = document["codes"].get(digest)
             if (
@@ -513,7 +651,7 @@ class Phase0OAuthProvider(
             document["refresh_tokens"][token_digest(raw_refresh)] = refresh
             access_expires_at = access["expires_at"]
 
-        self.store.mutate(exchange)
+        self._mutate_with_cleanup(exchange)
         return OAuthToken(
             access_token=raw_access,
             token_type="Bearer",
@@ -522,17 +660,28 @@ class Phase0OAuthProvider(
             refresh_token=raw_refresh,
         )
 
-    def _revoke_family(self, document: dict[str, Any], family_id: str) -> None:
+    def _notify_family_ended(self, family_id: str, reason: str) -> None:
+        if self._on_family_ended is not None:
+            self._on_family_ended(family_id, reason)
+        elif self._on_family_revoked is not None:
+            self._on_family_revoked(family_id)
+
+    def _revoke_family(
+        self, document: dict[str, Any], family_id: str, *, reason: str = "oauth_revocation"
+    ) -> None:
         family = document["families"].get(family_id)
         if family is not None:
-            family["revoked"] = True
+            mark_family_revoked(family, now=self.now(), reason=reason, source="oauth")
         for collection in ("access_tokens", "refresh_tokens"):
             for record in document[collection].values():
                 if record.get("family_id") == family_id:
                     record["status"] = "revoked"
-        if self._on_family_revoked is not None:
+        if self._on_family_revoked is not None or self._on_family_ended is not None:
             try:
-                self._on_family_revoked(family_id)
+                callback_reason = (
+                    revocation_details(family)[0] if isinstance(family, dict) else reason
+                )
+                self._notify_family_ended(family_id, callback_reason)
             except Exception as exc:
                 _LOGGER.warning(
                     "component=oauth severity=WARNING outcome=token_cleanup_failed error_type=%s",
@@ -560,13 +709,12 @@ class Phase0OAuthProvider(
 
         def load(document: dict[str, Any]) -> None:
             nonlocal result
-            self._garbage_collect(document)
             record = document["refresh_tokens"].get(token_digest(refresh_token))
             if record is None or record.get("client_id") != client.client_id:
                 return
             family = document["families"].get(record["family_id"])
             if record.get("status") == "consumed":
-                self._revoke_family(document, record["family_id"])
+                self._revoke_family(document, record["family_id"], reason="refresh_reuse")
                 return
             if (
                 record.get("status") != "active"
@@ -578,7 +726,7 @@ class Phase0OAuthProvider(
                 return
             result = self._refresh_model(refresh_token, record)
 
-        self.store.mutate(load)
+        self._mutate_with_cleanup(load)
         return result
 
     async def exchange_refresh_token(
@@ -596,14 +744,19 @@ class Phase0OAuthProvider(
 
         def exchange(document: dict[str, Any]) -> None:
             nonlocal access_expires_at, failure, raw_access, raw_refresh
-            self._garbage_collect(document)
             record = document["refresh_tokens"].get(token_digest(refresh_token.token))
             if record is None or record.get("client_id") != client.client_id:
                 failure = "Refresh token is invalid"
                 return
             family = document["families"].get(record["family_id"])
             if record.get("status") != "active":
-                self._revoke_family(document, record["family_id"])
+                self._revoke_family(
+                    document,
+                    record["family_id"],
+                    reason="refresh_reuse"
+                    if record.get("status") == "consumed"
+                    else "refresh_invalid_state",
+                )
                 failure = "Refresh token is invalid"
                 return
             if family is None or family["revoked"] or family["expires_at"] <= self.now():
@@ -623,8 +776,15 @@ class Phase0OAuthProvider(
             document["refresh_tokens"][token_digest(raw_refresh)] = refresh
             access_expires_at = access["expires_at"]
 
-        self.store.mutate(exchange)
+        self._mutate_with_cleanup(exchange)
         if failure is not None:
+            lifecycle_event(
+                "refresh_rejected",
+                family_id=refresh_token.family_id,
+                source="oauth",
+                outcome="rejected",
+                debug=True,
+            )
             raise TokenError("invalid_grant", failure)
         return OAuthToken(
             access_token=raw_access,
@@ -639,10 +799,9 @@ class Phase0OAuthProvider(
 
         def load(current: dict[str, Any]) -> None:
             nonlocal document
-            self._garbage_collect(current)
             document = current
 
-        self.store.mutate(load)
+        self._mutate_with_cleanup(load)
         record = document["access_tokens"].get(token_digest(token))
         if record is None or record.get("status") != "active" or record["expires_at"] <= self.now():
             return None
@@ -672,17 +831,62 @@ class Phase0OAuthProvider(
             miniserver_id=record["miniserver_id"],
         )
 
+    async def load_access_token_readonly(self, token: str) -> StoredAccessToken | None:
+        """Validate one current token without garbage collection or lifecycle callbacks.
+
+        MCP transport verification must not turn a local diagnostic read into
+        unrelated session expiry, remote token cleanup, or OAuth persistence.
+        """
+        document = self.store.snapshot()
+        record = document["access_tokens"].get(token_digest(token))
+        now = self.now()
+        if record is None or record.get("status") != "active" or record["expires_at"] <= now:
+            return None
+        family = document["families"].get(record["family_id"])
+        if (
+            family is None
+            or family["revoked"]
+            or family["expires_at"] <= now
+            or record["resource"] != self.resource
+            or record["client_id"] not in document["clients"]
+            or any(
+                family.get(key) != record.get(key)
+                for key in ("client_id", "identity_id", "miniserver_id", "resource")
+            )
+            or not set(record["scopes"]).issubset(str(family.get("scope", "")).split())
+        ):
+            return None
+        return StoredAccessToken(
+            token=token,
+            client_id=record["client_id"],
+            scopes=record["scopes"],
+            expires_at=record["expires_at"],
+            resource=record["resource"],
+            subject=record["identity_id"],
+            claims={
+                "iss": self.issuer,
+                "identity": record["identity_id"],
+                "miniserver": record["miniserver_id"],
+                "audience": record["resource"],
+            },
+            family_id=record["family_id"],
+            identity_id=record["identity_id"],
+            miniserver_id=record["miniserver_id"],
+        )
+
     async def revoke_token(self, token: StoredAccessToken | StoredRefreshToken) -> None:
         self.store.mutate(lambda document: self._revoke_family(document, token.family_id))
 
-    async def revoke_raw_token(self, raw_token: str, client_id: str) -> None:
+    async def revoke_raw_token(
+        self, raw_token: str, client_id: str, *, reason: str = "oauth_revocation"
+    ) -> None:
         digest = token_digest(raw_token)
 
         def revoke(document: dict[str, Any]) -> None:
             for collection in ("access_tokens", "refresh_tokens"):
                 record = document[collection].get(digest)
                 if record is not None and record.get("client_id") == client_id:
-                    self._revoke_family(document, record["family_id"])
+                    self._revoke_family(document, record["family_id"], reason=reason)
                     return
 
         self.store.mutate(revoke)
@@ -698,7 +902,9 @@ class Phase0OAuthProvider(
                     or scope not in str(family.get("scope", "")).split()
                 ):
                     continue
-                family["revoked"] = True
+                mark_family_revoked(
+                    family, now=self.now(), reason="scope_disabled", source="configuration"
+                )
                 revoked.append(family_id)
                 for collection in ("codes", "access_tokens", "refresh_tokens"):
                     for record in document[collection].values():
