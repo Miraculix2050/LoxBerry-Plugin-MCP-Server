@@ -87,6 +87,34 @@ parent identity, structure version and state references, with omissions. Runtime
 containment does not identify a project connector or physical luminaire; color
 picker support does not prove installed tunable-white lighting. No actions occur.
 
+For a bounded lighting review, use `loxone_analyze_project(scope="lighting",
+lighting_selection={"controller_uuids":["exact-visible-controller-id"]})`, or select
+one exact `room_uuid` instead. A room selects at most 16 visible LightControllerV2
+controls and reports exclusions. Default checks cover inventory, naming candidates,
+configured presence relationships, scene roles and missing planning context.
+Follow `next_cursor` with unchanged inputs, at most 50 findings per page.
+
+Optional `lighting_context` uses `schema_version="lighting_analysis_context.v1"`.
+Declare exact controller+mood identities, presence-source IDs, literal naming
+prefixes and room use/intent/fixtures/zones with explicit `origin` and `rationale`.
+Each room field and zone has independent provenance. Existing profile binding IDs
+reuse confirmed sources only; a confirmed binding does not confirm a hypothetical
+role or installed fixture. Presence sources may be outside the selected room but
+must remain visible. Duplicate resolved identities and overlapping prefixes are
+rejected. This creates no saved profile or configuration changes.
+Scenes without a declared role remain missing context. Noncurrent mood names are
+excluded from naming comparisons with explicit freshness gaps. An unavailable
+profile is a source/retry problem, not an instruction to change valid inputs.
+Direct sources need no profile or installation serial; explicit binding references
+retain installation and content-change checks. Child targets retain their parent
+anchor provenance. Truncated unresolved counts remain explicitly partial.
+
+Results retain source versions, freshness, omissions and room/controller/scene
+references. Naming differences are review candidates; configured reachability is
+not observed causation. Unknown paths and truncated names stay incomplete.
+Controller Kelvin defaults prove neither installed tunable-white fixtures nor a
+design need. Overall advice is conditional, not a professional physical audit.
+
 For a presence/light relationship, establish exact source and controller IDs;
 names or a shared room do not prove an association. Inspect project mapping and
 source coverage, find/describe the exact objects, then trace the relevant direction

@@ -57,13 +57,15 @@ def _analysis_payload(
     analyses: frozenset[str],
     taxonomy: tuple[AddressTaxonomyEntry, ...],
     scope: str = "knx",
+    lighting_sources: object = None,
 ) -> bytes:
     """Avoid per-object frozen-slot field introspection; retain every graph field.
 
     The dispatch table is local to this pickler, never a global copyreg mutation.
     Constructors restore the same immutable types in the isolated child.
     """
-    return _model_payload((view, analyses, taxonomy, scope))
+    legacy = (view, analyses, taxonomy, scope)
+    return _model_payload(legacy if lighting_sources is None else (*legacy, lighting_sources))
 
 
 def _model_payload(value: object) -> bytes:
@@ -175,6 +177,7 @@ async def process_analysis(
     *,
     scope: str = "knx",
     timings: dict[str, float | int] | None = None,
+    lighting_sources: object = None,
 ) -> dict[str, object]:
     """Run analysis; optional private diagnostics contain only durations and byte counts.
 
@@ -182,8 +185,20 @@ async def process_analysis(
     byte; stdout measures the remaining stream through EOF, including child exit.
     Child durations overlap these parent intervals and must not be added to them.
     """
-    if scope not in {"knx", "modbus"}:
+    if scope not in {"knx", "modbus", "lighting"}:
         raise ValueError("Unknown project analysis scope")
+    if scope == "lighting":
+        from mcpserver.lighting_analysis import LIGHTING_ANALYSES, LightingSources
+
+        if (
+            not isinstance(lighting_sources, LightingSources)
+            or taxonomy
+            or not analyses
+            or not analyses <= set(LIGHTING_ANALYSES)
+        ):
+            raise ValueError("Lighting worker requires bounded prepared sources and checks")
+    elif lighting_sources is not None:
+        raise ValueError("Lighting sources require lighting scope")
     if scope == "modbus":
         from .modbus_analysis import require_implemented
 
@@ -206,7 +221,7 @@ async def process_analysis(
     spawned = perf_counter()
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     stderr_task = asyncio.create_task(process.stderr.read())
-    payload = _analysis_payload(view, analyses, taxonomy, scope)
+    payload = _analysis_payload(view, analyses, taxonomy, scope, lighting_sources)
     serialized = perf_counter()
     if len(payload) > MAX_ANALYSIS_INPUT:
         process.kill()
@@ -294,17 +309,44 @@ def main() -> None:
             received = perf_counter()
             if len(raw) > MAX_ANALYSIS_INPUT:
                 raise ProjectError("project_worker_limit")
-            view, analyses, taxonomy, scope = pickle.loads(raw)
+            payload_parts = pickle.loads(raw)
+            if not isinstance(payload_parts, tuple) or len(payload_parts) not in {4, 5}:
+                raise ProjectError("project_worker_invalid")
+            view, analyses, taxonomy, scope = payload_parts[:4]
+            lighting_sources = payload_parts[4] if len(payload_parts) == 5 else None
             deserialized = perf_counter()
             if (
                 not isinstance(view, ProjectView)
                 or not isinstance(analyses, frozenset)
                 or not isinstance(taxonomy, tuple)
                 or any(not isinstance(item, AddressTaxonomyEntry) for item in taxonomy)
-                or scope not in {"knx", "modbus"}
+                or scope not in {"knx", "modbus", "lighting"}
             ):
                 raise ProjectError("project_worker_invalid")
-            if scope == "modbus":
+            if scope == "lighting":
+                from mcpserver.lighting_analysis import (
+                    LIGHTING_ANALYSES,
+                    LightingSources,
+                    analyze_lighting,
+                )
+
+                from .query import ProjectQuery
+
+                if (
+                    not isinstance(lighting_sources, LightingSources)
+                    or taxonomy
+                    or not analyses
+                    or not analyses <= set(LIGHTING_ANALYSES)
+                ):
+                    raise ProjectError("project_worker_invalid")
+                analysis_result = analyze_lighting(
+                    ProjectQuery(view, {c.uuid: c.name for c in lighting_sources.controls}),
+                    lighting_sources,
+                    analyses,
+                )
+            elif lighting_sources is not None:
+                raise ProjectError("project_worker_invalid")
+            elif scope == "modbus":
                 from .modbus_analysis import analyze_modbus, require_implemented
 
                 require_implemented(analyses)

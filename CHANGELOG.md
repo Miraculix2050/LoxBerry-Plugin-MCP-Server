@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a bounded lighting scope to the existing project analyzer with exact
+  controller/room selection, request-local scene/presence/room declarations,
+  shared profile-source resolution and fresh publication/cursor guards. Keep
+  naming candidates, configured reachability and physical claims separate (#441, stage 4).
+
 - Add documented Meter output sign conventions by normalized runtime subtype to
   state and StatisticV2 semantics, with raw values preserved and unknown/legacy
   types kept unqualified. Distinguish configurable physical-input polarity from

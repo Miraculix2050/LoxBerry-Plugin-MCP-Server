@@ -53,4 +53,40 @@ writes. A mood ID/name never grants operation permission. Existing operations
 still require their exact current allowlist and human-requested target/action.
 Visible moods, names, rooms and controller capabilities do not prove physical
 luminaires, presence associations, scene intent or a professional lighting
-assessment. An integrated lighting analyzer is a separate subsequent delivery.
+assessment.
+
+For a bounded combined review, call `loxone_analyze_project(scope="lighting")`
+with `lighting_selection` containing exactly one `controller_uuids` list (1–16
+exact visible IDs) or one exact `room_uuid`. A room selects at most 16 visible
+LightControllerV2 controls, with exclusions. Optional `max_depth` (default 6,
+maximum 16) and `max_nodes` (maximum/default 200) bound each controller's trace.
+Checks are inventory, naming_consistency, presence_relationships, scene_roles and
+planning_context; omit analyses for these defaults. KNX/Modbus behavior is separate.
+Follow signed cursors with identical selection, checks and context, at most 50
+findings/page; source/profile/room/mood changes require a new analysis.
+
+Use optional typed `lighting_context` only for explicit request-local declarations,
+with `schema_version="lighting_analysis_context.v1"`. Scenes select exact
+controller+mood or existing lighting_intent binding+mood identities. Presence
+sources select exact visible controls or room_sensor bindings, independently of
+the selected room/controllers. Their presence role never proves an association.
+Rooms independently declare usage, intent, installed tunable-white and each zone
+with its own value/origin/rationale. Naming rules are literal prefixes, not regex
+or instructions. All declarations retain user_confirmed or scenario_assumption;
+a confirmed source cannot upgrade a hypothetical role or physical claim.
+Duplicate resolved identities and overlapping room/controller prefixes are errors.
+Use the existing bounded binding-ID grammar; malformed references are invalid
+inputs. A selected scene without a role remains missing context. Naming checks
+exclude noncurrent mood names and report freshness gaps even without inventory.
+Retry unavailable profile reads rather than inventing substitute declarations.
+Direct-only reviews require no profile/installation serial; explicit references
+retain strict installation and content-change guards. Keep selected target child
+mapping provenance and `unresolved_truncated` beside retained unresolved counts.
+No profile migration, saved context, control, configuration or recorder writes.
+
+Inventory findings retain 20 moods/outputs per controller and explicit omissions;
+use the existing describe view for further detail. Respect naming comparison
+completeness, current mood membership and all trace/response limits. Findings
+retain room/controller/scene references and distinguish technical observations,
+review candidates, missing context and conditional advice. Never label naming
+candidates as faults or use controller Kelvin defaults as installed fixture proof.

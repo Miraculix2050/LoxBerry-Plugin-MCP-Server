@@ -45,9 +45,19 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.config import AtomicConfigStore, ConfigError
+from mcpserver.installation_profile import ProfileError
 from mcpserver.knx.catalog_runtime import CatalogRuntime
 from mcpserver.knx.model import KnxError
 from mcpserver.knx.project_metadata import ProjectMetadata
+from mcpserver.lighting_analysis import (
+    LIGHTING_ANALYSES,
+    LIGHTING_ANALYSIS_VERSION,
+    LightingAnalysisData,
+    LightingContext,
+    LightingSelection,
+    LightingSources,
+    prepare_lighting,
+)
 from mcpserver.local_solar_forecast import ForecastSourcesResult, LocalSolarForecastRuntime
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.active_alerts import (
@@ -2245,7 +2255,10 @@ class ProjectKnxCompactAnalysisData(BaseModel):
 
 class ProjectAnalysisEnvelope(ToolEnvelope):
     data: (
-        Annotated[ProjectAnalysisData | ProjectModbusAnalysisData, Field(discriminator="scope")]
+        Annotated[
+            ProjectAnalysisData | ProjectModbusAnalysisData | LightingAnalysisData,
+            Field(discriminator="scope"),
+        ]
         | ProjectKnxCompactAnalysisData
         | ErrorData
     )
@@ -3925,7 +3938,10 @@ def _fit_project_analysis_page(
 ) -> bool:
     if not isinstance(
         envelope.data,
-        ProjectAnalysisData | ProjectModbusAnalysisData | ProjectKnxCompactAnalysisData,
+        ProjectAnalysisData
+        | ProjectModbusAnalysisData
+        | ProjectKnxCompactAnalysisData
+        | LightingAnalysisData,
     ):
         return True
     data = envelope.data
@@ -6570,17 +6586,19 @@ _ANALYSIS_CACHE_TTL = 300
 
 
 class _ProjectAnalysisRunner:
-    """Shared authorization/cache/page path, with internal-only Modbus dispatch."""
+    """Shared authorization/cache/page path for bounded project domains."""
 
     def __init__(
         self,
         runtime: LoxoneRuntime | None,
         config_store: AtomicConfigStore | None = None,
         metadata: ProjectMetadata | None = None,
+        profile_path: Path | None = None,
     ) -> None:
         self.runtime = runtime
         self.config_store = config_store
         self.metadata = metadata
+        self.profile_path = profile_path
         self.cursors = _CursorCodec()
         self.results = ProjectResultCache[dict[str, object]](
             max_entries=_MAX_ANALYSIS_CACHE_ENTRIES,
@@ -6611,10 +6629,33 @@ class _ProjectAnalysisRunner:
         source_details: bool = False,
         admin_access: StoredAccessToken | None = None,
         admin_table: dict[str, Any] | None = None,
+        lighting_selection: LightingSelection | None = None,
+        lighting_context: LightingContext | None = None,
     ) -> _PreparedProjectAnalysisEnvelope:
         try:
             version: int
-            if scope == "modbus":
+            if scope != "lighting" and (
+                lighting_selection is not None or lighting_context is not None
+            ):
+                raise ValueError("Lighting arguments require lighting scope")
+            lighting: LightingSources | None = None
+            if scope == "lighting":
+                selected = (
+                    frozenset(analyses) if analyses is not None else frozenset(LIGHTING_ANALYSES)
+                )
+                if (
+                    not selected
+                    or not selected <= set(LIGHTING_ANALYSES)
+                    or (analyses is not None and len(selected) != len(analyses))
+                ):
+                    raise ValueError("analyses must be unique lighting checks")
+                if lighting_selection is None:
+                    raise ValueError("Lighting scope requires an explicit bounded selection")
+                lighting_selection = LightingSelection.model_validate(lighting_selection)
+                if lighting_context is not None:
+                    lighting_context = LightingContext.model_validate(lighting_context)
+                version = LIGHTING_ANALYSIS_VERSION
+            elif scope == "modbus":
                 selected = validate_modbus_selection(analyses)
                 require_implemented(selected)
                 version = MODBUS_ANALYSIS_VERSION
@@ -6657,10 +6698,33 @@ class _ProjectAnalysisRunner:
                 else await _project_query(self.runtime)
             )
             projection_started = time.monotonic()
+            initial_connected = snapshot.connected
             if self.runtime is None or self.runtime.projects is None:
                 raise RuntimeUnavailable("the service is not configured")
             projects = self.runtime.projects
             access = admin_access if admin_access is not None else _access()
+            if scope == "lighting":
+                assert lighting_selection is not None
+                async with self.runtime.worker_slot():
+                    lighting = await prepare_lighting(
+                        self.runtime,
+                        snapshot,
+                        lighting_selection,
+                        lighting_context,
+                        self.profile_path,
+                    )
+            lighting_identity = (
+                [
+                    lighting.selection.model_dump(),
+                    lighting.normalized,
+                    lighting.source_key,
+                    access.family_id,
+                    access.miniserver_id,
+                    access.identity_id,
+                ]
+                if lighting is not None
+                else None
+            )
             if ETS_COMPARISON in selected and self.metadata is None:
                 raise ProjectError("project_metadata_unavailable")
             taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
@@ -6714,6 +6778,7 @@ class _ProjectAnalysisRunner:
                             [knx_target, knx_revision],
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
+                            lighting_identity,
                             [presentation, admin_table.get("sort")]
                             if admin_table is not None
                             else presentation,
@@ -6736,7 +6801,10 @@ class _ProjectAnalysisRunner:
                         version,
                         [knx_target, knx_revision],
                         sorted(selected),
-                        project.view.mapping.structure_fingerprint if scope == "knx" else None,
+                        lighting_identity,
+                        project.view.mapping.structure_fingerprint
+                        if scope in {"knx", "lighting"}
+                        else None,
                         [(entry.address_format, entry.prefix, entry.label) for entry in taxonomy],
                     ],
                     separators=(",", ":"),
@@ -6756,7 +6824,11 @@ class _ProjectAnalysisRunner:
                     _LOGGER.debug("component=project_analysis_cache outcome=miss")
                     async with self.runtime.worker_slot():
                         work_deadline = time.monotonic() + 45
-                        if scope == "knx":
+                        if lighting is not None:
+                            result = await process_analysis(
+                                project.view, selected, scope="lighting", lighting_sources=lighting
+                            )
+                        elif scope == "knx":
                             standard = selected - {ETS_COMPARISON}
                             if standard:
                                 result = await process_analysis(project.view, standard, taxonomy)
@@ -6911,6 +6983,31 @@ class _ProjectAnalysisRunner:
                     "temporarily_unavailable",
                     "Project analysis result exceeds the response limit",
                 )
+            if lighting is not None:
+                # A cache hit and the initial snapshot never establish publication rights.
+                async with self.runtime.worker_slot():
+                    after_bindings, after_revision = await lighting.current_bindings(
+                        self.runtime, snapshot.structure, self.profile_path
+                    )
+                await projects.authorize(access)
+                # Refresh after all asynchronous profile work/admission; the checks
+                # below and publication do not yield to a stale pre-await snapshot.
+                final_project, final_snapshot = await _project_query(self.runtime)
+                lighting.validate(
+                    self.runtime, final_snapshot, after_bindings, after_revision, self.profile_path
+                )
+                if (
+                    final_project.view.snapshot.content_identity != content_identity
+                    or final_snapshot.connected != initial_connected
+                    or final_project.view.snapshot.fingerprint != project.view.snapshot.fingerprint
+                    or final_project.view.snapshot.model_version
+                    != project.view.snapshot.model_version
+                    or final_project.view.mapping != project.view.mapping
+                    or final_project.view.marker != project.view.marker
+                ):
+                    raise ControlOperationError(
+                        "temporarily_unavailable", "Lighting project changed; start a new analysis"
+                    )
             if admin_access is not None:
                 _LOGGER.info(
                     "component=project_load phase=response_fit duration_ms=%.1f",
@@ -6928,6 +7025,14 @@ class _ProjectAnalysisRunner:
                 _PreparedProjectAnalysisEnvelope,
                 "temporarily_unavailable",
                 "KNX address taxonomy configuration is unavailable",
+            )
+        except ControlOperationError as exc:
+            return _error(_PreparedProjectAnalysisEnvelope, exc.code, str(exc))
+        except ProfileError:
+            return _error(
+                _PreparedProjectAnalysisEnvelope,
+                "temporarily_unavailable",
+                "Lighting profile source is unavailable; retry with current sources",
             )
         except ValueError as exc:
             return _error(_PreparedProjectAnalysisEnvelope, "invalid_input", str(exc))
@@ -6970,7 +7075,12 @@ def register_project_tools(
         if metadata_path is not None and getattr(runtime, "endpoint", None)
         else None
     )
-    analysis_runner = _ProjectAnalysisRunner(runtime, config_store, metadata)
+    analysis_runner = _ProjectAnalysisRunner(
+        runtime,
+        config_store,
+        metadata,
+        knx_store_path.parent.parent / "installation-profile.json" if knx_store_path else None,
+    )
 
     async def metadata_revision() -> tuple[str, int]:
         if metadata is None or runtime is None:
@@ -7433,7 +7543,9 @@ def register_project_tools(
     @server.tool(
         name="loxone_analyze_project",
         description=(
-            "Analyze bounded KNX or Modbus project evidence, including coverage and evidence gaps. "
+            "Analyze bounded KNX, Modbus or explicitly selected lighting evidence. "
+            "Lighting requires exact controller/room selection and returns inventories, "
+            "naming candidates and conditional context, not a physical lighting audit. "
             "Select ets_project_comparison explicitly for compact ETS/KNX metadata review. "
             "Modbus checks inspect configured mappings, polling and direct consumers; "
             "they do not establish bus health, unused sensors or device validity."
@@ -7443,8 +7555,10 @@ def register_project_tools(
     )
     async def analyze_project(
         scope: Annotated[
-            Literal["knx", "modbus"],
-            Field(description="Project technology analysis scope; default KNX."),
+            Literal["knx", "modbus", "lighting"],
+            Field(
+                description="Bounded scope; default KNX. Lighting requires an explicit selection."
+            ),
         ] = "knx",
         analyses: Annotated[
             list[
@@ -7464,6 +7578,9 @@ def register_project_tools(
                     "direct_consumers",
                     "configured_polling",
                     "evidence_gaps",
+                    "presence_relationships",
+                    "scene_roles",
+                    "planning_context",
                 ]
             ]
             | None,
@@ -7476,6 +7593,7 @@ def register_project_tools(
                     "x-analyses-by-scope": {
                         "knx": sorted(KNX_ANALYSES | {ETS_COMPARISON}),
                         "modbus": list(MODBUS_ANALYSES),
+                        "lighting": list(LIGHTING_ANALYSES),
                     }
                 },
             ),
@@ -7512,6 +7630,18 @@ def register_project_tools(
             bool,
             Field(description="Opt in to full source groups for a compact ETS view."),
         ] = False,
+        lighting_selection: Annotated[
+            LightingSelection | None,
+            Field(
+                description="Lighting-only exact visible controller IDs or room ID; bounded traces."
+            ),
+        ] = None,
+        lighting_context: Annotated[
+            LightingContext | None,
+            Field(
+                description="Lighting-only request-local declarations; never stored confirmations."
+            ),
+        ] = None,
     ) -> ProjectAnalysisEnvelope:
         prepared = await analysis_runner.run(
             scope,
@@ -7524,6 +7654,8 @@ def register_project_tools(
             ambiguous_names=ambiguous_names,
             address=address,
             source_details=source_details,
+            lighting_selection=lighting_selection,
+            lighting_context=lighting_context,
         )
         return ProjectAnalysisEnvelope.model_validate(prepared.model_dump())
 
