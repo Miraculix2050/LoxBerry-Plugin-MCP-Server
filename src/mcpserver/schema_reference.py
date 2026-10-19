@@ -120,6 +120,7 @@ def schema_reference_html(version: str) -> bytes:
     body {{ max-width: 78rem; margin: 0 auto; padding: 1rem; line-height: 1.5; }}
     nav {{ display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }}
     .tool {{ margin: 1rem 0; padding: 1rem; border: 1px solid #8888; border-radius: .4rem; }}
+    h1, h2 {{ overflow-wrap: anywhere; }}
     summary {{ cursor: pointer; font-weight: 600; padding: .5rem 0; }}
     pre {{ max-height: 32rem; overflow: auto; padding: .75rem; background: #7772;
       white-space: pre-wrap; overflow-wrap: anywhere; }}

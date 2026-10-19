@@ -27,6 +27,7 @@ extracted from the matching version heading.
   current states, temperature history and qualified solar/energy reports (#444).
   Prompt retrieval performs no data reads or writes; recipes retain module,
   authorization and partial-evidence boundaries. Existing KNX prompts remain.
+  Wrap long tool and prompt headings in the static schema reference on narrow screens.
 
 - Fix local Event History rejecting exact runtime subcontrol suffix IDs. Preserve
   child/state storage identity, visibility, recording approval and plain-UUID
