@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Record the owner-approved #439/#509 technical closeout: reuse real source-read
+  evidence and deterministic reference-model tests without requiring real comparison
+  days or claiming empirical plant validation; preserve runtime qualification.
+
 - Clarify base-load/solar energy percentages, Wh-to-kWh conversion and unavailable
   denominators in MCP guidance; independently check the documented calculation
   against synthetic base-load results without claiming measured solar supply (#485).
@@ -101,7 +105,8 @@ extracted from the matching version heading.
   local observations and confirmed hourly energy bindings. Explain estimated
   irradiance, fixed windows, weather-ranked peers, yield/self-consumption
   differences and separately captured native forecasts; preserve qualitative
-  defaults and bounded source reads (#439, #509). Real-source acceptance remains open.
+  defaults and bounded source reads (#439, #509). The later owner-approved technical closeout supersedes the
+  original real-comparison-day acceptance requirement.
 
 - Add read-only native PV-production forecast semantics and optional local solar
   observation/forecast snapshots in the shared history store. Preserve forecast

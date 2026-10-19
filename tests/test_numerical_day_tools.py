@@ -375,6 +375,88 @@ def test_real_adapter_model_is_distinct_from_observed_interval_energy():
     assert result.self_consumption.method == "unavailable"
 
 
+@pytest.mark.parametrize("running,hours", [(False, 4), (True, 2)])
+def test_hand_calculated_yield_self_consumption_and_ranking_share_the_window(running, hours):
+    first, local, _ = fixture_data()
+    radiation = (100, 110, 105, 100)
+    production = (1000, 800, 1200, 400)
+    self_consumption = (600, 400, 800, 100)
+    local = [
+        (
+            source,
+            fingerprint,
+            [
+                (at, {"value": radiation[int((at - first.timestamp()) // 86400)]})
+                if source.kind == "irradiance"
+                else (at, payload)
+                for at, payload in rows
+            ],
+        )
+        for source, fingerprint, rows in local
+    ]
+    energies = {
+        role: {
+            (first + timedelta(days=day, hours=hour)).timestamp(): values[day]
+            for day in range(4)
+            for hour in range(10, 14)
+        }
+        for role, values in (
+            ("production", production),
+            ("self_consumption", self_consumption),
+        )
+    }
+    reference = first + timedelta(days=3)
+    result = _calculate(
+        local,
+        energies,
+        begin=first.timestamp(),
+        finish=(first + timedelta(days=4)).timestamp(),
+        zone_name="UTC",
+        options=NumericalComparableDayOptions(
+            method="numerical",
+            reference_day=reference.date().isoformat(),
+            start_hour=10,
+            end_hour=14,
+        ),
+        installation="plant",
+        balance_matches=False,
+        deadline=time.monotonic() + 5,
+        now=reference + timedelta(hours=12, minutes=30)
+        if running
+        else reference + timedelta(days=1),
+    )
+    days = [(first + timedelta(days=day)).date().isoformat() for day in range(4)]
+    assert result.common_hour_positions == list(range(10, 10 + hours))
+    assert [candidate.day for candidate in result.candidates] == [days[0], days[2], days[1]]
+    assert result.reference.pv_wh == 400 * hours
+    assert result.reference.radiation_wh_m2 == 100 * hours
+    assert result.group.count == 3 and result.group.median_pv_wh == 1000 * hours
+    assert result.group.relative_difference == pytest.approx(-0.6, abs=1e-12, rel=0)
+    assert result.group.check_candidate
+    metric = result.self_consumption
+    assert metric.method == "direct_observed" and metric.reference_wh == 100 * hours
+    assert metric.group.count == 3 and metric.group.median_wh == 600 * hours
+    assert metric.group.absolute_difference_wh == -500 * hours
+    assert metric.group.relative_difference == pytest.approx(-5 / 6, abs=1e-12, rel=0)
+    expected = [
+        (days[2], "pv_yield", -800 * hours, -2 / 3),
+        (days[2], "self_consumption", -700 * hours, -7 / 8),
+        (days[0], "pv_yield", -600 * hours, -3 / 5),
+        (days[0], "self_consumption", -500 * hours, -5 / 6),
+        (days[1], "pv_yield", -400 * hours, -1 / 2),
+        (days[1], "self_consumption", -300 * hours, -3 / 4),
+    ]
+    assert [(row.day, row.metric) for row in result.ranked_deviations] == [
+        (day, metric) for day, metric, _, _ in expected
+    ]
+    for actual, (_, _, difference, relative) in zip(
+        result.ranked_deviations, expected, strict=True
+    ):
+        assert actual.absolute_difference_wh == difference
+        assert actual.relative_difference == pytest.approx(relative, abs=1e-12, rel=0)
+    assert "no_storage_balance_or_causal_diagnosis" in metric.limitations
+
+
 def test_missing_hour_excludes_candidate_without_shrinking_reference():
     first, local, _ = fixture_data()
     missing = (first + timedelta(days=1, hours=12)).timestamp()
