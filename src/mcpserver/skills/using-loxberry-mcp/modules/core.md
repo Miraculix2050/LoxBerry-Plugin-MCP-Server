@@ -6,6 +6,9 @@ Use only currently authorized sources and exact discovered identities. An omitte
 or hidden source does not prove absence. Never infer physical roles, permissions,
 units, signs or meaning from names, rooms or categories. Unknown semantics stay
 unknown. Keep source-native values, calculations and estimates distinct.
+For on/off questions load states guidance and require fresh, exact semantic
+evidence for each activity claim. Unknown or omitted meaning is not off;
+logical control state does not prove physical appliance operation.
 Freshness and completeness are independent: current metadata does not prove
 historical observations, coverage or causation. Preserve source identity, method,
 time range, gaps, warnings and truncation. Follow pagination with unchanged

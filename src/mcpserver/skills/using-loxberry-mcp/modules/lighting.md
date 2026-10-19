@@ -6,6 +6,12 @@ to read source-proven mood IDs and names from its cached `moodList`. This is a
 bounded read of the existing state, not an active device probe. Retain its exact
 source-state reference, observation time and freshness in the answer.
 
+An active mood or its name does not prove any output is switched on or off.
+For current output claims read exact child states with semantic evidence and
+apply the states module's activity rules; unsupported colors/positions remain
+uninterpreted for activity. An unresolved child prevents an exhaustive all-off
+claim, even when discovery and value delivery are complete.
+
 Set `include_outputs=true` on that view only when exact runtime output references
 are needed. `outputs` projects bounded, visible direct Switch/Dimmer/ColorPicker
 children from normalized `subControls`, with parent identity and structure version.

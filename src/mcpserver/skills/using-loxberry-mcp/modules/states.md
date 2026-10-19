@@ -118,6 +118,18 @@ the overview.
 
 ### Interpret controller-specific states
 
+For "what is switched on?", first define the answer as documented logical control
+states, not physical appliance operation. Read relevant exact states with
+`loxone_read_controls(include_semantics=true)` or `loxone_get_state_semantics`.
+Keep three groups: evidenced logical activity, evidenced logical inactivity, and
+not determinable. Place a control in the first two only when its exact documented
+rule supports that activity claim AND its value is current and available. A
+`known` temperature, position, mode, scene or lock is not automatically an on/off
+predicate. Unknown, invalid, stale, unavailable or omitted meaning is never off.
+Do not turn raw zero/nonzero values or an active mood ID into activity. Report a
+qualified subset rather than "everything is off" when any relevant source is
+unresolved. State the coverage and do not infer a physical load from control names.
+
 For evidence about the meaning of an exact visible state, call
 `loxone_get_state_semantics(control_uuid=..., state_names=[...])`. Omit
 `state_names` to page the control's normalized states using `offset` and `limit`
@@ -126,8 +138,10 @@ For evidence about the meaning of an exact visible state, call
 This read-only tool uses fresh visibility and has no hidden-control option.
 Keep `value`, `semantic_value`, `quality` and `semantics` separate: a current
 value may have unknown meaning; a known decoder result may describe a stale
-observation. `known` is limited to the named decoder rule. Preserve `reason`,
-per-field `sources`, missing versions, and collection completeness. Missing
+observation. `known` is limited to the named decoder rule.
+`sources_complete=true` with zero sources only describes an empty returned source
+list; it is not evidence. `ok` and delivery `complete` never establish meaning.
+Preserve `reason`, per-field `sources`, missing versions, and collection completeness. Missing
 companions yield partial interpretations. Generic analog format strings do not prove units or
 precision. Configured StatusMonitor labels and positions do not establish
 severity, household roles or physical danger. Unsupported energy, meter and
@@ -141,6 +155,13 @@ codes and missing values do not become inactivity. These rules cite Structure
 File 17.1; current state evidence does not prove historical coverage.
 This interface does not retrieve project
 metadata or bundled documentation content and does not acknowledge alarms.
+
+`Dimmer.position` identifies a finite current position, with no inferred percent
+scale or on/off predicate. The documented off command sets position to zero;
+that one-way command description does not establish that every zero reading
+proves an off output. `Switch.active` still lacks a reviewed numeric encoding
+rule: do not transfer the InfoOnlyDigital decoder to it. Likewise, jLocked or
+lockedOn describes neither current activity nor physical operation by itself.
 
 
 - StatusMonitor state readers decode position-stable configured tuples and counts
