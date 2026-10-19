@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pydantic import ValidationError
 from test_analysis_context import LOAD, METER, PV, context_document, controls
-from test_load_planning import forecast, options
+from test_load_planning import START, forecast, options
 from test_native_efm import SERIAL, access
 
 import mcpserver.context_planning as module
@@ -18,6 +18,12 @@ from mcpserver.context_planning import calculate_context_plan, combine_forecasts
 from mcpserver.load_planning import LoadPlanningOptions
 from mcpserver.loxone.models import Freshness, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
+
+
+@pytest.fixture(autouse=True)
+def planning_wall_clock(monkeypatch):
+    """Keep fixture forecasts in the future without changing real deadline clocks."""
+    monkeypatch.setattr(module, "time", SimpleNamespace(time=lambda: START - 3600))
 
 
 def context_options(doc=None, **changes):
@@ -101,7 +107,7 @@ async def test_profileless_plan_authorization_publication_and_zero_history(
         ),
     )
     f = forecast()
-    f.prediction_at = int(time.time())
+    f.prediction_at = START - 3600
     batch = [(visible[PV], initial, f)]
     if source_count == 2:
         batch.append(
@@ -256,7 +262,7 @@ async def test_profile_cycles_keep_request_alias_and_share_one_history_read(
     monkeypatch.setattr(module, "_bindings", resolver)
     history = AsyncMock(return_value={"request-load": ((7200, 2000.0),)})
     monkeypatch.setattr(module, "_observed_profiles", history)
-    f = forecast().model_copy(update={"prediction_at": int(time.time())})
+    f = forecast().model_copy(update={"prediction_at": START - 3600})
     monkeypatch.setattr(
         module, "read_pv_forecasts", AsyncMock(return_value=[(visible[PV], structure, f)])
     )
