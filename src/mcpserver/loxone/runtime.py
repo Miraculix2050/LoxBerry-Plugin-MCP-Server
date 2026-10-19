@@ -444,7 +444,9 @@ class LoxoneRuntime:
             raise PermissionError("Authentication diagnostics require current loxone:read")
         if self._closed or self.auth_coordinator is None or self.auth_binding is None:
             raise RuntimeUnavailable("Authentication diagnostics unavailable")
-        result = self.auth_coordinator.diagnostic_snapshot(self.auth_binding(access))
+        result = self.auth_coordinator.diagnostic_snapshot(
+            self.auth_binding(access), include_revision=True
+        )
         if not await validator(access):
             raise PermissionError("Authentication diagnostics require current loxone:read")
         return result

@@ -309,3 +309,28 @@ async def test_authorization_revoked_while_session_waits_prevents_network(tmp_pa
         await task
     assert calls == 0
     assert coordinator.diagnostic_snapshot("own")["events"] == []
+
+
+@pytest.mark.asyncio
+async def test_same_second_rotation_invalidates_cursor_without_exposing_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = int(time.time())
+    coordinator = _coordinator(tmp_path, [_event(sequence=n, timestamp=stamp) for n in range(200)])
+    runtime = _runtime(coordinator)
+    monkeypatch.setattr(tools_module, "_access", _access)
+    server = FastMCP("same-second-rotation")
+    register_authentication_diagnostics_tool(server, runtime)
+    name = "loxone_list_authentication_events"
+    before = coordinator.diagnostic_snapshot("own")
+    first = await server._tool_manager.call_tool(name, {"limit": 1})
+    assert first.ok and first.data.next_cursor
+    assert "_history_revision" not in first.model_dump_json()
+    coordinator._state["events"] = [_event(sequence=n, timestamp=stamp) for n in range(1, 201)]
+    coordinator._save()
+    assert before == coordinator.diagnostic_snapshot("own")
+    result = await server._tool_manager.call_tool(
+        name, {"limit": 1, "cursor": first.data.next_cursor}
+    )
+    assert not result.ok and result.data.error == "invalid_input"
+    assert "_history_revision" not in coordinator.diagnostic_snapshot()

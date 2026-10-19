@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -370,7 +371,9 @@ class MiniserverAuthCoordinator:
             and event.get("connection_owner") == "tool_request"
         ]
 
-    def diagnostic_snapshot(self, binding_id: str | None = None) -> dict[str, Any]:
+    def diagnostic_snapshot(
+        self, binding_id: str | None = None, *, include_revision: bool = False
+    ) -> dict[str, Any]:
         """Project an atomic local snapshot without locks, saves or network access.
 
         A binding-less view is for the native authenticated Admin bridge only.
@@ -405,6 +408,7 @@ class MiniserverAuthCoordinator:
             return unavailable
         now = int(time.time())
         events: list[dict[str, Any]] = []
+        revisions: list[tuple[int | None, dict[str, Any]]] = []
         incomplete = False
         source = document["events"]
         # Input is byte-bounded. Enforce the existing retention count on reads.
@@ -451,15 +455,30 @@ class MiniserverAuthCoordinator:
             ):
                 projected["trace_id"] = trace
             events.append(projected)
+            sequence = event.get("sequence")
+            revisions.append(
+                (sequence if type(sequence) is int and sequence >= 0 else None, projected)
+            )
         if self._retain_open_state or self._state_uncertain:
             incomplete = True
             shared = self._diagnostic_status(self._state)
             shared["failure_guard_state"] = "persistence_uncertain"
-        return {
+        result = {
             "events": list(reversed(events)),
             "history_status": "incomplete" if incomplete else "bounded",
             "shared_status": shared,
         }
+        if include_revision:
+            # A public projection can be identical after same-second rotation.
+            # Hash only this caller's retained identities, never global sequence.
+            result["_history_revision"] = hashlib.sha256(
+                json.dumps(
+                    [self._profile_id, binding_id, revisions],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        return result
 
     def _diagnostic_status(self, document: dict[str, Any]) -> dict[str, Any]:
         """Expose shared protection without foreign counters or identities."""

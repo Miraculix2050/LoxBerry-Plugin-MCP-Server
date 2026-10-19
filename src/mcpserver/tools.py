@@ -8340,6 +8340,7 @@ def register_authentication_diagnostics_tool(
                         access.identity_id,
                         access.miniserver_id,
                         snapshot["events"],
+                        snapshot.get("_history_revision"),
                     ],
                     separators=(",", ":"),
                     sort_keys=True,
