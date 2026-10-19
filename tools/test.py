@@ -34,11 +34,17 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
-        ("src/mcpserver/lighting_analysis.py", "src/mcpserver/loxone/lighting.py"),
+        (
+            "src/mcpserver/lighting_analysis.py",
+            "src/mcpserver/loxone/lighting.py",
+            "src/mcpserver/tools.py",
+            "src/mcpserver/loxone/project/worker.py",
+        ),
         (
             "tests/test_lighting_analysis.py",
             "tests/test_lighting_context.py",
             "tests/test_lighting_relationships.py",
+            "tests/test_project_modbus_analysis.py",
             "tests/test_project_tools.py",
             "tests/test_project_worker.py",
             "tests/test_schema_reference.py",
@@ -54,6 +60,10 @@ _TEST_GROUPS: Final = (
         (
             "tests/test_analysis_context.py",
             "tests/test_lighting_analysis.py",
+            "tests/test_history_analysis.py",
+            "tests/test_history_analysis_tools.py",
+            "tests/test_installation_profile.py",
+            "tests/test_installation_profile_tools.py",
             "tests/test_context_planning.py",
             "tests/test_load_planning.py",
             "tests/test_load_planning_runtime.py",
@@ -161,6 +171,9 @@ _TEST_GROUPS: Final = (
             "tests/test_project_identity.py",
             "tests/test_project_knx_semantics.py",
             "tests/test_project_mapping.py",
+            "tests/test_project_modbus.py",
+            "tests/test_project_modbus_analysis.py",
+            "tests/test_project_modbus_checks.py",
             "tests/test_project_query.py",
             "tests/test_project_tools.py",
             "tests/test_project_worker.py",

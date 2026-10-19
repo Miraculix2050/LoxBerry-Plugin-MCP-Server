@@ -6990,7 +6990,9 @@ class _ProjectAnalysisRunner:
                 # Refresh after all asynchronous profile work/admission; the checks
                 # below and publication do not yield to a stale pre-await snapshot.
                 final_project, final_snapshot = await _project_query(self.runtime)
-                lighting.validate(self.runtime, final_snapshot, after_bindings, after_revision)
+                lighting.validate(
+                    self.runtime, final_snapshot, after_bindings, after_revision, self.profile_path
+                )
                 if (
                     final_project.view.snapshot.content_identity != content_identity
                     or final_snapshot.connected != initial_connected
@@ -7538,7 +7540,9 @@ def register_project_tools(
     @server.tool(
         name="loxone_analyze_project",
         description=(
-            "Analyze bounded KNX or Modbus project evidence, including coverage and evidence gaps. "
+            "Analyze bounded KNX, Modbus or explicitly selected lighting evidence. "
+            "Lighting requires exact controller/room selection and returns inventories, "
+            "naming candidates and conditional context, not a physical lighting audit. "
             "Select ets_project_comparison explicitly for compact ETS/KNX metadata review. "
             "Modbus checks inspect configured mappings, polling and direct consumers; "
             "they do not establish bus health, unused sensors or device validity."

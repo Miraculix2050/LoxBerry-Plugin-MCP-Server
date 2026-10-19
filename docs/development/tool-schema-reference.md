@@ -910,6 +910,11 @@ Binding IDs use the existing `^[A-Za-z0-9_-]{1,64}$` grammar. A selected scene
 without a role retains an exact-reference context gap. Naming-only checks exclude
 noncurrent mood names and report their freshness/time/source-status gap. Profile
 read failures return `temporarily_unavailable`, without storage details.
+Direct-only selection/context needs no profile or installation serial. Referenced
+bindings retain strict installation checks and a bounded document-content guard
+across later authorization/source awaits. Relationship evidence retains selected
+child target `runtime_target_mapping` and independent `unresolved_truncated`;
+`unresolved_relationships` is only a retained count when that flag is true.
 
 Findings retain stable IDs, check/code/classification, room/controller/mood
 references and bounded evidence. Inventory retains at most 20 mood/output rows

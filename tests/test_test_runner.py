@@ -29,6 +29,13 @@ def test_changed_packaging_selects_package_contract_tests() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "path", ["src/mcpserver/tools.py", "src/mcpserver/loxone/project/worker.py"]
+)
+def test_lighting_integration_paths_select_domain_regressions(path: str) -> None:
+    assert "tests/test_lighting_analysis.py" in _pytest_targets(create_plan("changed", (path,)))
+
+
 def test_changed_ui_selects_only_affected_ui_groups() -> None:
     plan = create_plan("changed", ("webfrontend/htmlauth/explorer.js",))
 

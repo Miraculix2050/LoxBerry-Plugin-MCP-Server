@@ -81,6 +81,9 @@ against fresh visible `moodList`; neither another state nor a reference identifi
 a scene role. A scene identity is always exact controller plus mood ID. A saved
 room-sensor binding does not establish presence semantics: keep the explicit
 presence-role declaration and its origin separate from source confirmation.
+Direct-only contexts do not require profile installation identity or a serial;
+they still guard current native source metadata and caller authorization. A
+referenced binding always retains the strict existing installation checks.
 
 ## Findings and provenance
 
@@ -111,6 +114,10 @@ complete professional or physical lighting audit or operating permission.
 Acquire fresh caller-visible runtime/project sources on every page through the
 existing access paths. Use `SourceSnapshot.capture/validate`, and re-read referenced
 bindings before publication, including same-revision content/companion changes.
+Keep a bounded profile-content guard stable across all later awaits, with no
+asynchronous work after final source/content validation. No profile is read when
+there is no binding reference. Preserve independent unresolved-evidence truncation
+and selected child target parent-anchor provenance.
 Lighting additionally guards selected mood projections and room metadata, because
 those are not all covered by the shared control signature. On change, reject a
 stale cursor/result rather than returning a mixed revision.

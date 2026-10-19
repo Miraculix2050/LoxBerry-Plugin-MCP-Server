@@ -267,6 +267,15 @@ profile read reject revocation or mixed revisions, including same-revision chang
 Publication re-reads optional profile bindings before the final fresh runtime/
 project acquisition; source validation and return then contain no further await.
 Operational profile failures remain source unavailability, not malformed input.
+Referenced profiles additionally carry a bounded content checksum from before
+resolution through the final synchronous publication guard. It detects replacement,
+deletion and same-revision changes across later awaits, including file identity
+changes during checksum reading; it parses no bindings and creates no store.
+The final read is capped at the existing profile document limit and takes no lock
+or further await. Direct-only lighting uses an explicit source-only mode of the
+same `SourceSnapshot`: endpoint/native metadata are guarded without constructing
+a profile identity. Existing callers keep the strict profile-identity default;
+references cannot select the source-only mode. Fresh authorization remains separate.
 Presence declarations are separate from configured reachability; unknown central
 flow, child parent anchors and bounded missing paths never prove causation.
 The [lighting contract](lighting-analysis-contract.md) defines the reviewed scope.

@@ -116,7 +116,7 @@ async def prepared(central=None, ctx=None):
 
 async def validate_sources(source, runtime, snapshot, profile_path):
     bindings, revision = await source.current_bindings(runtime, snapshot.structure, profile_path)
-    source.validate(runtime, snapshot, bindings, revision)
+    source.validate(runtime, snapshot, bindings, revision, profile_path)
 
 
 @pytest.mark.parametrize(
@@ -865,3 +865,164 @@ async def test_profile_await_cannot_publish_a_pre_await_runtime_snapshot(monkeyp
         lighting_context=context(presence_sources=[declared(binding_id="sensor")]),
     )
     assert not result.ok and result.data.error == "temporarily_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_unresolved_trace_truncation_is_exposed_with_its_partial_count():
+    runtime, snapshot, query, _ = fixture()
+    key = query.resolve(LIGHT, "runtime_control_uuid").key
+    graph = replace(
+        query.view.snapshot.graph, unresolved=tuple((key, "fixture_unresolved") for _ in range(10))
+    )
+    project = replace(query.view.snapshot, graph=graph)
+    query = ProjectQuery(ProjectView(project, map_runtime(project, snapshot.structure)), {})
+    sources = await prepare_lighting(
+        runtime, snapshot, LightingSelection(controller_uuids=[LIGHT], max_nodes=2), None, None
+    )
+    row = analyze_lighting(query, sources, frozenset({"presence_relationships"}))["findings"][0]
+    assert row["evidence"]["unresolved_relationships"] == 2
+    assert row["evidence"]["unresolved_truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_selected_lighting_child_retains_target_mapping_provenance():
+    runtime, snapshot, query, _ = fixture()
+    light = snapshot.structure.controls[1]
+    child = replace(light, uuid=CHILD, subcontrols=())
+    snapshot.structure = replace(
+        snapshot.structure,
+        controls=tuple(
+            replace(c, subcontrols=(child,)) if c.uuid == LIGHT else c
+            for c in snapshot.structure.controls
+        ),
+    )
+    query = ProjectQuery(
+        ProjectView(query.view.snapshot, map_runtime(query.view.snapshot, snapshot.structure)), {}
+    )
+    sources = await prepare_lighting(
+        runtime, snapshot, LightingSelection(controller_uuids=[CHILD]), None, None
+    )
+    row = analyze_lighting(query, sources, frozenset({"presence_relationships"}))["findings"][0]
+    provenance = row["evidence"]["runtime_target_mapping"]
+    assert row["references"][0]["controller_uuid"] == CHILD
+    assert provenance["runtime_control_uuid"] == CHILD
+    assert provenance["parent_runtime_control_uuid"] == LIGHT
+    assert provenance["mapping_status"] == "derived_from_parent"
+
+
+@pytest.mark.asyncio
+async def test_direct_sources_do_not_require_profile_serial_or_identity(monkeypatch):
+    runtime, snapshot, query, _ = fixture()
+    snapshot.structure = replace(
+        snapshot.structure, identity=replace(snapshot.structure.identity, miniserver_serial="")
+    )
+
+    def forbidden(*args):
+        raise AssertionError("profile identity must not be constructed")
+
+    monkeypatch.setattr(domain, "installation_identity", forbidden)
+    monkeypatch.setattr(domain, "_profile_digest", forbidden)
+    source = await prepare_lighting(
+        runtime,
+        snapshot,
+        LightingSelection(controller_uuids=[LIGHT]),
+        context(scenes=[declared(controller_uuid=LIGHT, mood_id="1", role="Task")]),
+        None,
+    )
+    assert analyze_lighting(query, source, frozenset({"inventory"}))["findings"]
+    await validate_sources(source, runtime, snapshot, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("when", ["authorization", "final_project"])
+@pytest.mark.parametrize("change", ["rewrite", "delete", "replace"])
+async def test_profile_file_changes_across_later_awaits_are_rejected(
+    monkeypatch, tmp_path, when, change
+):
+    runner, runtime, snapshot, query, _, _, _, _ = runner_fixture(monkeypatch)
+    path = tmp_path / "installation-profile.json"
+    path.write_text('{"content":"initial"}', encoding="utf-8")
+    runner.profile_path = path
+    bindings = {"sensor": {"status": "confirmed", "role": "room_sensor", "control_uuid": SOURCE}}
+    monkeypatch.setattr(domain, "read_profile_bindings", AsyncMock(return_value=(bindings, 1)))
+    calls = 0
+
+    def mutate():
+        if change == "rewrite":
+            path.write_text('{"content":"changed"}', encoding="utf-8")
+        elif change == "delete":
+            path.unlink()
+        else:
+            other = tmp_path / "replacement.json"
+            other.write_text('{"content":"changed"}', encoding="utf-8")
+            other.replace(path)
+
+    async def authorization(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            mutate()
+
+    async def project(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            mutate()
+        return query, snapshot
+
+    if when == "authorization":
+        runtime.projects.authorize = AsyncMock(side_effect=authorization)
+    else:
+        monkeypatch.setattr(tools, "_project_query", project)
+    result = await runner.run(
+        "lighting",
+        None,
+        lighting_selection=LightingSelection(controller_uuids=[LIGHT]),
+        lighting_context=context(presence_sources=[declared(binding_id="sensor")]),
+    )
+    assert not result.ok and result.data.error == "temporarily_unavailable"
+
+
+def test_shared_snapshot_keeps_strict_legacy_defaults_and_refuses_profile_bypass():
+    from mcpserver.analysis_context import SourceSnapshot
+    from mcpserver.installation_profile import ProfileError, installation_identity
+
+    runtime, snapshot, _, _ = fixture()
+    guard = SourceSnapshot.capture(
+        runtime.endpoint.origin, snapshot.structure, {LIGHT}, {}, None, set()
+    )
+    assert guard.source_identity is None
+    assert guard.installation == installation_identity(runtime.endpoint.origin, snapshot.structure)
+    guard.validate(runtime.endpoint.origin, snapshot.structure, {}, None)
+    missing = replace(
+        snapshot.structure, identity=replace(snapshot.structure.identity, miniserver_serial="")
+    )
+    with pytest.raises(ProfileError):
+        SourceSnapshot.capture(runtime.endpoint.origin, missing, {LIGHT}, {}, None, set())
+    with pytest.raises(ValueError, match="Profile references"):
+        SourceSnapshot.capture(
+            runtime.endpoint.origin,
+            missing,
+            {LIGHT},
+            {},
+            1,
+            {"binding"},
+            require_profile_identity=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_unchanged_profile_checksum_allows_valid_reference_publication(monkeypatch, tmp_path):
+    runner, *_ = runner_fixture(monkeypatch)
+    path = tmp_path / "installation-profile.json"
+    path.write_text('{"content":"stable"}', encoding="utf-8")
+    runner.profile_path = path
+    bindings = {"sensor": {"status": "confirmed", "role": "room_sensor", "control_uuid": SOURCE}}
+    monkeypatch.setattr(domain, "read_profile_bindings", AsyncMock(return_value=(bindings, 1)))
+    result = await runner.run(
+        "lighting",
+        None,
+        lighting_selection=LightingSelection(controller_uuids=[LIGHT]),
+        lighting_context=context(presence_sources=[declared(binding_id="sensor")]),
+    )
+    assert result.ok

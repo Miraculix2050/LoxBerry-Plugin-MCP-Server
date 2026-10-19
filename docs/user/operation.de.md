@@ -112,6 +112,10 @@ Szenen ohne deklarierte Rolle bleiben fehlender Kontext. Nicht aktuelle
 Mood-Namen werden mit sichtbarer Aktualitätslücke aus Namensvergleichen
 ausgeschlossen. Ein nicht verfügbares Profil ist ein Quell-/Wiederholungsproblem
 und kein Anlass, gültige Eingaben zu ändern.
+Direkte Quellen benötigen weder Profil noch Installationsseriennummer; explizite
+Binding-Verweise behalten Installations- und Inhaltsänderungsprüfungen. Child-Ziele
+behalten die Herkunft ihres Elternankers. Gekürzte Anzahlen ungeklärter Beziehungen
+bleiben ausdrücklich teilweise.
 
 Befunde behalten Quellversionen, Aktualität, Auslassungen und Raum-/Controller-/
 Szenenbezüge. Namensabweichungen sind Prüfkandidaten; konfigurierte Erreichbarkeit

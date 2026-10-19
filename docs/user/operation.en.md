@@ -105,6 +105,9 @@ rejected. This creates no saved profile or configuration changes.
 Scenes without a declared role remain missing context. Noncurrent mood names are
 excluded from naming comparisons with explicit freshness gaps. An unavailable
 profile is a source/retry problem, not an instruction to change valid inputs.
+Direct sources need no profile or installation serial; explicit binding references
+retain installation and content-change checks. Child targets retain their parent
+anchor provenance. Truncated unresolved counts remain explicitly partial.
 
 Results retain source versions, freshness, omissions and room/controller/scene
 references. Naming differences are review candidates; configured reachability is

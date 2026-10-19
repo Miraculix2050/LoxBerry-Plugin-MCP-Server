@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +20,13 @@ from mcpserver.analysis_context import (
     read_profile_bindings,
     resolve_source_association,
 )
-from mcpserver.installation_profile import installation_identity, visible_controls
+from mcpserver.bounded_worker import run_admitted_worker
+from mcpserver.installation_profile import (
+    MAX_DOCUMENT_BYTES,
+    ProfileError,
+    installation_identity,
+    visible_controls,
+)
 from mcpserver.loxone.lighting import (
     MOOD_ID_PATTERN,
     project_lighting_outputs,
@@ -236,6 +243,31 @@ def _mood_metadata(record: StateRecord | None) -> dict[str, Any]:
     }
 
 
+def _profile_digest(path: Path | None) -> str | None:
+    """Bounded content-only publication guard; all binding resolution stays shared."""
+    if path is None:
+        return None
+    try:
+        if path.is_symlink():
+            raise ProfileError("profile_unavailable")
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            raw = stream.read(MAX_DOCUMENT_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        current = path.stat(follow_symlinks=False)
+    except OSError:
+        raise ProfileError("profile_unavailable") from None
+    if len(raw) > MAX_DOCUMENT_BYTES:
+        raise ProfileError("profile_storage_limit")
+
+    def stamp(value: os.stat_result) -> tuple[int, int, int, int, int]:
+        return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+    if stamp(before) != stamp(after) or stamp(after) != stamp(current):
+        raise ProfileError("profile_changed")
+    return hashlib.sha256(raw).hexdigest()
+
+
 @dataclass
 class LightingSources:
     selection: LightingSelection
@@ -247,10 +279,13 @@ class LightingSources:
     guard: SourceSnapshot
     source_key: str
     binding_ids: set[str]
+    profile_digest: str | None = None
 
     async def current_bindings(
         self, runtime: Any, structure: LoxoneStructure, profile_path: Path | None
     ) -> tuple[dict[str, Any], int | None]:
+        if not self.binding_ids:
+            return {}, None
         return await read_profile_bindings(
             profile_path,
             installation_identity(runtime.endpoint.origin, structure),
@@ -259,10 +294,20 @@ class LightingSources:
         )
 
     def validate(
-        self, runtime: Any, snapshot: Any, bindings: dict[str, Any], revision: int | None
+        self,
+        runtime: Any,
+        snapshot: Any,
+        bindings: dict[str, Any],
+        revision: int | None,
+        profile_path: Path | None = None,
     ) -> None:
         """Validate after the final fresh acquisition, with no further await before publication."""
         structure = snapshot.structure
+        # Keep the referenced document stable across all subsequent asynchronous
+        # authorization/source reads. This bounded checksum does not parse or
+        # interpret a profile and performs no writes or further await.
+        if self.profile_digest is not None and _profile_digest(profile_path) != self.profile_digest:
+            raise ControlOperationError("temporarily_unavailable", "Lighting profile changed")
         self.guard.validate(runtime.endpoint.origin, structure, bindings, revision)
         current = select_controllers(structure, self.selection)
         room_ids = {c.room_uuid for c in current[0]} | {self.selection.room_uuid}
@@ -324,12 +369,17 @@ async def prepare_lighting(
         *context.presence_sources,
     ]
     binding_ids = {row.binding_id for row in declarations if row.binding_id is not None}
-    bindings, revision = await read_profile_bindings(
-        profile_path,
-        installation_identity(runtime.endpoint.origin, structure),
-        structure,
-        required=bool(binding_ids),
-    )
+    bindings: dict[str, Any] = {}
+    revision: int | None = None
+    profile_digest = None
+    if binding_ids:
+        profile_digest = await run_admitted_worker(_profile_digest, profile_path)
+        bindings, revision = await read_profile_bindings(
+            profile_path,
+            installation_identity(runtime.endpoint.origin, structure),
+            structure,
+            required=True,
+        )
     visible = {key: c for key, c in visible_controls(structure).items() if not c.is_hidden}
     moods = {c.uuid: _mood_metadata(_mood_state(runtime, snapshot, c)) for c in controls}
     scenes = []
@@ -405,14 +455,22 @@ async def prepare_lighting(
         room["zones"] = sorted(room["zones"], key=lambda r: r["value"])
     source_ids = selected | {r["control_uuid"] for r in presence}
     guard = SourceSnapshot.capture(
-        runtime.endpoint.origin, structure, source_ids, bindings, revision, binding_ids
+        runtime.endpoint.origin,
+        structure,
+        source_ids,
+        bindings,
+        revision,
+        binding_ids,
+        require_profile_identity=bool(binding_ids),
     )
     rooms = tuple(room for room in structure.rooms if room.uuid in selected_rooms)
     source_key = digest(
         [
             repr(guard.signature),
             guard.installation,
+            guard.source_identity,
             guard.bindings,
+            profile_digest,
             revision,
             moods,
             repr(rooms),
@@ -420,7 +478,16 @@ async def prepare_lighting(
         ]
     )
     return LightingSources(
-        selection, controls, excluded, normalized, moods, rooms, guard, source_key, binding_ids
+        selection,
+        controls,
+        excluded,
+        normalized,
+        moods,
+        rooms,
+        guard,
+        source_key,
+        binding_ids,
+        profile_digest,
     )
 
 
@@ -580,6 +647,9 @@ def analyze_lighting(
                     refs,
                     {
                         "start_project_node_id": target.key,
+                        "runtime_target_mapping": project.derived_target(
+                            control.uuid, "runtime_control_uuid"
+                        ),
                         "reached_nodes": len(nodes),
                         "relationships": relationships,
                         "presence_role_missing": not bool(relationships),
@@ -590,6 +660,7 @@ def analyze_lighting(
                         "unresolved_relationships": len(trace["unresolved_relationships"])
                         if isinstance(trace["unresolved_relationships"], list)
                         else 0,
+                        "unresolved_truncated": trace["unresolved_truncated"],
                         "operating_causation": "unverified",
                         "no_path_does_not_prove_no_association": True,
                     },

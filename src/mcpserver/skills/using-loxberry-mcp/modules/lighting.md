@@ -79,6 +79,9 @@ Use the existing bounded binding-ID grammar; malformed references are invalid
 inputs. A selected scene without a role remains missing context. Naming checks
 exclude noncurrent mood names and report freshness gaps even without inventory.
 Retry unavailable profile reads rather than inventing substitute declarations.
+Direct-only reviews require no profile/installation serial; explicit references
+retain strict installation and content-change guards. Keep selected target child
+mapping provenance and `unresolved_truncated` beside retained unresolved counts.
 No profile migration, saved context, control, configuration or recorder writes.
 
 Inventory findings retain 20 moods/outputs per controller and explicit omissions;
