@@ -391,6 +391,22 @@ Load core rules first.
 
 ## Read history and statistics
 
+For `comparable_days`, optional `analysis_context.day_context` declares one
+confirmed `site` whose timezone equals the tool timezone. Map existing `sources`
+by `source_index`; choose one `weather` source per quantity, never by name or
+averaging. Numerical weather retains registered solar observations; qualitative
+radiation retains the actual structured source. Forecasts remain forecasts.
+Declare `assets` and confirmed `production` coverage as a disjoint partition;
+never combine an aggregate with included meters. Multiple PV sources require
+confirmed common supply and contribute only qualified complete hours present in
+every source. Radiation alongside PV requires confirmed independence; it cannot
+come from the evaluated PV control. Production, direct self-consumption and
+export require confirmed associations, while units, quantities, native EFM
+membership and balance boundaries still need technical evidence. A profile is
+optional for exact statistic selectors. Report echoed site/coverage as owner
+confirmations, not independently verified physical facts. Separate independent
+sites into separate calls. Preserve #439/#509 positive acceptance requirements.
+
 For compact historical calculations prefer `loxone_analyze_history` with exact
 advertised series/state IDs or currently confirmed visible profile bindings.
 Inspect the schema, select `temperature_summary`, `energy` or `state_duration`,

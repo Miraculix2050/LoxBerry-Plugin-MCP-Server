@@ -382,7 +382,8 @@ def test_inherited_profile_cycle_timezone_is_checked_before_source_reads():
         )
 
 
-def test_history_membership_keeps_same_named_independent_efms_separate():
+@pytest.mark.parametrize("role", ["consumer", "self_consumption", "grid_export", "production"])
+def test_history_membership_keeps_same_named_independent_efms_separate(role):
     from mcpserver.analysis_context import HistoryAnalysisContext, resolve_history_associations
     from mcpserver.loxone.models import StatisticSeries
 
@@ -413,7 +414,7 @@ def test_history_membership_keeps_same_named_independent_efms_separate():
                     {
                         "association_id": "load",
                         "source_index": 0,
-                        "role": "consumer",
+                        "role": role,
                         "origin": "user_confirmed",
                     }
                 ],

@@ -1,5 +1,44 @@
 # Vergleichbare Tage
 
+## Ein expliziter Standort und mehrere Quellen
+
+Optional ordnet `analysis_context.day_context` die vorhandenen `sources` über
+`source_index` zu; der Kontext wählt keine zusätzlichen Quellen aus. `site`
+enthält einen bestätigten `site_id`, `timezone` und
+`association_origin="user_confirmed"`. Die Zeitzone muss der expliziten
+Tool-Zeitzone entsprechen. Breiten- und Längengrad sind gemeinsam optional und
+dürfen bestätigten PV-Parametern nicht widersprechen. Unabhängige Standorte
+werden in getrennten Aufrufen untersucht.
+
+`weather` wählt genau eine Quelle je `quantity` (`radiation`, `temperature`,
+`forecast`). Die Zuordnungen verwenden `role="weather_context"` und bestätigte
+Herkunft. Weitere angegebene Wetterquellen werden weder gemittelt noch nach Namen
+ausgewählt. Die qualitative Methode nutzt die ausgewählte tatsächliche strukturierte
+Strahlungsquelle; die numerische Methode behält registrierte Solarbeobachtungen
+und native Decoder bei. Prognosen bleiben getrennte Prognosen. Strahlung neben
+Produktionsdaten erfordert `radiation_independence_origin="user_confirmed"`;
+dieselbe PV-Control darf ihre eigene unabhängige Strahlungsevidenz nicht liefern.
+
+`assets` und `production` beschreiben mit `source_index`, `asset_ids` und
+`coverage_origin="user_confirmed"` die Produktionsabdeckung. Diese muss die
+deklarierten Anlagen überschneidungsfrei aufteilen: Ein Aggregat für Dach und
+Garage darf nicht neben einem enthaltenen Einzelzähler beitragen. Mehrere
+Produktionsquellen benötigen einen bestätigten gemeinsamen Versorgungsbereich.
+Summiert werden nur qualifizierte vollständige Stunden, die in **jeder**
+beitragenden Quelle vorliegen. Fehlende Daten werden weder Null noch Teilsumme
+der Gesamtanlage. `production_sources` weist Qualifikation und vollständige
+Stunden jeder Quelle aus.
+
+Exakte stündliche Statistikselektoren funktionieren ohne Profil. Produktion,
+direkter Eigenverbrauch und Netzeinspeisung benötigen bestätigte Zuordnungen;
+Rollen belegen keine Einheiten, Mengen oder Messgrenzen. PV minus Einspeisung
+behält zusätzlich die ausdrückliche Bilanzbestätigung, Einspeiserichtung und
+passende Grenzen aller Produktionsquellen bei. Native EFM-Mitgliedschaft gilt
+für alle Energiebeiträge. Ergebnisse geben Standort und Zuordnungen wieder und
+kennzeichnen bestätigte Abdeckung als nicht unabhängig geprüft. Vor der Ausgabe
+werden Sichtbarkeit, Installation, Quellenmerkmale und verwendete Profilrevisionen
+erneut geprüft. Die bestehenden Abnahmegates #439/#509 bleiben offen.
+
 ## Numerische Wettervergleiche
 
 Explizit `comparable_day_options.method="numerical"` mit `reference_day` wählen.

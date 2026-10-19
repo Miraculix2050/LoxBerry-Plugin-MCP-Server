@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add explicit site/weather selection and disjoint multi-PV coverage to optional
+  history context. Sum only qualified common complete hours, retain native source
+  evidence, legacy comparisons and separate forecast provenance (#558).
+
 - Add optional request-local history associations, complete measured-cycle evidence
   and separately declared real/hypothetical scenarios sharing one historical
   export budget. Preserve legacy calls and profile formats; revalidate selected

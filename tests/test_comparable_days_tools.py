@@ -27,6 +27,64 @@ from mcpserver.loxone.weather_history import (
 UUID = "00000001-0000-0000-0000000000000001"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["none", "weather", "revision"])
+async def test_context_class_source_is_explicit_and_revalidated(monkeypatch, tmp_path, change):
+    from unittest.mock import AsyncMock
+
+    from mcpserver.analysis_context import HistoryAnalysisContext
+
+    runtime, tool, args, _, _ = setup(monkeypatch, tmp_path)
+    fresh = runtime.structure
+    if change == "weather":
+        fresh = replace(fresh, global_metadata=())
+    runtime._history_visible_structure = AsyncMock(return_value=fresh)
+    args["analysis_context"] = HistoryAnalysisContext.model_validate(
+        {
+            "scope": {
+                "kind": "scenario",
+                "description": "One site",
+                "common_supply_origin": "user_confirmed",
+            },
+            "associations": [
+                {
+                    "association_id": "weather",
+                    "source_index": 0,
+                    "role": "weather_context",
+                    "origin": "user_confirmed",
+                }
+            ],
+            "day_context": {
+                "site": {
+                    "site_id": "site",
+                    "timezone": "UTC",
+                    "association_origin": "user_confirmed",
+                },
+                "weather": [{"quantity": "radiation", "source_index": 0}],
+            },
+        }
+    )
+    if change == "revision":
+        monkeypatch.setattr(
+            "mcpserver.history_analysis_tools.read_profile_bindings",
+            AsyncMock(side_effect=[({}, 1), ({}, 2)]),
+        )
+    result = await tool.fn(**args)
+    assert result.ok == (change == "none"), result
+    if result.ok:
+        assert result.data.day_context.site.site_id == "site"
+        assert result.data.context_associations[0].control_uuid is None
+        assert result.data.context_associations[0].binding_id is None
+        assert result.data.weather_sources[0].state_uuid == UUID
+        assert (
+            "site_and_coverage_are_owner_confirmed_not_independently_verified"
+            in result.data.comparable_days.limitations
+        )
+    else:
+        assert result.data.error == "temporarily_unavailable"
+    runtime.authorized_statistics.assert_not_awaited()
+
+
 def setup(monkeypatch, tmp_path):
     runtime, _old = configured(monkeypatch)
     runtime.endpoint = SimpleNamespace(origin="http://192.168.255.254")

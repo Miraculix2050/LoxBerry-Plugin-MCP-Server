@@ -7,6 +7,21 @@ acceptance remains required before #509/#439 close. #501 remains independent.
 
 ## Numerical method and local runtime adapter
 
+Optional `HistoryAnalysisContext.day_context` resolves existing source indices
+with the shared resolver. It declares one confirmed site/timezone, one selected
+weather source per quantity and disjoint production asset coverage. It adds no
+selectors, profiles, recorders or persistence. Multiple production sources require
+confirmed common supply. Aggregate and included meters cannot share an asset.
+All production maps must qualify and contain the same complete hourly position
+before that position contributes; never use zero-fill or a qualified subset as
+the plant total. Selected radiation requires owner-confirmed independence and
+unchanged native qualification. Forecasts remain forecasts. Confirmed direct
+self-consumption and export retain native EFM membership, boundary/direction and
+explicit balance requirements. Echoed site/coverage remains owner-confirmed,
+not independent physical proof. Revalidate identity, visibility, selected Controls,
+weather metadata/state identities, source configuration and used profile
+bindings/revision before output in the already admitted history session.
+
 The numerical pure method accepts adapter-produced hourly evidence for one to 31 contiguous
 local days. Callers cannot assert evidence-rule identifiers. A reference day and
 all candidates use a fixed local-hour window; a running reference uses only its
