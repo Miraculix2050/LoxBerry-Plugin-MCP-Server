@@ -26,7 +26,7 @@ from mcpserver.loxone.efm import normalize as normalize_efm
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.events import LoxonePayloadTooLarge
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
-from mcpserver.loxone.native_efm import VIEWS, NativeEfmError, decode_native_efm
+from mcpserver.loxone.native_efm import VIEWS, NativeEfmError, NativeEfmResult, decode_native_efm
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.structure import normalize_structure
@@ -69,16 +69,17 @@ def test_actual_power_semantics_bind_only_documented_format(source_format, unit)
     result = StateSemanticsResolver().resolve_native_efm(raw, control, control)
     assert result.schema_version == "native_efm_result.v2"
     assert result.source_metadata_status == "stable" and not result.semantic_complete
-    assert [field.unit for field in result.fields] == [unit, unit, unit, None, None]
+    assert result.semantic_rule_version == "native_efm_actual_semantics_17_2_8_28.v2"
+    assert [field.unit for field in result.fields] == [unit, unit, unit, unit, None]
     assert [field.unit_origin for field in result.fields] == [
         "configured_display_format",
         "configured_display_format",
         "configured_display_format",
-        None,
+        "configured_display_format",
         None,
     ]
     assert all(field.unit_origin is None for field in raw.fields)
-    for name in ("Gpwr", "Ppwr", "Spwr"):
+    for name in ("Gpwr", "Ppwr", "Spwr", "Cpwr"):
         assert any(
             f"fields.{name}.unit_origin" in source.fields for source in result.semantic_sources
         )
@@ -105,6 +106,32 @@ def test_actual_power_semantics_bind_only_documented_format(source_format, unit)
     assert all(source.rule_id == result.semantic_rule_version for source in result.semantic_sources)
     assert {source.document_version for source in result.semantic_sources} == {"17.1"}
     assert {source.firmware_version for source in result.semantic_sources} == {"17.2.8.28"}
+
+
+def test_retained_semantic_rule_v1_result_remains_readable():
+    raw = decode_native_efm(ACTUAL, "actual", retrieved_at=RECEIVED)
+    retained = raw.model_dump() | {
+        "schema_version": "native_efm_result.v2",
+        "semantic_rule_version": "native_efm_actual_semantics_17_2_8_28.v1",
+    }
+    result = NativeEfmResult.model_validate(retained)
+    assert result.semantic_rule_version == retained["semantic_rule_version"]
+    assert result.fields == raw.fields
+
+
+def test_display_units_do_not_compute_a_balance_or_clamp_signed_residuals():
+    control = semantic_control({"actualFormat": "%.3f kW", "nodes": []})
+    raw = decode_native_efm(
+        '{"Gpwr":10,"Ppwr":1,"Spwr":-3,"Cpwr":2,"Rest":-0.5}',
+        "actual",
+        retrieved_at=RECEIVED,
+    )
+    result = StateSemanticsResolver().resolve_native_efm(raw, control, control)
+    assert [field.value for field in result.fields] == [10, 1, -3, 2, -0.5]
+    assert result.fields[3].unit == "kW"
+    assert result.fields[3].unit_origin == "configured_display_format"
+    assert result.fields[4].unit is result.fields[4].unit_origin is None
+    assert all(field.scale is field.sign_convention is None for field in result.fields)
 
 
 @pytest.mark.parametrize(

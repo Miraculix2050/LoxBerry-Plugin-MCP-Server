@@ -34,35 +34,39 @@ unit/sign inference, balance or self-consumption calculation is performed.
 
 ## Partial report components
 
-The versioned [EFM semantic evidence matrix v1](efm-semantic-matrix.v1.md)
+The versioned [EFM semantic evidence matrix](efm-semantic-matrix.v1.md)
 records the #534 documentation/KB investigation, per-field decisions and exact
-missing prerequisites for firmware 17.2.8.28. It confirms the existing subset
-without adding runtime semantics; node/meter direction rules and block-output
-descriptions do not establish aggregate field mappings.
+missing prerequisites for firmware 17.2.8.28. The baseline confirmed the existing
+subset; the follow-up adds only Cpwr's declared display-unit binding. Node/meter
+direction rules alone do not establish aggregate inclusion formulas.
 
 The native transport rule remains `native_efm_17_2_8_28.v1`. Results now use
 `native_efm_result.v2`; its additive semantic fields and widened `unit` enum
 explicitly distinguish known W/kW from null. The pure rule
-`native_efm_actual_semantics_17_2_8_28.v1` is based on the official
+`native_efm_actual_semantics_17_2_8_28.v2` is based on the official
 [Structure File 17.1, pages 64–67](https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=64).
 
 | Native component | Proven meaning | Remaining gaps |
 | --- | --- | --- |
 | Actual Gpwr/Ppwr/Spwr | Grid/production/storage power; W or kW only from the same EFM's complete `details.actualFormat` | Sign direction, boundary, observation time |
-| Actual Cpwr | Load power | Unit, sign direction, boundary, observation time |
+| Actual Cpwr | Load power; declared W/kW from the same EFM's stable `actualFormat`, including its documented consumed-power applicability | Sign direction, boundary, observation time, source calibration |
 | Actual Rest | KB block output means calculated remaining power of the top group; no native-field enrichment yet | Native field/output binding, unit, direction and boundary |
 | Native calendar/lifetime fields | Source names and current native view | Units, currency, boundaries/reset and historical date selection |
 | Historical report components | Existing independently evidenced StatisticV2/Event History path | Coverage and component-specific semantics must pass that path's gates |
 | EnergyManager / EnergyManager2 | Separate documented generation context below | No positive target-device evidence; no shared EFM algorithm |
 
 An enriched native field adds nullable `unit_origin`, currently only
-`configured_display_format` for the existing exact Gpwr/Ppwr/Spwr W/kW rule.
+`configured_display_format` for the exact Gpwr/Ppwr/Spwr/Cpwr W/kW rule.
 The originating source is the same EFM's stable, bounded `details.actualFormat`;
 provenance lists both unit and origin. This is declared presentation metadata,
 not a measurement calibration, scale factor or proof of source-unit consistency.
 No unit conversion, new admitted format or extra request is introduced. Missing,
-invalid, unsupported or changed metadata leaves unit and origin null. Cpwr,
-native Rest and period fields receive no unit-origin inference.
+invalid, unsupported or changed metadata leaves unit and origin null.
+Native Rest and period fields receive no unit-origin inference. The
+[read-only follow-up](efm-rest-display-observations.md) records the independent
+Cpwr source chain, current comparisons and separate missing native Rest result.
+Earlier semantic rule v1 remains accepted when reading retained old results;
+new enrichment emits v2. No transport/schema version changes are needed.
 
 The [EFM KB](https://www.loxone.com/dede/kb/energieflussmonitor/) defines Rest's
 block function and explains unmetered downstream loads and measurement

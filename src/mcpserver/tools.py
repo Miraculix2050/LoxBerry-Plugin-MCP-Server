@@ -6023,7 +6023,7 @@ def register_read_tools(
                     "pv_forecast reads native PVPF hourly kWh (loxone:read). All native views "
                     "require one plain target, no state_names or semantics. EFM requires exact "
                     "firmware 17.2.8.28 and fresh Loxone administrator. Period views require "
-                    "history activation and scope. Only Gpwr/Ppwr/Spwr have metadata-bound W/kW "
+                    "history activation and scope. Gpwr/Ppwr/Spwr/Cpwr have metadata-bound W/kW "
                     "units; other units, signs and period boundaries remain unknown."
                 )
             ),

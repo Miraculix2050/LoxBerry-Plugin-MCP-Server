@@ -1152,9 +1152,9 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
    administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
    Period views also require `loxone:history` and administrator-enabled history.
    `native_result` is separate from cached states: `values=[]`, zero state counts,
-   state semantics omitted. In `native_efm_result.v2`, only Gpwr/Ppwr/Spwr gain
-   metadata-bound W/kW units and documented power roles; Cpwr is load power with
-   unknown unit and native Rest stays unqualified. `unit_origin` identifies
+   state semantics omitted. In `native_efm_result.v2`, Gpwr/Ppwr/Spwr/Cpwr gain
+   metadata-bound W/kW units and documented power roles; Cpwr is load power and
+   native Rest stays unqualified. `unit_origin` identifies
    `configured_display_format` for that existing W/kW rule, not calibrated
    measurement units or an automatic conversion. Rest's documented block meaning
    is remaining top-group power; only native-field mapping remains unverified.
