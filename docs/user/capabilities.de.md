@@ -604,8 +604,8 @@ bestätigt diese Grenze: Die Loxone-KB beschreibt den Bausteinausgang `Rest` als
 berechnete Restleistung der Spitzengruppe. Eine belegte Zuordnung zum nativen
 Ergebnis fehlt weiterhin. Vorzeichen von Zähler- oder Knotenwerten und deren
 Einheiten werden nicht auf native Gesamtergebnisse übertragen.
-Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische und Periodengrenzen
-bleiben unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
+Im Ergebnis bleiben Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische
+und Periodengrenzen unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
 Herkunft; bei geändertem Format bleiben Einheiten unbekannt.
 Fehlende Felder einschließlich `Rest` dürfen nicht als Wert 0 interpretiert werden.
 Kalenderansichten sind laufende native Perioden, keine beliebigen historischen
@@ -613,6 +613,14 @@ Zeiträume; Eigenverbrauchs- oder Bilanzrechnung wird nicht angeboten. Ohne die
 Option bleiben zwischengespeicherte State-Lesungen unverändert. Andere Firmware
 und native Nicht-Admin-Lesungen bleiben nicht unterstützt; Geräteabnahme wird
 getrennt ausgewiesen.
+
+Ein rein lesender Vergleich auf einer Anlage mit Firmware **17.2.8.28** hat
+inzwischen negative, Null- und positive native `Spwr`-Werte passend zum explizit
+verknüpften Speicherzähler und EFM-Teilnehmerzustand belegt. Das stützt für diese
+Anlage die dokumentierte Zähler-Ausgangskonvention: positiv beim Entladen,
+negativ beim Laden. Die konfigurierte Eingangspolarität und eine tatsächliche
+Invertierung sind damit nicht nachgewiesen. Diese begrenzte Gerätebeobachtung
+ändert weder die allgemeine Vorzeichensemantik noch den Decoder.
 
 Für datierte Energieberichte verwende bestätigte Historienbindungen und
 `loxone_analyze_history(operation="energy")` mit deren Semantik und Abdeckung.

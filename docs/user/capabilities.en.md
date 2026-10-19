@@ -551,7 +551,7 @@ The [semantic review for firmware 17.2.8.28](../development/efm-semantic-matrix.
 confirms this boundary: the Loxone KB describes the block output Rest as calculated
 remaining power of the top group, but its mapping to the native result remains
 unproven. Meter/node signs and units are not transferred to native aggregates.
-Signs, scaling, currency, physical observation
+In the result, signs, scaling, currency, physical observation
 freshness and period boundaries remain unknown. The `native_efm_result.v2` result
 records the source rule and provenance; changed metadata leaves units unknown.
 Missing fields, including `Rest`, are not
@@ -559,6 +559,14 @@ zero. Calendar views are running native periods, not arbitrary historical dates;
 no self-consumption or balance calculation is provided. Omit the option for
 unchanged cached-state reads. Other firmware and non-admin native reads remain
 unsupported; device acceptance is reported separately.
+
+A read-only comparison on one installation with firmware **17.2.8.28** has now
+observed negative, zero and positive native `Spwr` values consistent with the
+explicitly linked storage meter and EFM participant state. This supports the
+documented meter-output convention on that installation: positive for discharge,
+negative for charge. It does not establish the configured input polarity or an
+actual inversion. This bounded device observation changes neither general sign
+semantics nor the decoder.
 
 For dated energy reports use confirmed history bindings and the existing
 `loxone_analyze_history(operation="energy")`, respecting its semantics and coverage.
