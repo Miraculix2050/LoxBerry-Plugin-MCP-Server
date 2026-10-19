@@ -87,6 +87,14 @@ parent identity, structure version and state references, with omissions. Runtime
 containment does not identify a project connector or physical luminaire; color
 picker support does not prove installed tunable-white lighting. No actions occur.
 
+For a presence/light relationship, establish exact source and controller IDs;
+names or a shared room do not prove an association. Inspect project mapping and
+source coverage, find/describe the exact objects, then trace the relevant direction
+with `include_internal_flow_gaps=true`. Keep raw wiring, reviewed internal edges,
+unmodeled internal flow and ambiguous parents distinct. Preserve child identity
+separately from parent topology and retain all limits; a missing bounded path does
+not establish physical absence. No configuration or control writes are required.
+
 Use `loxone_describe_control(view="lighting_context")` for bounded source mood
 IDs/names of one visible LightControllerV2. Check status, source state, timestamp,
 freshness and omissions; missing or invalid data is not an empty scene inventory.

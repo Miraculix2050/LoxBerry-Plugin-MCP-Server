@@ -74,6 +74,9 @@ No Miniserver, profile, configuration or recorder writes and no induced events.
 
 ## PR 4: bounded lighting analyzer (#441)
 
+Review the concrete [lighting analysis contract](lighting-analysis-contract.md)
+with PR3 before implementing this package.
+
 - Extend `loxone_analyze_project` additively with `scope="lighting"` and an
   optional typed lighting context. Preserve KNX/Modbus defaults and wire behavior.
 - Select exact controller IDs or an exact room ID; never select by room name.

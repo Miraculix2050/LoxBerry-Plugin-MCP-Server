@@ -887,6 +887,12 @@ routing revision changes no tool names, defaults, bounds or authorization.
 
 ## Bounded lighting source context (#442/#443)
 
+`loxone_trace_project_logic` adds `include_internal_flow_gaps=false`. Opting in
+reports `internal_flow_not_modeled` and `internal_flow_parent_ambiguous` through
+existing `semantic_gaps`, with retained-node references and existing trace/byte
+bounds. These diagnostics add no edges or functional interpretation. Legacy
+calls and exact-only mapping/derived-parent definitions retain their meaning.
+
 The additive `include_outputs=false` option is valid only with `lighting_context`.
 When selected it includes `outputs`, projection version 1, from visible direct
 normalized LightControllerV2 `subControls` of type Switch/Dimmer/ColorPicker(V2).

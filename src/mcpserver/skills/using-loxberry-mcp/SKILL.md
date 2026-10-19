@@ -591,6 +591,12 @@ current states, statistics, or history only when those sources independently
 provide the required observation. Do not infer meanings for unknown block types
 or request raw project XML.
 
+Set `include_internal_flow_gaps=true` on `loxone_trace_project_logic` when a
+relationship review needs explicit unmodeled internal flow. The default remains
+false. These bounded `semantic_gaps` reference retained nodes, distinguish an
+unmodeled block from ambiguous connector containment, and never create edges or
+claim that raw wiring establishes a functional or historical effect.
+
 For SysVar, DigitalIn, Actor, Online, Mode and VoltageOut, model version 15 can
 resolve an exact normalized UUID across model sources after whole-group attribute
 and topology checks. Mapping remains exact only when occurrences are equivalent
@@ -991,12 +997,27 @@ unknown. The complete view envelope is capped at 64 KiB; respect
 Use existing full descriptions and bounded state reads only if their details
 are required, and count those reads in workflow measurements.
 
+For a presence/light relationship, first establish the exact visible source and
+controller IDs with the user or independent source evidence. Names, room and
+category do not assign a presence role. Load project guidance and inspect
+`loxone_get_project_status` for mapping/source coverage. Find and describe the
+exact project objects, then use `loxone_trace_project_logic` in the relevant
+direction with `include_internal_flow_gaps=true`. Keep raw signal/reference paths
+separate from reviewed internal `semantic_edges`. `internal_flow_not_modeled`
+means the server has no reviewed internal rule for that reached block, not that
+the configuration is broken or has no internal flow. An ambiguous connector
+parent stays `internal_flow_parent_ambiguous`. Neither diagnostic adds a path.
+Do not jump across an unknown central block to invent a presence association.
+Retain exact child `runtime_target_mapping` separately from its parent topology,
+unmapped/ambiguous source evidence and every trace/response limit. A bounded
+missing path does not prove the physical relationship is absent.
+
 Read the project module for configured structural paths and operations before
 writes. A mood ID/name never grants operation permission. Existing operations
 still require their exact current allowlist and human-requested target/action.
 Visible moods, names, rooms and controller capabilities do not prove physical
 luminaires, presence associations, scene intent or a professional lighting
-assessment. Specialized lighting review from #441 is not supplied here.
+assessment. An integrated lighting analyzer is a separate subsequent delivery.
 
 Load core rules first.
 

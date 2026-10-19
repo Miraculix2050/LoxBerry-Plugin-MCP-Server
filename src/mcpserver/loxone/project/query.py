@@ -1038,12 +1038,19 @@ class ProjectQuery:
         return snapshot._logical_ports.get(key) or snapshot.occurrence_keys_for(key)
 
     def trace(
-        self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
+        self,
+        node: GraphNode,
+        *,
+        direction: str,
+        max_depth: int,
+        max_nodes: int,
+        include_internal_flow_gaps: bool = False,
     ) -> dict[str, object]:
         if (
             direction not in {"upstream", "downstream"}
             or not 1 <= max_depth <= 16
             or not 1 <= max_nodes <= 200
+            or type(include_internal_flow_gaps) is not bool
         ):
             raise ProjectQueryError("project_query_invalid")
         adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
@@ -1143,13 +1150,40 @@ class ProjectQuery:
             node, keys, signal_predecessors, max_nodes, direction
         )
         semantic_gaps: list[dict[str, str]] = []
+        unmodeled_blocks: set[str] = set()
         state_flows = {f.block_key: f for f in self.view.snapshot.graph.state_flows}
         for reached in semantic_scope:
             parent = (
                 self._parents.get(reached) if self._nodes[reached].kind == "connector" else None
             )
+            if include_internal_flow_gaps and self._nodes[reached].kind == "connector":
+                parents = self._containment_parents.get(reached, ())
+                if len(parents) > 1:
+                    semantic_gaps.append(
+                        {"project_node_id": reached, "code": "internal_flow_parent_ambiguous"}
+                    )
+                    continue
             flow = state_flows.get(parent or reached)
             if flow is None:
+                block_key = parent or reached
+                block = self._nodes[block_key]
+                if (
+                    include_internal_flow_gaps
+                    and block.kind == "block"
+                    and block_key not in unmodeled_blocks
+                    and any(
+                        self._nodes[key].kind == "connector"
+                        for key in self._children.get(block_key, ())
+                    )
+                    and not signal_use_rules(block.block_type)
+                ):
+                    unmodeled_blocks.add(block_key)
+                    semantic_gaps.append(
+                        {
+                            "project_node_id": block_key if block_key in trace_keys else reached,
+                            "code": "internal_flow_not_modeled",
+                        }
+                    )
                 continue
             gap_reason = (
                 state_connector_reason(
