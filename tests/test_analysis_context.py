@@ -245,7 +245,8 @@ def test_history_associations_use_exact_members_without_profile_writes(change):
 
 
 @pytest.mark.parametrize("foreign", [False, True])
-def test_declared_real_feedback_retains_saved_operating_companion(foreign):
+@pytest.mark.parametrize("stored", [False, True])
+def test_declared_real_feedback_retains_saved_operating_companion(foreign, stored):
     from mcpserver.analysis_context import (
         DeclaredCycle,
         HistoryAnalysisContext,
@@ -299,13 +300,16 @@ def test_declared_real_feedback_retains_saved_operating_companion(foreign):
             ],
         }
     )
+    if not stored:
+        consumer.pop("load_flexibility")
+        consumer["load_constraints_usable"] = False
     selectors = [
         {"binding_id": "saved"},
         {"binding_id": "other-active" if foreign else "saved-active"},
     ]
     bindings = {"saved": consumer, "saved-active": active, "other-active": other}
-    if foreign:
-        with pytest.raises(ValueError, match="confirmed companion"):
+    if foreign or not stored:
+        with pytest.raises(ValueError, match="companion"):
             resolve_history_associations(
                 ctx, selectors, visible, bindings, timezone_name="Europe/Berlin"
             )

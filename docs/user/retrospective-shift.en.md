@@ -29,7 +29,8 @@ uniform demand estimate, never a reconstruction of missing measurements.
 The export association itself must be `user_confirmed`; scenario role or direction
 assumptions cannot establish the measured budget. If a profile-backed declared
 real model supplies operating feedback, it must match the saved operating
-companion. Missing-feedback limitations apply only to evaluated declared models
+companion; absent saved companions cannot be replaced by arbitrary feedback.
+Missing-feedback limitations apply only to evaluated declared models
 without that feedback.
 
 Context results appear in `comparison.context_analysis`, with association IDs,

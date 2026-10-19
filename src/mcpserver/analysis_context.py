@@ -458,6 +458,12 @@ def resolve_history_associations(
             if operating["role"] != "operating_state" or op.origin != "user_confirmed":
                 raise ValueError("observed operating association requires confirmation")
         stored = consumer.get("load_flexibility")
+        if (
+            selectors[selected.source_index].get("binding_id")
+            and load.operating_id is not None
+            and stored is None
+        ):
+            raise ValueError("selected operating source requires a confirmed saved companion")
         effective_flex = load.flexibility or (
             LoadFlexibility.model_validate(stored) if stored else None
         )

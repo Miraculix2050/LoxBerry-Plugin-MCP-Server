@@ -23,7 +23,8 @@ fehlenden Messungen.
 Die Exportzuordnung selbst muss `user_confirmed` sein; Szenarioannahmen zu Rolle
 oder Richtung begründen kein gemessenes Budget. Gibt ein profilgestütztes reales
 Modell eine Betriebsrückmeldung an, muss diese dem gespeicherten Begleiter
-entsprechen. Hinweise auf fehlende Rückmeldung gelten nur für tatsächlich
+entsprechen; ein fehlender gespeicherter Begleiter darf nicht durch eine beliebige
+Rückmeldung ersetzt werden. Hinweise auf fehlende Rückmeldung gelten nur für tatsächlich
 ausgewertete deklarierte Modelle ohne diese Rückmeldung.
 
 `comparison.context_analysis` trennt Zuordnungs-IDs, echte Profilreferenzen,
