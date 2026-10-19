@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Qualify the exact accumulated native EFM `totalSelfConsumption` Wh/kWh statistic
+  for hourly self-consumption analysis, preserving explicit plant association and
+  native-calculation limitations. Add correlated numerical source-read, preparation,
+  calculation and response-size debug diagnostics without additional data requests
+  (#439, #509).
+
 - Add opt-in unmodeled internal-flow diagnostics to existing bounded project
   traces and document evidence-backed presence/light relationship review without
   inferring links from names, rooms or runtime-child suffixes (#441, stage 3).

@@ -97,3 +97,35 @@ their existing fingerprint shape; V2 rule/recording metadata changes require
 profile review. Warm statistic payloads are keyed by fresh technical source
 metadata as well as caller identity and query, so raw/diff changes cannot reuse
 an incompatible payload. Fresh authorization remains mandatory on cache hits.
+
+
+## EFM self-consumption statistics (#439/#509)
+
+Rule `EFM.series.totalSelfConsumption.v1` applies only to the exact EFM output
+`totalSelfConsumption`, valid accumulated StatisticV2 metadata and an exact native
+Wh/kWh format (printf or decimal-place pattern). It reuses the existing StatisticV2
+Unix interval-start/difference-sum contract. The official Energy Flow Monitor
+knowledge base defines native self-consumption; the exact output/format contract
+was additionally sampled read-only on Loxberry-Test: 48 hourly native differences,
+format `0,000kWh`, accumulated=true. The owner confirmed this source's association
+and intended self-consumption coverage on 19 October 2026, including previously
+stored PV energy. That declaration is installation evidence, never a global
+physical-boundary inference. The public article does not enumerate this wire field;
+the exact native channel mapping is retained as an explicit decoder rule backed by
+that representative metadata/sample, rather than attributed to the PDF.
+
+This is an EFM-computed counter, not an independent physical meter or a new storage
+balance. Boundary, direction, physical measurement and reset uncertainty remain
+explicit. `direct_observed` retains its compatible source-series method name; the
+metric carries `native_efm_calculation_not_independent_meter`. Unknown formats,
+other fields/types and legacy statistics are excluded. Money, power and percentage
+channels cannot inherit this qualification. Profile ruleset changes still invalidate
+old source bindings; request-local confirmed associations avoid implicit profile
+mutation. No genuine weather-peer acceptance follows from synthetic weather tests.
+
+Numerical debug phases use the existing request trace and logger:
+`numerical_solar_read`, `numerical_statistic_read`, `numerical_energy_preparation`,
+`numerical_calculation` and `numerical_response`. Read durations include each
+authorized/worker call's waiting overhead; they are not pure database CPU time.
+Read records report only point counts and timing, response records only count/bytes.
+No source identity, value, extra query, cache or default logging change is added.

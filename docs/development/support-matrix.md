@@ -100,3 +100,13 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   boundaries remain explicit. Multiple independent plant fixtures establish
   isolation/arithmetic only, not real multi-plant or new firmware compatibility.
   Positive native-source/real-consumer gates remain open in #440/#510.
+
+
+### EFM self-consumption statistics
+
+The exact accumulated StatisticV2 `totalSelfConsumption` Wh/kWh channel has a
+bounded hourly decoder and regression coverage. Plant association remains an
+explicit owner declaration; output is a native EFM calculation, not independent
+physical metering. Unknown EFM channels, units and legacy clocks remain unqualified.
+A representative native hourly source read does not establish positive real
+weather-peer, all-firmware or multi-installation acceptance (#439/#509).

@@ -76,6 +76,13 @@ Speicherentladung und andere Erzeugung. Zusätzlich müssen bestätigte
 Profil-Bilanzgrenzen übereinstimmen und die Einspeiserichtung deklariert sein.
 Kein Speicherbilanzmodell; negative Bilanzen werden nicht auf null begrenzt.
 
+Als direkter Kanal wird auch die native EFM-Statistik `totalSelfConsumption`
+unterstützt, wenn sie als akkumulierter StatisticV2-Kanal exakt Wh oder kWh
+ausweist. Stundenwerte sind native Differenzsummen, keine vom Plugin berechnete
+PV-/Speicherbilanz. Die Anlagenzuordnung muss bestätigt werden; der Eigenverbrauch
+ist eine EFM-Berechnung und kein unabhängiger physischer Zähler. Andere EFM-Kanäle,
+Währungen, Leistungseinheiten und unbekannte Formate erhalten diese Bedeutung nicht.
+
 W/m²-Quellzustände werden trapezförmig zu geschätzten Wh/m² integriert: keine
 Extrapolation oder Lücken über der doppelten Abtastperiode, maximal 60 Minuten.
 Temperatur verwendet den nächsten aufgezeichneten Zustand innerhalb von
@@ -102,6 +109,13 @@ kann exakte Gültigkeitsintervalle liefern; nur zuvor erfasste Prognosen dürfen
 mit vollständigen Istintervallen verglichen werden. Keine Wetterauswahl aus Prognosen.
 
 Jede eindeutige Quelle wird pro Zeitraum einmal gemeinsam frisch autorisiert gelesen.
+
+Bei aktivierter Debug-Diagnostik liefern korrelierte Phasenmeldungen die Zeiten
+für Solarhistorienzugriff, Statistikzugriff, Energieaufbereitung und Berechnung
+sowie Punktzahlen und Antwortgröße. Zugriffszeiten enthalten Warte- und
+Berechtigungsprüfung des jeweiligen Aufrufs; sie sind keine reinen SQL-Zeiten.
+Die Diagnostik erzeugt keine zusätzlichen Datenabrufe und gibt keine Quellwerte aus.
+
 Grenzen: 16 Quellen, 100.000 Punkte, 31 lokale Tage, 30 Sekunden, zwei Analysen,
 64 KiB. Aufzeichnung erzeugt keine frühere Historie. Echte mehrtägige Abnahme bleibt
 Voraussetzung für den Abschluss von #509 und #439.
