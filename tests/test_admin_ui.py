@@ -4171,3 +4171,56 @@ def test_admin_message_help_link_preserves_effective_page_language(tmp_path: Pat
             timeout=10,
         )
         assert f'href="message-approval.cgi?lang={expected}"' in response.stdout
+
+
+def test_authentication_history_only_reads_on_click_and_renders_text():
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const authHistory =');
+const block = source.slice(start, source.indexOf('  let authProbeRunning', start));
+class Element {
+  constructor() { this.children = []; this.events = {}; this.dataset = {}; this.disabled = false; }
+  addEventListener(name, callback) { this.events[name] = callback; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children = children; }
+  setAttribute(name, value) { this[name] = value; }
+  set innerHTML(value) { throw Error('HTML injection sink'); }
+}
+const elements = new Map();
+const document = {
+  getElementById(id) {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id);
+  },
+  createElement() { return new Element(); },
+  createTextNode(text) { return {textContent: text}; },
+};
+const calls = [];
+const hostile = '<img src=x onerror=alert(1)>';
+const postAjax = async body => {
+  calls.push(Object.fromEntries(body));
+  return {data: {history_status: 'bounded',
+    events: [{outcome: 'unknown', connection_owner: hostile}], bindings: []}};
+};
+const context = vm.createContext({document, postAjax, URLSearchParams});
+vm.runInContext(block, context);
+assert.equal(calls.length, 0);
+(async () => {
+  const button = document.getElementById('authentication-history-refresh');
+  await button.events.click();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, 'list_authentication_events');
+  const target = document.getElementById('authentication-history-content');
+  assert.equal(target.children[1].children[0].textContent, hostile);
+  assert.equal(button.disabled, false);
+  assert.equal(target['aria-busy'], 'false');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/sessions.js")], check=True
+    )

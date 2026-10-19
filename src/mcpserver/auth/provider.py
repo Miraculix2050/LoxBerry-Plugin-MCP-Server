@@ -831,6 +831,49 @@ class Phase0OAuthProvider(
             miniserver_id=record["miniserver_id"],
         )
 
+    async def load_access_token_readonly(self, token: str) -> StoredAccessToken | None:
+        """Validate one current token without garbage collection or lifecycle callbacks.
+
+        MCP transport verification must not turn a local diagnostic read into
+        unrelated session expiry, remote token cleanup, or OAuth persistence.
+        """
+        document = self.store.snapshot()
+        record = document["access_tokens"].get(token_digest(token))
+        now = self.now()
+        if record is None or record.get("status") != "active" or record["expires_at"] <= now:
+            return None
+        family = document["families"].get(record["family_id"])
+        if (
+            family is None
+            or family["revoked"]
+            or family["expires_at"] <= now
+            or record["resource"] != self.resource
+            or record["client_id"] not in document["clients"]
+            or any(
+                family.get(key) != record.get(key)
+                for key in ("client_id", "identity_id", "miniserver_id", "resource")
+            )
+            or not set(record["scopes"]).issubset(str(family.get("scope", "")).split())
+        ):
+            return None
+        return StoredAccessToken(
+            token=token,
+            client_id=record["client_id"],
+            scopes=record["scopes"],
+            expires_at=record["expires_at"],
+            resource=record["resource"],
+            subject=record["identity_id"],
+            claims={
+                "iss": self.issuer,
+                "identity": record["identity_id"],
+                "miniserver": record["miniserver_id"],
+                "audience": record["resource"],
+            },
+            family_id=record["family_id"],
+            identity_id=record["identity_id"],
+            miniserver_id=record["miniserver_id"],
+        )
+
     async def revoke_token(self, token: StoredAccessToken | StoredRefreshToken) -> None:
         self.store.mutate(lambda document: self._revoke_family(document, token.family_id))
 

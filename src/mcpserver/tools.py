@@ -2696,6 +2696,37 @@ class LoxBerryServiceEventsEnvelope(ToolEnvelope):
     data: LoxBerryServiceEventsData | LoxBerryErrorData
 
 
+class MiniserverAuthEventData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    timestamp: str
+    connection_owner: Literal["tool_request"]
+    phase: str
+    outcome: str
+    breaker_transition: Literal["opened", "reopened", "closed"] | None = None
+    trace_id: str | None = None
+
+
+class MiniserverAuthStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    breaker_state: Literal["closed", "open_source_ip_blocked", "unavailable"]
+    failure_guard_state: Literal["closed", "cooldown", "persistence_uncertain", "unavailable"]
+    recovery_guard_state: Literal["closed", "pending", "unavailable"]
+    next_auth_attempt_at: int | None = None
+
+
+class MiniserverAuthEventsData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shared_status: MiniserverAuthStatusData
+    history_status: Literal["bounded", "incomplete", "unavailable"]
+    events: list[MiniserverAuthEventData]
+    next_cursor: str | None = None
+
+
+class MiniserverAuthEventsEnvelope(ToolEnvelope):
+    model_config = ConfigDict(extra="forbid")
+    data: MiniserverAuthEventsData | LoxBerryErrorData
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -3019,7 +3050,10 @@ class LoxBerryReadRuntime:
     """Live policy check and bounded access to the fixed diagnostics adapter."""
 
     def __init__(
-        self, diagnostics: LoxBerryDiagnostics, config_store: Any, auth_store: Any
+        self,
+        diagnostics: LoxBerryDiagnostics,
+        config_store: Any,
+        auth_store: Any,
     ) -> None:
         self._diagnostics = diagnostics
         self._config_store = config_store
@@ -8269,6 +8303,96 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
             )
 
 
+def register_authentication_diagnostics_tool(
+    server: FastMCP, runtime: LoxoneRuntime | None
+) -> None:
+    """Publish only the caller-binding projection, independently of LoxBerry grants."""
+    cursors = _CursorCodec()
+
+    @server.tool(
+        name="loxone_list_authentication_events",
+        description=(
+            "Read retained Miniserver authentication events for this registered app, Loxone "
+            "identity and Miniserver, including earlier authorizations of that same binding. "
+            "Requires current loxone:read. Newest first; bounded history is not a complete audit. "
+            "Shared protection status does not identify a cause. Never signs in or starts recovery."
+        ),
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
+        structured_output=True,
+    )
+    async def list_authentication_events(
+        cursor: CursorArgument = None,
+        limit: Annotated[
+            int, Field(description="Events per page, from 1 to 50.", ge=1, le=50)
+        ] = 20,
+    ) -> MiniserverAuthEventsEnvelope:
+        trace_id = str(uuid4())
+        try:
+            access = _access()
+            if runtime is None:
+                raise RuntimeUnavailable("Authentication diagnostics unavailable")
+            snapshot = await runtime.authentication_diagnostics(access)
+            scope = "authentication-events-v1:" + cursors.digest(
+                json.dumps(
+                    [
+                        access.family_id,
+                        access.client_id,
+                        access.identity_id,
+                        access.miniserver_id,
+                        snapshot["events"],
+                        snapshot.get("_history_revision"),
+                    ],
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode()
+            )
+            page = _page(cursors, scope, snapshot["events"], cursor, limit)
+            result = _result(
+                MiniserverAuthEventsEnvelope,
+                {
+                    "shared_status": snapshot["shared_status"],
+                    "history_status": snapshot["history_status"],
+                    "events": page["items"],
+                    "next_cursor": page["next_cursor"],
+                },
+                trace_id=trace_id,
+            )
+            if len(result.model_dump_json().encode("utf-8")) > 64 * 1024:
+                raise RuntimeUnavailable("Authentication diagnostics unavailable")
+            return result
+        except ValueError:
+            return _error(
+                MiniserverAuthEventsEnvelope,
+                "invalid_input",
+                "Cursor is invalid or history changed; restart without a cursor",
+                trace_id=trace_id,
+            )
+        except PermissionError:
+            return _error(
+                MiniserverAuthEventsEnvelope,
+                "permission_denied",
+                "Authentication diagnostics require current loxone:read",
+                trace_id=trace_id,
+            )
+        except RuntimeUnavailable:
+            return _error(
+                MiniserverAuthEventsEnvelope,
+                "temporarily_unavailable",
+                "Authentication diagnostics are temporarily unavailable",
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            _LOGGER.error(
+                "component=tools trace_id=%s outcome=internal_error "
+                "tool=loxone_list_authentication_events error_type=%s",
+                trace_id,
+                type(exc).__name__,
+            )
+            return _error(
+                MiniserverAuthEventsEnvelope, "internal_error", "Internal error", trace_id=trace_id
+            )
+
+
 def _rfc3339(value: str) -> datetime:
     if not value or len(value) > 64:
         raise ValueError("timestamp is invalid")
@@ -9309,6 +9433,7 @@ def register_tool_surface(
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
     register_skill_tool(server)
+    register_authentication_diagnostics_tool(server, runtime)
     from mcpserver.installation_profile_tools import (
         register_profile_read_tool,
         register_profile_write_tools,

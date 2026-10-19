@@ -474,6 +474,7 @@ def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
     tools = response.json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
         "loxone_get_skill_guide",
+        "loxone_list_authentication_events",
         "loxberry_get_knx_catalog",
         "loxberry_get_knx_correction_drafts",
         "loxberry_prepare_knx_corrections",

@@ -11,6 +11,80 @@ window.McpAdmin.createSessions = (core) => {
   const loxberryOperateBindingList = document.getElementById('loxberry-operate-binding-list');
   const remoteCleanupWarning = document.getElementById('remote-cleanup-warning');
   const authProbe = document.getElementById('miniserver-auth-probe');
+  const authHistory = document.getElementById('authentication-history');
+  const authHistoryRefresh = document.getElementById('authentication-history-refresh');
+  const authHistoryContent = document.getElementById('authentication-history-content');
+  const renderAuthenticationHistory = (data, target) => {
+    const status = document.createElement('p');
+    status.role = 'status';
+    status.textContent = ({bounded: authHistory.dataset.boundedLabel,
+      unavailable: authHistory.dataset.unavailableLabel,
+      incomplete: authHistory.dataset.incompleteLabel})[data.history_status]
+      || authHistory.dataset.unavailableLabel;
+    const events = Array.isArray(data.events) ? data.events : [];
+    const list = document.createElement('ol');
+    for (const event of events) {
+      const item = document.createElement('li');
+      // Backend allowlists fields; text nodes remain mandatory for all values.
+      const fields = ['timestamp', 'connection_owner', 'phase', 'outcome', 'breaker_transition', 'trace_id'];
+      item.textContent = fields.map((key) => {
+        if (key !== 'outcome') return event[key];
+        const suffix = String(event.outcome || '').replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+        return authHistory.dataset['event' + suffix.charAt(0).toUpperCase() + suffix.slice(1)]
+          || authHistory.dataset.unknownLabel;
+      }).filter((value) => typeof value === 'string').join(' · ')
+        || authHistory.dataset.unknownLabel;
+      list.append(item);
+    }
+    if (!events.length && data.history_status !== 'unavailable') {
+      const empty = document.createElement('p');
+      empty.textContent = authHistory.dataset.emptyLabel;
+      list.append(empty);
+    }
+    const shared = document.createElement('p');
+    const protection = data.shared_status || {};
+    shared.textContent = authHistory.dataset.sharedLabel + ': ' +
+      ['breaker_state', 'failure_guard_state', 'recovery_guard_state']
+        .map((key) => String(protection[key] || '')).join(' · ');
+    if (Number.isSafeInteger(protection.next_auth_attempt_at)) {
+      shared.textContent += ' · ' + authHistory.dataset.nextLabel + ': ' +
+        new Date(protection.next_auth_attempt_at * 1000).toLocaleString();
+    }
+    target.replaceChildren(status, list, shared);
+    for (const binding of Array.isArray(data.bindings) ? data.bindings : []) {
+      const group = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = [binding.client_name || binding.client, binding.identity, binding.miniserver,
+        binding.event_count, binding.latest_event?.timestamp].map((value) => String(value ?? '')).join(' · ');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lb-button';
+      button.textContent = authHistory.dataset.detailsLabel;
+      const content = document.createElement('div');
+      content.setAttribute('aria-live', 'polite');
+      button.addEventListener('click', () => loadAuthenticationHistory(button, content, binding.session_id));
+      group.append(summary, button, content);
+      target.append(group);
+    }
+  };
+  const loadAuthenticationHistory = async (button, target, sessionId) => {
+    if (button.disabled) return;
+    button.disabled = true;
+    target.setAttribute('aria-busy', 'true');
+    try {
+      const body = new URLSearchParams({action: 'list_authentication_events', ajax: '1'});
+      if (sessionId) body.set('session_id', sessionId);
+      const result = await postAjax(body, 15000);
+      renderAuthenticationHistory(result.data, target);
+    } catch {
+      target.replaceChildren(document.createTextNode(authHistory.dataset.unavailableLabel));
+    } finally {
+      button.disabled = false;
+      target.setAttribute('aria-busy', 'false');
+    }
+  };
+  authHistoryRefresh?.addEventListener('click', () =>
+    loadAuthenticationHistory(authHistoryRefresh, authHistoryContent));
   let authProbeRunning = false;
   let sessionDataVersion = 0;
   let sessionsLoaded = false;

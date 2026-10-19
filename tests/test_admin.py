@@ -3002,3 +3002,74 @@ def test_legacy_save_with_partial_policies_preserves_each_knx_explorer_approval(
         }
     )
     assert store.load().explorer_bindings == (approval,)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {"path": "elsewhere"},
+        {"session_id": ""},
+        {"session_id": None},
+        {"session_id": 4},
+        {"session_id": "x" * 129},
+    ],
+)
+def test_authentication_history_rejects_invalid_admin_requests(payload):
+    with pytest.raises(AdminError):
+        dispatch({"action": "list_authentication_events", "payload": payload})
+
+
+def test_authentication_history_groups_verified_binding_and_reads_on_demand(tmp_path, monkeypatch):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator, authentication_binding
+
+    auth = AtomicJsonAuthStore((tmp_path / "auth" / "sessions.json").resolve())
+    config = PluginConfig(loxone_endpoint="http://192.168.10.20")
+    families = {
+        "first": {"client_id": "app", "identity_id": "identity", "miniserver_id": "server"},
+        "renewed": {"client_id": "app", "identity_id": "identity", "miniserver_id": "server"},
+        "other": {"client_id": "other-app", "identity_id": "identity", "miniserver_id": "server"},
+    }
+    auth.mutate(lambda document: document["families"].update(families))
+    monkeypatch.setattr(admin, "_auth_store", lambda: auth)
+    monkeypatch.setattr(admin, "_config_store", lambda: SimpleNamespace(load=lambda: config))
+    calls = []
+
+    def read(self, binding_id=None):
+        calls.append(binding_id)
+        return {"events": [], "history_status": "bounded", "shared_status": {}}
+
+    monkeypatch.setattr(MiniserverAuthCoordinator, "diagnostic_snapshot", read)
+    monkeypatch.setattr(
+        admin,
+        "_sessions",
+        lambda snapshot: [
+            {
+                "id": family,
+                "client": record["client_id"],
+                "client_name": "Same display name",
+                "identity": record["identity_id"],
+            }
+            for family, record in families.items()
+        ],
+    )
+    global_history = dispatch({"action": "list_authentication_events"})
+    assert len(global_history["bindings"]) == 2
+    assert calls[0] is None
+    own = authentication_binding(auth, "app", "identity", "server")
+    calls.clear()
+    for family in ("first", "renewed"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": family}})
+    assert calls == [own, own]
+    assert "binding_id" not in json.dumps(global_history)
+    assert "subject_key" not in json.dumps(global_history)
+    with pytest.raises(AdminError, match="unavailable"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": "unknown"}})
+
+
+def test_removed_signed_authentication_recovery_action_is_rejected():
+    with pytest.raises(AdminError):
+        dispatch(
+            {"action": "request_miniserver_auth_recovery", "payload": {"session_id": "family"}}
+        )

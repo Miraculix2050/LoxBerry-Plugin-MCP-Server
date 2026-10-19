@@ -81,6 +81,7 @@ EXPECTED_TOOLS = {
     "loxberry_get_service_health",
     "loxberry_get_system_status",
     "loxberry_list_service_events",
+    "loxone_list_authentication_events",
     "loxone_analyze_project",
     "loxone_analyze_observability",
     "loxone_describe_control",

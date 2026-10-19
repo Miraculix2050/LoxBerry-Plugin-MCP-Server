@@ -1408,6 +1408,71 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
     return sorted(result, key=lambda item: str(item["id"]))
 
 
+def _authentication_events(payload: object) -> dict[str, Any]:
+    """Read bounded authentication diagnostics only on explicit local Admin request."""
+    from mcpserver.loxone.auth_diagnostics import (
+        MiniserverAuthCoordinator,
+        authentication_binding,
+    )
+    from mcpserver.loxone.client import MiniserverEndpoint
+
+    if not isinstance(payload, dict) or set(payload) - {"session_id"}:
+        raise AdminError("Authentication history request is invalid")
+    family_id = payload.get("session_id")
+    if "session_id" in payload and (
+        not isinstance(family_id, str) or not family_id or len(family_id) > 128
+    ):
+        raise AdminError("Session identifier is invalid")
+    snapshot = _admin_read_snapshot(require_configuration=True)
+    config = snapshot.configuration
+    if config is None or not config.loxone_endpoint:
+        return {"events": [], "history_status": "unavailable", "bindings": []}
+    store = _auth_store()
+    endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+    coordinator = MiniserverAuthCoordinator(
+        store.path.parent / "miniserver-auth-diagnostics.json",
+        initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+        maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+        profile_id=store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+    )
+    families = snapshot.auth_document.get("families", {})
+    if not isinstance(families, dict):
+        families = {}
+
+    def binding(record: dict[str, Any]) -> str | None:
+        values = [record.get(key) for key in ("client_id", "identity_id", "miniserver_id")]
+        if not all(isinstance(value, str) and value for value in values):
+            return None
+        return authentication_binding(store, str(values[0]), str(values[1]), str(values[2]))
+
+    if family_id is not None:
+        record = families.get(family_id)
+        if not isinstance(record, dict) or (binding_id := binding(record)) is None:
+            raise AdminError("Session authentication history is unavailable")
+        return coordinator.diagnostic_snapshot(binding_id=binding_id) | {"bindings": []}
+    result = coordinator.diagnostic_snapshot()
+    groups: dict[str, dict[str, Any]] = {}
+    for session in _sessions(snapshot):
+        record = families.get(session["id"])
+        if not isinstance(record, dict) or (binding_id := binding(record)) is None:
+            continue
+        if binding_id not in groups:
+            if len(groups) >= 50:
+                continue
+            history = coordinator.diagnostic_snapshot(binding_id=binding_id)
+            groups[binding_id] = {
+                "session_id": session["id"],
+                "client": session["client"],
+                "client_name": str(session["client_name"])[:120],
+                "identity": session["identity"],
+                "miniserver": str(record["miniserver_id"])[:12],
+                "event_count": len(history["events"]),
+                "history_status": history["history_status"],
+                "latest_event": history["events"][0] if history["events"] else None,
+            }
+    return result | {"bindings": list(groups.values()), "bindings_bounded": True}
+
+
 def _confirm_loxone_token(payload: object) -> dict[str, Any]:
     from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 
@@ -2368,6 +2433,8 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         if not isinstance(family_id, str) or len(family_id) > 128:
             raise AdminError("session identifier is invalid")
         return {"revoked": _revoke(family_id), "sessions": _sessions()}
+    if action == "list_authentication_events":
+        return _authentication_events(payload)
     if action == "confirm_loxone_token":
         return _confirm_loxone_token(payload)
     if action == "revoke_all":

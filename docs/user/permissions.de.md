@@ -39,4 +39,23 @@ Ein unveränderter Projektmarker allein genügt nicht als Nachweis aktueller
 Sichtbarkeit. Die lokale Ereignishistorie prüft die Sichtbarkeit ebenfalls durch
 einen frischen Strukturabruf.
 
+## Eigene Authentifizierungsereignisse
+
+`loxone_list_authentication_events(cursor=None, limit=20)` benötigt eine aktuell
+gültige `loxone:read`-Autorisierung. Es liest nur belegbar zugeordnete Ereignisse
+für die exakte registrierte App (`client_id`), Loxone-Identität und den Miniserver,
+auch aus früheren Anmeldungen derselben Kombination. Anwendungsnamen erlauben
+keinen Zugriff. Eine widerrufene oder abgelaufene Autorisierung darf auch keine
+Folgeseite lesen. Eine zusätzliche LoxBerry-Freigabe ist nicht erforderlich;
+globale Ereignisse bleiben lokalen Administratoren vorbehalten.
+
+`limit` beträgt 1–50, die Antwort höchstens 64 KiB. Neueste Ereignisse stehen zuerst;
+`next_cursor` unverändert übernehmen. Bei geänderter Historie, Neustart, anderer
+OAuth-Familie oder ungültigem Cursor muss die Abfrage neu beginnen. Der getrennt
+gekennzeichnete gemeinsame Schutzstatus identifiziert keine fremden Clients und
+belegt keinen Verursacher einer Sperre. Das Lesen öffnet keine Miniserver-Verbindung
+und startet keinen Wiederherstellungsversuch. Die Historie ist begrenzt: Fehlende
+oder nicht verfügbare Ereignisse beweisen keine Fehlerfreiheit. Alte Ereignisse
+ohne belegte Herkunft bleiben unzugeordnet.
+
 Weiter: [Funktionsumfang](capabilities.de.md).

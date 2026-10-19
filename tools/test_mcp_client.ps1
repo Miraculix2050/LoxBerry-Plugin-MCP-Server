@@ -207,6 +207,7 @@ try {
     if ($toolsResponse.error) { throw 'MCP tools/list failed.' }
 
     $expected = @(
+        'loxone_list_authentication_events',
         'loxone_get_system_status', 'loxone_get_structure_overview',
         'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
@@ -356,7 +357,7 @@ try {
     }
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 118 -or
+        $skillGuide.data.revision -ne 119 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'

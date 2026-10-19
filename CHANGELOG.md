@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded authentication-event reads for the currently authorized app,
+  Loxone identity and Miniserver, including retained events from earlier logins.
+  Add explicit local Admin history and binding summaries without changing
+  authentication guards or recovery actions. Missing history remains unknown (#584).
+
 - Add Explorer lighting drafts from exact visible controller results, scope-specific
   fields and bounded page summaries with independent naming/selection limits.
   Synchronize the six lighting scenarios and evidence boundaries in DE/EN (#441, stage 5).
