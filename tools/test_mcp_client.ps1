@@ -207,6 +207,7 @@ try {
     if ($toolsResponse.error) { throw 'MCP tools/list failed.' }
 
     $expected = @(
+        'loxone_list_authentication_events',
         'loxone_get_system_status', 'loxone_get_structure_overview',
         'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
@@ -232,7 +233,6 @@ try {
         'loxone_get_project_status', 'loxone_find_project_objects',
         'loxone_describe_project_object', 'loxone_trace_project_logic',
         'loxone_analyze_observability', 'loxone_analyze_project',
-        'loxone_list_authentication_events',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
         'loxberry_get_system_status', 'loxberry_list_service_events',
         'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
