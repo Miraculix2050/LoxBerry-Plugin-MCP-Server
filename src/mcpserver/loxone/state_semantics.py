@@ -751,7 +751,7 @@ class StateSemanticsResolver:
                     document_version="17.1",
                 )
             )
-        if efm_self_consumption:
+        if role == "native_self_consumption_channel":
             sources.extend(
                 (
                     SemanticsSource(

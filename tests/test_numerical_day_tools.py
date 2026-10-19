@@ -676,7 +676,27 @@ async def test_numerical_timings_correlate_unique_reads_without_source_data(
 
 
 @pytest.mark.asyncio
-async def test_native_efm_self_consumption_uses_same_history_context(monkeypatch, tmp_path):
+async def test_solar_read_diagnostic_includes_authorization(monkeypatch, tmp_path, caplog):
+    import logging
+    import re
+
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+
+    async def authorize(_access):
+        await asyncio.sleep(0.02)
+
+    runtime._require_access.side_effect = authorize
+    with caplog.at_level(logging.DEBUG, logger="mcpserver.history_analysis"):
+        result = await tool.fn(**args)
+    assert result.ok, result
+    messages = [r.message for r in caplog.records if "phase=numerical_solar_read " in r.message]
+    assert len(messages) == 2
+    assert all(float(re.search(r"duration_ms=([\d.]+)", message)[1]) >= 20 for message in messages)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["self_consumption", "production", "grid_export"])
+async def test_native_efm_self_consumption_uses_same_history_context(monkeypatch, tmp_path, role):
     from unittest.mock import AsyncMock
 
     from mcpserver.analysis_context import HistoryAnalysisContext
@@ -692,10 +712,14 @@ async def test_native_efm_self_consumption_uses_same_history_context(monkeypatch
     runtime.authorized_statistics.return_value = meter, series, points
     args["sources"][2] = AnalysisSource(control_uuid=P, series_id="pv", granularity="hour")
     doc = day_context_document()
-    doc["associations"][2]["role"] = "self_consumption"
-    doc["day_context"].update(assets=[], production=[])
+    doc["associations"][2]["role"] = role
+    if role != "production":
+        doc["day_context"].update(assets=[], production=[])
     args["analysis_context"] = HistoryAnalysisContext.model_validate(doc)
     result = await tool.fn(**args)
+    if role != "self_consumption":
+        assert not result.ok and result.data.error == "invalid_input"
+        return
     assert result.ok, result
     metric = result.data.comparable_days.self_consumption
     assert metric.method == "direct_observed" and metric.reference_wh == 2800

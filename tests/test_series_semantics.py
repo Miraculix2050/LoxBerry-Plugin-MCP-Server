@@ -58,6 +58,7 @@ def test_other_channels_cannot_borrow_efm_self_consumption_contract(changes, kin
     item = series(output="totalSelfConsumption", format="0,000kWh")
     result = resolve(replace(item, **changes), kind=kind, granularity="hour")
     assert result.unit is None and result.measurement_quantity is None
+    assert all(source.rule_id != "EFM.series.totalSelfConsumption.v1" for source in result.sources)
 
 
 @pytest.mark.parametrize("granularity", ["raw", "hour", "day", "month", "year"])

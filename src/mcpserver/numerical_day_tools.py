@@ -518,8 +518,8 @@ async def numerical_day_analysis(
             margin = (
                 0 if source.kind == "pv_forecast" else min(3600, 2 * source.sampling_period_seconds)
             )
-            await runtime._require_access(access)
             read_started = time.perf_counter()
+            await runtime._require_access(access)
             rows, consumed = await run_admitted_worker(
                 store.read,
                 source,
@@ -581,6 +581,11 @@ async def numerical_day_analysis(
         count += len(points)
         preparation_started = time.perf_counter()
         semantics = resolver.resolve_series(control, series, granularity="hour")
+        if (
+            semantics.measurement_role == "native_self_consumption_channel"
+            and role != "self_consumption"
+        ):
+            raise ValueError("native self-consumption channel requires the self_consumption role")
         summary = await run_admitted_worker(
             statistic_summary,
             "energy",
