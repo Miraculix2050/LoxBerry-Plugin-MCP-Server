@@ -246,10 +246,12 @@ without skipping records. Observability keeps exact-only counters and emits the
 selected derived child's evidence separately from parent topology.
 
 Project trace optionally reports `include_internal_flow_gaps` in the existing
-bounded `semantic_gaps` projection. Unknown block rules and ambiguous connector
+bounded `semantic_gaps` projection. Unmodeled reached occurrences and ambiguous connector
 parents are diagnostics only: traversal, graph identity, mapping definitions and
 default responses remain unchanged. Diagnostic references share retained-node and
 response-byte limits. No lighting graph or connector interpretation is introduced.
+Coverage uses emitted internal edges, including reference projections, and the
+existing State contracts; catalog rules alone never establish port coverage.
 
 ## KNX metadata administration
 

@@ -1150,7 +1150,16 @@ class ProjectQuery:
             node, keys, signal_predecessors, max_nodes, direction
         )
         semantic_gaps: list[dict[str, str]] = []
-        unmodeled_blocks: set[str] = set()
+        modeled_nodes = (
+            {
+                key
+                for edge in self.view.snapshot.graph.semantic_edges
+                for key in (edge.source, edge.target)
+            }
+            if include_internal_flow_gaps
+            else set()
+        )
+        scoped_nodes = set(semantic_scope)
         state_flows = {f.block_key: f for f in self.view.snapshot.graph.state_flows}
         for reached in semantic_scope:
             parent = (
@@ -1165,22 +1174,28 @@ class ProjectQuery:
                     continue
             flow = state_flows.get(parent or reached)
             if flow is None:
-                block_key = parent or reached
-                block = self._nodes[block_key]
-                if (
-                    include_internal_flow_gaps
-                    and block.kind == "block"
-                    and block_key not in unmodeled_blocks
-                    and any(
-                        self._nodes[key].kind == "connector"
-                        for key in self._children.get(block_key, ())
-                    )
-                    and not signal_use_rules(block.block_type)
+                if not include_internal_flow_gaps or reached in modeled_nodes:
+                    continue
+                node_kind = self._nodes[reached].kind
+                connectors = (
+                    [
+                        key
+                        for key in self._children.get(reached, ())
+                        if self._nodes[key].kind == "connector"
+                    ]
+                    if node_kind == "block"
+                    else []
+                )
+                # Reached ports carry occurrence-specific coverage. A block
+                # reached without its ports is assessed only at block scope.
+                if node_kind == "connector" or (
+                    connectors
+                    and not any(key in scoped_nodes for key in connectors)
+                    and not any(key in modeled_nodes for key in connectors)
                 ):
-                    unmodeled_blocks.add(block_key)
                     semantic_gaps.append(
                         {
-                            "project_node_id": block_key if block_key in trace_keys else reached,
+                            "project_node_id": reached,
                             "code": "internal_flow_not_modeled",
                         }
                     )

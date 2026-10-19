@@ -25,11 +25,23 @@ OUTPUT, INPUT, CENTRAL, CENTRAL_INPUT, CENTRAL_OUTPUT = (str(i) * 32 for i in ra
 CHILD = LIGHT + "/AI1"
 
 
-def lighting_query(central_type=None, *, duplicate_parent=False, unmapped_source=False):
+def lighting_query(
+    central_type=None,
+    *,
+    duplicate_parent=False,
+    unmapped_source=False,
+    central_input_key="I1",
+    central_output_key="Q",
+    duplicate_output=False,
+    keep_reviewed_input=False,
+):
     intermediary = (
         f'<C Type="{central_type}" U="{CENTRAL}">'
-        f'<Co K="I1" U="{CENTRAL_INPUT}"><In Input="{OUTPUT}"/></Co>'
-        f'<Co K="Q" U="{CENTRAL_OUTPUT}"/></C>'
+        f'<Co K="{central_input_key}" U="{CENTRAL_INPUT}"><In Input="{OUTPUT}"/></Co>'
+        f'<Co K="{central_output_key}" U="{CENTRAL_OUTPUT}"/>'
+        + (f'<Co K="Q" U="{"6" * 32}"/>' if duplicate_output else "")
+        + (f'<Co K="I1" U="{"7" * 32}"/>' if keep_reviewed_input else "")
+        + "</C>"
         if central_type
         else ""
     )
@@ -98,6 +110,52 @@ def test_indirect_wiring_uses_only_existing_reviewed_or_rule():
     assert LIGHT in source_ids(project, result)
     assert {edge["rule_id"] for edge in result["semantic_edges"]} == {"or_i1_q_v1"}
     assert len(result["edges"]) == 2
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"central_output_key": "UnknownOutput"},
+        {"duplicate_output": True},
+        {"central_input_key": "UnknownInput", "keep_reviewed_input": True},
+    ],
+)
+def test_catalog_rule_does_not_hide_an_unmodeled_reached_connector(options):
+    project = lighting_query("Or", **options)
+    result = trace(project)
+    connector = next(n for n in project.view.snapshot.graph.nodes if n.source_id == CENTRAL_INPUT)
+    assert {"project_node_id": connector.key, "code": "internal_flow_not_modeled"} in result[
+        "semantic_gaps"
+    ]
+    assert LIGHT not in source_ids(project, result)
+
+
+def test_reviewed_input_reference_flow_is_not_reported_as_unknown():
+    parsed = parse_project(
+        (
+            f'<P><C Type="SyntheticSource" U="{SOURCE}"/>'
+            f'<C Type="InputRef" U="{CENTRAL}" Ref="{SOURCE}"><Co K="AQ" U="{CENTRAL_OUTPUT}"/></C>'
+            f'<C Type="SyntheticLighting" U="{LIGHT}"><Co K="P" U="{INPUT}">'
+            f'<In Input="{CENTRAL_OUTPUT}"/></Co></C></P>'
+        ).encode()
+    )
+    graph = build_graph((("p", parsed),))
+    snapshot = ProjectSnapshot(
+        "synthetic",
+        PROJECT_MODEL_VERSION,
+        (ProjectPartSummary("p", len(parsed.elements), ()),),
+        graph,
+    )
+    structure = LoxoneStructure(LoxoneIdentity("reader", "synthetic"), "v1", (), (), ())
+    project = ProjectQuery(ProjectView(snapshot, map_runtime(snapshot, structure)), {})
+    source = next(n for n in graph.nodes if n.source_id == SOURCE)
+    result = project.trace(
+        source, direction="downstream", max_depth=16, max_nodes=200, include_internal_flow_gaps=True
+    )
+    assert {e["rule_id"] for e in result["semantic_edges"]} == {"input_ref_aq_v1"}
+    assert LIGHT in source_ids(project, result)
+    reviewed = {n.key for n in graph.nodes if n.source_id in {CENTRAL, CENTRAL_OUTPUT}}
+    assert not any(g["project_node_id"] in reviewed for g in result["semantic_gaps"])
 
 
 @pytest.mark.parametrize("direction,target", [("downstream", SOURCE), ("upstream", LIGHT)])

@@ -27,7 +27,7 @@ page, and the existing response-byte guard. Emit omissions and partial coverage.
 
 ## Request-local context
 
-`lighting_context` has discriminator `version="lighting_analysis_context.v1"`,
+`lighting_context` has discriminator `schema_version="lighting_analysis_context.v1"`,
 forbids unknown fields, and is at most 64 KiB when serialized. Optional arrays:
 
 - `scenes` (max 100): exactly one `controller_uuid` or existing `binding_id`,
@@ -37,15 +37,29 @@ forbids unknown fields, and is at most 64 KiB when serialized. Optional arrays:
   explicit origin and rationale. This declares the source's presence role, not
   an association with any controller. Only configured graph evidence can prove
   the inspected structural path; missing or unmapped paths remain unresolved.
-- `rooms` (max 16): exact selected `room_uuid`, optional `usage` and `intent`
-  (max 256 characters each), optional `tunable_white_installed` boolean and
-  `zones` (max 16 plain labels of max 80 characters), explicit origin and rationale.
+- `rooms` (max 16): exact selected `room_uuid`. Optional `usage` and `intent`
+  each wrap a text `value` (max 256 characters), their own origin and rationale.
+  `tunable_white_installed` independently wraps a boolean value, origin and
+  rationale. `zones` contains at most 16 individually declared labels, each with
+  its own plain text value (max 80 characters), origin and rationale. Never assign
+  one provenance to independently knowable usage, intent, fixtures and zoning.
 - `naming_rules` (max 16): exactly one selected `controller_uuid` or `room_uuid`,
   `kind="prefix"`, nonempty literal `value` (max 80 characters), explicit origin
   and rationale. No regex or natural-language instructions are executed.
 
-Reject contradictory/duplicate resolved scene declarations and declarations for
-unselected/inaccessible sources. Source identity and declaration origin remain
+Reject all duplicate resolved scene identities (controller plus mood), duplicate
+resolved presence-source control IDs, duplicate room IDs and duplicate naming
+targets, even if the repeated declarations are identical. Zone labels are unique
+literal values within one room. Each target has at most one prefix rule; reject
+room/controller prefix rules whose selected controller coverage overlaps. There
+is no implicit precedence, override or first/last-wins behavior. Sort each
+validated collection by its resolved identity for normalized context/cache keys.
+
+Scene, room and naming targets must belong to the selected lighting scope and
+remain visible. Presence sources are validated independently against fresh caller
+visibility; they are sensors and need not be selected lighting controllers or
+share their room. Their declared role never establishes a graph association.
+Source identity and declaration origin remain
 separate: a confirmed source binding cannot upgrade a hypothetical scene role,
 fixture or room-use declaration into a confirmation. Text is data, never policy.
 

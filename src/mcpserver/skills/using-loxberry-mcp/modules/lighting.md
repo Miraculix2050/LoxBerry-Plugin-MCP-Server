@@ -32,8 +32,10 @@ category do not assign a presence role. Load project guidance and inspect
 exact project objects, then use `loxone_trace_project_logic` in the relevant
 direction with `include_internal_flow_gaps=true`. Keep raw signal/reference paths
 separate from reviewed internal `semantic_edges`. `internal_flow_not_modeled`
-means the server has no reviewed internal rule for that reached block, not that
-the configuration is broken or has no internal flow. An ambiguous connector
+means no reviewed internal flow applies to that reached occurrence, not that
+the configuration is broken or has no internal flow. A rule catalog entry alone
+does not prove coverage; emitted reference rules and State contracts also count.
+An absent gap does not establish complete block behavior. An ambiguous connector
 parent stays `internal_flow_parent_ambiguous`. Neither diagnostic adds a path.
 Do not jump across an unknown central block to invent a presence association.
 Retain exact child `runtime_target_mapping` separately from its parent topology,
