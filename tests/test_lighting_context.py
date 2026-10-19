@@ -280,6 +280,26 @@ def test_output_projection_budgets_real_entry_and_state_objects():
 
 
 @pytest.mark.asyncio
+async def test_irreducible_output_envelope_is_serialized_once_without_rows(monkeypatch):
+    children = tuple(Control(str(i), "Light", "Dimmer", None, None, None, ()) for i in range(100))
+    server, _ = setup_tool(monkeypatch, [], control_name="x" * 131072, subcontrols=children)
+    serialized_rows = []
+    original = tools.ControlDescriptionEnvelope.model_dump_json
+
+    def counted(envelope, *args, **kwargs):
+        if isinstance(envelope.data, tools.ControlLightingContextData):
+            serialized_rows.append(len(envelope.data.outputs.entries))
+        return original(envelope, *args, **kwargs)
+
+    monkeypatch.setattr(tools.ControlDescriptionEnvelope, "model_dump_json", counted)
+    result = await server._tool_manager.get_tool("loxone_describe_control").fn(
+        "light", view="lighting_context", include_outputs=True
+    )
+    assert not result.ok and result.data.error == "response_too_large"
+    assert serialized_rows == [0]
+
+
+@pytest.mark.asyncio
 async def test_combined_moods_outputs_and_metadata_trim_outputs_instead_of_failing(monkeypatch):
     children = tuple(Control(str(i), "x" * 200, "Dimmer", None, None, None, ()) for i in range(100))
     initial = project_lighting_outputs(output_controller(children))

@@ -5426,8 +5426,20 @@ def register_read_tools(
                 )
                 if isinstance(envelope.data, ControlLightingContextData):
                     retained_outputs = envelope.data.outputs
+                    if retained_outputs is not None and retained_outputs.entries:
+                        entries = retained_outputs.entries
+                        retained_outputs.entries = []
+                        baseline_bytes = len(envelope.model_dump_json().encode("utf-8"))
+                        retained_outputs.entries = entries
+                        if baseline_bytes > 64 * 1024:
+                            return _error(
+                                ControlDescriptionEnvelope,
+                                "response_too_large",
+                                "Lighting context exceeds the response budget",
+                            )
                     # At most 100 bounded rows; account for real mood/control
                     # metadata and omission-counter growth in the final envelope.
+                    # Irreducible metadata was rejected before repeated encoding.
                     while (
                         retained_outputs is not None
                         and retained_outputs.entries
