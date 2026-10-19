@@ -91,6 +91,39 @@ Runtime-Unterordnung identifiziert keinen Projektanschluss und keine physische
 Leuchte; ColorPicker-Unterstützung beweist keine installierte Tunable-White-Leuchte.
 Es werden keine Aktionen ausgeführt.
 
+Für eine begrenzte Lichtprüfung `loxone_analyze_project(scope="lighting",
+lighting_selection={"controller_uuids":["genaue-sichtbare-controller-id"]})`
+verwenden oder stattdessen eine genaue `room_uuid` auswählen. Ein Raum wählt
+höchstens 16 sichtbare LightControllerV2 aus und meldet Auslassungen. Standardmäßig
+werden Inventar, Namenskandidaten, konfigurierte Präsenzbeziehungen, Szenenrollen
+und fehlender Planungskontext geprüft. `next_cursor` mit unveränderten Eingaben
+folgen; eine Seite enthält höchstens 50 Befunde.
+
+Der optionale `lighting_context` verwendet
+`schema_version="lighting_analysis_context.v1"`. Genaue Controller-Mood-Paare,
+Präsenzquellen, wörtliche Namenspräfixe und Raumnutzung/Absicht/Leuchten/Zonen mit
+`origin` und `rationale` deklarieren. Jedes Raumfeld und jede Zone hat eine eigene
+Herkunft. Bestehende Profil-Binding-IDs verwenden nur bestätigte Quellen erneut;
+ein bestätigtes Binding bestätigt keine hypothetische Rolle oder installierte
+Leuchte. Präsenzquellen dürfen außerhalb des gewählten Raums liegen, müssen aber
+sichtbar bleiben. Doppelte aufgelöste Identitäten und überlappende Präfixe werden
+abgewiesen. Es werden keine Profile oder Konfigurationen gespeichert.
+Szenen ohne deklarierte Rolle bleiben fehlender Kontext. Nicht aktuelle
+Mood-Namen werden mit sichtbarer Aktualitätslücke aus Namensvergleichen
+ausgeschlossen. Ein nicht verfügbares Profil ist ein Quell-/Wiederholungsproblem
+und kein Anlass, gültige Eingaben zu ändern.
+Direkte Quellen benötigen weder Profil noch Installationsseriennummer; explizite
+Binding-Verweise behalten Installations- und Inhaltsänderungsprüfungen. Child-Ziele
+behalten die Herkunft ihres Elternankers. Gekürzte Anzahlen ungeklärter Beziehungen
+bleiben ausdrücklich teilweise.
+
+Befunde behalten Quellversionen, Aktualität, Auslassungen und Raum-/Controller-/
+Szenenbezüge. Namensabweichungen sind Prüfkandidaten; konfigurierte Erreichbarkeit
+ist keine beobachtete Ursache. Unbekannte Pfade und gekürzte Namen bleiben
+unvollständig. Kelvin-Defaults eines Controllers belegen weder installierte
+Tunable-White-Leuchten noch einen Planungsbedarf. Die Gesamtberatung bleibt
+bedingt und ersetzt keine professionelle physische Lichtprüfung.
+
 Für eine Präsenz-Licht-Beziehung genaue Quell- und Controller-IDs belegen;
 Namen oder ein gemeinsamer Raum beweisen keine Zuordnung. Projekt-Mapping und
 Quellabdeckung prüfen, genaue Objekte suchen/beschreiben und dann die passende

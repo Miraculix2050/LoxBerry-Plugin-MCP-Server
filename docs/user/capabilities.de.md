@@ -618,13 +618,24 @@ Administrator** auf Firmware **17.2.8.28**. Verwende genau ein Ziel ohne
 `state_names` und `include_semantics=false`. Perioden benötigen zusätzlich
 `loxone:history` und aktivierte Historie. Ein LoxBerry-Admin-Login belegt diese
 Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
-leeren `values` und null gelesenen States. Für `Gpwr`, `Ppwr` und `Spwr` werden
+leeren `values` und null gelesenen States. Für `Gpwr`, `Ppwr`, `Spwr` und `Cpwr` werden
 Leistungsgröße und W/kW aus dem unveränderten, belegten EFM-Format ergänzt.
-`Cpwr` ist belegte Lastleistung mit unbekannter Einheit; `Rest` bleibt unbekannt.
+`Cpwr` ist belegte Lastleistung; natives `Rest` bleibt
+unqualifiziert. Bei der bestehenden W/kW-Ergänzung kennzeichnet
+`unit_origin="configured_display_format"` eine deklarierte Anzeigeeinheit,
+keine geprüfte Sensorskalierung oder physikalische Kalibrierung. Ein Anzeigetext
+löst keine Zahlenumrechnung aus. Fehlende, ungeeignete oder geänderte Formate
+lassen Einheit und Herkunft null; dasselbe gilt für Rest und Periodenfelder,
+solange deren einzelne Zuordnung nicht belegt ist.
 Die [Semantikprüfung für Firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
 bestätigt diese Grenze: Die Loxone-KB beschreibt den Bausteinausgang `Rest` als
 berechnete Restleistung der Spitzengruppe. Eine belegte Zuordnung zum nativen
-Ergebnis fehlt weiterhin. Vorzeichen von Zähler- oder Knotenwerten und deren
+Ergebnis fehlt weiterhin. Die dokumentierte Bausteinfunktion von Rest ist damit
+bekannt; offen ist die native Zuordnung. Restanteile können ungemessene Verbraucher
+und Messabweichungen enthalten. Unterschiedliche Messzeitpunkte, Toleranzen und
+gerundete Anzeigen rechtfertigen weder eine erzwungene Nullbilanz noch das
+Abschneiden eines Restwerts oder den Schluss auf einen ungemessenen Verbraucher
+allein aus einem Restwert ungleich null. Vorzeichen von Zähler- oder Knotenwerten und deren
 Einheiten werden nicht auf native Gesamtergebnisse übertragen.
 Im Ergebnis bleiben Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische
 und Periodengrenzen unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
@@ -643,6 +654,23 @@ Anlage die dokumentierte Zähler-Ausgangskonvention: positiv beim Entladen,
 negativ beim Laden. Die konfigurierte Eingangspolarität und eine tatsächliche
 Invertierung sind damit nicht nachgewiesen. Diese begrenzte Gerätebeobachtung
 ändert weder die allgemeine Vorzeichensemantik noch den Decoder.
+
+Ein weiterer [rein lesender Rest-/Anzeigevergleich](../development/efm-rest-display-observations.md)
+auf dieser Firmware bestätigte die Zuordnung aller fünf expliziten Teilnehmer-
+und Zählerreferenzen, einschließlich vorzeichenbehafteter Werte des separat
+referenzierten Zählers mit Anzeigename Rest. Natives Rest fehlte in allen drei
+Actual-Antworten. Die deklarierte Anzeigeeinheit von Cpwr ist nun durch die
+verbrauchsspezifische Dokumentation und das stabile EFM-Format qualifiziert,
+Semantikregel v2. Passende benachbarte Verbrauchswerte stützen die geprüfte Anlage,
+keine allgemeine Einschlussformel oder physisch gleichzeitige Messung. Gecachte
+Produktionsaggregate können von einem einzelnen Produktionsteilnehmer abweichen.
+Für diesen Vergleich wurde kein neuer Code auf das Zielgerät übertragen.
+
+Verfügbare Restwerte werden unverändert **ohne Einheit** ausgegeben. Ein natives
+`Rest` behält seinen Rohwert; ein fehlendes natives Feld bleibt fehlend. Der exakt
+zugeordnete Rest-Zähler kann separat über den bestehenden State-Lesepfad
+(`actual`, ohne `native_result_view`) gelesen werden. Sein Wert wird als eigener
+Zählerwert mit Quelle ausgewiesen und ersetzt kein fehlendes natives EFM-Feld.
 
 Für datierte Energieberichte verwende bestätigte Historienbindungen und
 `loxone_analyze_history(operation="energy")` mit deren Semantik und Abdeckung.

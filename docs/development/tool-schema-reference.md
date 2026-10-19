@@ -1,5 +1,20 @@
 # Tool schema reference
 
+## Native EFM display-unit provenance (#534 follow-up)
+
+`native_result.fields[].unit_origin` adds nullable
+`configured_display_format`. Only the existing exact, stable same-EFM W/kW rule
+for Gpwr/Ppwr/Spwr/Cpwr populates it, with per-field source paths for unit and origin.
+Other fields, periods and rejected/changed metadata keep it null. The additive
+field distinguishes declared display metadata from physical calibration; it
+changes no raw value, scale, format allowlist, source request, authorization or
+native result version. See [native-energy results](native-energy-results.md).
+
+Semantic rule `native_efm_actual_semantics_17_2_8_28.v2` extends the admitted field
+set to Cpwr using consumption-specific documentation and scoped read-only
+corroboration. Retained v1 results remain readable. Transport and result schema
+versions stay unchanged; native Rest and period units remain unqualified.
+
 ## Normalized meter outputs (#534 follow-up)
 
 The full `loxone_describe_control` response adds nullable
@@ -513,7 +528,7 @@ Optional `native_result_view` adds one native EFM read. Its fixed view allowlist
 admin-first authorization, empty state rows, independent source quality and
 budgets are documented in [Native energy results](native-energy-results.md).
 `native_efm_result.v2` adds versioned partial semantics, provenance and report
-applicability; actual Gpwr/Ppwr/Spwr allow metadata-bound `W`/`kW` units. Other
+applicability; actual Gpwr/Ppwr/Spwr/Cpwr allow metadata-bound `W`/`kW` units. Other
 units, signs and physical boundaries remain unknown. Historical components keep
 the existing independently evidenced history contract.
 Omission/null keeps the contract below unchanged and does not fetch native data.
@@ -900,6 +915,47 @@ routing revision changes no tool names, defaults, bounds or authorization.
 
 
 ## Bounded lighting source context (#442/#443)
+
+`loxone_analyze_project(scope="lighting")` adds `LightingAnalysisData` to the
+existing envelope. It requires typed `lighting_selection`: exactly one of
+`controller_uuids` (1–16 unique exact visible runtime IDs) or `room_uuid` (one
+exact visible room, at most 16 visible LightControllerV2 controls, with exclusions).
+Optional selection trace limits are `max_depth` (1–16, default 6) and `max_nodes`
+(1–200, default 200). Default lighting checks are `inventory`,
+`naming_consistency`, `presence_relationships`, `scene_roles`, `planning_context`.
+KNX/Modbus defaults retain their contracts. Lighting arguments outside this scope,
+and ETS-only views/filters inside it, return `invalid_input`.
+
+Optional typed `lighting_context` forbids extra keys, is at most 64 KiB, and uses
+`schema_version="lighting_analysis_context.v1"`. Its scenes (max 100), presence
+sources, rooms and prefix rules (each max 16) follow the exact identities,
+independent origins/rationales and uniqueness rules in the
+[lighting contract](lighting-analysis-contract.md). Scene membership requires a
+current valid native mood source. A declaration outside the 100-row inventory
+projection may reference a validated native mood ID, but its omitted name remains
+unknown. Ambiguous native IDs never establish one scene name. Profile references
+reuse existing `lighting_intent` or `room_sensor` source confirmations only.
+Binding IDs use the existing `^[A-Za-z0-9_-]{1,64}$` grammar. A selected scene
+without a role retains an exact-reference context gap. Naming-only checks exclude
+noncurrent mood names and report their freshness/time/source-status gap. Profile
+read failures return `temporarily_unavailable`, without storage details.
+Direct-only selection/context needs no profile or installation serial. Referenced
+bindings retain strict installation checks and a bounded document-content guard
+across later authorization/source awaits. Relationship evidence retains selected
+child target `runtime_target_mapping` and independent `unresolved_truncated`;
+`unresolved_relationships` is only a retained count when that flag is true.
+
+Findings retain stable IDs, check/code/classification, room/controller/mood
+references and bounded evidence. Inventory retains at most 20 mood/output rows
+per controller with full validated totals and explicit omissions; use the existing
+describe view for additional source detail. Coverage includes controller selection,
+unsupported types and `naming_comparison_complete`. Trace evidence caps diagnostic
+rows at 16 and reports omissions. Findings use existing signed cursor pagination
+(max 50) and the 64 KiB page fitter; no zero-progress cursor is returned.
+Sources/profile content, selected room/mood metadata and caller visibility are
+checked on every page and again before publication. Stale/mixed inputs are rejected.
+Naming candidates are not faults, presence role declarations are not associations,
+and configured reachability is not measured causation or a physical lighting audit.
 
 `loxone_trace_project_logic` adds `include_internal_flow_gaps=false`. Opting in
 reports `internal_flow_not_modeled` and `internal_flow_parent_ambiguous` through

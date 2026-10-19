@@ -10,6 +10,19 @@ extracted from the matching version heading.
   native-calculation limitations. Add correlated numerical source-read, preparation,
   calculation and response-size debug diagnostics without additional data requests
   (#439, #509).
+- Bind native EFM Cpwr to the unchanged declared W/kW display format through
+  semantic rule v2, with documented consumed-power applicability and bounded
+  read-only comparisons; retain missing native Rest separately from meter states (#534).
+
+- Add a bounded lighting scope to the existing project analyzer with exact
+  controller/room selection, request-local scene/presence/room declarations,
+  shared profile-source resolution and fresh publication/cursor guards. Keep
+  naming candidates, configured reachability and physical claims separate (#441, stage 4).
+
+- Identify native EFM W/kW enrichment as configured display-unit metadata,
+  preserving numeric values and unknown field bindings; clarify documented
+  residual power versus native Rest mapping and avoid forced zero balances (#534).
+
 - Add documented Meter output sign conventions by normalized runtime subtype to
   state and StatisticV2 semantics, with raw values preserved and unknown/legacy
   types kept unqualified. Distinguish configurable physical-input polarity from

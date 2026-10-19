@@ -26,7 +26,7 @@ from mcpserver.loxone.efm import normalize as normalize_efm
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.events import LoxonePayloadTooLarge
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
-from mcpserver.loxone.native_efm import VIEWS, NativeEfmError, decode_native_efm
+from mcpserver.loxone.native_efm import VIEWS, NativeEfmError, NativeEfmResult, decode_native_efm
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.structure import normalize_structure
@@ -69,7 +69,20 @@ def test_actual_power_semantics_bind_only_documented_format(source_format, unit)
     result = StateSemanticsResolver().resolve_native_efm(raw, control, control)
     assert result.schema_version == "native_efm_result.v2"
     assert result.source_metadata_status == "stable" and not result.semantic_complete
-    assert [field.unit for field in result.fields] == [unit, unit, unit, None, None]
+    assert result.semantic_rule_version == "native_efm_actual_semantics_17_2_8_28.v2"
+    assert [field.unit for field in result.fields] == [unit, unit, unit, unit, None]
+    assert [field.unit_origin for field in result.fields] == [
+        "configured_display_format",
+        "configured_display_format",
+        "configured_display_format",
+        "configured_display_format",
+        None,
+    ]
+    assert all(field.unit_origin is None for field in raw.fields)
+    for name in ("Gpwr", "Ppwr", "Spwr", "Cpwr"):
+        assert any(
+            f"fields.{name}.unit_origin" in source.fields for source in result.semantic_sources
+        )
     assert [field.measurement_quantity for field in result.fields] == ["power"] * 4 + [None]
     assert [field.measurement_role for field in result.fields] == [
         "grid_power",
@@ -93,6 +106,34 @@ def test_actual_power_semantics_bind_only_documented_format(source_format, unit)
     assert all(source.rule_id == result.semantic_rule_version for source in result.semantic_sources)
     assert {source.document_version for source in result.semantic_sources} == {"17.1"}
     assert {source.firmware_version for source in result.semantic_sources} == {"17.2.8.28"}
+
+
+def test_retained_semantic_rule_v1_result_remains_readable():
+    raw = decode_native_efm(ACTUAL, "actual", retrieved_at=RECEIVED)
+    retained = raw.model_dump() | {
+        "schema_version": "native_efm_result.v2",
+        "semantic_rule_version": "native_efm_actual_semantics_17_2_8_28.v1",
+    }
+    result = NativeEfmResult.model_validate(retained)
+    assert result.semantic_rule_version == retained["semantic_rule_version"]
+    assert result.fields == raw.fields
+
+
+def test_display_units_do_not_compute_a_balance_or_clamp_signed_residuals():
+    control = semantic_control({"actualFormat": "%.3f kW", "nodes": []})
+    raw = decode_native_efm(
+        '{"Gpwr":10,"Ppwr":1,"Spwr":-3,"Cpwr":2,"Rest":-0.5}',
+        "actual",
+        retrieved_at=RECEIVED,
+    )
+    result = StateSemanticsResolver().resolve_native_efm(raw, control, control)
+    assert [field.value for field in result.fields] == [10, 1, -3, 2, -0.5]
+    assert result.fields[3].unit == "kW"
+    assert result.fields[3].unit_origin == "configured_display_format"
+    assert result.fields[4].status == "present"
+    assert result.fields[4].value == -0.5
+    assert result.fields[4].unit is result.fields[4].unit_origin is None
+    assert all(field.scale is field.sign_convention is None for field in result.fields)
 
 
 @pytest.mark.parametrize(
@@ -124,6 +165,7 @@ def test_missing_or_unsupported_formats_never_supply_units(source_format):
     )
     assert result.source_metadata_status == ("invalid" if rejected else "unsupported")
     assert all(field.unit is None for field in result.fields)
+    assert all(field.unit_origin is None for field in result.fields)
     assert "power_units_unverified" in result.report_limitations
     assert not any(source.kind == "structure_file" for source in result.semantic_sources)
 
@@ -141,6 +183,7 @@ def test_absent_root_format_does_not_inherit_participant_or_total_format():
     )
     assert result.source_metadata_status == "missing"
     assert all(field.unit is None for field in result.fields)
+    assert all(field.unit_origin is None for field in result.fields)
 
 
 def test_changed_format_discards_unit_enrichment_and_preserves_values():
@@ -152,6 +195,7 @@ def test_changed_format_discards_unit_enrichment_and_preserves_values():
     assert result.source_metadata_status == "changed"
     assert "source_metadata_changed" in result.report_limitations
     assert all(field.unit is None for field in result.fields)
+    assert all(field.unit_origin is None for field in result.fields)
     assert [field.value for field in result.fields] == [1, 2, 3, 4, None]
     assert result.fields[0].measurement_quantity == "power"
 
@@ -165,6 +209,7 @@ def test_native_period_report_does_not_gain_units_or_historical_dates(view):
         control,
     )
     assert result.source_metadata_status == "not_applicable" and not result.semantic_sources
+    assert all(field.unit_origin is None for field in result.fields)
     assert all(
         field.unit is field.measurement_quantity is field.measurement_role is None
         for field in result.fields

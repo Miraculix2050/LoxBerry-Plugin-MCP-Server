@@ -609,6 +609,11 @@ Load core rules first.
 
 ### Inspect project logic
 
+For selected lighting inventory/naming/presence/scene/planning review, load the
+lighting module and use the existing analyzer's `scope="lighting"` with explicit
+bounded selection. This reuses the project graph and cursor/authorization path;
+it creates no new connector rules, saved profile or physical-causation evidence.
+
 Use Project Intelligence only for a structural question such as what can
 influence a known control. Call `loxone_get_project_status` first when project
 freshness, mapping coverage, or unresolved relationships matter. Then:
@@ -1078,7 +1083,43 @@ writes. A mood ID/name never grants operation permission. Existing operations
 still require their exact current allowlist and human-requested target/action.
 Visible moods, names, rooms and controller capabilities do not prove physical
 luminaires, presence associations, scene intent or a professional lighting
-assessment. An integrated lighting analyzer is a separate subsequent delivery.
+assessment.
+
+For a bounded combined review, call `loxone_analyze_project(scope="lighting")`
+with `lighting_selection` containing exactly one `controller_uuids` list (1–16
+exact visible IDs) or one exact `room_uuid`. A room selects at most 16 visible
+LightControllerV2 controls, with exclusions. Optional `max_depth` (default 6,
+maximum 16) and `max_nodes` (maximum/default 200) bound each controller's trace.
+Checks are inventory, naming_consistency, presence_relationships, scene_roles and
+planning_context; omit analyses for these defaults. KNX/Modbus behavior is separate.
+Follow signed cursors with identical selection, checks and context, at most 50
+findings/page; source/profile/room/mood changes require a new analysis.
+
+Use optional typed `lighting_context` only for explicit request-local declarations,
+with `schema_version="lighting_analysis_context.v1"`. Scenes select exact
+controller+mood or existing lighting_intent binding+mood identities. Presence
+sources select exact visible controls or room_sensor bindings, independently of
+the selected room/controllers. Their presence role never proves an association.
+Rooms independently declare usage, intent, installed tunable-white and each zone
+with its own value/origin/rationale. Naming rules are literal prefixes, not regex
+or instructions. All declarations retain user_confirmed or scenario_assumption;
+a confirmed source cannot upgrade a hypothetical role or physical claim.
+Duplicate resolved identities and overlapping room/controller prefixes are errors.
+Use the existing bounded binding-ID grammar; malformed references are invalid
+inputs. A selected scene without a role remains missing context. Naming checks
+exclude noncurrent mood names and report freshness gaps even without inventory.
+Retry unavailable profile reads rather than inventing substitute declarations.
+Direct-only reviews require no profile/installation serial; explicit references
+retain strict installation and content-change guards. Keep selected target child
+mapping provenance and `unresolved_truncated` beside retained unresolved counts.
+No profile migration, saved context, control, configuration or recorder writes.
+
+Inventory findings retain 20 moods/outputs per controller and explicit omissions;
+use the existing describe view for further detail. Respect naming comparison
+completeness, current mood membership and all trace/response limits. Findings
+retain room/controller/scene references and distinguish technical observations,
+review candidates, missing context and conditional advice. Never label naming
+candidates as faults or use controller Kelvin defaults as installed fixture proof.
 
 Load core rules first.
 
@@ -1120,13 +1161,22 @@ from omitted bindings. Installation changes never inherit old confirmed roles.
    administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
    Period views also require `loxone:history` and administrator-enabled history.
    `native_result` is separate from cached states: `values=[]`, zero state counts,
-   state semantics omitted. In `native_efm_result.v2`, only Gpwr/Ppwr/Spwr gain
-   metadata-bound W/kW units and documented power roles; Cpwr is load power with
-   unknown unit and Rest stays unknown. Check rule/provenance and metadata status:
+   state semantics omitted. In `native_efm_result.v2`, Gpwr/Ppwr/Spwr/Cpwr gain
+   metadata-bound W/kW units and documented power roles; Cpwr is load power and
+   native Rest stays unqualified. `unit_origin` identifies
+   `configured_display_format` for that existing W/kW rule, not calibrated
+   measurement units or an automatic conversion. Rest's documented block meaning
+   is remaining top-group power; only native-field mapping remains unverified.
+   Residuals can include unmetered loads and measurement/timing differences.
+   Never force zero balance, clamp residuals or infer a fault/unmetered load from
+   a nonzero residual alone. Check rule/provenance and metadata status:
    changed/missing/invalid/unsupported metadata never supplies units. Check field delivery
    separately from unknown scale, signs, currency, observation freshness and
    period boundaries. `semantic_complete` remains false. Calendar views
    describe current running periods, not yesterday or arbitrary historic dates.
+   Return an available Rest raw value unchanged without a unit. A separately
+   identified Rest meter can be read through the cached-state workflow (`actual`,
+   no `native_result_view`); name its source and keep it separate from native Rest.
    Missing `Rest` is not zero. Do not calculate a balance, infer self-consumption,
    self-sufficiency or aliases, or retry native reads automatically. Omit/null
    `native_result_view` retains the existing cached-state workflow without probes.

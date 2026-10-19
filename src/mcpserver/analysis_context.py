@@ -355,6 +355,7 @@ class SourceSnapshot:
     bindings: dict[str, Any]
     revision: int | None
     weather_metadata: tuple[object, ...] | None = None
+    source_identity: tuple[str, str, str] | None = None
 
     @classmethod
     def capture(
@@ -367,11 +368,14 @@ class SourceSnapshot:
         binding_ids: set[str],
         *,
         include_weather: bool = False,
+        require_profile_identity: bool = True,
     ) -> SourceSnapshot:
         from mcpserver.installation_profile import installation_identity
 
+        if not require_profile_identity and binding_ids:
+            raise ValueError("Profile references require installation identity")
         return cls(
-            installation_identity(origin, structure),
+            installation_identity(origin, structure) if require_profile_identity else "",
             selected_source_signature(structure, source_ids),
             deepcopy({key: bindings.get(key) for key in binding_ids}),
             revision,
@@ -384,6 +388,11 @@ class SourceSnapshot:
                 )
             )
             if include_weather
+            else None,
+            # Direct-only reviews need no profile serial. These are source metadata
+            # guards, never a substitute for fresh caller authorization.
+            (origin, structure.identity.username, structure.identity.miniserver_serial)
+            if not require_profile_identity
             else None,
         )
 
@@ -403,8 +412,14 @@ class SourceSnapshot:
             raise ControlOperationError(
                 "temporarily_unavailable", "Analysis context changed"
             ) from None
+        identity_changed = (
+            (origin, structure.identity.username, structure.identity.miniserver_serial)
+            != self.source_identity
+            if self.source_identity is not None
+            else installation_identity(origin, structure) != self.installation
+        )
         if (
-            installation_identity(origin, structure) != self.installation
+            identity_changed
             or signature != self.signature
             or revision != self.revision
             or any(bindings.get(key) != value for key, value in self.bindings.items())

@@ -484,7 +484,7 @@ async def test_public_contract_adds_modbus_and_preserves_knx_default():
     server = FastMCP("modbus-foundation")
     tools.register_project_tools(server, None)
     tool = server._tool_manager.get_tool("loxone_analyze_project")
-    assert tool.parameters["properties"]["scope"]["enum"] == ["knx", "modbus"]
+    assert tool.parameters["properties"]["scope"]["enum"] == ["knx", "modbus", "lighting"]
     assert tool.parameters["properties"]["scope"]["default"] == "knx"
     assert "ProjectModbusAnalysisData" in json.dumps(tool.output_schema)
     assert tool.parameters["properties"]["limit"]["minimum"] == 1

@@ -498,7 +498,7 @@ class StateSemanticsResolver:
         self, result: NativeEfmResult, before: Control, after: Control
     ) -> NativeEfmResult:
         """Bind only documented aggregate power fields to unchanged EFM metadata."""
-        rule = "native_efm_actual_semantics_17_2_8_28.v1"
+        rule = "native_efm_actual_semantics_17_2_8_28.v2"
         limitations = [
             "sign_convention_unverified",
             "measurement_boundary_unverified",
@@ -620,8 +620,8 @@ class StateSemanticsResolver:
             ),
         )
         enriched.fields = [
-            field.model_copy(update={"unit": match[1]})
-            if field.name in {"Gpwr", "Ppwr", "Spwr"}
+            field.model_copy(update={"unit": match[1], "unit_origin": "configured_display_format"})
+            if field.name in {"Gpwr", "Ppwr", "Spwr", "Cpwr"}
             else field
             for field in enriched.fields
         ]
@@ -629,7 +629,11 @@ class StateSemanticsResolver:
             SemanticsSource(
                 "structure_file",
                 "controls[target].details.actualFormat",
-                ("fields.Gpwr.unit", "fields.Ppwr.unit", "fields.Spwr.unit"),
+                tuple(
+                    f"fields.{name}.{attribute}"
+                    for name in ("Gpwr", "Ppwr", "Spwr", "Cpwr")
+                    for attribute in ("unit", "unit_origin")
+                ),
                 rule_id=rule,
                 document_version="17.1",
                 firmware_version=result.firmware,
@@ -639,7 +643,11 @@ class StateSemanticsResolver:
             SemanticsSource(
                 "decoder_rule",
                 _STATUS_DOCUMENT + "#page=64",
-                ("fields.Gpwr.unit", "fields.Ppwr.unit", "fields.Spwr.unit"),
+                tuple(
+                    f"fields.{name}.{attribute}"
+                    for name in ("Gpwr", "Ppwr", "Spwr", "Cpwr")
+                    for attribute in ("unit", "unit_origin")
+                ),
                 rule_id=rule,
                 document_version="17.1",
                 firmware_version=result.firmware,

@@ -28,6 +28,7 @@ class NativeEfmField(BaseModel):
     status: Literal["present", "missing", "invalid"]
     value: float | None = None
     unit: Literal["W", "kW"] | None = None
+    unit_origin: Literal["configured_display_format"] | None = None
     measurement_quantity: Literal["power"] | None = None
     measurement_role: (
         Literal["grid_power", "production_power", "storage_power", "load_power"] | None
@@ -42,7 +43,13 @@ class NativeEfmResult(BaseModel):
     source_kind: Literal["native_efm_result"] = "native_efm_result"
     rule_version: Literal["native_efm_17_2_8_28.v1"] = "native_efm_17_2_8_28.v1"
     schema_version: Literal["native_efm_result.v1", "native_efm_result.v2"] = "native_efm_result.v1"
-    semantic_rule_version: Literal["native_efm_actual_semantics_17_2_8_28.v1"] | None = None
+    semantic_rule_version: (
+        Literal[
+            "native_efm_actual_semantics_17_2_8_28.v1",
+            "native_efm_actual_semantics_17_2_8_28.v2",
+        ]
+        | None
+    ) = None
     source_metadata_status: Literal[
         "not_requested", "not_applicable", "missing", "invalid", "unsupported", "stable", "changed"
     ] = "not_requested"

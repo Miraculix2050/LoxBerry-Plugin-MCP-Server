@@ -1,8 +1,8 @@
 # Lighting analysis contract
 
-Status: contract for review before the next implementation PR in the
-[delivery plan](lighting-review-delivery-plan.md). The relationship PR does not
-publish an analyzer yet. This extends `loxone_analyze_project`, never a new tool,
+Status: reviewed with relationship PR #572 before implementation in the next
+package of the [delivery plan](lighting-review-delivery-plan.md).
+This extends `loxone_analyze_project`, never a new tool,
 profile document, persistent store or independent project graph.
 
 ## Selection and existing behavior
@@ -24,6 +24,12 @@ configuration. Runtime IDs retain exact suffixes; profile reference models keep
 their existing UUID contract. Bound trace work per selected controller to 200 nodes,
 16 levels, default depth 6. Findings use existing limit/cursor pagination, max 50 per
 page, and the existing response-byte guard. Emit omissions and partial coverage.
+The selection's optional `max_depth` and `max_nodes` fields set these trace bounds.
+Inventory findings retain at most 20 mood/output rows per controller, with totals
+and omissions; explicit scene membership uses the whole bounded validated native
+ID set even when a presentation row/name is omitted. Duplicate native mood IDs do
+not establish one scene name. Check `naming_comparison_complete` independently
+from source freshness and selected-controller coverage.
 
 ## Request-local context
 
@@ -75,6 +81,9 @@ against fresh visible `moodList`; neither another state nor a reference identifi
 a scene role. A scene identity is always exact controller plus mood ID. A saved
 room-sensor binding does not establish presence semantics: keep the explicit
 presence-role declaration and its origin separate from source confirmation.
+Direct-only contexts do not require profile installation identity or a serial;
+they still guard current native source metadata and caller authorization. A
+referenced binding always retains the strict existing installation checks.
 
 ## Findings and provenance
 
@@ -105,6 +114,10 @@ complete professional or physical lighting audit or operating permission.
 Acquire fresh caller-visible runtime/project sources on every page through the
 existing access paths. Use `SourceSnapshot.capture/validate`, and re-read referenced
 bindings before publication, including same-revision content/companion changes.
+Keep a bounded profile-content guard stable across all later awaits, with no
+asynchronous work after final source/content validation. No profile is read when
+there is no binding reference. Preserve independent unresolved-evidence truncation
+and selected child target parent-anchor provenance.
 Lighting additionally guards selected mood projections and room metadata, because
 those are not all covered by the shared control signature. On change, reject a
 stale cursor/result rather than returning a mixed revision.

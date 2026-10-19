@@ -253,6 +253,33 @@ response-byte limits. No lighting graph or connector interpretation is introduce
 Coverage uses emitted internal edges, including reference projections, and the
 existing State contracts; catalog rules alone never establish port coverage.
 
+The additive `lighting` scope of the existing project analyzer selects at most
+16 exact visible controls or one exact room and runs its bounded checks in the
+existing isolated analysis worker. It reuses the runner's result cache, cursor
+leases, pagination, byte fitter and project graph. The default remains KNX.
+`lighting_analysis` owns typed request-local declarations and normalization;
+`read_profile_bindings`, `resolve_source_association` and `SourceSnapshot` remain
+the shared source/profile authority checks. There is no new profile or store.
+Each page reacquires caller-visible project/runtime sources. Both cache keys bind
+caller identity, normalized selection/context, source/profile content and mood/room
+signatures. Before publication another fresh project/runtime acquisition and
+profile read reject revocation or mixed revisions, including same-revision changes.
+Publication re-reads optional profile bindings before the final fresh runtime/
+project acquisition; source validation and return then contain no further await.
+Operational profile failures remain source unavailability, not malformed input.
+Referenced profiles additionally carry a bounded content checksum from before
+resolution through the final synchronous publication guard. It detects replacement,
+deletion and same-revision changes across later awaits, including file identity
+changes during checksum reading; it parses no bindings and creates no store.
+The final read is capped at the existing profile document limit and takes no lock
+or further await. Direct-only lighting uses an explicit source-only mode of the
+same `SourceSnapshot`: endpoint/native metadata are guarded without constructing
+a profile identity. Existing callers keep the strict profile-identity default;
+references cannot select the source-only mode. Fresh authorization remains separate.
+Presence declarations are separate from configured reachability; unknown central
+flow, child parent anchors and bounded missing paths never prove causation.
+The [lighting contract](lighting-analysis-contract.md) defines the reviewed scope.
+
 ## KNX metadata administration
 
 

@@ -564,13 +564,23 @@ administrator** on firmware **17.2.8.28**. Use one target without `state_names`
 and keep `include_semantics=false`. Periods additionally require `loxone:history`
 and enabled history. A LoxBerry Admin login does not establish this permission.
 Native results use a separate `native_result` section with empty `values` and
-zero state counts. Gpwr/Ppwr/Spwr gain documented power quantity and W/kW only from
-unchanged, evidenced EFM format metadata. Cpwr is documented load power with an
-unknown unit; Rest remains unknown.
+zero state counts. Gpwr/Ppwr/Spwr/Cpwr gain documented power quantity and W/kW only
+from unchanged, evidenced EFM format metadata; Cpwr denotes load power.
+Native Rest remains unqualified.
+For the existing W/kW enrichment, `unit_origin="configured_display_format"`
+identifies a declared display unit, not a verified sensor scale or physical
+calibration. Values are never converted because of a display label. Unsupported,
+missing or changed formats leave both unit and origin null; the same applies to
+Rest and period fields until their individual binding is established.
 The [semantic review for firmware 17.2.8.28](../development/efm-semantic-matrix.v1.md)
 confirms this boundary: the Loxone KB describes the block output Rest as calculated
 remaining power of the top group, but its mapping to the native result remains
-unproven. Meter/node signs and units are not transferred to native aggregates.
+unproven. Rest's documented block function is therefore known; the native mapping
+is the remaining question. Residuals may include unmetered loads and measurement
+differences. Different sampling times, tolerances and rounded displays do not
+justify an exact zero balance, clamping a residual, or diagnosing an unmetered
+consumer from a nonzero residual alone. Meter/node signs and units are not
+transferred to native aggregates.
 In the result, signs, scaling, currency, physical observation
 freshness and period boundaries remain unknown. The `native_efm_result.v2` result
 records the source rule and provenance; changed metadata leaves units unknown.
@@ -587,6 +597,22 @@ documented meter-output convention on that installation: positive for discharge,
 negative for charge. It does not establish the configured input polarity or an
 actual inversion. This bounded device observation changes neither general sign
 semantics nor the decoder.
+
+A further [read-only Rest/display comparison](../development/efm-rest-display-observations.md)
+on that firmware found all five explicit participant/meter bindings consistent,
+including signed values at the separately referenced meter displayed as Rest.
+Native Rest was missing in all three actual responses. Cpwr's declared display
+unit is now qualified through the consumption-specific documentation and stable
+same-EFM format, semantic rule v2. Matching adjacent consumption values support
+the tested installation, not a universal inclusion formula or simultaneous
+physical measurements. Cached production aggregates can differ from a single
+production participant. No new code was deployed to the target for this comparison.
+
+Return available Rest values unchanged **without a unit**. A native `Rest`
+retains its raw number; a missing native field stays missing. Read the exactly
+bound Rest meter separately through the existing state workflow (`actual`,
+without `native_result_view`). Identify its value and source as a separate meter
+reading; it does not replace a missing native EFM field.
 
 For dated energy reports use confirmed history bindings and the existing
 `loxone_analyze_history(operation="energy")`, respecting its semantics and coverage.
