@@ -727,3 +727,35 @@ async def test_revocation_during_publication_profile_recheck_is_not_published(mo
         "lighting", None, lighting_selection=LightingSelection(controller_uuids=[LIGHT])
     )
     assert not result.ok and result.data.error == "unauthenticated"
+
+
+@pytest.mark.asyncio
+async def test_reachable_child_reports_only_its_parent_anchor_not_an_exact_config_block():
+    runtime, snapshot, query, _ = fixture()
+    from mcpserver.loxone.models import Control
+
+    source_child = Control(
+        SOURCE + "/AI1", "Declared source child", "Switch", "outside", None, None, ()
+    )
+    snapshot.structure = replace(
+        snapshot.structure,
+        controls=tuple(
+            replace(c, subcontrols=(source_child,)) if c.uuid == SOURCE else c
+            for c in snapshot.structure.controls
+        ),
+    )
+    query = ProjectQuery(
+        ProjectView(query.view.snapshot, map_runtime(query.view.snapshot, snapshot.structure)), {}
+    )
+    source = await prepare_lighting(
+        runtime,
+        snapshot,
+        LightingSelection(controller_uuids=[LIGHT]),
+        context(presence_sources=[declared(control_uuid=source_child.uuid)]),
+        None,
+    )
+    row = analyze_lighting(query, source, frozenset({"presence_relationships"}))["findings"][0]
+    relation = row["evidence"]["relationships"][0]
+    assert relation["status"] == "parent_anchor_upstream_reachability"
+    assert relation["control_uuid"] == source_child.uuid
+    assert relation["runtime_target_mapping"]["parent_runtime_control_uuid"] == SOURCE

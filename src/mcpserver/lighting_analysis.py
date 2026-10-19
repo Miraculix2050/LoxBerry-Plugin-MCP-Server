@@ -542,7 +542,11 @@ def analyze_lighting(
                         if anchor == target.key:
                             status = "shared_anchor_not_an_association"
                         elif anchor in reached:
-                            status = "configured_upstream_reachability"
+                            status = (
+                                "parent_anchor_upstream_reachability"
+                                if provenance
+                                else "configured_upstream_reachability"
+                            )
                         else:
                             status = "not_reached_in_bounded_trace"
                     except ProjectQueryError as exc:
