@@ -635,7 +635,19 @@ def resolve_history_associations(
         if effective[a.source_index]["role"]
         in {"production", "consumer", "house_consumption", "grid_export", "self_consumption"}
     ]
-    native = {r.identifier: r for r in resolve_selected_membership(context.scope, visible, energy)}
+    native = {
+        r.identifier: r
+        for r in resolve_selected_membership(
+            context.scope,
+            visible,
+            energy,
+            contribution_roles=(
+                {a.association_id: effective[a.source_index]["role"] for a in context.associations}
+                if context.day_context is not None
+                else None
+            ),
+        )
+    }
     if context.day_context is not None:
         day = context.day_context
         if day.site.timezone != timezone_name:
@@ -729,6 +741,8 @@ def resolve_selected_membership(
     scope: EnergyScope,
     visible: dict[str, Control],
     selections: list[tuple[str, str | None, Declaration]],
+    *,
+    contribution_roles: dict[str, str] | None = None,
 ) -> list[ResolvedAssociation]:
     """Prove selected native topology independently of any domain's input shape."""
     members: dict[str, tuple[int, ...]] = {}
@@ -756,17 +770,26 @@ def resolve_selected_membership(
                     raise ValueError("ambiguous or inaccessible EFM participant")
                 members[row.control_uuid] = row.path
     paths = []
-    identities = [uuid for _, uuid, _ in selections if uuid is not None]
+    identities = [
+        (uuid, contribution_roles[identifier] if contribution_roles is not None else None)
+        for identifier, uuid, _ in selections
+        if uuid is not None
+    ]
     if len(identities) != len(set(identities)):
         raise ValueError("duplicate selected energy contribution")
     result = []
+    checked_controls: set[str | None] = set()
     for identifier, uuid, origin in selections:
         if uuid is not None and uuid not in visible:
             raise ValueError("context source is not accessible")
         if scope.kind == "efm":
             if uuid not in members:
                 raise ValueError("source is not a proven selected EFM participant")
-            paths.append(members[uuid])
+            # Distinct day metrics share membership, not a measurement contribution.
+            # Keep topology uniqueness across different controls and all legacy calls.
+            if contribution_roles is None or uuid not in checked_controls:
+                paths.append(members[uuid])
+                checked_controls.add(uuid)
             result.append(
                 ResolvedAssociation(
                     identifier=identifier,

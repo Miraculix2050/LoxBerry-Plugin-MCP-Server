@@ -161,6 +161,83 @@ def test_context_scenario_auxiliary_balance_is_rejected(role):
         )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["self_consumption", "grid_export"])
+@pytest.mark.parametrize("scope", ["scenario", "efm"])
+@pytest.mark.parametrize("mutation", ["none", "same_source", "same_role"])
+async def test_day_metrics_share_control_without_reusing_a_contribution(
+    monkeypatch, tmp_path, role, scope, mutation
+):
+    from unittest.mock import AsyncMock
+
+    from mcpserver.analysis_context import HistoryAnalysisContext
+    from mcpserver.loxone.efm import Participant, Projection
+
+    runtime, tool, args, _ = setup(monkeypatch, tmp_path)
+    meter, production, points = runtime.authorized_statistics.return_value
+    auxiliary = replace(production, series_id="auxiliary", output="totalNeg")
+    meter = replace(meter, statistic_series=(production, auxiliary))
+    monitor = replace(
+        control(),
+        uuid="12345678-1234-1234-1234567890123460",
+        control_type="EFM",
+        efm=Projection((Participant((0,), control_uuid=P),)),
+    )
+    runtime.structure = replace(
+        runtime.structure, controls=(*runtime.structure.controls[:2], meter, monitor)
+    )
+    runtime._history_visible_structure = AsyncMock(return_value=runtime.structure)
+
+    async def read(*positional, **kwargs):
+        if positional[3] == "pv":
+            return meter, production, points
+        return meter, auxiliary, tuple(replace(p, value=p.value / 4) for p in points)
+
+    runtime.authorized_statistics.side_effect = read
+    args["sources"][2] = AnalysisSource(control_uuid=P, series_id="pv", granularity="hour")
+    args["sources"].append(
+        AnalysisSource(
+            control_uuid=P,
+            series_id="pv" if mutation == "same_source" else "auxiliary",
+            granularity="hour",
+        )
+    )
+    doc = day_context_document()
+    doc["scope"]["common_supply_origin"] = "scenario_assumption"
+    if scope == "efm":
+        doc["scope"].update(kind="efm", monitor_uuid=monitor.uuid)
+    doc["associations"][2]["measurement_boundary"] = "confirmed-balance"
+    doc["associations"].append(
+        {
+            "association_id": "auxiliary",
+            "source_index": 3,
+            "role": "production" if mutation == "same_role" else role,
+            "origin": "user_confirmed",
+            "measurement_boundary": "confirmed-balance",
+            "declared_direction": "export" if role == "grid_export" else None,
+        }
+    )
+    args["analysis_context"] = HistoryAnalysisContext.model_validate(doc)
+    args["comparable_day_options"] = args["comparable_day_options"].model_copy(
+        update={"pv_export_balance_confirmed": True}
+    )
+    result = await tool.fn(**args)
+    if mutation != "none":
+        assert not result.ok and result.data.error == "invalid_input", result
+        runtime.authorized_statistics.assert_not_awaited()
+        return
+    assert result.ok, result
+    days = result.data.comparable_days
+    assert days.reference.pv_wh == 2800
+    assert days.self_consumption.method == (
+        "direct_observed" if role == "self_consumption" else "pv_minus_export"
+    )
+    assert days.self_consumption.reference_wh == (700 if role == "self_consumption" else 2100)
+    assert runtime.authorized_statistics.await_count == 2
+    expected_origin = "native_efm" if scope == "efm" else "user_confirmed"
+    assert all(a.origin == expected_origin for a in result.data.context_associations[2:])
+
+
 @pytest.mark.parametrize("mutation", ["overlap", "timezone", "independence", "common_supply"])
 def test_day_context_contradictions_are_rejected(mutation):
     from mcpserver.analysis_context import HistoryAnalysisContext

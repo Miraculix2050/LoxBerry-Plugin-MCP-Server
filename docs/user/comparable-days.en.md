@@ -26,6 +26,13 @@ qualified, complete hours present in **every** contributing source are summed.
 Missing data never becomes zero or a partial plant total. `production_sources`
 reports each source's qualification and complete-hour count.
 
+Distinct statistic series on one control can supply production and direct
+self-consumption or export as separate metrics. Reusing the exact same source
+or adding the same energy role twice on that control is rejected. Native topology
+overlap checks still apply across controls. For one production source the existing
+confirmed PV-minus-export balance suffices; the additional common-supply
+confirmation applies when combining multiple production sources.
+
 Exact hourly statistic selectors can be used without a profile. Production,
 direct self-consumption and export associations require explicit confirmation;
 roles do not establish units, quantities or measurement boundaries. Derived

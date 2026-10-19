@@ -622,7 +622,7 @@ async def numerical_day_analysis(
     )
     if day_context is not None:
         balance_matches = bool(
-            common_supply_confirmed
+            (len(production_rows) == 1 or common_supply_confirmed)
             and production_rows
             and exported.get("measurement_boundary")
             and exported.get("declared_direction") == "export"

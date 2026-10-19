@@ -22,6 +22,13 @@ not independent physical proof. Revalidate identity, visibility, selected Contro
 weather metadata/state identities, source configuration and used profile
 bindings/revision before output in the already admitted history session.
 
+Day metrics may use distinct series on the same control for distinct energy roles.
+Exact-source and same-role reuse remain invalid; check native topology once per
+control while returning provenance for every association. Other resolver callers
+retain their control-level duplicate checks. A single production source retains
+the existing confirmed PV-minus-export balance; common-supply confirmation is
+additional only for combined production sources.
+
 The numerical pure method accepts adapter-produced hourly evidence for one to 31 contiguous
 local days. Callers cannot assert evidence-rule identifiers. A reference day and
 all candidates use a fixed local-hour window; a running reference uses only its

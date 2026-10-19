@@ -8,7 +8,10 @@ by `source_index`; choose one `weather` source per quantity, never by name or
 averaging. Numerical weather retains registered solar observations; qualitative
 radiation retains the actual structured source. Forecasts remain forecasts.
 Declare `assets` and confirmed `production` coverage as a disjoint partition;
-never combine an aggregate with included meters. Multiple PV sources require
+never combine an aggregate with included meters. Distinct statistic series on one
+control may supply distinct energy roles; exact-source or same-role reuse is
+invalid. A single PV source retains the confirmed PV-minus-export balance.
+Multiple PV sources require
 confirmed common supply and contribute only qualified complete hours present in
 every source. Radiation alongside PV requires confirmed independence; it cannot
 come from the evaluated PV control. Production, direct self-consumption and

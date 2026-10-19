@@ -29,6 +29,14 @@ beitragenden Quelle vorliegen. Fehlende Daten werden weder Null noch Teilsumme
 der Gesamtanlage. `production_sources` weist Qualifikation und vollständige
 Stunden jeder Quelle aus.
 
+Verschiedene Statistikreihen desselben Controls können Produktion und direkten
+Eigenverbrauch oder Einspeisung als getrennte Messgrößen liefern. Dieselbe exakte
+Quelle oder dieselbe Energierolle zweimal auf diesem Control wird abgewiesen.
+Native Überschneidungsprüfungen gelten weiterhin zwischen Controls. Bei einer
+Produktionsquelle reicht die bestehende bestätigte PV-minus-Einspeisung-Bilanz;
+die zusätzliche Bestätigung des gemeinsamen Versorgungsbereichs gilt für mehrere
+zusammengefasste Produktionsquellen.
+
 Exakte stündliche Statistikselektoren funktionieren ohne Profil. Produktion,
 direkter Eigenverbrauch und Netzeinspeisung benötigen bestätigte Zuordnungen;
 Rollen belegen keine Einheiten, Mengen oder Messgrenzen. PV minus Einspeisung
