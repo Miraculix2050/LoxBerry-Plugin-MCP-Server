@@ -775,3 +775,44 @@ test('lighting row transfer through dialog discards stale analyzer context witho
     lighting_selection: {controller_uuids: ['exact/AI1']}});
   assert.equal(h.calls().length, 1);
 });
+
+
+test('JSON scope changes discard hidden old parameters and preserve compatible explicit checks', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await json(h, {scope: 'knx', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2});
+  await json(h, {scope: 'lighting', view: 'summary', source_details: true,
+    analyses: ['address_patterns'], cursor: 'old', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(field(h, 'view'), undefined);
+  assert.ok(field(h, 'lighting_selection'));
+  await json(h, {scope: 'knx', analyses: ['address_patterns'], cursor: 'old', limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']},
+    lighting_context: {schema_version: 'lighting_analysis_context.v1'}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'knx', analyses: ['address_patterns'], limit: 2});
+  assert.equal(field(h, 'lighting_selection'), undefined);
+  assert.ok(field(h, 'view'));
+  await json(h, {scope: 'lighting', analyses: ['inventory'], limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'lighting', analyses: ['inventory'], limit: 2,
+    lighting_selection: {controller_uuids: ['exact/AI1']}});
+  assert.equal(h.calls().length, 0);
+});
+
+test('JSON scope cleanup never repairs malformed check types before request validation', async (t) => {
+  const h = createHarness({tools: [analyzer]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('json-tab'));
+  const malformed = {scope: 'lighting', analyses: 'inventory',
+    lighting_selection: {controller_uuids: ['exact/AI1']}};
+  h.byId('json').value = JSON.stringify(malformed);
+  await h.click(h.byId('run'));
+  assert.deepEqual(JSON.parse(h.byId('json').value), malformed);
+  assert.equal(h.calls().length, 0);
+  assert.equal(h.byId('validation').hidden, false);
+});

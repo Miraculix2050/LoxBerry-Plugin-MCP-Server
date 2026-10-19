@@ -292,11 +292,19 @@
       if (show) { elements.validation.textContent = label('invalidArguments'); elements.validation.hidden = false; }
       return false;
     }
-    const errors = core.validateArguments(parsed, state.selectedTool.inputSchema || {type: 'object'});
+    const schema = state.selectedTool.inputSchema || {type: 'object'};
+    const scopeChanged = state.selectedTool.name === 'loxone_analyze_project' &&
+      (state.arguments.scope ?? 'knx') !== (parsed.scope ?? 'knx');
+    const structuralErrors = scopeChanged ? core.validateValue(parsed, schema, schema) : [];
+    if (scopeChanged && !structuralErrors.length) {
+      parsed = adapters.changeAnalysisScope(parsed, adapters.analysisOptions(state.selectedTool, parsed));
+    }
+    const errors = structuralErrors.length ? structuralErrors : core.validateArguments(parsed, schema);
     if (errors.length) {
       if (show) { elements.validation.textContent = `${label('invalidArguments')} ${errors.join('; ')}`; elements.validation.hidden = false; }
       return false;
     }
+    if (scopeChanged) elements.json.value = JSON.stringify(parsed, null, 2);
     explorerState.setArguments(parsed);
     saveCurrentDraft();
     elements.validation.hidden = true;

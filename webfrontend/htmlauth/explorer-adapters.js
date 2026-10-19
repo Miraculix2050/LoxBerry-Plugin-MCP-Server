@@ -133,10 +133,14 @@
   const LIGHTING_FIELDS = ['lighting_selection', 'lighting_context'];
   const ETS_FIELDS = ['view', 'relation', 'names_differ', 'ambiguous_names', 'address', 'source_details'];
 
-  function changeAnalysisScope(argumentsValue) {
+  function changeAnalysisScope(argumentsValue, allowedAnalyses = null) {
     const next = {...argumentsValue};
     const hidden = next.scope === 'lighting' ? ETS_FIELDS : LIGHTING_FIELDS;
-    [...hidden, 'analyses', 'cursor'].forEach((field) => { delete next[field]; });
+    [...hidden, 'cursor'].forEach((field) => { delete next[field]; });
+    const explicitCompatibleChecks = Array.isArray(allowedAnalyses) &&
+      (next.analyses === null || (Array.isArray(next.analyses) &&
+        next.analyses.every((check) => allowedAnalyses.includes(check))));
+    if (!explicitCompatibleChecks) delete next.analyses;
     return next;
   }
 
