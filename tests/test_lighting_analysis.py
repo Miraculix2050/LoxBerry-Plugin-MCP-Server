@@ -1031,6 +1031,7 @@ async def test_unchanged_profile_checksum_allows_valid_reference_publication(mon
 @pytest.mark.parametrize("handle_changed", [False, True])
 def test_profile_digest_handles_windows_path_creation_time(monkeypatch, tmp_path, handle_changed):
     import hashlib
+
     from mcpserver.installation_profile import ProfileError
 
     path = tmp_path / "profile.json"
