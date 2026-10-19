@@ -141,13 +141,13 @@ class LightingOutputProjection:
     entries: tuple[LightingOutput, ...]
     total: int | None
     omitted: int | None
-    unsupported_types: int
+    unsupported_types: int | None
 
 
 def project_lighting_outputs(control: Control) -> LightingOutputProjection:
     """Project explicit visible children; containment proves no physical connector."""
     if control.control_type != "LightControllerV2":
-        return LightingOutputProjection("unsupported", (), None, None, 0)
+        return LightingOutputProjection("unsupported", (), None, None, None)
     entries: list[LightingOutput] = []
     total = unsupported = 0
     used = 2  # JSON list brackets.

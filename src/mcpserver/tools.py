@@ -695,7 +695,7 @@ class LightingOutputsData(BaseModel):
     entries: Annotated[list[LightingOutputData], Field(max_length=100)]
     total: int | None
     omitted: int | None
-    unsupported_types: int
+    unsupported_types: int | None
     configuration_completeness: Literal["not_assessable"] = "not_assessable"
     connector_identity: Literal["unresolved"] = "unresolved"
 

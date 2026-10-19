@@ -247,10 +247,28 @@ def test_output_projection_uses_explicit_parent_not_suffix_or_names():
     assert [entry.uuid for entry in result.entries] == ["opaque-child"]
     assert unrelated.uuid not in {entry.uuid for entry in result.entries}
     assert result.total == 1 and result.omitted == 0
-    assert (
-        project_lighting_outputs(replace(controller, control_type="Switch")).status == "unsupported"
+    unsupported = project_lighting_outputs(replace(controller, control_type="Switch"))
+    assert unsupported.status == "unsupported"
+    assert (unsupported.total, unsupported.omitted, unsupported.unsupported_types) == (
+        None,
+        None,
+        None,
     )
-    assert project_lighting_outputs(output_controller(())).total == 0
+    empty = project_lighting_outputs(output_controller(()))
+    assert (empty.total, empty.omitted, empty.unsupported_types) == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_unsupported_output_counts_match_nullable_wire_contract(monkeypatch):
+    server, _ = setup_tool(monkeypatch, [], control_type="Switch")
+    result = await server._tool_manager.get_tool("loxone_describe_control").fn(
+        "light", view="lighting_context", include_outputs=True
+    )
+    assert result.ok and result.data.outputs.status == "unsupported"
+    wire = result.model_dump(mode="json")["data"]["outputs"]
+    assert all(wire[field] is None for field in ("total", "omitted", "unsupported_types"))
+    schema = tools.LightingOutputsData.model_json_schema()["properties"]["unsupported_types"]
+    assert {item["type"] for item in schema["anyOf"]} == {"integer", "null"}
 
 
 def test_output_byte_bound_reports_omitted_rows_without_using_hidden_data(monkeypatch):
