@@ -82,7 +82,7 @@ measurement-boundary comparability nor permission for writes.
 - Comparable days use only the existing qualitative radiation-class method.
   Explicitly choose a common local hour window before calling it. Preserve the
   class assumption, warnings, gaps and DST exclusions. The separately implemented
-  numeric comparison method and its outstanding acceptance gates in #439 are
+  numeric comparison method and its technical source requirements are
   outside this qualitative recipe; it supplies no causal explanations.
 - Consumer/PV overlap proves no exact solar attribution. Rankings require explicit
   human confirmation of comparable boundaries and excluded parent/child overlap;

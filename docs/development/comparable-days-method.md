@@ -2,8 +2,10 @@
 
 Status: Qualitative runtime branch plus explicit numerical local-source adapter.
 The numerical adapter consumes Admin-confirmed observations and current confirmed
-energy-statistic bindings in the existing fresh history context. Real-source
-acceptance remains required before #509/#439 close. #501 remains independent.
+energy-statistic bindings in the existing fresh history context. Technical
+source-read and reference-model acceptance is defined in
+[the closeout criteria](solar-history-acceptance.en.md); real comparison days
+are not required for #509/#439 closure. #501 remains independent.
 
 ## Numerical method and local runtime adapter
 

@@ -457,7 +457,10 @@ export require confirmed associations, while units, quantities, native EFM
 membership and balance boundaries still need technical evidence. A profile is
 optional for exact statistic selectors. Report echoed site/coverage as owner
 confirmations, not independently verified physical facts. Separate independent
-sites into separate calls. Preserve #439/#509 positive acceptance requirements.
+sites into separate calls. The owner-approved #439/#509 closeout uses real source
+reads and deterministic
+model tests; real comparison days are not a closure gate. This does not waive
+runtime evidence requirements or establish empirical plant validation.
 
 For compact historical calculations prefer `loxone_analyze_history` with exact
 advertised series/state IDs or currently confirmed visible profile bindings.
@@ -1385,7 +1388,10 @@ complete period-energy bounds (Structure File 17.1 p.115); actual comparison sta
 match previously captured forecasts to exact complete actual intervals. Do not
 allocate daily forecasts to partial days or assume the native calendar timezone.
 A functioning method or synthetic
-fixture does not close #509/#439: require genuine history and a positive comparison.
+fixture alone does not establish source readability. The owner-approved #509/#439
+technical acceptance combines real source reads with deterministic model tests;
+real comparison days are not required for closure. Do not claim empirical plant
+validation or relax runtime source qualification.
 
 ### Qualitative weather peers
 
@@ -1400,7 +1406,8 @@ positions qualifies a peer; never shrink missing positions, use forecasts as
 observations, or infer continuous coverage. No raw pages, 15-percent radiation
 tolerance, temperature selection, radiation energy, normalized yield, PV anomaly
 diagnosis or self-consumption result is provided by this class branch. Lux cannot
-be converted universally to irradiance. Numerical source/method gates remain open. Unexpected values stay in the archive
+be converted universally to irradiance. Numerical inputs still need their separate
+source/method qualification. Unexpected values stay in the archive
 and in bounded point-time/raw-value/reason diagnostics with a trace-correlated
 sanitized log. Tell the user when the tool warns about mapping/data incompatibility;
 do not call it a proven device fault or silently treat those values as valid classes.

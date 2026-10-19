@@ -8,7 +8,9 @@ Future Loxone Config MCP imports remain a separately requested future integratio
 The owner approved closing the delivered intermediate series separately from
 its two original evidence-gated goals: [numerical comparable days](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/509)
 and [full PV-yield planning](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/510).
-Their parent issues remain open; intermediate delivery is not their completion.
+This describes the historical intermediate boundary, not current issue status.
+The later #439/#509 technical closeout follows the revised
+[criteria](solar-history-acceptance.en.md); #510 retains its prospective gates.
 
 ## Source evidence
 

@@ -88,7 +88,7 @@ keine Vergleichbarkeit von Messgrenzen und erlaubt keine Schreiboperation.
   Strahlungsklassenmethode. Das gemeinsame lokale Stundenfenster ist vor dem
   Aufruf ausdrücklich zu wählen. Klassenannahme, Warnungen, Lücken und
   Sommerzeitausschlüsse bleiben sichtbar. Die separat implementierte numerische
-  Vergleichsmethode und ihre noch offenen Abnahmegrenzen aus #439 gehören nicht
+  Vergleichsmethode und ihre technischen Quellenanforderungen gehören nicht
   zu dieser qualitativen Vorlage; sie liefert keine kausalen Erklärungen.
 - PV-/Verbraucherüberlappung belegt keine exakte Solarzuordnung. Für Rankings
   muss der Nutzer vergleichbare Messgrenzen und ausgeschlossene Eltern-/Kind-

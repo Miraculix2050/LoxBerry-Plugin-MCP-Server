@@ -56,7 +56,8 @@ direction and matching boundaries for every production source. Native EFM
 membership applies to all energy contributions. Results echo the site and
 associations and label owner-confirmed coverage as not independently verified.
 Visibility, installation, source metadata and referenced profile revisions are
-checked again before publication. Existing #439/#509 acceptance gates remain open.
+checked again before publication. The technical closeout criteria are documented in
+[the acceptance summary](../development/solar-history-acceptance.en.md).
 
 ## Numerical weather peers
 
@@ -109,8 +110,9 @@ Forecasts do not select weather peers.
 
 Each unique source/range is read once in one fresh authorized context. Limits:
 16 sources, 100,000 points, 31 local days, 30 seconds, two analyses, 64 KiB.
-Recording never backfills observations. Real multi-day acceptance remains required
-before #509 and #439 close.
+Recording never backfills observations. Technical acceptance combines real source reads with deterministic model tests;
+real comparison days are not a closeout requirement for #509/#439. This does not
+claim empirical validation of a plant or relax runtime source qualification.
 
 ## Qualitative radiation classes
 
