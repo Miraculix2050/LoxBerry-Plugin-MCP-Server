@@ -1,5 +1,21 @@
 # Bounded historical analysis
 
+Optional `history_analysis_context.v1` extends the existing source selection:
+association indices reference only the supplied `sources`. Resolution reuses
+the common optional-profile, visibility and publication guards. Exact source
+membership and EFM topology are checked before historical reads. The final
+structure read reuses the admitted history session rather than nesting runtime
+admission. Profile revision, selected sources and operating companions are
+rechecked before publication; context declarations participate in raw cursors.
+
+`comparison.context_analysis` keeps request identities separate from persistent
+binding identities. Observed episode gates remain intact. Observed and declared
+candidate demand share the same neutral Decimal budget allocator, while the
+legacy wrapper retains its released result. Declared uniform demand can cover
+partial hours only as a conditional upper bound; measured hourly supply is never
+interpolated. Search exhaustion discards all allocations. No modeled baseline is
+serialized as an observed cycle or a measured historical saving.
+
 One read-only tool, `loxone_analyze_history`, provides typed calculations.
 `loxone_get_statistics` remains the compatible source reader with inclusive
 filters and cursors. Observability describes available sources. A separate tool

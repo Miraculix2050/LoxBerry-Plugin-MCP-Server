@@ -1,5 +1,40 @@
 # Bedingte rückblickende Lastverschiebung
 
+Der bestehende Profilablauf bleibt erhalten. Alternativ kann `analysis_context`
+(`history_analysis_context.v1`) übergeben werden. Seine Zuordnungen verweisen mit
+nullbasiertem `source_index` auf die vorhandene `sources`-Liste und führen keine
+weiteren Quellen ein. Jede ausgewählte Quelle benötigt eine eigene Zuordnung.
+Eine Anfrage behandelt einen EFM- oder Szenariobereich; unabhängige Versorgungen
+bleiben getrennte Anfragen. Exakte sichtbare Quellen benötigen kein gespeichertes
+Profil. Profilreferenzen verwenden aktuell bestätigte Rollen, Messgrenzen und
+Zyklusregeln, ohne diese zu überschreiben.
+
+Eine `observed`-Last referenziert Verbraucher und Betriebszustand. Ihre gemessenen
+Intervallregeln werden ausdrücklich angegeben oder aus einem passenden Profil
+übernommen. Beide Zyklusgrenzen, durchgehende Aufzeichnung und vollständige
+stündliche Zyklusenergie bleiben für Verschiebungsbeispiele erforderlich.
+Übernommene und angegebene Zykluszeitzonen müssen zur Analysezeitzone passen.
+`declared_real` verwendet einen bestätigten sichtbaren Verbraucher und einen
+vollständigen bestätigten deklarierten Zyklus. `hypothetical` hat keinen
+Verbraucher- oder Betriebszustandsbezug und verwendet `scenario_assumption`.
+Deklarierte Energie ist ein gleichmäßiges Bedarfsmodell und ergänzt keine
+fehlenden Messungen.
+
+Die Exportzuordnung selbst muss `user_confirmed` sein; Szenarioannahmen zu Rolle
+oder Richtung begründen kein gemessenes Budget. Gibt ein profilgestütztes reales
+Modell eine Betriebsrückmeldung an, muss diese dem gespeicherten Begleiter
+entsprechen; ein fehlender gespeicherter Begleiter darf nicht durch eine beliebige
+Rückmeldung ersetzt werden. Hinweise auf fehlende Rückmeldung gelten nur für tatsächlich
+ausgewertete deklarierte Modelle ohne diese Rückmeldung.
+
+`comparison.context_analysis` trennt Zuordnungs-IDs, echte Profilreferenzen,
+gemessene Episoden und bedingte Modellzuweisungen. Alle modellierten Lasten
+teilen ein gemessenes historisches Exportbudget. Deklarierte Zuweisungen haben
+keinen gemessenen Ausgangslauf und belegen keine historische Verbesserung.
+Fehlende Aktivitäts-/Mindestpausennachweise und historische Sperren bleiben
+Einschränkungen. Netzüberschuss ist nicht automatisch Solarproduktion.
+Profile, Aufzeichnungen, Konfiguration und Geräte werden nicht geändert.
+
 `loxone_analyze_history(operation="retrospective_shift")` berechnet, wie viel
 gemessenen Export ein vollständig beobachteter Lastzyklus zu einer anderen
 vergangenen Zeit möglicherweise aufgenommen hätte. Jedes Beispiel ist bedingt:
