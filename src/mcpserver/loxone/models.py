@@ -203,6 +203,8 @@ class Control:
     status_monitor_status_complete: bool = False
     status_monitor_input_total: int | None = None
     status_monitor_input_complete: bool = False
+    meter_type: str | None = None
+    meter_type_defaulted: bool = False
 
 
 @dataclass(frozen=True, slots=True)

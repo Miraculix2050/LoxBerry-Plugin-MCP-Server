@@ -10,6 +10,10 @@ extracted from the matching version heading.
   native-calculation limitations. Add correlated numerical source-read, preparation,
   calculation and response-size debug diagnostics without additional data requests
   (#439, #509).
+- Add documented Meter output sign conventions by normalized runtime subtype to
+  state and StatisticV2 semantics, with raw values preserved and unknown/legacy
+  types kept unqualified. Distinguish configurable physical-input polarity from
+  fixed meter outputs; native EFM aggregate unknowns remain separate (#534).
 
 - Add opt-in unmodeled internal-flow diagnostics to existing bounded project
   traces and document evidence-backed presence/light relationship review without
