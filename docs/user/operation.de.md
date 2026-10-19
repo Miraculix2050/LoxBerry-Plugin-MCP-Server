@@ -99,6 +99,8 @@ werden Inventar, Namenskandidaten, konfigurierte Präsenzbeziehungen, Szenenroll
 und fehlender Planungskontext geprüft. `next_cursor` mit unveränderten Eingaben
 folgen; eine Seite enthält höchstens 50 Befunde.
 
+Im Explorer `scope=lighting` wählen, um `lighting_selection` und den optionalen `lighting_context` einzublenden; ETS-Felder werden ausgeblendet. Ein Scope-Wechsel entfernt unpassende Felder, gewählte Prüfungen und Cursor, erhält aber das normale Seitenlimit. Die vollständige sichtbare LightControllerV2-Ergebniszeile aus `loxone_find_controls` auswählen, um ihre genaue ID in einen Analyzer-Entwurf zu übernehmen; es wird kein Werkzeug automatisch aufgerufen. Den Entwurf ausdrücklich prüfen und ausführen. Die Ergebnisübersicht zählt Beobachtungen, Prüfkandidaten, Kontextlücken und bedingte Hinweise der aktuellen Seite. Vollständigkeit des Namensvergleichs getrennt von der Auswahlabdeckung lesen; genaue Bezüge, Herkunft und Grenzen im Belegbaum oder JSON öffnen. Siehe die [sechs Lichtfälle](analysis-support.de.md).
+
 Der optionale `lighting_context` verwendet
 `schema_version="lighting_analysis_context.v1"`. Genaue Controller-Mood-Paare,
 Präsenzquellen, wörtliche Namenspräfixe und Raumnutzung/Absicht/Leuchten/Zonen mit

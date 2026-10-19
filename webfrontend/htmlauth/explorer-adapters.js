@@ -130,7 +130,22 @@
   function operationParameterFields() { return OPERATION_FIELDS; }
   function hasActionFields(tool) { return (typeof tool === 'string' ? tool : tool?.name) === 'loxone_operate_control'; }
 
+  const LIGHTING_FIELDS = ['lighting_selection', 'lighting_context'];
+  const ETS_FIELDS = ['view', 'relation', 'names_differ', 'ambiguous_names', 'address', 'source_details'];
+
+  function changeAnalysisScope(argumentsValue) {
+    const next = {...argumentsValue};
+    const hidden = next.scope === 'lighting' ? ETS_FIELDS : LIGHTING_FIELDS;
+    [...hidden, 'analyses', 'cursor'].forEach((field) => { delete next[field]; });
+    return next;
+  }
+
   function fieldVisible(tool, field, argumentsValue) {
+    if (tool?.name === 'loxone_analyze_project') {
+      const scope = argumentsValue?.scope ?? tool.inputSchema?.properties?.scope?.default ?? 'knx';
+      if (LIGHTING_FIELDS.includes(field)) return scope === 'lighting';
+      if (ETS_FIELDS.includes(field)) return scope !== 'lighting';
+    }
     if (!hasActionFields(tool)) return true;
     return field === 'control_uuid' || field === 'action' ||
       actionFields(argumentsValue && argumentsValue.action).includes(field);
@@ -168,6 +183,19 @@
 
   // Recipes enhance a transfer; schema-compatible targets remain the default.
   const TRANSFER_RECIPES = [{
+    sourceTool: 'loxone_find_controls',
+    targetTool: 'loxone_analyze_project',
+    contextLabel: 'lightingTransferContext',
+    prepare(displayedResult, path, value, now, target) {
+      if (!target?.inputSchema?.properties?.scope?.enum?.includes('lighting') ||
+          !displayedResult?.ok || !Array.isArray(path) || path.length !== 3 ||
+          path[0] !== 'data' || path[1] !== 'items' || !Number.isInteger(path[2]) ||
+          !value || displayedResult.data?.items?.[path[2]] !== value ||
+          value.type !== 'LightControllerV2' || !['direct', 'linked'].includes(value.visibility) ||
+          typeof value.uuid !== 'string' || !value.uuid) return null;
+      return {scope: 'lighting', lighting_selection: {controller_uuids: [value.uuid]}};
+    },
+  }, {
     sourceTool: 'loxone_describe_control',
     targetTool: 'loxone_get_statistics',
     contextLabel: 'statisticsTransferContext',
@@ -193,7 +221,7 @@
     for (const recipe of TRANSFER_RECIPES) {
       if (recipe.sourceTool !== sourceTool ||
           !tools.some((tool) => tool.name === recipe.targetTool)) continue;
-      const args = recipe.prepare(displayedResult, path, value, now);
+      const args = recipe.prepare(displayedResult, path, value, now, tools.find((tool) => tool.name === recipe.targetTool));
       if (args) return {tool: recipe.targetTool, arguments: args, contextLabel: recipe.contextLabel};
     }
     return null;
@@ -202,6 +230,6 @@
   return {GROUPS, forTool, toolGroup, requiredScopes, scopeAlternatives,
     requiredMutationScope,
     fieldHelpKey, analysisOptions, isAdvancedField, isReferenceField, referenceCandidates,
-    hasActionFields, actionFields, operationParameterFields, fieldVisible, changeAction,
+    hasActionFields, actionFields, operationParameterFields, fieldVisible, changeAction, changeAnalysisScope,
     transferRecipe};
 });

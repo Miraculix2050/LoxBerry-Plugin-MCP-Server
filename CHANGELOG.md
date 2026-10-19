@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add Explorer lighting drafts from exact visible controller results, scope-specific
+  fields and bounded page summaries with independent naming/selection limits.
+  Synchronize the six lighting scenarios and evidence boundaries in DE/EN (#441, stage 5).
+
 - Add a bounded lighting scope to the existing project analyzer with exact
   controller/room selection, request-local scene/presence/room declarations,
   shared profile-source resolution and fresh publication/cursor guards. Keep

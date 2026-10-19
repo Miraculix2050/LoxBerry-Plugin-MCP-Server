@@ -1057,3 +1057,98 @@ def test_profile_digest_handles_windows_path_creation_time(monkeypatch, tmp_path
             domain._profile_digest(path)
     else:
         assert domain._profile_digest(path) == hashlib.sha256(b"stable").hexdigest()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "scenario",
+    ["lighting-01", "lighting-02", "lighting-03", "lighting-04", "lighting-05", "lighting-06"],
+)
+async def test_six_lighting_questions_keep_supported_and_partial_evidence(monkeypatch, scenario):
+    runner, runtime, *_ = runner_fixture(monkeypatch)
+    ctx = None
+    checks = {
+        "lighting-01": ["inventory", "scene_roles"],
+        "lighting-02": ["naming_consistency"],
+        "lighting-03": ["presence_relationships"],
+        "lighting-04": ["planning_context"],
+        "lighting-05": ["naming_consistency", "scene_roles"],
+        "lighting-06": ["inventory", "planning_context"],
+    }[scenario]
+    if scenario == "lighting-03":
+        ctx = context(presence_sources=[declared(control_uuid=SOURCE)])
+    if scenario == "lighting-05":
+        ctx = context(
+            scenes=[
+                declared(controller_uuid=LIGHT, mood_id="1", role="Night"),
+                declared(controller_uuid=OTHER, mood_id="1", role="Night"),
+            ]
+        )
+    if scenario == "lighting-06":
+        ctx = context(
+            rooms=[
+                {
+                    "room_uuid": "room",
+                    "usage": declared(value="Kitchen"),
+                    "intent": declared(value="Independent task and ambient zones"),
+                },
+                {"room_uuid": "other", "usage": declared(value="Office")},
+            ]
+        )
+    result = await runner.run(
+        "lighting",
+        checks,
+        limit=50,
+        lighting_selection=LightingSelection(controller_uuids=[LIGHT, OTHER]),
+        lighting_context=ctx,
+    )
+    assert result.ok
+    data = result.data.model_dump()
+    rows = data["findings"]
+    codes = {row["code"] for row in rows}
+    assert data["coverage"]["scope"] == "selected_visible_controllers"
+    assert len(rows) <= 50 and len(result.model_dump_json().encode()) <= 65536
+    assert runtime.projects.authorize.await_count >= 1
+    assert "controller_capability_does_not_prove_installed_luminaires" in data["limitations"]
+    if scenario == "lighting-01":
+        assert {"visible_lighting_inventory", "scene_roles_missing"} <= codes
+        gap = next(row for row in rows if row["code"] == "scene_roles_missing")
+        assert gap["classification"] == "context_gap" and not gap["evidence"]["inferred_from_names"]
+    elif scenario == "lighting-02":
+        assert "repeated_visible_mood_name" in codes
+        assert all(row["classification"] == "review_candidate" for row in rows)
+    elif scenario == "lighting-03":
+        reached = next(row for row in rows if row["references"][0]["controller_uuid"] == LIGHT)
+        relation = reached["evidence"]["relationships"][0]
+        assert relation["control_uuid"] == SOURCE
+        assert relation["status"] == "configured_upstream_reachability"
+        assert relation["declared_presence_origin"] == "scenario_assumption"
+        assert reached["evidence"]["operating_causation"] == "unverified"
+    elif scenario == "lighting-04":
+        assert codes == {"conditional_room_review"}
+        assert all("tunable_white_installed" in row["evidence"]["missing_context"] for row in rows)
+        assert all(not row["evidence"]["controller_kelvin_defaults_prove_fixtures"] for row in rows)
+    elif scenario == "lighting-05":
+        roles = [row for row in rows if row["code"] == "declared_scene_role"]
+        assert len(roles) == 2 and {row["references"][0]["controller_uuid"] for row in roles} == {
+            LIGHT,
+            OTHER,
+        }
+        assert all(
+            row["classification"] == "conditional"
+            and row["evidence"]["technical_source_does_not_confirm_role"]
+            for row in roles
+        )
+        assert all(
+            row["evidence"]["declaration"]["origin"] == "scenario_assumption" for row in roles
+        )
+    else:
+        planning = [row for row in rows if row["code"] == "conditional_room_review"]
+        assert {row["references"][0]["room_uuid"] for row in planning} == {"room", "other"}
+        assert all(
+            row["evidence"]["installed_luminaires"] == "not_technically_verified"
+            for row in planning
+        )
+        assert all(
+            "tunable_white_installed" in row["evidence"]["missing_context"] for row in planning
+        )

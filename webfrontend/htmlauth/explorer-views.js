@@ -513,6 +513,9 @@
         elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('planningNotice')}));
         elements.summary.append(element('p', {className: 'mcp-explorer-muted', text: label('planningContext')}));
       }
+      if (state.selectedTool.name === 'loxone_analyze_project' && state.arguments.scope === 'lighting') {
+        elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('lightingNotice')}));
+      }
       if (state.selectedTool.name === 'loxone_analyze_history' && state.selectedTool.inputSchema?.properties?.analysis_context) {
         elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('historyContext')}));
       }
@@ -660,6 +663,26 @@
           if (card) sources.append(card);
         }
         if (sources.childElementCount) elements.resultTree.prepend(sources);
+      }
+      if (context?.tool === 'loxone_analyze_project' && displayed?.ok && displayed.data?.scope === 'lighting') {
+        const data = displayed.data;
+        const counts = {technical_observation: 0, review_candidate: 0, context_gap: 0, conditional: 0};
+        for (const finding of (data.findings || []).slice(0, 50)) {
+          if (Object.hasOwn(counts, finding.classification)) counts[finding.classification]++;
+        }
+        const summary = element('div', {className: 'mcp-explorer-stack'});
+        summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('lightingNotice')}));
+        summary.append(element('p', {text: `${label('analysisPage')}: ${label('analysisFacts')} ${counts.technical_observation}; ` +
+          `${label('analysisReview')} ${counts.review_candidate}; ${label('analysisGaps')} ${counts.context_gap}; ` +
+          `${label('lightingConditional')} ${counts.conditional}`}));
+        if (data.analysis_truncated || !data.coverage?.selection_complete ||
+            data.coverage?.supported !== data.coverage?.selected) {
+          summary.append(element('p', {className: 'mcp-explorer-warning', text: label('analysisLimited')}));
+        }
+        if (data.analyses?.includes('naming_consistency') && !data.coverage?.naming_comparison_complete) {
+          summary.append(element('p', {className: 'mcp-explorer-warning', text: label('lightingNamingIncomplete')}));
+        }
+        elements.resultTree.prepend(summary);
       }
       if (context?.tool === 'loxone_analyze_project' && displayed?.ok && displayed.data?.scope === 'modbus') {
         const data = displayed.data;

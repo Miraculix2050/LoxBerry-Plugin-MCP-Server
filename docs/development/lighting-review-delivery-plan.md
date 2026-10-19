@@ -5,12 +5,17 @@ Planning baseline: master `72766d32`; recheck current master before every PR.
 Each PR is independently usable, reviewed, tested and accepted on Gen. 1
 before integration of the next package. Branches use `codex/`.
 
-Execution checkpoint: #559 is already implemented independently in
-[PR #563](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/563).
-Use that reviewed delivery as PR 1 after its final CI, Gen.-1 acceptance and merge;
-do not publish a competing resolver or introduce another profile abstraction.
-Lighting PRs start from its merged master. The plan-recording PR changes no runtime
-behavior and does not claim that any of the acceptance gates below have passed.
+Execution checkpoint: PR1 [#563](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/563),
+PR2 [#568](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/568),
+PR3 [#572](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/572) and
+PR4 [#575](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/575)
+are merged after their scoped review, tests and Gen.-1 acceptance. PR4's final
+[gate record](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/575#issuecomment-6274992150)
+binds review, CI and read-only target/browser evidence to its delivered stand.
+PR5 starts from merged PR4, master `b816081e`; its Explorer and integrated
+six-scenario delivery still require their own final gates. #441 stays open until
+those gates pass. Do not publish a competing #559 resolver or another profile
+abstraction. The original plan-recording PR changed no runtime behavior.
 
 Coordination with the #559 owner confirmed these shared interfaces:
 `read_profile_bindings`, `resolve_source_association` and

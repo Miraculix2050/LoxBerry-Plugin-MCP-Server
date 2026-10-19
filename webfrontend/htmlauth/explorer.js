@@ -260,8 +260,7 @@
     const scopeChanged = state.selectedTool?.name === 'loxone_analyze_project' && name === 'scope' &&
       previousScope !== (included ? value : 'knx');
     if (scopeChanged) {
-      explorerState.setField('analyses', false);
-      explorerState.setField('cursor', false);
+      explorerState.setArguments(adapters.changeAnalysisScope(state.arguments));
     }
     elements.json.value = JSON.stringify(state.arguments, null, 2);
     saveCurrentDraft();
@@ -423,7 +422,11 @@
       const tool = state.tools.find((item) => item.name === state.transferRecipe.tool);
       if (!tool) return;
       const existing = draftFor(tool).arguments;
-      const draft = {...core.clone(existing), ...state.transferRecipe.arguments};
+      let draft = {...core.clone(existing), ...state.transferRecipe.arguments};
+      if (tool.name === 'loxone_analyze_project' && state.transferRecipe.arguments.scope === 'lighting') {
+        draft = adapters.changeAnalysisScope(draft);
+        delete draft.lighting_context;
+      }
       delete draft.cursor;
       selectTool(tool.name, draft);
       revealRequest(true, true);
