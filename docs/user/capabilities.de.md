@@ -672,6 +672,16 @@ zugeordnete Rest-Zähler kann separat über den bestehenden State-Lesepfad
 (`actual`, ohne `native_result_view`) gelesen werden. Sein Wert wird als eigener
 Zählerwert mit Quelle ausgewiesen und ersetzt kein fehlendes natives EFM-Feld.
 
+Die abschließende [Aggregat-/Periodenprüfung](../development/efm-semantic-matrix.v1.md#final-aggregateperiod-disposition)
+übernimmt keine weiteren Bedeutungen aus ähnlichen Feldern: `totalFormat` gilt
+belegt für `total/totalNeg`, nicht automatisch für die sieben nativen
+Periodenfelder. Die KB-Formel für den Bausteinausgang `Yd` ist kein belegter
+Vertrag für natives `Income`. Projektwährung und Zeitzone definieren weder
+dessen Einheit noch Periodengrenzen oder Lifetime-Beginn. Diese Werte bleiben
+lesbar als Rohwerte; die genannten Metadaten bleiben unbekannt. Aktuelle
+App-/Config-Änderungslisten liefern Versionshinweise, keine zusätzliche
+Kompatibilitätszusage oder native Berechnungsformel.
+
 Für datierte Energieberichte verwende bestätigte Historienbindungen und
 `loxone_analyze_history(operation="energy")` mit deren Semantik und Abdeckung.
 Aktuelle native Leistungswerte bleiben getrennte Momentaufnahmen; `get/day`

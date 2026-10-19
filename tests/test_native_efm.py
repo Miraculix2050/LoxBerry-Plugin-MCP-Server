@@ -201,10 +201,21 @@ def test_changed_format_discards_unit_enrichment_and_preserves_values():
 
 
 @pytest.mark.parametrize("view", sorted(VIEWS - {"actual"}))
-def test_native_period_report_does_not_gain_units_or_historical_dates(view):
-    control = semantic_control({"actualFormat": "%.3f kW", "totalFormat": "%.3f kWh", "nodes": []})
+@pytest.mark.parametrize(
+    "name", ["Export", "Import", "Production", "Charge", "Discharge", "Consumption", "Income"]
+)
+def test_native_period_report_does_not_gain_units_or_historical_dates(view, name):
+    control = semantic_control(
+        {
+            "actualFormat": "%.3f kW",
+            "totalFormat": "%.3f kWh",
+            "currency": "EUR",
+            "timezone": "Europe/Berlin",
+            "nodes": [],
+        }
+    )
     result = StateSemanticsResolver().resolve_native_efm(
-        decode_native_efm('{"Production":12,"Income":3}', view, retrieved_at=RECEIVED),
+        decode_native_efm(json.dumps({name: -1.25}), view, retrieved_at=RECEIVED),
         control,
         control,
     )
@@ -214,7 +225,15 @@ def test_native_period_report_does_not_gain_units_or_historical_dates(view):
         field.unit is field.measurement_quantity is field.measurement_role is None
         for field in result.fields
     )
+    delivered = next(field for field in result.fields if field.name == name)
+    assert delivered.status == "present" and delivered.value == -1.25
+    assert all(
+        field.scale is field.sign_convention is field.currency is None for field in result.fields
+    )
+    assert all(field.status == "missing" for field in result.fields if field.name != name)
     assert result.period_start is result.period_end is result.timezone is None
+    assert result.period_completion == ("unknown" if view == "lifetime" else "running")
+    assert result.observation_freshness == "unknown" and not result.semantic_complete
     assert not result.historical_date_selection_supported
     assert "period_units_unverified" in result.report_limitations
 

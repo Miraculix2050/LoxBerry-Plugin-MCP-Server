@@ -1,3 +1,4 @@
+import ast
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -8,6 +9,7 @@ from mcpserver.history_analysis import HistoryAnalysisDeadline, StateSegment, st
 from mcpserver.history_comparison import ComparisonInput, compare_history
 from mcpserver.loxone.state_semantics import SeriesSemantics
 from mcpserver.loxone.statistics import StatisticPoint
+from mcpserver.skill_delivery import read_skill_markdown
 
 
 def energy(
@@ -435,6 +437,52 @@ def test_baseload_weights_real_dst_hours_and_labels_daily_estimate(start, end, h
     assert result.metrics["estimated_24_hour_energy_Wh"] == 2400
     assert result.status == "partial"
     assert "24_hour_extrapolation_is_an_estimate" in result.limitations
+
+
+@pytest.mark.parametrize(
+    "power_w,solar_kwh,expected_ratio,expected_percent",
+    [(100, 12, 0.2, 20), (100, 1.2, 2, 200), (125, 3, 1, 100), (0, 12, 0, 0)],
+)
+def test_solar23_documented_percent_uses_actual_baseload_output(
+    power_w, solar_kwh, expected_ratio, expected_percent
+):
+    values = energy([(hour * 3600, power_w) for hour in range(5)], end=18000)
+    result = compare("baseload", [values], end=18000)
+    assert result.metric_units["estimated_24_hour_energy_Wh"] == "Wh"
+    assert "24_hour_extrapolation_is_an_estimate" in result.limitations
+    calculation = (
+        read_skill_markdown("history")
+        .split("For solar-23,", 1)[1]
+        .split("```python\n", 1)[1]
+        .split("```", 1)[0]
+    )
+    tree = ast.parse(calculation)
+    # Execute only the documented arithmetic, without calls, attributes or imports.
+    assert all(
+        isinstance(
+            node,
+            ast.Module
+            | ast.Assign
+            | ast.Name
+            | ast.Load
+            | ast.Store
+            | ast.BinOp
+            | ast.Div
+            | ast.Mult
+            | ast.Constant,
+        )
+        for node in ast.walk(tree)
+    )
+    variables = {
+        "estimated_24_hour_energy_Wh": result.metrics["estimated_24_hour_energy_Wh"],
+        "mean_daily_solar_energy_kwh": solar_kwh,
+    }
+    exec(compile(tree, "solar23-guide-example", "exec"), {"__builtins__": {}}, variables)
+    assert variables["estimated_daily_energy_kwh"] == pytest.approx(
+        power_w * 24 / 1000, rel=0, abs=1e-9
+    )
+    assert variables["energy_ratio"] == pytest.approx(expected_ratio, rel=0, abs=1e-9)
+    assert variables["energy_percent"] == pytest.approx(expected_percent, rel=0, abs=1e-9)
 
 
 def test_ambiguous_custom_night_boundary_rejected():

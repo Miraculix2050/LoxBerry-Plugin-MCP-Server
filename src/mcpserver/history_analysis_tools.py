@@ -931,7 +931,8 @@ def register_history_analysis_tool(
             "visible profile bindings. Requires loxone:read and loxone:history. Source semantics "
             "and coverage qualify findings; overlap is not solar attribution, and shift examples "
             "do not establish admissibility or savings. Raw evidence is opt-in. See history and "
-            "energy guidance."
+            "energy guidance. Base-load energy percentages require matching units/periods and "
+            "100 times the energy ratio; an unknown or non-positive denominator is unavailable."
         ),
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
         structured_output=True,
