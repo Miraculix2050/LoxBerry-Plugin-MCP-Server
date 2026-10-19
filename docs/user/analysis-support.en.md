@@ -53,7 +53,7 @@ Supported: a bounded existing read workflow. Conditional: required sources, sema
 
 Numeric references: sample mean 21 °C; counter difference 3 kWh; rank 3/2 kWh; mixed hourly window 3600 s; night median 100 W and estimated 2.4 kWh/day. Conversion of evidenced synthetic power intervals into whole-hour energies is a fixture contract, not a new decoder. Details and measurement limits: [Acceptance report](../development/analysis-acceptance.md).
 
-Correct qualified partial answers are allowed when sources are absent. No roles inferred from names, backfilled initial values, hidden identities, control commands or causal solar attribution. Token consumption and the 20-percent token target remain incomplete without available token measurements; response bytes are not tokens.
+Correct qualified partial answers are allowed when sources are absent. No roles inferred from names, backfilled initial values, hidden identities, control commands or causal solar attribution. The former mandatory token target was replaced for #485; missing optional token values remain unknown and do not block closure. Response bytes establish no token or cost savings. The [bounded native acceptance](../development/analysis-acceptance-closeout.md) separates measured results from remaining limits.
 
 
 ## Request-local energy planning (#556)
