@@ -260,10 +260,16 @@ def _profile_digest(path: Path | None) -> str | None:
     if len(raw) > MAX_DOCUMENT_BYTES:
         raise ProfileError("profile_storage_limit")
 
-    def stamp(value: os.stat_result) -> tuple[int, int, int, int, int]:
-        return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+    def stamp(value: os.stat_result) -> tuple[int, int, int, int]:
+        # Windows path stat may expose creation time where fstat exposes change time.
+        # Compare ctime only between reads of the same open handle.
+        return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
 
-    if stamp(before) != stamp(after) or stamp(after) != stamp(current):
+    if (
+        stamp(before) != stamp(after)
+        or before.st_ctime_ns != after.st_ctime_ns
+        or stamp(after) != stamp(current)
+    ):
         raise ProfileError("profile_changed")
     return hashlib.sha256(raw).hexdigest()
 

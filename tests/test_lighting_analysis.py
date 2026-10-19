@@ -1026,3 +1026,33 @@ async def test_unchanged_profile_checksum_allows_valid_reference_publication(mon
         lighting_context=context(presence_sources=[declared(binding_id="sensor")]),
     )
     assert result.ok
+
+
+@pytest.mark.parametrize("handle_changed", [False, True])
+def test_profile_digest_handles_windows_path_creation_time(monkeypatch, tmp_path, handle_changed):
+    import hashlib
+    from mcpserver.installation_profile import ProfileError
+
+    path = tmp_path / "profile.json"
+    path.write_bytes(b"stable")
+    actual = domain.os.fstat
+    calls = 0
+
+    def handle_stat(fd):
+        nonlocal calls
+        calls += 1
+        result = actual(fd)
+        return SimpleNamespace(
+            st_dev=result.st_dev,
+            st_ino=result.st_ino,
+            st_size=result.st_size,
+            st_mtime_ns=result.st_mtime_ns,
+            st_ctime_ns=123 + int(handle_changed and calls > 1),
+        )
+
+    monkeypatch.setattr(domain.os, "fstat", handle_stat)
+    if handle_changed:
+        with pytest.raises(ProfileError, match="profile_changed"):
+            domain._profile_digest(path)
+    else:
+        assert domain._profile_digest(path) == hashlib.sha256(b"stable").hexdigest()
