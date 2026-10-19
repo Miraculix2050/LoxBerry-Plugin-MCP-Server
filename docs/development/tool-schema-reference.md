@@ -887,6 +887,38 @@ routing revision changes no tool names, defaults, bounds or authorization.
 
 ## Bounded lighting source context (#442/#443)
 
+`loxone_analyze_project(scope="lighting")` adds `LightingAnalysisData` to the
+existing envelope. It requires typed `lighting_selection`: exactly one of
+`controller_uuids` (1–16 unique exact visible runtime IDs) or `room_uuid` (one
+exact visible room, at most 16 visible LightControllerV2 controls, with exclusions).
+Optional selection trace limits are `max_depth` (1–16, default 6) and `max_nodes`
+(1–200, default 200). Default lighting checks are `inventory`,
+`naming_consistency`, `presence_relationships`, `scene_roles`, `planning_context`.
+KNX/Modbus defaults retain their contracts. Lighting arguments outside this scope,
+and ETS-only views/filters inside it, return `invalid_input`.
+
+Optional typed `lighting_context` forbids extra keys, is at most 64 KiB, and uses
+`schema_version="lighting_analysis_context.v1"`. Its scenes (max 100), presence
+sources, rooms and prefix rules (each max 16) follow the exact identities,
+independent origins/rationales and uniqueness rules in the
+[lighting contract](lighting-analysis-contract.md). Scene membership requires a
+current valid native mood source. A declaration outside the 100-row inventory
+projection may reference a validated native mood ID, but its omitted name remains
+unknown. Ambiguous native IDs never establish one scene name. Profile references
+reuse existing `lighting_intent` or `room_sensor` source confirmations only.
+
+Findings retain stable IDs, check/code/classification, room/controller/mood
+references and bounded evidence. Inventory retains at most 20 mood/output rows
+per controller with full validated totals and explicit omissions; use the existing
+describe view for additional source detail. Coverage includes controller selection,
+unsupported types and `naming_comparison_complete`. Trace evidence caps diagnostic
+rows at 16 and reports omissions. Findings use existing signed cursor pagination
+(max 50) and the 64 KiB page fitter; no zero-progress cursor is returned.
+Sources/profile content, selected room/mood metadata and caller visibility are
+checked on every page and again before publication. Stale/mixed inputs are rejected.
+Naming candidates are not faults, presence role declarations are not associations,
+and configured reachability is not measured causation or a physical lighting audit.
+
 `loxone_trace_project_logic` adds `include_internal_flow_gaps=false`. Opting in
 reports `internal_flow_not_modeled` and `internal_flow_parent_ambiguous` through
 existing `semantic_gaps`, with retained-node references and existing trace/byte

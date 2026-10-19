@@ -2,6 +2,11 @@ Load core rules first.
 
 ### Inspect project logic
 
+For selected lighting inventory/naming/presence/scene/planning review, load the
+lighting module and use the existing analyzer's `scope="lighting"` with explicit
+bounded selection. This reuses the project graph and cursor/authorization path;
+it creates no new connector rules, saved profile or physical-causation evidence.
+
 Use Project Intelligence only for a structural question such as what can
 influence a known control. Call `loxone_get_project_status` first when project
 freshness, mapping coverage, or unresolved relationships matter. Then:

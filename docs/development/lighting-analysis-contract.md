@@ -1,8 +1,8 @@
 # Lighting analysis contract
 
-Status: contract for review before the next implementation PR in the
-[delivery plan](lighting-review-delivery-plan.md). The relationship PR does not
-publish an analyzer yet. This extends `loxone_analyze_project`, never a new tool,
+Status: reviewed with relationship PR #572 before implementation in the next
+package of the [delivery plan](lighting-review-delivery-plan.md).
+This extends `loxone_analyze_project`, never a new tool,
 profile document, persistent store or independent project graph.
 
 ## Selection and existing behavior
@@ -24,6 +24,12 @@ configuration. Runtime IDs retain exact suffixes; profile reference models keep
 their existing UUID contract. Bound trace work per selected controller to 200 nodes,
 16 levels, default depth 6. Findings use existing limit/cursor pagination, max 50 per
 page, and the existing response-byte guard. Emit omissions and partial coverage.
+The selection's optional `max_depth` and `max_nodes` fields set these trace bounds.
+Inventory findings retain at most 20 mood/output rows per controller, with totals
+and omissions; explicit scene membership uses the whole bounded validated native
+ID set even when a presentation row/name is omitted. Duplicate native mood IDs do
+not establish one scene name. Check `naming_comparison_complete` independently
+from source freshness and selected-controller coverage.
 
 ## Request-local context
 

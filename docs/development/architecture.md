@@ -253,6 +253,21 @@ response-byte limits. No lighting graph or connector interpretation is introduce
 Coverage uses emitted internal edges, including reference projections, and the
 existing State contracts; catalog rules alone never establish port coverage.
 
+The additive `lighting` scope of the existing project analyzer selects at most
+16 exact visible controls or one exact room and runs its bounded checks in the
+existing isolated analysis worker. It reuses the runner's result cache, cursor
+leases, pagination, byte fitter and project graph. The default remains KNX.
+`lighting_analysis` owns typed request-local declarations and normalization;
+`read_profile_bindings`, `resolve_source_association` and `SourceSnapshot` remain
+the shared source/profile authority checks. There is no new profile or store.
+Each page reacquires caller-visible project/runtime sources. Both cache keys bind
+caller identity, normalized selection/context, source/profile content and mood/room
+signatures. Before publication another fresh project/runtime acquisition and
+profile read reject revocation or mixed revisions, including same-revision changes.
+Presence declarations are separate from configured reachability; unknown central
+flow, child parent anchors and bounded missing paths never prove causation.
+The [lighting contract](lighting-analysis-contract.md) defines the reviewed scope.
+
 ## KNX metadata administration
 
 

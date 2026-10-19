@@ -34,6 +34,17 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
+        ("src/mcpserver/lighting_analysis.py", "src/mcpserver/loxone/lighting.py"),
+        (
+            "tests/test_lighting_analysis.py",
+            "tests/test_lighting_context.py",
+            "tests/test_lighting_relationships.py",
+            "tests/test_project_tools.py",
+            "tests/test_project_worker.py",
+            "tests/test_schema_reference.py",
+        ),
+    ),
+    (
         (
             "src/mcpserver/analysis_context.py",
             "src/mcpserver/context_planning.py",
@@ -42,6 +53,7 @@ _TEST_GROUPS: Final = (
         ),
         (
             "tests/test_analysis_context.py",
+            "tests/test_lighting_analysis.py",
             "tests/test_context_planning.py",
             "tests/test_load_planning.py",
             "tests/test_load_planning_runtime.py",

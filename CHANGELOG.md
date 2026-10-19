@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a bounded lighting scope to the existing project analyzer with exact
+  controller/room selection, request-local scene/presence/room declarations,
+  shared profile-source resolution and fresh publication/cursor guards. Keep
+  naming candidates, configured reachability and physical claims separate (#441, stage 4).
+
 - Add opt-in unmodeled internal-flow diagnostics to existing bounded project
   traces and document evidence-backed presence/light relationship review without
   inferring links from names, rooms or runtime-child suffixes (#441, stage 3).
