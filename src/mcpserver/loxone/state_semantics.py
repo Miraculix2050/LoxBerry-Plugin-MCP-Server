@@ -320,23 +320,38 @@ def _resolve_measurement(
     return result, semantic_value
 
 
-def _meter_sources(control: Control, channel: str) -> list[SemanticsSource]:
+def _meter_sources(
+    control: Control, channel: str, *, state: bool = False, decoded: bool = False
+) -> list[SemanticsSource]:
     assert control.meter_type is not None and control.meter_type in METER_DOCUMENTS
-    return [
+    sources = [
         SemanticsSource(
             "structure_file",
             _STATUS_DOCUMENT + "#page=105",
-            ("meter_type",),
+            ("sign_convention",) + (("semantic_value.meter_type",) if decoded else ()),
             document_version="17.1",
             rule_id=("Meter.type.default.v1" if control.meter_type_defaulted else "Meter.type.v1"),
         ),
         SemanticsSource(
             "decoder_rule",
             METER_DOCUMENTS[control.meter_type],
-            ("sign_convention",),
+            ("sign_convention",)
+            + (("value_type",) if state else ())
+            + (("semantic_value.kind", "semantic_value.channel") if decoded else ())
+            + (("semantic_value.output_direction",) if decoded and channel == "actual" else ()),
             rule_id=f"Meter.output.{control.meter_type}.{channel}.v1",
         ),
     ]
+    if decoded:
+        sources.append(
+            SemanticsSource(
+                "runtime_state",
+                f"states.{channel}",
+                ("semantic_value.value",),
+                state_uuid=dict(control.state_uuids)[channel],
+            )
+        )
+    return sources
 
 
 def _resolve_meter(
@@ -350,7 +365,7 @@ def _resolve_meter(
         reason="value_unavailable",
         value_type="number",
         sign_convention=convention,
-        sources=_meter_sources(control, name),
+        sources=_meter_sources(control, name, state=True),
     )
     result.sources_returned = result.sources_total = len(result.sources)
     if value is None:
@@ -370,6 +385,8 @@ def _resolve_meter(
     }
     if name == "actual":
         decoded["output_direction"] = output_direction(control.meter_type or "", value)
+    result.sources = _meter_sources(control, name, state=True, decoded=True)
+    result.sources_returned = result.sources_total = len(result.sources)
     # Quantity, unit, physical boundary and input inversion are separate evidence.
     return result, decoded
 

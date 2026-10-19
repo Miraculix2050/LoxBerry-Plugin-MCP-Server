@@ -81,7 +81,10 @@ def test_normalized_output_sign_is_independent_of_labels_and_units(
     )
     assert descriptor.unit is None and descriptor.measurement_quantity is None
     assert descriptor.interpretation_status == "partial"
-    assert all("sign_convention" in s.fields for s in descriptor.sources[1:])
+    fields = {field for source in descriptor.sources for field in source.fields}
+    assert {f"semantic_value.{field}" for field in decoded} <= fields
+    assert "meter_type" not in fields
+    assert descriptor.sources[-1].state_uuid == "power"
 
 
 @pytest.mark.parametrize("value", [0, 1.5])
@@ -134,6 +137,11 @@ def test_advertised_statistics_share_sign_rule_and_profile_source_changes(kind):
     descriptor = resolve(kind, None)[0]
     assert result.sign_convention == descriptor.sign_convention
     assert result.measurement_boundary is None and result.direction is None
+    assert all(
+        not field.startswith("semantic_value") and field != "meter_type"
+        for source in result.sources
+        for field in source.fields
+    )
     assert f"Meter.output.{kind}.actual.v1" in resolver.source_reference(control, series=series)
     assert (
         resolver.resolve_series(control, replace(series, accumulated=True)).sign_convention is None
@@ -152,3 +160,14 @@ def test_difference_sums_do_not_inherit_nonnegative_counter_output_rule():
     assert result.value_meaning == "interval_difference_sum"
     assert result.sign_convention is None
     assert "decreases_require_reset_evidence" in result.limitations
+
+
+@pytest.mark.parametrize("value", [None, True, "2", float("inf")])
+def test_unavailable_or_invalid_value_does_not_claim_decoded_field_provenance(value):
+    descriptor, decoded = resolve("storage", value)
+    assert decoded is None
+    assert not any(
+        field.startswith("semantic_value")
+        for source in descriptor.sources
+        for field in source.fields
+    )
