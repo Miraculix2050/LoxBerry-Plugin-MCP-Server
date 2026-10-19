@@ -108,6 +108,10 @@ ein bestätigtes Binding bestätigt keine hypothetische Rolle oder installierte
 Leuchte. Präsenzquellen dürfen außerhalb des gewählten Raums liegen, müssen aber
 sichtbar bleiben. Doppelte aufgelöste Identitäten und überlappende Präfixe werden
 abgewiesen. Es werden keine Profile oder Konfigurationen gespeichert.
+Szenen ohne deklarierte Rolle bleiben fehlender Kontext. Nicht aktuelle
+Mood-Namen werden mit sichtbarer Aktualitätslücke aus Namensvergleichen
+ausgeschlossen. Ein nicht verfügbares Profil ist ein Quell-/Wiederholungsproblem
+und kein Anlass, gültige Eingaben zu ändern.
 
 Befunde behalten Quellversionen, Aktualität, Auslassungen und Raum-/Controller-/
 Szenenbezüge. Namensabweichungen sind Prüfkandidaten; konfigurierte Erreichbarkeit

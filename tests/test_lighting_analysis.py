@@ -114,6 +114,11 @@ async def prepared(central=None, ctx=None):
     )
 
 
+async def validate_sources(source, runtime, snapshot, profile_path):
+    bindings, revision = await source.current_bindings(runtime, snapshot.structure, profile_path)
+    source.validate(runtime, snapshot, bindings, revision)
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -267,10 +272,10 @@ async def test_profile_confirmation_never_upgrades_scene_role_or_presence_declar
     assert source.normalized["scenes"][0]["source_origin"] == "user_confirmed"
     assert source.normalized["scenes"][0]["origin"] == "scenario_assumption"
     assert source.normalized["presence_sources"][0]["origin"] == "scenario_assumption"
-    await source.validate(runtime, snapshot, None)
+    await validate_sources(source, runtime, snapshot, None)
     bindings["light"] = {**bindings["light"], "rationale": "same revision mutation"}
     with pytest.raises(ControlOperationError, match="changed"):
-        await source.validate(runtime, snapshot, None)
+        await validate_sources(source, runtime, snapshot, None)
     # Also reject two references resolving to the same controller+mood identity.
     with pytest.raises(ValueError, match="duplicate"):
         await prepare_lighting(
@@ -367,7 +372,7 @@ async def test_room_selection_is_exact_deterministic_partial_and_empty_is_not_wh
         runtime, snapshot, LightingSelection(room_uuid="outside"), None, None
     )
     assert empty.controls == ()
-    await empty.validate(runtime, snapshot, None)
+    await validate_sources(empty, runtime, snapshot, None)
     with pytest.raises(ControlOperationError):
         await prepare_lighting(runtime, snapshot, LightingSelection(room_uuid="Same"), None, None)
 
@@ -602,11 +607,11 @@ async def test_profile_revision_installation_and_companion_mutations_are_publica
     )
     read.return_value = (bindings, 2)
     with pytest.raises(ControlOperationError):
-        await source.validate(runtime, snapshot, None)
+        await validate_sources(source, runtime, snapshot, None)
     read.return_value = (bindings, 1)
     runtime.endpoint.origin = "https://other.invalid"
     with pytest.raises(ControlOperationError):
-        await source.validate(runtime, snapshot, None)
+        await validate_sources(source, runtime, snapshot, None)
     runtime.endpoint.origin = "https://synthetic.invalid"
     snapshot.structure = replace(
         snapshot.structure,
@@ -616,7 +621,7 @@ async def test_profile_revision_installation_and_companion_mutations_are_publica
         ),
     )
     with pytest.raises(ControlOperationError):
-        await source.validate(runtime, snapshot, None)
+        await validate_sources(source, runtime, snapshot, None)
 
 
 @pytest.mark.asyncio
@@ -759,3 +764,104 @@ async def test_reachable_child_reports_only_its_parent_anchor_not_an_exact_confi
     assert relation["status"] == "parent_anchor_upstream_reachability"
     assert relation["control_uuid"] == source_child.uuid
     assert relation["runtime_target_mapping"]["parent_runtime_control_uuid"] == SOURCE
+
+
+@pytest.mark.parametrize("field", ["scenes", "presence_sources"])
+@pytest.mark.parametrize("binding", [" ", "../binding", "bad/ref"])
+def test_profile_reference_grammar_matches_existing_identifiers(field, binding):
+    row = declared(binding_id=binding)
+    if field == "scenes":
+        row["mood_id"] = "1"
+    with pytest.raises(ValidationError):
+        context(**{field: [row]})
+
+
+@pytest.mark.asyncio
+async def test_naming_only_does_not_publish_stale_mood_name_collisions():
+    runtime, snapshot, query, records = fixture()
+    for key in records:
+        records[key] = replace(records[key], freshness=Freshness.STALE)
+    source = await prepare_lighting(
+        runtime, snapshot, LightingSelection(controller_uuids=[LIGHT, OTHER]), None, None
+    )
+    result = analyze_lighting(query, source, frozenset({"naming_consistency"}))
+    assert not any(f["code"] == "repeated_visible_mood_name" for f in result["findings"])
+    assert not result["coverage"]["naming_comparison_complete"]
+
+
+@pytest.mark.asyncio
+async def test_selected_scene_without_role_reports_exact_missing_context():
+    ctx = context(
+        scenes=[
+            declared(controller_uuid=LIGHT, mood_id="1"),
+            declared(controller_uuid=OTHER, mood_id="1", role="Task"),
+        ]
+    )
+    _, _, query, _, sources = await prepared(ctx=ctx)
+    result = analyze_lighting(query, sources, frozenset({"scene_roles"}))
+    missing = next(f for f in result["findings"] if f["code"] == "scene_roles_missing")
+    assert missing["references"] == [
+        {"controller_uuid": LIGHT, "room_uuid": "room", "mood_id": "1"}
+    ]
+    assert not any(
+        f["code"] == "declared_scene_role" and f["references"][0]["controller_uuid"] == LIGHT
+        for f in result["findings"]
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["prepare", "publication"])
+async def test_profile_operational_failure_is_unavailability(monkeypatch, phase):
+    from mcpserver.installation_profile import ProfileError
+
+    runner, *_ = runner_fixture(monkeypatch)
+    bindings = {"sensor": {"status": "confirmed", "role": "room_sensor", "control_uuid": SOURCE}}
+    read = AsyncMock(
+        side_effect=[ProfileError("profile_corrupt")]
+        if phase == "prepare"
+        else [(bindings, 1), ProfileError("profile_busy")]
+    )
+    monkeypatch.setattr(domain, "read_profile_bindings", read)
+    result = await runner.run(
+        "lighting",
+        None,
+        lighting_selection=LightingSelection(controller_uuids=[LIGHT]),
+        lighting_context=context(presence_sources=[declared(binding_id="sensor")]),
+    )
+    assert not result.ok and result.data.error == "temporarily_unavailable"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["visibility", "room", "source"])
+async def test_profile_await_cannot_publish_a_pre_await_runtime_snapshot(monkeypatch, change):
+    runner, runtime, snapshot, query, _, _, reads, _ = runner_fixture(monkeypatch)
+    bindings = {"sensor": {"status": "confirmed", "role": "room_sensor", "control_uuid": SOURCE}}
+    count = 0
+
+    async def read(*args, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 2:
+            # Simulate a change while the asynchronous publication profile read runs.
+            if change == "visibility":
+                snapshot.structure = replace(snapshot.structure, controls=())
+            if change == "room":
+                snapshot.structure = replace(snapshot.structure, rooms=(Room("room", "Changed"),))
+            if change == "source":
+                snapshot.structure = replace(
+                    snapshot.structure,
+                    controls=tuple(
+                        replace(c, state_uuids=()) if c.uuid == LIGHT else c
+                        for c in snapshot.structure.controls
+                    ),
+                )
+        return bindings, 1
+
+    monkeypatch.setattr(domain, "read_profile_bindings", read)
+    result = await runner.run(
+        "lighting",
+        None,
+        lighting_selection=LightingSelection(controller_uuids=[LIGHT]),
+        lighting_context=context(presence_sources=[declared(binding_id="sensor")]),
+    )
+    assert not result.ok and result.data.error == "temporarily_unavailable"

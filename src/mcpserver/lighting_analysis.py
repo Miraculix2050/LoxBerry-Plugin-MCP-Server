@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, JsonValue, model_validator
 from mcpserver.analysis_context import (
     ContextContract,
     Declaration,
+    Identifier,
     SourceSnapshot,
     read_profile_bindings,
     resolve_source_association,
@@ -68,7 +69,7 @@ class LightingDeclaration(ContextContract):
 
 class LightingScene(LightingDeclaration):
     controller_uuid: str | None = Field(default=None, min_length=1, max_length=200)
-    binding_id: str | None = Field(default=None, min_length=1, max_length=64)
+    binding_id: Identifier | None = None
     mood_id: str = Field(min_length=1, max_length=10)
     role: str | None = Field(default=None, min_length=1, max_length=64)
 
@@ -83,7 +84,7 @@ class LightingScene(LightingDeclaration):
 
 class LightingPresence(LightingDeclaration):
     control_uuid: str | None = Field(default=None, min_length=1, max_length=200)
-    binding_id: str | None = Field(default=None, min_length=1, max_length=64)
+    binding_id: Identifier | None = None
 
     @model_validator(mode="after")
     def exact_source(self) -> LightingPresence:
@@ -247,14 +248,21 @@ class LightingSources:
     source_key: str
     binding_ids: set[str]
 
-    async def validate(self, runtime: Any, snapshot: Any, profile_path: Path | None) -> None:
-        structure = snapshot.structure
-        bindings, revision = await read_profile_bindings(
+    async def current_bindings(
+        self, runtime: Any, structure: LoxoneStructure, profile_path: Path | None
+    ) -> tuple[dict[str, Any], int | None]:
+        return await read_profile_bindings(
             profile_path,
             installation_identity(runtime.endpoint.origin, structure),
             structure,
             required=bool(self.binding_ids),
         )
+
+    def validate(
+        self, runtime: Any, snapshot: Any, bindings: dict[str, Any], revision: int | None
+    ) -> None:
+        """Validate after the final fresh acquisition, with no further await before publication."""
+        structure = snapshot.structure
         self.guard.validate(runtime.endpoint.origin, structure, bindings, revision)
         current = select_controllers(structure, self.selection)
         room_ids = {c.room_uuid for c in current[0]} | {self.selection.room_uuid}
@@ -592,6 +600,23 @@ def analyze_lighting(
         for c in controls:
             if full_name(c.name):
                 names[c.name.casefold()].append(c)
+            if (
+                sources.moods[c.uuid]["freshness"] != "current"
+                or sources.moods[c.uuid]["status"] != "available"
+            ):
+                add(
+                    "naming_consistency",
+                    "mood_names_not_current",
+                    "context_gap",
+                    [ref(c)],
+                    {
+                        "freshness": sources.moods[c.uuid]["freshness"],
+                        "observed_at": sources.moods[c.uuid]["observed_at"],
+                        "source_status": sources.moods[c.uuid]["status"],
+                        "included_in_mood_name_comparison": False,
+                    },
+                )
+                continue
             for mood in sources.moods[c.uuid]["moods"]:
                 if (
                     full_name(mood["name"])
@@ -643,6 +668,15 @@ def analyze_lighting(
         roles: defaultdict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
         for scene in sources.normalized["scenes"]:
             c = by_id[scene["control_uuid"]]
+            if not scene.get("role"):
+                add(
+                    "scene_roles",
+                    "scene_roles_missing",
+                    "context_gap",
+                    [ref(c, scene["mood_id"])],
+                    {"declaration": scene, "inferred_from_names": False},
+                )
+                continue
             matching = [m for m in sources.moods[c.uuid]["moods"] if m["id"] == scene["mood_id"]]
             mood = (
                 matching[0]

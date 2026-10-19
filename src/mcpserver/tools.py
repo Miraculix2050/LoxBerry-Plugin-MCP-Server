@@ -45,6 +45,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.config import AtomicConfigStore, ConfigError
+from mcpserver.installation_profile import ProfileError
 from mcpserver.knx.catalog_runtime import CatalogRuntime
 from mcpserver.knx.model import KnxError
 from mcpserver.knx.project_metadata import ProjectMetadata
@@ -6981,9 +6982,15 @@ class _ProjectAnalysisRunner:
                 )
             if lighting is not None:
                 # A cache hit and the initial snapshot never establish publication rights.
-                final_project, final_snapshot = await _project_query(self.runtime)
                 async with self.runtime.worker_slot():
-                    await lighting.validate(self.runtime, final_snapshot, self.profile_path)
+                    after_bindings, after_revision = await lighting.current_bindings(
+                        self.runtime, snapshot.structure, self.profile_path
+                    )
+                await projects.authorize(access)
+                # Refresh after all asynchronous profile work/admission; the checks
+                # below and publication do not yield to a stale pre-await snapshot.
+                final_project, final_snapshot = await _project_query(self.runtime)
+                lighting.validate(self.runtime, final_snapshot, after_bindings, after_revision)
                 if (
                     final_project.view.snapshot.content_identity != content_identity
                     or final_snapshot.connected != initial_connected
@@ -6996,7 +7003,6 @@ class _ProjectAnalysisRunner:
                     raise ControlOperationError(
                         "temporarily_unavailable", "Lighting project changed; start a new analysis"
                     )
-                await projects.authorize(access)
             if admin_access is not None:
                 _LOGGER.info(
                     "component=project_load phase=response_fit duration_ms=%.1f",
@@ -7017,6 +7023,12 @@ class _ProjectAnalysisRunner:
             )
         except ControlOperationError as exc:
             return _error(_PreparedProjectAnalysisEnvelope, exc.code, str(exc))
+        except ProfileError:
+            return _error(
+                _PreparedProjectAnalysisEnvelope,
+                "temporarily_unavailable",
+                "Lighting profile source is unavailable; retry with current sources",
+            )
         except ValueError as exc:
             return _error(_PreparedProjectAnalysisEnvelope, "invalid_input", str(exc))
         except PermissionError:

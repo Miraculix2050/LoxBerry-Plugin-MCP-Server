@@ -102,6 +102,9 @@ reuse confirmed sources only; a confirmed binding does not confirm a hypothetica
 role or installed fixture. Presence sources may be outside the selected room but
 must remain visible. Duplicate resolved identities and overlapping prefixes are
 rejected. This creates no saved profile or configuration changes.
+Scenes without a declared role remain missing context. Noncurrent mood names are
+excluded from naming comparisons with explicit freshness gaps. An unavailable
+profile is a source/retry problem, not an instruction to change valid inputs.
 
 Results retain source versions, freshness, omissions and room/controller/scene
 references. Naming differences are review candidates; configured reachability is

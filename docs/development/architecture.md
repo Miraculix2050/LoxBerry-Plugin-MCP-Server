@@ -264,6 +264,9 @@ Each page reacquires caller-visible project/runtime sources. Both cache keys bin
 caller identity, normalized selection/context, source/profile content and mood/room
 signatures. Before publication another fresh project/runtime acquisition and
 profile read reject revocation or mixed revisions, including same-revision changes.
+Publication re-reads optional profile bindings before the final fresh runtime/
+project acquisition; source validation and return then contain no further await.
+Operational profile failures remain source unavailability, not malformed input.
 Presence declarations are separate from configured reachability; unknown central
 flow, child parent anchors and bounded missing paths never prove causation.
 The [lighting contract](lighting-analysis-contract.md) defines the reviewed scope.

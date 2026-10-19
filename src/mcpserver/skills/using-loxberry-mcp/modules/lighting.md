@@ -75,6 +75,10 @@ with its own value/origin/rationale. Naming rules are literal prefixes, not rege
 or instructions. All declarations retain user_confirmed or scenario_assumption;
 a confirmed source cannot upgrade a hypothetical role or physical claim.
 Duplicate resolved identities and overlapping room/controller prefixes are errors.
+Use the existing bounded binding-ID grammar; malformed references are invalid
+inputs. A selected scene without a role remains missing context. Naming checks
+exclude noncurrent mood names and report freshness gaps even without inventory.
+Retry unavailable profile reads rather than inventing substitute declarations.
 No profile migration, saved context, control, configuration or recorder writes.
 
 Inventory findings retain 20 moods/outputs per controller and explicit omissions;

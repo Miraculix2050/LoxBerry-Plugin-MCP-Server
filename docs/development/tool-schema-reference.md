@@ -906,6 +906,10 @@ current valid native mood source. A declaration outside the 100-row inventory
 projection may reference a validated native mood ID, but its omitted name remains
 unknown. Ambiguous native IDs never establish one scene name. Profile references
 reuse existing `lighting_intent` or `room_sensor` source confirmations only.
+Binding IDs use the existing `^[A-Za-z0-9_-]{1,64}$` grammar. A selected scene
+without a role retains an exact-reference context gap. Naming-only checks exclude
+noncurrent mood names and report their freshness/time/source-status gap. Profile
+read failures return `temporarily_unavailable`, without storage details.
 
 Findings retain stable IDs, check/code/classification, room/controller/mood
 references and bounded evidence. Inventory retains at most 20 mood/output rows
