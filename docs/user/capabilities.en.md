@@ -614,6 +614,15 @@ bound Rest meter separately through the existing state workflow (`actual`,
 without `native_result_view`). Identify its value and source as a separate meter
 reading; it does not replace a missing native EFM field.
 
+The final [aggregate/period review](../development/efm-semantic-matrix.v1.md#final-aggregateperiod-disposition)
+does not transfer meanings from similar fields: `totalFormat` is evidenced for
+`total/totalNeg`, not automatically for the seven native period fields. The KB
+formula for block output `Yd` is not an established contract for native `Income`.
+Project currency and timezone define neither its unit nor period boundaries or
+lifetime origin. These values remain readable as raw numbers with the stated
+metadata unknown. Current App/Config change notes provide version context, not
+an additional compatibility claim or native calculation formula.
+
 For dated energy reports use confirmed history bindings and the existing
 `loxone_analyze_history(operation="energy")`, respecting its semantics and coverage.
 Current native power values stay separate snapshots; `get/day` cannot provide

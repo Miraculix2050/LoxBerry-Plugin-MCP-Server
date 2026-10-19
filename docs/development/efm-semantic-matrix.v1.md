@@ -193,3 +193,48 @@ compatibility is claimed. E1/E2 remain historical source evidence.
 Broader topology/transformations remain #357; manager acceptance #533, optional
 non-admin disclosure #535, weather/PV planning #509/#510 and performance #501
 remain separate.
+
+
+## Final aggregate/period disposition
+
+The final analytical pass accepts no additional runtime interpretation beyond
+semantic rule v2. The following source boundaries apply to the existing decoder;
+they are deliberate limits of the completed #534 investigation.
+
+| Question | Established source boundary | Delivery / prerequisite for expansion |
+| --- | --- | --- |
+| Native aggregate membership | D1 distinguishes calculated EFM aggregates from individually typed nodes. K1 distinguishes organizing groups from metered distribution boards. | Preserve native values. A decoder expansion needs an exact aggregate inclusion/sign contract covering hierarchy, reverse flows and multiple sources; a single flat installation cannot supply it. |
+| Native period units | D1 p.64 binds totalFormat to total/totalNeg; p.67 lists seven different aggregate keys. | No per-field unit transfer. Require an explicit binding for each admitted field/view, not a node energy example or a project display format. |
+| Income | K1 defines the block output Yd using import/export prices, accumulated hourly or when prices change. | Native Income is not documented as an alias of Yd. No currency, tariff formula or yield alias is inferred. Require a native-field contract and matching price/currency applicability. |
+| Clock and reset | D1 selects current calendar views and lifetime. A local project can declare a timezone/currency, but contains neither native response boundaries nor accumulated reset history. | Do not manufacture timestamps or lifetime origin. Require an exact calendar/reset contract plus source evidence for that field/view. |
+| Rest | Block remaining-top-group meaning is documented; native delivery remains separate from a referenced meter. | Return available raw Rest without a unit. Preserve missing native fields and separately identify meter readings. |
+
+The supplied meter reference project contains meter blocks but no EFM block;
+it cannot independently prove native EFM aggregation. The household project's
+EFM declares separate power/quantity display formats and explicit meter links;
+its output connectors do not declare native formulas or polarity inversion.
+Current local settings are configuration evidence, not proof of installed or
+historical state. Private project identifiers, detailed traces and acquisition
+records remain outside product documentation.
+
+The official [App beta notes](https://www.loxone.com/enen/support/loxone-app-public-beta/)
+for App 17.2.1 (21992) distinguish newer Miniserver-supplied accumulated production
+components from earlier fallback calculations and describe fixes for group and
+reverse-rest presentation. The [Config beta notes](https://www.loxone.com/enen/support/loxone-config-public-beta/)
+also record BG-I44612 concerning bidirectional delivery in EFM lifetime values.
+These are version-sensitive change notices, not a documented mapping to this
+allowlisted native response. They neither prove a defect on firmware 17.2.8.28
+nor authorize new fields, a reconstructed formula or wider compatibility.
+
+The retained official D1 remains the versioned technical source. Direct online
+PDF/page retrieval was unavailable during rechecking; indexed official KB and
+change-note text supplied the supplementary context above. Search snippets are
+not treated as a newer version-bound wire specification.
+
+Regression coverage exercises all 35 field/view combinations: raw signed numbers
+remain present, omitted fields remain missing, and display formats or incidental
+currency/timezone metadata do not manufacture period semantics or boundaries.
+Normal review and final CI cover this closeout; no runtime transport, schema,
+authorization or request-budget change, target access or deployment is needed.
+#534 can remain closed with these documented limits. Future expansion requires
+the missing contract/evidence rather than silently promoting an unknown value.
