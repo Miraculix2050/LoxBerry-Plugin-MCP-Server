@@ -1217,6 +1217,16 @@
       ]
     }
   ],
+  "prompt_recipes": {
+    "lighting_naming_review": ["lighting-01", "lighting-02", "lighting-05"],
+    "presence_light_association": ["lighting-03"],
+    "current_state_summary": ["basic-09", "basic-10", "basic-11", "basic-12"],
+    "temperature_history_summary": ["basic-07"],
+    "solar_daily_report": ["solar-14"],
+    "comparable_day_review": ["solar-20"],
+    "consumer_pv_comparison": ["solar-17", "solar-18"],
+    "energy_period_report": ["solar-24"]
+  },
   "required_fixture_variants": [
     "event_only",
     "statistics_only",

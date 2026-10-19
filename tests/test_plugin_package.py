@@ -256,6 +256,8 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
     selector_cache.write_bytes(b'"""Event History selector cache."""\r\n')
     prompts = source_root / "mcpserver" / "prompts.py"
     prompts.write_bytes(b'"""Prompt registration."""\r\n')
+    analysis_prompts = source_root / "mcpserver" / "analysis_prompts.py"
+    analysis_prompts.write_bytes(b'"""Analysis prompt recipes."""\r\n')
     knx_prompts = source_root / "mcpserver" / "knx" / "prompts.py"
     knx_prompts.parent.mkdir()
     knx_prompts.write_bytes(b'"""KNX prompt recipes."""\r\n')
@@ -263,6 +265,7 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("mcpserver/module.py", b'"""Module."""\n')
         archive.writestr("mcpserver/prompts.py", b'"""Prompt registration."""\n')
+        archive.writestr("mcpserver/analysis_prompts.py", b'"""Analysis prompt recipes."""\n')
         archive.writestr("mcpserver/knx/prompts.py", b'"""KNX prompt recipes."""\n')
         archive.writestr("mcpserver/auth/scopes.py", b'"""Scope names."""\n')
         archive.writestr(

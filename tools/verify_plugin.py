@@ -122,6 +122,7 @@ _TEXT_NAMES: Final = {
 }
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/prompts.py",
+    "mcpserver/analysis_prompts.py",
     "mcpserver/knx/prompts.py",
     "mcpserver/auth/scopes.py",
     "mcpserver/emergency_options_cache.py",

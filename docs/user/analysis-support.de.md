@@ -1,5 +1,9 @@
 # Analysefragen: Support und Grenzen
 
+Die [lesenden MCP-Promptvorlagen](mcp-prompts.de.md) machen verfügbare Abläufe
+parametrisiert auswählbar. Sie erweitern keine fachliche Abdeckung und führen
+beim Abruf keine Analyse aus (#444).
+
 Aktuelle Ergänzung: [Native PVPF-Prognosen und bedingte Zukunftsplanung](pv-planning.de.md) verwenden eine eigene PV-Quelle und bestätigte Lastprofile. Der unten erhaltene Solar-25-Fall beschreibt die ursprüngliche Wetter-only-Abnahme; daraus folgt keine bestandene Quellen-, Geräte- oder KI-Abnahme der neuen Planung.
 
 Für die erneute Abnahme in #485 gelten Bytes, vollständige Aufrufzahlen,
