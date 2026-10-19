@@ -119,6 +119,26 @@ coverage. See the [versioned evidence matrix](../development/analysis-semantic-e
 Other energy, meter or controller meanings can remain unknown. This coverage is
 fixture-tested; it does not establish new hardware or firmware compatibility.
 
+For runtime `Meter` controls, the full description exposes `model.meter_type`
+from documented `details.type`: `unidirectional` (also the documented default
+when absent), `bidirectional`, `storage`, or `legacy`. Unknown, malformed or
+contradictory subtype metadata does not gain output semantics. `powerName`,
+project `PwrN`, display icons, units and household labels do not select the type.
+For advertised `actual`, state semantics and compatible raw StatisticV2 semantics
+report `sign_convention`: `non_negative` for Uni (zero included),
+`positive_consumption_negative_delivery` for Bi, and
+`positive_discharge_negative_charge` for storage. Valid state values add
+`semantic_value.kind=meter_output` with `output_direction`; zero is only `zero`,
+not evidence of a stopped physical device. Reading channels `total`, `totalNeg`
+and their documented day/week/month/year variants are nonnegative; `totalNeg`
+is a separate counter, not a negative net value. No undocumented counter aliases
+are assigned. Units and physical boundaries remain separately qualified, so
+these state descriptors remain partial. Legacy meters retain their prior behavior.
+Invalid numeric values or negative values on nonnegative channels produce no
+semantic value; original raw values are retained. Input-polarity configuration
+is not required to interpret these documented outputs. Native EFM aggregates
+do not inherit these rules. See the [meter evidence](../development/meter-output-semantics.md).
+
 Native series now expose `semantics` through description, observability and
 statistic reads. Explicit accumulated metadata distinguishes cumulative counters
 from samples and the adapter's aggregated difference sums. Exact Meter channels

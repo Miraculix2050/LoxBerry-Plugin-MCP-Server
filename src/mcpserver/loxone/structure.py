@@ -844,6 +844,26 @@ def _controls(
         statistic_series, statistic_series_truncated = _statistic_series(item)
         window_monitor_items, window_monitor_summary = _window_monitor_items(details.get("windows"))
         semantics_invalid_fields: list[str] = []
+        meter_type = None
+        meter_type_defaulted = False
+        if item.get("type") == "Meter":
+            # Structure File 17.1 p.105 explicitly defines the missing-field default.
+            candidate = details.get("type", "unidirectional")
+            if isinstance(candidate, str) and candidate in {
+                "unidirectional",
+                "bidirectional",
+                "storage",
+                "legacy",
+            }:
+                meter_type = candidate
+                meter_type_defaulted = "type" not in details
+                if meter_type == "unidirectional" and any(
+                    name == "storage" or name.startswith("totalNeg") for name, _ in states
+                ):
+                    meter_type = None
+                    semantics_invalid_fields.append("meter_type")
+            else:
+                semantics_invalid_fields.append("meter_type")
         format_total_length = (
             len(details["format"]) if isinstance(details.get("format"), str) else None
         )
@@ -923,6 +943,8 @@ def _controls(
                 format=format_value,
                 semantics_invalid_fields=tuple(semantics_invalid_fields),
                 format_total_length=format_total_length,
+                meter_type=meter_type,
+                meter_type_defaulted=meter_type_defaulted,
                 status_monitor_status_total=status_total,
                 status_monitor_status_complete=status_complete,
                 status_monitor_input_total=input_total,

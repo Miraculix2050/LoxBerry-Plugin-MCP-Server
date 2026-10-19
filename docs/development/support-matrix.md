@@ -52,6 +52,12 @@ to the corresponding recorded target acceptance; fixtures are not device proof.
   `inputStates` position-stable tuple decoding and configured-state counts. Other meanings remain unknown;
   this does not establish new firmware or control-family hardware compatibility.
 - History, diagnostics and cache operation require their documented scopes and local approvals.
+- Normalized `Meter` output conventions are fixture-tested for documented
+  unidirectional, bidirectional and storage subtypes (including the documented
+  missing-subtype default). State and compatible StatisticV2 series share the
+  rules; unknown/legacy metadata remains unenriched. See
+  [meter output semantics](meter-output-semantics.md). This establishes no new
+  target compatibility or native EFM aggregate contract.
 - Control is Gen.-1-only, default-disabled, type-specific and limited to visible operable controls.
 - Only actions explicitly identified as hardware confirmed in the user capability documentation are hardware promises; other implemented actions remain unverified.
 

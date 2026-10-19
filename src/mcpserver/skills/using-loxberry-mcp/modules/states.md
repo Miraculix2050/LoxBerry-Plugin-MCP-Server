@@ -145,7 +145,15 @@ Preserve `reason`, per-field `sources`, missing versions, and collection complet
 companions yield partial interpretations. Generic analog format strings do not prove units or
 precision. Configured StatusMonitor labels and positions do not establish
 severity, household roles or physical danger. Unsupported energy, meter and
-controller states can remain unknown. For exact `IRoomControllerV2.tempActual`
+controller states can remain unknown. For normalized `Meter`, inspect the full
+description's `model.meter_type`: documented unidirectional outputs are
+nonnegative, bidirectional `actual` is positive consumption/negative delivery,
+and storage `actual` is positive discharge/negative charge. The input direction
+setting does not change this output convention. Zero is not proof of physical
+inactivity; a positive unidirectional output does not identify a consumer.
+Reading channels remain separately nonnegative. Preserve partial unit/boundary
+evidence and invalid values; never transfer these rules to native EFM aggregates.
+Malformed, future and legacy subtypes have no new decoder. For exact `IRoomControllerV2.tempActual`
 and `tempTarget`, use `measurement_role` to distinguish actual/target temperature;
 only a complete explicit Celsius/Fahrenheit format establishes its unit. A bare
 degree format keeps the unit unknown. `InfoOnlyDigital.active` and

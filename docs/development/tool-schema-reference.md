@@ -1,5 +1,19 @@
 # Tool schema reference
 
+## Normalized meter outputs (#534 follow-up)
+
+The full `loxone_describe_control` response adds nullable
+`capabilities.model.meter_type`: `unidirectional`, `bidirectional`, `storage`,
+or `legacy`. It retains documented runtime `details.type`, including the explicit
+missing-field unidirectional default; malformed/future/conflicting metadata
+does not select a rule. Existing state semantics and compatible raw StatisticV2
+series expose the documented output `sign_convention`. Valid state results add
+`semantic_value.kind=meter_output`, channel, subtype, numeric value, and
+`output_direction` for `actual`. Raw values and partial evidence remain separate.
+Difference sums do not inherit a counter's nonnegative convention. No input
+polarity inference, native EFM aggregate decoder, new tool or source request is
+introduced. See [meter output semantics](meter-output-semantics.md).
+
 ## Local Event History runtime control IDs (#553)
 
 `loxone_get_event_history.control_uuid` accepts a plain UUID (existing canonical
