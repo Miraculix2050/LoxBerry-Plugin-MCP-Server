@@ -63,6 +63,26 @@ cannot establish durations. The 24-hour extrapolation is a labelled estimate for
 the selected channel, not proven whole-installation base load. Respect ambiguous
 local-window errors and the separate native EFM balance gate.
 
+For solar-23, distinguish an energy ratio from its percentage. Use the returned
+`estimated_24_hour_energy_Wh`, convert Wh to kWh once, and compare with the mean
+daily solar energy in kWh over the same explicitly selected period:
+
+```python
+estimated_daily_energy_kwh = estimated_24_hour_energy_Wh / 1000
+energy_ratio = estimated_daily_energy_kwh / mean_daily_solar_energy_kwh
+energy_percent = 100 * energy_ratio
+```
+
+Synthetic example: 100 W extrapolates to 2400 Wh = 2.4 kWh per 24 hours;
+with 12 kWh mean daily solar energy, the ratio is 0.2 and the percentage is 20%.
+The quotient alone is not a percentage. Zero, negative, non-finite or unknown
+solar energy leaves the ratio and percentage unavailable; do not divide or
+invent a denominator. Require evidenced energy units, usable coverage and
+qualified source roles/boundaries before calculating installation values.
+The estimate-to-yield ratio may exceed 100%; do not clamp it or call it measured
+solar supply, self-consumption, independence or savings. Missing prerequisites
+permit only a clearly labelled general formula, not an installation result.
+
 Read `coverage_evidence`: UTC intervals are half-open internally, while existing
 public history/statistic time filters remain inclusive. Sample timestamps prove
 points only. Only documented hourly difference records expose exact energy

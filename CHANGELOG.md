@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Clarify base-load/solar energy percentages, Wh-to-kWh conversion and unavailable
+  denominators in MCP guidance; independently check the documented calculation
+  against synthetic base-load results without claiming measured solar supply (#485).
+
 - Qualify the exact accumulated native EFM `totalSelfConsumption` Wh/kWh statistic
   for hourly self-consumption analysis, preserving explicit plant association and
   native-calculation limitations. Add correlated numerical source-read, preparation,

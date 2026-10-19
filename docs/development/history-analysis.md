@@ -92,6 +92,16 @@ DST hours retain their actual duration. A 24-hour energy extrapolation is labell
 as an estimate and does not establish whole-installation base load. Raw power
 samples without an evidenced duration cannot produce this estimate.
 
+For solar-23, convert `estimated_24_hour_energy_Wh / 1000` to estimated daily kWh.
+Divide by the mean daily solar energy in kWh over the same selected period to
+obtain a dimensionless ratio; multiply by **100** to report a percentage. A
+synthetic 100 W baseline gives 2.4 kWh per 24 hours; against 12 kWh/day the ratio
+is 0.2 and the percentage 20%, not 0.2%. Missing, zero, negative or non-finite
+solar energy leaves the result unavailable. Verify roles, boundaries, units and
+coverage before applying the formula; a qualified formula without source values
+is not an installation result. The ratio may exceed 100% and must not be clamped
+or treated as measured solar supply, self-consumption, independence or savings.
+
 Comparisons reuse the same source context, budgets and worker admission. Outputs
 retain per-source provenance and expose a bounded `comparison` result with method,
 units, usable intervals and limitations. Explicit raw pages preserve the common
