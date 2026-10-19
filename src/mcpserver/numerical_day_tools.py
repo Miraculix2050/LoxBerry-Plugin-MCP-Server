@@ -581,11 +581,6 @@ async def numerical_day_analysis(
         count += len(points)
         preparation_started = time.perf_counter()
         semantics = resolver.resolve_series(control, series, granularity="hour")
-        if (
-            semantics.measurement_role == "native_self_consumption_channel"
-            and role != "self_consumption"
-        ):
-            raise ValueError("native self-consumption channel requires the self_consumption role")
         summary = await run_admitted_worker(
             statistic_summary,
             "energy",
@@ -601,7 +596,7 @@ async def numerical_day_analysis(
         if qualified:
             hours = await run_admitted_worker(
                 qualified_hourly_energy,
-                ComparisonInput(summary, semantics, points),
+                ComparisonInput(summary, semantics, points, profile_role=role),
                 begin,
                 finish,
                 deadline,

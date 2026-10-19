@@ -6,6 +6,8 @@ Wh or kWh. Hourly values are native difference sums, not a plugin PV/storage
 balance. Confirm the installation association explicitly. This is an EFM
 calculation, not an independent physical meter. Other EFM outputs, currencies,
 power units and unknown formats do not inherit this interpretation.
+All historical comparisons require the `self_consumption` role for this channel;
+it cannot be relabelled as production, consumer demand or export.
 
 When debug diagnostics are enabled, correlated phase records report solar-history
 reads, statistic reads, energy preparation and calculation durations, point counts

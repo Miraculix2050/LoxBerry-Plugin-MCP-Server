@@ -82,6 +82,8 @@ ausweist. Stundenwerte sind native Differenzsummen, keine vom Plugin berechnete
 PV-/Speicherbilanz. Die Anlagenzuordnung muss bestätigt werden; der Eigenverbrauch
 ist eine EFM-Berechnung und kein unabhängiger physischer Zähler. Andere EFM-Kanäle,
 Währungen, Leistungseinheiten und unbekannte Formate erhalten diese Bedeutung nicht.
+In allen historischen Vergleichen benötigt dieser Kanal die Rolle `self_consumption`;
+er darf nicht als Erzeugung, Verbrauch eines Verbrauchers oder Einspeisung umgedeutet werden.
 
 W/m²-Quellzustände werden trapezförmig zu geschätzten Wh/m² integriert: keine
 Extrapolation oder Lücken über der doppelten Abtastperiode, maximal 60 Minuten.

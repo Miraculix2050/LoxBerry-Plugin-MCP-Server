@@ -117,7 +117,10 @@ that representative metadata/sample, rather than attributed to the PDF.
 This is an EFM-computed counter, not an independent physical meter or a new storage
 balance. Boundary, direction, physical measurement and reset uncertainty remain
 explicit. `direct_observed` retains its compatible source-series method name; the
-metric carries `native_efm_calculation_not_independent_meter`. Unknown formats,
+metric carries `native_efm_calculation_not_independent_meter`. Contradictory
+comparison roles are rejected at the shared `ComparisonInput`
+boundary: this channel requires `self_consumption` in numerical and general
+comparisons, including overlap, ranking and retrospective-shift inputs. Unknown formats,
 other fields/types and legacy statistics are excluded. Money, power and percentage
 channels cannot inherit this qualification. Profile ruleset changes still invalidate
 old source bindings; request-local confirmed associations avoid implicit profile
