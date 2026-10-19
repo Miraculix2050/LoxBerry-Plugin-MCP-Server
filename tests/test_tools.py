@@ -757,7 +757,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "cursor",
             "limit",
         },
-        "loxone_describe_control": {"control_uuid", "include_hidden", "view"},
+        "loxone_describe_control": {"control_uuid", "include_hidden", "view", "include_outputs"},
         "loxone_get_control_notes": {"control_uuid", "include_hidden"},
         "loxone_get_states": {"state_uuids", "include_hidden"},
         "loxone_get_state_semantics": {"control_uuid", "state_names", "offset", "limit"},

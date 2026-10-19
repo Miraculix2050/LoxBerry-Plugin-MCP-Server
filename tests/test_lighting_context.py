@@ -253,6 +253,14 @@ def test_output_projection_uses_explicit_parent_not_suffix_or_names():
     assert project_lighting_outputs(output_controller(())).total == 0
 
 
+def test_output_byte_bound_reports_omitted_rows_without_using_hidden_data(monkeypatch):
+    monkeypatch.setattr("mcpserver.loxone.lighting.MAX_OUTPUT_BYTES", 64)
+    child = Control("child", "x" * 100, "Dimmer", None, None, None, ())
+    hidden = replace(child, uuid="hidden", is_hidden=True)
+    result = project_lighting_outputs(output_controller((child, hidden)))
+    assert result.total == 1 and result.omitted == 1 and result.entries == ()
+
+
 def test_outputs_exclude_hidden_and_unknown_types_and_bound_states_names_and_rows():
     child = Control(
         "child",
