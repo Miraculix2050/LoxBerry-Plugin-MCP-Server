@@ -156,8 +156,9 @@ verfügbare Historie. Eine Sperrbeobachtung belegt keinen Verursacher. Fehlende
 oder leere Historie beweist keinen fehlerfreien Betrieb. Es gibt keine zusätzliche
 Recovery-Aktion; die bestehende Admin-Probe behält ihre Schutz- und Frequenzgrenzen.
 
-Die Übersicht zeigt höchstens 50 unterschiedliche aktive App/Identität/Miniserver-
-Zuordnungen. Bei weiteren Zuordnungen warnt sie vor der gekürzten Liste und nennt
+Die Übersicht zeigt höchstens 50 unterschiedliche gespeicherte, nicht widerrufene
+App/Identität/Miniserver-Zuordnungen, auch bei abgelaufenen Sitzungen. Bei weiteren
+Zuordnungen warnt sie vor der gekürzten Liste und nennt
 die Anzahl der ausgelassenen unterschiedlichen Zuordnungen; mehrere Sitzungen
 derselben Zuordnung zählen einmal. Ein abgelehnter Miniserver-Befehl wird getrennt
 von einer abgelehnten Authentifizierung angezeigt.

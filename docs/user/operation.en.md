@@ -144,7 +144,8 @@ history. A block observation does not identify its cause. Unavailable or empty
 history does not prove a healthy system. No extra recovery action is introduced;
 the existing Admin probe keeps its existing protection and rate limits.
 
-The overview shows at most 50 distinct active app/identity/Miniserver bindings.
+The overview shows at most 50 distinct retained, non-revoked app/identity/Miniserver
+bindings, including those with expired sessions.
 When more exist, it warns that the list is truncated and shows the number of
 omitted distinct bindings; repeated sessions of the same binding count once.
 A rejected Miniserver command is reported separately from rejected authentication.
