@@ -7,6 +7,9 @@ configuration is changed. The existing EFM views retain their own requirements.
 
 The native `getForecasts` command supplies hourly kWh for today, tomorrow and the
 day after tomorrow. The result normalizes these to Wh with Unix hour boundaries.
+The adapter accepts the direct JSON forecast object and previously supported
+`LL` responses. Other commands retain their response-envelope check; error
+responses and invalid forecast data are still rejected.
 Aggregate states remain separate. State timestamps use the Loxone 2009 epoch;
 forecast timestamps use Unix. Missing hours are not interpolated.
 
@@ -23,6 +26,21 @@ value. Report missing setup; do not activate, subscribe or reconfigure automatic
 Native forecast support is distinct from the existing W/m² weather guidance.
 
 ## Conditional future load planning
+
+Forecast read failures distinguish timeouts, protocol errors, rejected requests,
+connection errors and unavailable authorization storage through fixed sanitized
+messages. The error category remains `temporarily_unavailable`; the message does
+not include raw server responses or credentials. This applies to both native
+forecast reads and the planner. A connection or protocol failure is not evidence
+of missing forecast configuration. Failed reads are not automatically retried.
+
+With Debug logging enabled, one bounded runtime event identifies the failed step
+(snapshot, token lookup, session establishment, forecast command, structure
+recheck or forecast decoding) and a fixed cause label. Connection causes distinguish
+WebSocket closure, connection establishment failure, source-IP blocking and an
+invalid response envelope; unclassified causes remain unknown. The event's
+`trace_id` matches the MCP error. No payloads, exception text, control identities
+or credentials are logged. These details are omitted at Info level.
 
 Use `loxone_plan_loads(options=...)` with `forecast_control_uuid`, offset-aware
 future `start`/`end`, `timezone`, and up to 16 `consumer_binding_ids` from the

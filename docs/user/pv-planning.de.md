@@ -8,6 +8,9 @@ weiterhin deren eigene Voraussetzungen.
 
 Der native Befehl `getForecasts` liefert stündliche kWh für heute, morgen und
 übermorgen. Das Ergebnis normalisiert diese in Wh mit Unix-Stundengrenzen.
+Der Adapter akzeptiert das direkte JSON-Prognoseobjekt sowie bisher unterstützte
+`LL`-Antworten. Andere Befehle behalten ihre Prüfung des Antwortumschlags;
+Fehlerantworten und ungültige Prognosedaten werden weiterhin abgewiesen.
 Aggregierte Zustände bleiben getrennt. Zustandszeitstempel verwenden die
 Loxone-Epoche 2009, Prognosezeitstempel Unix. Fehlende Stunden werden nicht ergänzt.
 
@@ -26,6 +29,23 @@ abonnieren oder umkonfigurieren. Native Prognosen sind von der bestehenden
 W/m²-Wetterorientierung getrennt.
 
 ## Bedingte zukünftige Lastplanung
+
+Fehlgeschlagene Prognoseabrufe unterscheiden Zeitüberschreitungen, Protokollfehler,
+abgewiesene Anfragen, Verbindungsfehler und nicht verfügbaren Autorisierungsspeicher
+durch feste bereinigte Meldungen. Die Fehlerkategorie bleibt
+`temporarily_unavailable`; Meldungen enthalten weder rohe Serverantworten noch
+Zugangsdaten. Das gilt für native Prognoseabrufe und den Planer. Ein Verbindungs-
+oder Protokollfehler belegt keine fehlende Prognosekonfiguration. Fehlgeschlagene
+Lesezugriffe werden nicht automatisch wiederholt.
+
+Bei aktiviertem Debug-Logging benennt ein begrenztes Laufzeitereignis den
+fehlgeschlagenen Schritt (Snapshot, Tokenzugriff, Sitzungsaufbau, Prognosebefehl,
+Strukturprüfung oder Prognosedekodierung) und eine feste Ursachenkennung.
+Verbindungsursachen unterscheiden geschlossene WebSockets, fehlgeschlagenen
+Verbindungsaufbau, Quell-IP-Sperren und einen ungültigen Antwortumschlag;
+nicht zugeordnete Ursachen bleiben unbekannt. Die `trace_id` entspricht dem
+MCP-Fehler. Nutzdaten, Exception-Texte, Steuerungsidentitäten und Zugangsdaten
+werden nicht protokolliert. Auf Info-Level entfallen diese Details.
 
 `loxone_plan_loads(options=...)` benötigt `forecast_control_uuid`, zukünftige
 `start`/`end` mit UTC-Offset, `timezone` und bis zu 16 `consumer_binding_ids` aus

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import struct
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
@@ -10,7 +12,18 @@ import pytest
 from test_native_efm import ACTION, TARGET, access, fixture_runtime
 
 import mcpserver.loxone.client as client_module
-from mcpserver.loxone.client import LoxoneWebSocketSession
+from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+from mcpserver.loxone.client import (
+    LoxoneCommandRejected,
+    LoxoneConnectionError,
+    LoxoneResponseEnvelopeError,
+    LoxoneSourceIpBlocked,
+    LoxoneTokenAuthenticationRejected,
+    LoxoneWebSocketClosed,
+    LoxoneWebSocketConnectionFailed,
+    LoxoneWebSocketSession,
+)
+from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
 from mcpserver.loxone.models import Freshness
 from mcpserver.loxone.pv_forecast_hours import PvForecastError, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
@@ -37,6 +50,7 @@ async def test_transport_encryption_and_fixed_read_command(monkeypatch, secure):
         "encrypted": not secure,
         "timeout_seconds": 10,
         "max_payload_bytes": 32768,
+        "allow_direct_json": True,
     }
     with pytest.raises(ValueError):
         await session.pv_forecast("../other")
@@ -51,6 +65,71 @@ def decode(raw=None, states=None):
         retrieved_at="2026-10-18T10:00:00+00:00",
         now=NOW,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_real_command_transport_preserves_direct_and_wrapped_forecasts(wrapped):
+    raw = json.dumps({"tomorrow": [{"t": NOW + 3600, "v": 1.2}]})
+    payload = json.dumps({"LL": {"Code": "200", "value": raw}}) if wrapped else raw
+    websocket = SimpleNamespace(
+        send=AsyncMock(),
+        recv=AsyncMock(side_effect=[struct.pack("<BBBBI", 3, 0, 0, 0, len(payload)), payload]),
+    )
+    session = object.__new__(LoxoneWebSocketSession)
+    session._websocket, session._encryptor = websocket, object()
+    session._secure_transport = True
+    session._timeout, session._max_payload = 25, 1_000_000
+    returned = await session.pv_forecast(TARGET)
+    assert returned == raw
+    assert decode(raw=returned).hours[0].energy_wh == 1200
+    websocket.send.assert_awaited_once_with(f"jdev/sps/io/{TARGET}/getForecasts")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"LL":{"Code":"403","value":"private response"}}',
+        '{"LL":"private response","today":[]}',
+    ],
+)
+async def test_direct_json_opt_in_never_hides_rejections_or_invalid_wrappers(payload):
+    websocket = SimpleNamespace(
+        send=AsyncMock(),
+        recv=AsyncMock(side_effect=[struct.pack("<BBBBI", 3, 0, 0, 0, len(payload)), payload]),
+    )
+    with pytest.raises((LoxoneCommandRejected, LoxoneResponseEnvelopeError)):
+        await client_module._websocket_command(
+            websocket,
+            object(),
+            "fixed/read",
+            encrypted=False,
+            timeout_seconds=1,
+            max_payload_bytes=32768,
+            allow_direct_json=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_direct_json_keeps_duplicate_keys_for_domain_validation():
+    payload = '{"tomorrow":[],"tomorrow":[]}'
+    websocket = SimpleNamespace(
+        send=AsyncMock(),
+        recv=AsyncMock(side_effect=[struct.pack("<BBBBI", 3, 0, 0, 0, len(payload)), payload]),
+    )
+    raw = await client_module._websocket_command(
+        websocket,
+        object(),
+        "fixed/read",
+        encrypted=False,
+        timeout_seconds=1,
+        max_payload_bytes=32768,
+        allow_direct_json=True,
+    )
+    assert raw == payload
+    with pytest.raises(PvForecastError, match="invalid_payload"):
+        decode(raw=raw)
 
 
 def test_hourly_energy_and_distinct_timestamp_epochs():
@@ -234,3 +313,144 @@ async def test_duplicate_forecast_actions_are_rejected_before_transport():
         await read_pv_forecasts(runtime, access(), [first.uuid, second.uuid])
     runtime._open_session.assert_not_awaited()
     session.load_structure.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("log_level", [logging.DEBUG, logging.INFO])
+@pytest.mark.parametrize("phase", ["session", "forecast", "structure"])
+@pytest.mark.parametrize(
+    "error_type,code,message",
+    [
+        (TimeoutError, "temporarily_unavailable", "PV forecast read timed out"),
+        (
+            LoxoneProtocolError,
+            "temporarily_unavailable",
+            "PV forecast read failed due to a protocol error",
+        ),
+        (
+            LoxoneConnectionError,
+            "temporarily_unavailable",
+            "PV forecast read failed due to a connection error",
+        ),
+        (
+            LoxoneCommandRejected,
+            "temporarily_unavailable",
+            "Miniserver rejected the PV forecast request",
+        ),
+        *[
+            (error, "temporarily_unavailable", "PV forecast read failed due to a connection error")
+            for error in (
+                LoxoneResponseEnvelopeError,
+                LoxoneWebSocketClosed,
+                LoxoneWebSocketConnectionFailed,
+                LoxoneSourceIpBlocked,
+            )
+        ],
+        (
+            LoxonePayloadTooLarge,
+            "response_too_large",
+            "PV forecast response exceeds bounds",
+        ),
+        (PvForecastError, "unsupported_source", "PV forecast response is invalid"),
+        (
+            LoxoneTokenAuthenticationRejected,
+            "permission_denied",
+            "Loxone authentication rejected",
+        ),
+    ],
+)
+async def test_read_failures_are_distinct_sanitized_and_not_retried(
+    phase, error_type, code, message, log_level, caplog
+):
+    runtime, structure, session, token = fixture_runtime()
+    control = replace(structure.controls[0], control_type="PvProductionForecast")
+    structure = replace(structure, controls=(control,))
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", structure, True)
+
+    runtime.snapshot_context = snapshots
+    runtime.cache = SimpleNamespace(get=Mock())
+    runtime.token_health = SimpleNamespace(
+        record_successful_authentication=Mock(), record_rejected_authentication=Mock()
+    )
+    session.pv_forecast = AsyncMock(return_value="{}")
+    session.load_structure = AsyncMock(return_value=structure)
+    failing_call = {
+        "session": runtime._open_session,
+        "forecast": session.pv_forecast,
+        "structure": session.load_structure,
+    }[phase]
+    failing_call.side_effect = error_type("sensitive source content")
+
+    with (
+        caplog.at_level(log_level, logger="mcpserver.loxone.runtime"),
+        pytest.raises(ControlOperationError) as failure,
+    ):
+        await read_pv_forecast(runtime, access(), TARGET)
+
+    assert failure.value.code == code
+    assert str(failure.value) == message
+    assert failure.value.__suppress_context__
+    phases = {
+        "session": "session_establishment",
+        "forecast": "forecast_command",
+        "structure": "structure_recheck",
+    }
+    reasons = {
+        TimeoutError: "timeout",
+        LoxoneProtocolError: "protocol_error",
+        LoxoneConnectionError: "connection_error",
+        LoxoneResponseEnvelopeError: "response_envelope_invalid",
+        LoxoneWebSocketClosed: "websocket_closed",
+        LoxoneWebSocketConnectionFailed: "websocket_connection_failed",
+        LoxoneSourceIpBlocked: "source_ip_blocked",
+        LoxoneCommandRejected: "request_rejected",
+        LoxonePayloadTooLarge: "payload_too_large",
+        PvForecastError: "forecast_invalid",
+        LoxoneTokenAuthenticationRejected: "authentication_rejected",
+    }
+    records = [r for r in caplog.records if "code=pv_forecast_" in r.getMessage()]
+    assert len(records) == int(log_level == logging.DEBUG)
+    if records:
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].getMessage() == (
+            f"trace_id={failure.value.trace_id} outcome=error "
+            f"code=pv_forecast_{phases[phase]} error_type={reasons[error_type]}"
+        )
+        assert records[0].exc_info is None
+    assert "sensitive source content" not in caplog.text
+    failing_call.assert_awaited_once()
+    assert session.pv_forecast.await_count == int(phase != "session")
+    assert session.load_structure.await_count == int(phase == "structure")
+    assert session.close.await_count == int(phase != "session")
+    token.destroy.assert_called_once()
+    assert runtime.token_health.record_rejected_authentication.call_count == int(
+        error_type is LoxoneTokenAuthenticationRejected
+    )
+    from mcpserver.tools import ControlsReadEnvelope, _operation_error
+
+    envelope = _operation_error(ControlsReadEnvelope, failure.value)
+    assert envelope.trace_id == failure.value.trace_id
+    assert "sensitive source content" not in envelope.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_token_storage_failure_is_not_a_timeout():
+    runtime, structure, session, _ = fixture_runtime()
+    control = replace(structure.controls[0], control_type="PvProductionForecast")
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", replace(structure, controls=(control,)), True)
+
+    runtime.snapshot_context = snapshots
+    runtime.token_store.get.side_effect = LoxoneTokenStoreError("sensitive source content")
+    with pytest.raises(ControlOperationError) as failure:
+        await read_pv_forecast(runtime, access(), TARGET)
+    assert failure.value.code == "temporarily_unavailable"
+    assert str(failure.value) == "PV forecast authorization storage is unavailable"
+    runtime.token_store.get.assert_called_once()
+    runtime._open_session.assert_not_awaited()
+    session.close.assert_not_awaited()

@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from mcpserver.auth.loxone_store import LoxoneTokenStoreError
 from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import (
+    LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneResponseEnvelopeError,
+    LoxoneSourceIpBlocked,
     LoxoneTokenAuthenticationRejected,
+    LoxoneWebSocketClosed,
+    LoxoneWebSocketConnectionFailed,
 )
 from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
 from mcpserver.loxone.models import Control, Freshness, LoxoneStructure
@@ -21,6 +28,23 @@ from mcpserver.loxone.uuid import normalize_loxone_uuid
 
 if TYPE_CHECKING:
     from mcpserver.loxone.client import LoxoneWebSocketSession
+
+
+# Reuse the existing runtime diagnostic component and bounded service-event fields.
+_LOGGER = logging.getLogger("mcpserver.loxone.runtime")
+
+
+def _read_failure(
+    trace_id: str, phase: str, reason: str, code: str, message: str
+) -> ControlOperationError:
+    """Log only fixed caller-independent labels; never exception or response text."""
+    _LOGGER.debug(
+        "trace_id=%s outcome=error code=pv_forecast_%s error_type=%s",
+        trace_id,
+        phase,
+        reason,
+    )
+    return ControlOperationError(code, message, trace_id=trace_id)
 
 
 def visible_pvpf(structure: LoxoneStructure, uuid: str) -> Control:
@@ -53,6 +77,8 @@ async def read_pv_forecasts(
         raise ControlOperationError("invalid_input", "Invalid PV forecast target") from None
     session: LoxoneWebSocketSession | None = None
     token = None
+    trace_id = str(uuid4())
+    phase = "snapshot"
     try:
         async with asyncio.timeout(30), runtime.snapshot_context(access) as snapshot:
             controls = [visible_pvpf(snapshot.structure, uuid) for uuid in uuids]
@@ -64,11 +90,13 @@ async def read_pv_forecasts(
                 raise ControlOperationError(
                     "unsupported_source", "Invalid PVPF action identity"
                 ) from None
+            phase = "token_lookup"
             token = runtime.token_store.get(
                 access.family_id, access.miniserver_id, access.identity_id
             )
             if token is None:
                 raise RuntimeUnavailable("Loxone authorization is unavailable")
+            phase = "session_establishment"
             session = await runtime._open_session(
                 token,
                 owner="tool_request",
@@ -91,7 +119,9 @@ async def read_pv_forecasts(
                     and record.value == 0
                     for record in ready_records
                 )
+                phase = "forecast_command"
                 payloads.append("{}" if not_ready else await session.pv_forecast(action))
+            phase = "structure_recheck"
             refreshed = await session.load_structure()
             results = []
             for control, raw in zip(controls, payloads, strict=True):
@@ -109,6 +139,7 @@ async def read_pv_forecasts(
                     record = runtime.cache.get(snapshot.subject, state_uuid)
                     if record.freshness is Freshness.CURRENT:
                         states[name] = record.value
+                phase = "forecast_decode"
                 result = decode_forecast(
                     raw,
                     states,
@@ -119,20 +150,75 @@ async def read_pv_forecasts(
                 results.append((after, refreshed, result))
         return results
     except LoxonePayloadTooLarge:
-        raise ControlOperationError(
-            "response_too_large", "PV forecast response exceeds bounds"
+        raise _read_failure(
+            trace_id,
+            phase,
+            "payload_too_large",
+            "response_too_large",
+            "PV forecast response exceeds bounds",
         ) from None
     except PvForecastError:
-        raise ControlOperationError(
-            "unsupported_source", "PV forecast response is invalid"
+        raise _read_failure(
+            trace_id,
+            phase,
+            "forecast_invalid",
+            "unsupported_source",
+            "PV forecast response is invalid",
         ) from None
     except LoxoneTokenAuthenticationRejected:
         if runtime.token_health is not None:
             runtime.token_health.record_rejected_authentication(access.family_id)
-        raise ControlOperationError("permission_denied", "Loxone authentication rejected") from None
-    except (TimeoutError, LoxoneConnectionError, LoxoneProtocolError, LoxoneTokenStoreError):
-        raise ControlOperationError(
-            "temporarily_unavailable", "PV forecast read timed out"
+        raise _read_failure(
+            trace_id,
+            phase,
+            "authentication_rejected",
+            "permission_denied",
+            "Loxone authentication rejected",
+        ) from None
+    except TimeoutError:
+        raise _read_failure(
+            trace_id, phase, "timeout", "temporarily_unavailable", "PV forecast read timed out"
+        ) from None
+    except LoxoneProtocolError:
+        raise _read_failure(
+            trace_id,
+            phase,
+            "protocol_error",
+            "temporarily_unavailable",
+            "PV forecast read failed due to a protocol error",
+        ) from None
+    except LoxoneCommandRejected:
+        raise _read_failure(
+            trace_id,
+            phase,
+            "request_rejected",
+            "temporarily_unavailable",
+            "Miniserver rejected the PV forecast request",
+        ) from None
+    except LoxoneConnectionError as exc:
+        reason = "connection_error"
+        if isinstance(exc, LoxoneResponseEnvelopeError):
+            reason = "response_envelope_invalid"
+        elif isinstance(exc, LoxoneWebSocketClosed):
+            reason = "websocket_closed"
+        elif isinstance(exc, LoxoneWebSocketConnectionFailed):
+            reason = "websocket_connection_failed"
+        elif isinstance(exc, LoxoneSourceIpBlocked):
+            reason = "source_ip_blocked"
+        raise _read_failure(
+            trace_id,
+            phase,
+            reason,
+            "temporarily_unavailable",
+            "PV forecast read failed due to a connection error",
+        ) from None
+    except LoxoneTokenStoreError:
+        raise _read_failure(
+            trace_id,
+            phase,
+            "authorization_storage_unavailable",
+            "temporarily_unavailable",
+            "PV forecast authorization storage is unavailable",
         ) from None
     finally:
         if session is not None:

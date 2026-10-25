@@ -5,6 +5,14 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Distinguish PV forecast timeouts, protocol errors, rejected requests, connection
+  errors and authorization-storage failures using sanitized messages; retain
+  existing error categories for native reads and conditional planning (#510).
+  Add Debug-only fixed phase/cause diagnostics correlated with the MCP error;
+  never log response payloads or exception text.
+  Accept the documented direct JSON day object from native `getForecasts` while
+  retaining wrapped responses, explicit rejection handling and payload validation.
+
 - Add bounded authentication-event reads for the currently authorized app,
   Loxone identity and Miniserver, including retained events from earlier logins.
   Add explicit local Admin history and binding summaries without changing

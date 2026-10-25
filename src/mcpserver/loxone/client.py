@@ -86,6 +86,18 @@ class LoxoneConnectionError(RuntimeError):
     """Sanitized error raised when the Miniserver cannot be used securely."""
 
 
+class LoxoneResponseEnvelopeError(LoxoneConnectionError):
+    """A decoded command response lacks the expected LL mapping."""
+
+
+class LoxoneWebSocketClosed(LoxoneConnectionError):
+    """The peer closed the command transport."""
+
+
+class LoxoneWebSocketConnectionFailed(LoxoneConnectionError):
+    """The WebSocket transport could not be established."""
+
+
 class LoxoneCommandRejected(LoxoneConnectionError):
     """Raised when the Miniserver rejects a command response."""
 
@@ -146,7 +158,7 @@ class LoxoneToken:
 def _response_value(document: Mapping[str, Any]) -> Any:
     wrapper = document.get("LL")
     if not isinstance(wrapper, Mapping):
-        raise LoxoneConnectionError("Miniserver returned an invalid response")
+        raise LoxoneResponseEnvelopeError("Miniserver returned an invalid response")
     code = wrapper.get("Code", wrapper.get("code"))
     if str(code) != "200":
         raise LoxoneCommandRejected("Miniserver rejected the request", response_code=str(code))
@@ -170,7 +182,7 @@ async def _receive_websocket(
                 raise LoxoneSourceIpBlocked(
                     "Miniserver temporarily blocked this source IP"
                 ) from None
-            raise LoxoneConnectionError("Miniserver WebSocket connection closed") from None
+            raise LoxoneWebSocketClosed("Miniserver WebSocket connection closed") from None
         if not isinstance(raw_header, bytes):
             raise LoxoneProtocolError("Expected a binary WebSocket header")
         header = parse_header(raw_header, max_payload_bytes=max_payload_bytes)
@@ -215,6 +227,7 @@ async def _websocket_command(
     encrypted: bool,
     timeout_seconds: float,
     max_payload_bytes: int,
+    allow_direct_json: bool = False,
 ) -> Any:
     outgoing = encryptor.encrypted_command(command) if encrypted else command
     try:
@@ -223,7 +236,7 @@ async def _websocket_command(
         received = exc.rcvd
         if received is not None and received.code == 4003:
             raise LoxoneSourceIpBlocked("Miniserver temporarily blocked this source IP") from None
-        raise LoxoneConnectionError("Miniserver WebSocket connection closed") from None
+        raise LoxoneWebSocketClosed("Miniserver WebSocket connection closed") from None
     header, payload = await _receive_websocket(
         websocket,
         timeout_seconds=timeout_seconds,
@@ -237,6 +250,10 @@ async def _websocket_command(
         raise LoxoneProtocolError("Miniserver command response is not JSON") from exc
     if not isinstance(response, Mapping):
         raise LoxoneProtocolError("Miniserver command response is invalid")
+    if allow_direct_json and "LL" not in response:
+        # PVPF returns its documented day object directly. Preserve original text
+        # for the bounded domain decoder, including duplicate-key validation.
+        return payload
     return _response_value(response)
 
 
@@ -472,7 +489,7 @@ class LoxoneClient:
                 timeout=self.timeout_seconds,
             )
         except (OSError, TimeoutError) as exc:
-            raise LoxoneConnectionError("Miniserver WebSocket connection failed") from exc
+            raise LoxoneWebSocketConnectionFailed("Miniserver WebSocket connection failed") from exc
 
     async def acquire_token(self, username: str, password: str) -> LoxoneToken:
         escaped_user = quote(username, safe="")
@@ -850,6 +867,7 @@ class LoxoneWebSocketSession:
             encrypted=not self._secure_transport,
             timeout_seconds=min(self._timeout, 10.0),
             max_payload_bytes=min(self._max_payload, MAX_BYTES),
+            allow_direct_json=True,
         )
 
     async def native_efm_result(self, action_uuid: str, view: str) -> Any:
