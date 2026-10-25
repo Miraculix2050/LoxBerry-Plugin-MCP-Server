@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 from pathlib import Path
@@ -15,9 +16,11 @@ import mcpserver.tools as tools_module
 from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.loxone.auth_diagnostics import (
+    AttemptProvenance,
     MiniserverAuthCoordinator,
     authentication_binding,
 )
+from mcpserver.loxone.client import LoxoneCommandRejected
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeAuthorizationError
 from mcpserver.tools import register_authentication_diagnostics_tool
 
@@ -80,6 +83,60 @@ def test_binding_separates_each_verified_identifier_and_survives_new_login(tmp_p
     assert own != authentication_binding(store, "client", "other-identity", "miniserver")
     assert own != authentication_binding(store, "client", "identity", "other-miniserver")
     assert own != store.pseudonym("loxberry-read-binding-v1", '["client","identity","miniserver"]')
+
+
+@pytest.mark.parametrize(
+    "identifiers",
+    [
+        ("client", "identity", "miniserver"),
+        ("client:with-delimiter", "identity\u00e4", 'mini"server'),
+    ],
+)
+def test_captured_key_preserves_binding_without_reopening_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, identifiers: tuple[str, str, str]
+) -> None:
+    store = AtomicJsonAuthStore((tmp_path / "auth.json").resolve())
+    expected = authentication_binding(store, *identifiers)
+    key = base64.urlsafe_b64decode(store.snapshot()["subject_key"])
+
+    def forbidden() -> Any:
+        pytest.fail("Binding calculation reopened the captured auth snapshot")
+
+    monkeypatch.setattr(store, "snapshot", forbidden)
+    assert authentication_binding(store, *identifiers, subject_key=key) == expected
+    assert (
+        authentication_binding(store, "other-client", *identifiers[1:], subject_key=key) != expected
+    )
+
+
+@pytest.mark.asyncio
+async def test_persisted_command_rejection_survives_safe_projection(tmp_path: Path) -> None:
+    path = tmp_path / "diagnostics.json"
+    coordinator = MiniserverAuthCoordinator(path)
+
+    async def rejected() -> None:
+        raise LoxoneCommandRejected("private-response-text", response_code="403")
+
+    with pytest.raises(LoxoneCommandRejected):
+        await coordinator.attempt(
+            rejected,
+            owner="tool_request",
+            phase="session_establishment",
+            provenance=AttemptProvenance(binding_id="own"),
+        )
+    restarted = MiniserverAuthCoordinator(path)
+    before = path.read_bytes()
+    for binding in (None, "own"):
+        snapshot = restarted.diagnostic_snapshot(binding)
+        assert snapshot["history_status"] == "bounded"
+        assert [event["outcome"] for event in snapshot["events"]] == [
+            "command_rejected",
+            "attempt_started",
+        ]
+        assert "private-response-text" not in json.dumps(snapshot)
+        assert "403" not in json.dumps(snapshot)
+    assert restarted.diagnostic_snapshot("foreign")["events"] == []
+    assert path.read_bytes() == before
 
 
 def test_projection_redacts_secrets_and_reads_without_saves_or_locks(

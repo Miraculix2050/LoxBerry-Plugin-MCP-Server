@@ -155,3 +155,9 @@ Quell-IP-Sperre, unterdrückte Versuche, bestätigte Wiederherstellung und nicht
 verfügbare Historie. Eine Sperrbeobachtung belegt keinen Verursacher. Fehlende
 oder leere Historie beweist keinen fehlerfreien Betrieb. Es gibt keine zusätzliche
 Recovery-Aktion; die bestehende Admin-Probe behält ihre Schutz- und Frequenzgrenzen.
+
+Die Übersicht zeigt höchstens 50 unterschiedliche aktive App/Identität/Miniserver-
+Zuordnungen. Bei weiteren Zuordnungen warnt sie vor der gekürzten Liste und nennt
+die Anzahl der ausgelassenen unterschiedlichen Zuordnungen; mehrere Sitzungen
+derselben Zuordnung zählen einmal. Ein abgelehnter Miniserver-Befehl wird getrennt
+von einer abgelehnten Authentifizierung angezeigt.

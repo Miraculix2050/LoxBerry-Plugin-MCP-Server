@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -49,6 +50,7 @@ _EVENT_OUTCOMES: Final = frozenset(
         "source_ip_blocked",
         "authenticated",
         "authentication_rejected",
+        "command_rejected",
         "token_rejected",
         "recovery_confirmed",
         "attempt_cancelled",
@@ -58,15 +60,21 @@ _EVENT_OUTCOMES: Final = frozenset(
 
 
 def authentication_binding(
-    auth_store: Any, client_id: str, identity_id: str, miniserver_id: str
+    auth_store: Any,
+    client_id: str,
+    identity_id: str,
+    miniserver_id: str,
+    *,
+    subject_key: bytes | None = None,
 ) -> str:
     """Bind retained history to verified identifiers, never a presentation name."""
-    return str(
-        auth_store.pseudonym(
-            "miniserver-auth-binding-v2",
-            json.dumps([client_id, identity_id, miniserver_id], separators=(",", ":")),
-        )
+    parts = (
+        "miniserver-auth-binding-v2",
+        json.dumps([client_id, identity_id, miniserver_id], separators=(",", ":")),
     )
+    if subject_key is not None:
+        return hmac.new(subject_key, "\0".join(parts).encode("utf-8"), hashlib.sha256).hexdigest()
+    return str(auth_store.pseudonym(*parts))
 
 
 class _InterprocessLockUnavailable(RuntimeError):

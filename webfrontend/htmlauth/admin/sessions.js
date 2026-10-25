@@ -51,6 +51,16 @@ window.McpAdmin.createSessions = (core) => {
         new Date(protection.next_auth_attempt_at * 1000).toLocaleString();
     }
     target.replaceChildren(status, list, shared);
+    if (data.bindings_truncated === true) {
+      const warning = document.createElement('p');
+      warning.role = 'status';
+      warning.className = 'mcp-status';
+      warning.dataset.kind = 'warning';
+      const omitted = Number.isSafeInteger(data.bindings_omitted) && data.bindings_omitted > 0
+        ? String(data.bindings_omitted) : '?';
+      warning.textContent = authHistory.dataset.bindingsTruncatedLabel.replace('{count}', omitted);
+      target.append(warning);
+    }
     for (const binding of Array.isArray(data.bindings) ? data.bindings : []) {
       const group = document.createElement('details');
       const summary = document.createElement('summary');

@@ -243,7 +243,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v18", "page.js": "v14", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v18", "page.js": "v14", "sessions.js": "v14"}.get(
             name, "v12"
         )
         assert (
@@ -4200,12 +4200,15 @@ const document = {
   createElement() { return new Element(); },
   createTextNode(text) { return {textContent: text}; },
 };
+const labels = JSON.parse(process.argv[2]);
+Object.assign(document.getElementById('authentication-history').dataset, labels);
 const calls = [];
 const hostile = '<img src=x onerror=alert(1)>';
+let response = {history_status: 'bounded',
+  events: [{outcome: 'unknown', connection_owner: hostile}], bindings: []};
 const postAjax = async body => {
   calls.push(Object.fromEntries(body));
-  return {data: {history_status: 'bounded',
-    events: [{outcome: 'unknown', connection_owner: hostile}], bindings: []}};
+  return {data: response};
 };
 const context = vm.createContext({document, postAjax, URLSearchParams});
 vm.runInContext(block, context);
@@ -4216,11 +4219,50 @@ assert.equal(calls.length, 0);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].action, 'list_authentication_events');
   const target = document.getElementById('authentication-history-content');
-  assert.equal(target.children[1].children[0].textContent, hostile);
+  assert.equal(target.children[1].children[0].textContent, hostile + ' · ' + labels.unknownLabel);
   assert.equal(button.disabled, false);
   assert.equal(target['aria-busy'], 'false');
+  for (const omitted of [0, 1, 206]) {
+    response = {history_status: 'bounded', events: [{outcome: 'command_rejected'}],
+      bindings: [], bindings_truncated: omitted > 0, bindings_omitted: omitted};
+    await button.events.click();
+    assert.equal(target.children[1].children[0].textContent, labels.eventCommandRejected);
+    const warnings = target.children.filter(child => child.dataset?.kind === 'warning');
+    assert.equal(warnings.length, omitted > 0 ? 1 : 0);
+    if (omitted) {
+      assert.equal(warnings[0].textContent,
+        labels.bindingsTruncatedLabel.replace('{count}', String(omitted)));
+    }
+  }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
-    subprocess.run(
-        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/sessions.js")], check=True
-    )
+    for language in ("de", "en"):
+        translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        labels = {
+            attribute: re.search(rf"^{key}=(.+)$", translations, re.MULTILINE).group(1)
+            for attribute, key in (
+                ("unknownLabel", "AUTH_HISTORY_UNKNOWN"),
+                ("eventCommandRejected", "AUTH_EVENT_COMMAND_REJECTED"),
+                ("bindingsTruncatedLabel", "AUTH_BINDINGS_TRUNCATED"),
+            )
+        }
+        template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+        assert (
+            'data-event-command-rejected="<TMPL_VAR SESSIONS.AUTH_EVENT_COMMAND_REJECTED'
+            in template
+        )
+        assert (
+            'data-bindings-truncated-label="<TMPL_VAR SESSIONS.AUTH_BINDINGS_TRUNCATED' in template
+        )
+        subprocess.run(
+            [
+                node,
+                "-e",
+                script,
+                str(ROOT / "webfrontend/htmlauth/admin/sessions.js"),
+                json.dumps(labels),
+            ],
+            check=True,
+        )

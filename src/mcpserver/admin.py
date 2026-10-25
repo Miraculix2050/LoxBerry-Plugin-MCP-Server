@@ -1443,7 +1443,15 @@ def _authentication_events(payload: object) -> dict[str, Any]:
         values = [record.get(key) for key in ("client_id", "identity_id", "miniserver_id")]
         if not all(isinstance(value, str) and value for value in values):
             return None
-        return authentication_binding(store, str(values[0]), str(values[1]), str(values[2]))
+        if snapshot.subject_key is None:
+            return None
+        return authentication_binding(
+            store,
+            str(values[0]),
+            str(values[1]),
+            str(values[2]),
+            subject_key=snapshot.subject_key,
+        )
 
     if family_id is not None:
         record = families.get(family_id)
@@ -1452,11 +1460,13 @@ def _authentication_events(payload: object) -> dict[str, Any]:
         return coordinator.diagnostic_snapshot(binding_id=binding_id) | {"bindings": []}
     result = coordinator.diagnostic_snapshot()
     groups: dict[str, dict[str, Any]] = {}
+    seen_bindings: set[str] = set()
     for session in _sessions(snapshot):
         record = families.get(session["id"])
         if not isinstance(record, dict) or (binding_id := binding(record)) is None:
             continue
-        if binding_id not in groups:
+        if binding_id not in seen_bindings:
+            seen_bindings.add(binding_id)
             if len(groups) >= 50:
                 continue
             history = coordinator.diagnostic_snapshot(binding_id=binding_id)
@@ -1470,7 +1480,13 @@ def _authentication_events(payload: object) -> dict[str, Any]:
                 "history_status": history["history_status"],
                 "latest_event": history["events"][0] if history["events"] else None,
             }
-    return result | {"bindings": list(groups.values()), "bindings_bounded": True}
+    omitted = len(seen_bindings) - len(groups)
+    return result | {
+        "bindings": list(groups.values()),
+        "bindings_bounded": True,
+        "bindings_truncated": omitted > 0,
+        "bindings_omitted": omitted,
+    }
 
 
 def _confirm_loxone_token(payload: object) -> dict[str, Any]:
