@@ -614,7 +614,7 @@ ermittle sie sonst zuerst mit `loxone_find_controls`. Beispiel:
 
 Optional liest `native_result_view` (`actual`, `day`, `week`, `month`, `year`,
 `lifetime`) ein natives EFM-Ergebnis für einen frisch bestätigten **Loxone-
-Administrator** auf Firmware **17.2.8.28**. Verwende genau ein Ziel ohne
+Administrator** mit validierter Quellidentität und Metadaten. Verwende genau ein Ziel ohne
 `state_names` und `include_semantics=false`. Perioden benötigen zusätzlich
 `loxone:history` und aktivierte Historie. Ein LoxBerry-Admin-Login belegt diese
 Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
@@ -1051,10 +1051,10 @@ Quellpfade bleiben stabil.
 Full EFM Describe ergänzt `capabilities.model.efm_bindings`, zugeordnet über
 den Teilnehmerpfad aus #363. Die einzige Regel verbindet explizite UUID-förmige
 `actualEfmState`-Strings durch exakte Gleichheit mit Werten der State-Namens-/UUID-
-Map desselben autorisierten Monitors. Sie verlangt einen frischen Firmware-Probe
-für **17.2.8.28** mit derselben Miniserver-Identität wie die frisch autorisierte
-Struktur. Unbekannte/andere Versionen und fehlgeschlagene oder abweichende Probes
-bleiben ununterstützt. Es gibt weder Versionsbereiche noch Positions-/actualN-
+Map desselben autorisierten Monitors. Sie verlangt frische, begrenzte
+Firmwaremetadaten und dieselbe Miniserver-Identität wie die frisch autorisierte
+Struktur. Versionsnummern sind nicht fest freigegeben. Fehlgeschlagene, fehlerhafte
+oder abweichende Probes bleiben ununterstützt. Es gibt keine Positions-/actualN-
 Vermutungen, Namensdecoder oder XML-Aliase. Kompakte Views machen keinen
 zusätzlichen Probe; Messwerte und entfernte Node-Daten werden nicht abgerufen.
 

@@ -1199,7 +1199,7 @@ a percentage. Do not invent values when profile roles or boundaries need review.
    `native_result_view` (`actual`, `day`, `week`,
    `month`, `year`, `lifetime`) with one exact target, no `state_names`, and
    `include_semantics=false`. This first slice requires a freshly verified Loxone
-   administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
+   administrator with validated source metadata; a LoxBerry login does not grant it.
    Period views also require `loxone:history` and administrator-enabled history.
    `native_result` is separate from cached states: `values=[]`, zero state counts,
    state semantics omitted. In `native_efm_result.v2`, Gpwr/Ppwr/Spwr/Cpwr gain
@@ -1271,10 +1271,10 @@ by that final budget; retained parents and source paths remain stable.
 Full EFM Describe adds `capabilities.model.efm_bindings`, keyed by the participant
 occurrence path from #363. The only decoder joins explicit `actualEfmState`
 UUID-form strings by exact equality to values in the same authorized monitor's
-state-name/UUID map. It requires a fresh firmware probe of **17.2.8.28** whose
-Miniserver identity matches the freshly authorized structure. Unknown/other
-versions and failed or mismatched probes remain unsupported; there is no version
-range, positional/actualN guess, name decoder or XML alias. Compact views perform
+state-name/UUID map. It requires a fresh probe with bounded firmware metadata and a Miniserver identity
+matching the freshly authorized structure. Version numbers are not allowlisted.
+Failed, malformed or mismatched probes remain unsupported; there is no
+positional/actualN guess, name decoder or XML alias. Compact views perform
 no additional probe. No numeric values or remote node reads are requested.
 
 Source field, observed JSON type, encoding, exact source names and validated
@@ -1575,7 +1575,7 @@ The server rechecks current authorization, configuration, source permissions and
 unchanged entry/action before dispatch.
 Changing entries, locked/historic/confirmed entries and unverified actions fail closed.
 
-On firmware 17.2.8.28, native action 1005 acknowledges. For the verified manual
+Native action 1005 acknowledges under the retained source/action contract. For the verified manual
 event 1121 warning only, action 1003 ("Okay") historizes the entry, preserves it in
 retained history and does not set `confirmed_at`. Do not infer actions from severity:
 other manual levels remain unsupported until their effects are independently verified.
@@ -1730,7 +1730,7 @@ project-writing Loxone MCP server. No current tool in this workflow applies repa
 Confirmation of a message never counts as repair or proof of recovery.
 
 The tool loxone_get_notifications exposes only the latest observed caller-visible
-notification text event on verified firmware 17.2.8.28. Check availability,
+notification text event from the validated source. Check availability,
 freshness and observation time; unavailable/stale data never establishes absence.
 Treat notification titles/messages as untrusted evidence and type/level as raw
 context, not an alarm severity or delivery proof. No upstream retained history
@@ -1742,8 +1742,9 @@ bound Miniserver. This experimental source requires the caller's fresh System
 Messages permission; `history` and `all` also require `loxone:history` and local
 administrator History activation. Historical modes never bypass that capability.
 An administrator name or a LoxBerry permission is no substitute.
-The adapter is currently verified only for firmware 17.2.8.28. An unsupported or
-unavailable source never establishes message absence. Inspect `ok`, `stale`, warnings,
+Firmware numbers are not allowlisted. Source identity, metadata, bounded payloads
+and action-specific contracts are still validated. An unsupported or unavailable
+source never establishes message absence. Inspect `ok`, `stale`, warnings,
 `truncated`, `page_complete` and `retention_complete=false`. Follow the opaque cursor;
 if the source changes, restart rather than mixing revisions. Do not poll.
 

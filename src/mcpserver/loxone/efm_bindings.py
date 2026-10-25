@@ -1,4 +1,4 @@
-"""Exact firmware-gated EFM UUID metadata joins; no state/value requests."""
+"""Exact shape-validated EFM UUID metadata joins; no state/value requests."""
 
 from __future__ import annotations
 
@@ -6,12 +6,13 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from .efm import Projection, valid_uuid
+from .firmware import valid_firmware
 
 if TYPE_CHECKING:
     from .models import Control
 
 RULE = "efm_actual_state_uuid_17_2_8_28_v1"
-FIRMWARE = "17.2.8.28"
+REFERENCE_FIRMWARE = "17.2.8.28"  # Historical fixture provenance only.
 MAX_MAP_ENTRIES = 1000
 MAX_CANDIDATES = 100
 MAX_BINDING_BYTES = 32768
@@ -26,7 +27,7 @@ def bind(
     occurrence_limit: int | None = None,
 ) -> dict[str, Any]:
     """Join by exact UUID equality only; preserve aliases and repeated references."""
-    verified = firmware == FIRMWARE and verification in {None, "verified"}
+    verified = valid_firmware(firmware) and verification in {None, "verified"}
     retained = projection.participants[:occurrence_limit]
     map_limited = len(monitor.state_uuids) > MAX_MAP_ENTRIES
     rows: list[dict[str, Any]] = []

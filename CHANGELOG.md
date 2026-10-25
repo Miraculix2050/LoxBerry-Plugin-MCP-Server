@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Remove exact firmware-version admission pins from System Messages, notifications,
+  native EFM views and exact EFM state bindings. Retain source identity, bounded
+  metadata/payloads, rights, action allowlists and single-message Admin approval.
+  Native EFM results report the actual probed firmware; historical rule IDs remain
+  provenance rather than compatibility guarantees.
+
 - Preserve Miniserver timeout/protocol and sanitized WebSocket-close diagnostics;
   count only confirmed token-authentication rejections against token health.
   Distinguish command permission failures from server faults, accept a normal

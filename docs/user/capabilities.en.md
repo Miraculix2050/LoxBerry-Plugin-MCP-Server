@@ -560,7 +560,7 @@ discover them with `loxone_find_controls` first. For example:
 
 The optional `native_result_view` (`actual`, `day`, `week`, `month`, `year`,
 `lifetime`) reads one native EFM result for a freshly verified **Loxone
-administrator** on firmware **17.2.8.28**. Use one target without `state_names`
+administrator** with validated source identity and metadata. Use one target without `state_names`
 and keep `include_semantics=false`. Periods additionally require `loxone:history`
 and enabled history. A LoxBerry Admin login does not establish this permission.
 Native results use a separate `native_result` section with empty `values` and
@@ -967,10 +967,10 @@ by that final budget; retained parents and source paths remain stable.
 Full EFM Describe adds `capabilities.model.efm_bindings`, keyed by the participant
 occurrence path from #363. The only decoder joins explicit `actualEfmState`
 UUID-form strings by exact equality to values in the same authorized monitor's
-state-name/UUID map. It requires a fresh firmware probe of **17.2.8.28** whose
-Miniserver identity matches the freshly authorized structure. Unknown/other
-versions and failed or mismatched probes remain unsupported; there is no version
-range, positional/actualN guess, name decoder or XML alias. Compact views perform
+state-name/UUID map. It requires fresh, bounded firmware metadata and a Miniserver identity matching
+the freshly authorized structure. Firmware numbers are not allowlisted. Failed,
+malformed or mismatched probes remain unsupported; there is no positional/actualN
+guess, name decoder or XML alias. Compact views perform
 no additional probe. No numeric values or remote node reads are requested.
 
 Source field, observed JSON type, encoding, exact source names and validated
