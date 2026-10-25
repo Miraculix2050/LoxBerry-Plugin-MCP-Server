@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Avoid re-scanning the state cache for unchanged immutable allowed-state
+  snapshots while retaining incoming-event checks and immediate pruning on
+  membership or connection changes (#600).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes

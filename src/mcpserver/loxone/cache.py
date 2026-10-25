@@ -23,8 +23,10 @@ class UserStateCache:
         self._clock = clock
         self._values: dict[str, OrderedDict[str, StateRecord]] = {}
         self._available: dict[str, bool] = {}
+        self._allowed_snapshots: dict[str, frozenset[str]] = {}
 
     def begin_connection(self, subject: str) -> None:
+        self._allowed_snapshots.pop(subject, None)
         values = self._values.setdefault(subject, OrderedDict())
         for uuid, record in tuple(values.items()):
             values[uuid] = replace(record, freshness=Freshness.STALE)
@@ -34,9 +36,17 @@ class UserStateCache:
         self, subject: str, events: Iterable[StateEvent], *, allowed_uuids: Container[str]
     ) -> None:
         values = self._values.setdefault(subject, OrderedDict())
-        for uuid in tuple(values):
-            if uuid not in allowed_uuids:
-                del values[uuid]
+        # Only identity of an exact immutable snapshot can skip re-pruning.
+        # Mutable/general containers retain their existing per-call behavior.
+        immutable = type(allowed_uuids) is frozenset
+        if not immutable or self._allowed_snapshots.get(subject) is not allowed_uuids:
+            for uuid in tuple(values):
+                if uuid not in allowed_uuids:
+                    del values[uuid]
+            if type(allowed_uuids) is frozenset:
+                self._allowed_snapshots[subject] = allowed_uuids
+            else:
+                self._allowed_snapshots.pop(subject, None)
         observed_at = self._clock()
         for event in events:
             if event.uuid not in allowed_uuids:
@@ -53,6 +63,7 @@ class UserStateCache:
         self._available[subject] = True
 
     def disconnect(self, subject: str) -> None:
+        self._allowed_snapshots.pop(subject, None)
         values = self._values.setdefault(subject, OrderedDict())
         for uuid, record in tuple(values.items()):
             values[uuid] = replace(record, freshness=Freshness.STALE)
@@ -69,5 +80,6 @@ class UserStateCache:
         return StateRecord(uuid=uuid, value=None, freshness=freshness, observed_at=None)
 
     def clear(self, subject: str) -> None:
+        self._allowed_snapshots.pop(subject, None)
         self._values.pop(subject, None)
         self._available.pop(subject, None)

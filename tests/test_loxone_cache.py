@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import OrderedDict
+
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Freshness
@@ -74,3 +76,49 @@ def test_cache_purges_state_removed_from_the_filtered_structure() -> None:
 
     assert cache.get("subject", "still-allowed").freshness is Freshness.CURRENT
     assert cache.get("subject", "revoked").freshness is Freshness.UNKNOWN
+
+
+def test_repeated_immutable_membership_checks_events_without_scanning_retained_states():
+    cache = UserStateCache()
+    allowed = frozenset({"allowed"})
+    cache.apply("subject", [StateEvent("allowed", 1.0)], allowed_uuids=allowed)
+
+    class NoScan(OrderedDict):
+        def __iter__(self):
+            raise AssertionError("unchanged membership scanned cached states")
+
+    cache._values["subject"] = NoScan(cache._values["subject"])
+    cache.apply(
+        "subject", [StateEvent("denied", 2.0), StateEvent("allowed", 3.0)], allowed_uuids=allowed
+    )
+    assert cache.get("subject", "allowed").value == 3.0
+    assert cache.get("subject", "denied").freshness is Freshness.UNKNOWN
+
+
+def test_membership_changes_prune_immediately_and_mutable_edits_never_reuse_snapshot():
+    cache = UserStateCache()
+    original = frozenset({"one", "two"})
+    cache.apply("subject", [StateEvent("one", 1.0), StateEvent("two", 2.0)], allowed_uuids=original)
+    cache.apply("subject", [], allowed_uuids=frozenset({"one"}))
+    assert cache.get("subject", "two").freshness is Freshness.UNKNOWN
+    mutable = {"one", "three"}
+    cache.apply("subject", [StateEvent("three", 3.0)], allowed_uuids=mutable)
+    mutable.remove("three")
+    cache.apply("subject", [], allowed_uuids=mutable)
+    assert cache.get("subject", "three").freshness is Freshness.UNKNOWN
+    cache.clear("subject")
+    assert "subject" not in cache._allowed_snapshots
+
+
+def test_membership_snapshot_is_reset_on_connection_lifecycle_and_isolated_by_subject():
+    cache = UserStateCache()
+    allowed = frozenset({"one"})
+    cache.apply("first", [StateEvent("one", 1.0)], allowed_uuids=allowed)
+    cache.apply("second", [], allowed_uuids=frozenset())
+    assert cache.get("second", "one").freshness is Freshness.UNKNOWN
+    cache.disconnect("first")
+    assert "first" not in cache._allowed_snapshots
+    assert cache.get("first", "one").freshness is Freshness.STALE
+    cache.apply("first", [], allowed_uuids=allowed)
+    cache.begin_connection("first")
+    assert "first" not in cache._allowed_snapshots
