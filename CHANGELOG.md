@@ -9,6 +9,10 @@ extracted from the matching version heading.
   ownership to the running maintainer, and remove unowned failed-family cache
   state while preserving owned disconnected-state freshness (#613).
 
+- Let healthy connected families read snapshots while another family is opening
+  a connection, retaining authorization, fresh visibility, serialized new-session
+  capacity, pruning and shutdown checks (#594).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes

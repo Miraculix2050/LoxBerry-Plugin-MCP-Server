@@ -13,6 +13,11 @@ dafür geöffnete Sitzung und gibt Cache-Einträge ohne verbliebenen Besitzer fr
 Werte einer bestehenden getrennten Sitzung behalten bis zur regulären Bereinigung
 ihren Status als veraltet.
 
+Ein bereits verbundener Client mit intakter Verbindung kann lesen, während ein
+anderer Client seine Verbindung aufbaut. Autorisierung, aktuelle Sichtprüfung und
+Sitzungsgrenzen gelten weiterhin; Anfragen für die Verbindung oder Aktualisierung
+desselben Clients können weiterhin warten.
+
 Unter **Clients und Sitzungen** können Administratoren Sitzungen und lokale Diagnose- oder Operate-Freigaben prüfen und widerrufen. Auf schmalen Bildschirmen erscheinen alle Angaben und Aktionen je Sitzung oder Freigabe untereinander. Während eines Widerrufs wird die betroffene Zeile ausgegraut. Der Widerruf einer Freigabe beendet passende Sitzungen. Das Trennen des Tool Explorers widerruft nur dessen OAuth-Sitzung; seine lokale Freigabe kann für dieselbe Loxone-Identität und denselben Miniserver bis zur angezeigten Frist reaktiviert werden. Die inaktive Aufbewahrung ist von 1 bis 720 Stunden konfigurierbar und beträgt standardmäßig 72 Stunden.
 
 Ein Sitzungswiderruf sperrt den MCP-Zugriff sofort. Die anschließende Loxone-Tokenbereinigung läuft im Hintergrund. Der Abschnitt zeigt aggregierte Warnungen, wenn die Bereinigung aussteht, der Miniserver Anmeldungen blockiert oder der Remote-Widerruf nach begrenzten Versuchen unbestätigt bleibt. Bei unbestätigtem Ergebnis kann ein Administrator die Loxone-Benutzerverwaltung prüfen; die Warnung nennt keine betroffene Identität.

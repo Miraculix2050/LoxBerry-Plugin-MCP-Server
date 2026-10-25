@@ -1540,33 +1540,47 @@ class LoxoneRuntime:
     ) -> RuntimeSnapshot:
         """Only enter through snapshot's access gate or snapshot_context's slot."""
         subject = access.family_id
-        # Admission precedes family locks. Disconnect never takes admission, so
-        # pruning cannot reverse the order while waiting for a family holder.
-        async with self._admission_lock:
+        record = self._records.get(subject)
+        connected_now = False
+        if (
+            self._admission_lock.locked()
+            and record is not None
+            and record.connected
+            and not record.task.done()
+        ):
+            # A live record needs no new capacity. Do not queue it behind another
+            # family's connection I/O or pruning. Keep current authorization and
+            # shutdown checks, and retain normal refresh/publication checks below.
             await self._require_access(access)
             if self._closed:
                 raise RuntimeUnavailable("Loxone runtime is closed")
-            await self._prune_sessions(subject)
-            record = self._records.get(subject)
-            connected_now = False
-            if record is None or record.task.done():
-                async with self._locks.hold(subject):
-                    await self._require_access(access)
-                    record = self._records.get(subject)
-                    if record is None or record.task.done():
-                        record = await self._connect(access)
-                        try:
-                            await self._require_access(access)
-                            if self._closed:
-                                raise RuntimeUnavailable("Loxone runtime is closed")
-                        except BaseException:
-                            record.task.cancel()
-                            with suppress(asyncio.CancelledError, Exception):
-                                await record.task
-                            self.cache.clear(subject)
-                            raise
-                        self._records[subject] = record
-                        connected_now = True
+        else:
+            # New capacity remains serialized before taking family locks.
+            # Disconnect never takes admission, preserving pruning lock order.
+            async with self._admission_lock:
+                await self._require_access(access)
+                if self._closed:
+                    raise RuntimeUnavailable("Loxone runtime is closed")
+                await self._prune_sessions(subject)
+                record = self._records.get(subject)
+                if record is None or record.task.done():
+                    async with self._locks.hold(subject):
+                        await self._require_access(access)
+                        record = self._records.get(subject)
+                        if record is None or record.task.done():
+                            record = await self._connect(access)
+                            try:
+                                await self._require_access(access)
+                                if self._closed:
+                                    raise RuntimeUnavailable("Loxone runtime is closed")
+                            except BaseException:
+                                record.task.cancel()
+                                with suppress(asyncio.CancelledError, Exception):
+                                    await record.task
+                                self.cache.clear(subject)
+                                raise
+                            self._records[subject] = record
+                            connected_now = True
         record.last_used = time.monotonic()
         if (fresh_visibility and not connected_now) or (
             record.last_structure_check + self.structure_refresh_seconds <= record.last_used
