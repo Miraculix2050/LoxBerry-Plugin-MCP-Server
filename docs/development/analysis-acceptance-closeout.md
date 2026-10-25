@@ -348,7 +348,9 @@ No initial configuration copy was retained, so an exact field-level before/after
 comparison is unavailable. Normal installed Explorer authorization maintenance
 can persist approval metadata, but that does not establish the cause of this
 particular change. Do not restore or overwrite the file to manufacture equality.
-The sanitized investigation is tracked separately in [#569](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/569).
+The sanitized investigation is recorded in
+[#569](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/569)
+and the follow-up below.
 
 The comparison's 14 common read settings, caller, selected sources and fixed
 statistics fingerprints matched. No harness configuration write was issued.
@@ -362,6 +364,72 @@ The matched setting projection covers connection timeout, ordinary/history rate
 limits, history enablement, parallel calls, structure refresh, runtime session
 count/idle bounds, state/control/reference/depth bounds, and initial/maximum
 Miniserver authorization-probe intervals.
+
+#### Configuration-byte investigation (#569, 2026-10-26)
+
+Outcome: supported configuration writers and field categories are established
+from source and local synthetic checks. The writer and changed fields in the
+2026-10-18 interval remain unknown. No product defect was demonstrated, so no
+runtime, authorization or configuration behavior was changed. This closes the
+bounded investigation through its explicit observational-limit criterion; it
+does not resolve the original preservation gap.
+
+Source inspection used `d262d74b180feac43a9ad96eac8744824b4123d4`.
+`config.py` and `explorer_bindings.py` are unchanged from the measured final
+source `124fb581b02b1119666e314c94943235a2fa1639`. That earlier `server.py`
+also contains the maintenance loop and family callbacks described here. This
+comparison concerns repository sources; it does not identify the installed
+process that wrote the file during the unexplained interval.
+
+| Supported writer | Trigger and field category |
+| --- | --- |
+| `record_explorer_approval` in `src/mcpserver/explorer_bindings.py` | Explicit approval can create a `policies.explorer_bindings` entry. An already approved Explorer family starting through `server.py:on_family_started` can update `last_active_at`, `last_active_until` and clear `inactive_since`. |
+| `record_explorer_family_end` in the same module | OAuth cleanup invokes `server.py:on_family_expired` after releasing the auth-store lock; matching entries can receive `inactive_since`. |
+| `maintain_explorer_bindings` in the same module | The server lifespan worker reconciles immediately and then every 60 seconds. It can set/clear `inactive_since` or remove entries beyond configured retention. |
+| Admin save and approval/revocation paths in `src/mcpserver/admin.py`; permission dispatch in `src/mcpserver/installation_profile_permissions.py` | These are separate configuration/policy writers. Their existence is not evidence that an administrator or permission operation ran during the interval. |
+
+The Explorer functions replace only `PluginConfig.explorer_bindings`.
+These records are authorization lifecycle data, not merely display metadata:
+inactivity and retention determine whether reusable approval remains available.
+Neither their normal operation nor a matching subset of read settings proves
+that authorization policy was unchanged during the historical interval.
+
+`AtomicConfigStore.mutate` holds the configuration lock and saves only when the
+validated object changes. Saving serializes the complete document with sorted
+keys, indentation and a final newline, then atomically replaces the file.
+Consequently, a supported lifecycle update can change its byte hash without an
+Admin settings save; serialization can also normalize document representation.
+`load` does not save the JSON document. None of these facts attributes the
+historical write.
+
+Local checks used Python 3.13, temporary synthetic configuration/auth stores and
+fixed times; no target connection or real credentials were used. Before/after
+documents were compared in memory and only changed field names and byte-equality
+booleans were reported. Every case preserved all configuration fields outside
+`policies.explorer_bindings`:
+
+| Synthetic case | Changed fields | Configuration bytes changed |
+| --- | --- | --- |
+| Existing approval refreshed | `last_active_at`, `last_active_until` | Yes |
+| Maintenance with no active family, before retention | `inactive_since` | Yes |
+| Repeated maintenance with no semantic change | None | No |
+| Maintenance at retention boundary | Removal from `policies.explorer_bindings` | Yes |
+| Family-end callback | `inactive_since` | Yes |
+
+The existing `tests/test_explorer_bindings.py` suite passed all 12 cases, including
+retention, expired-family cleanup, pending-family limits and lock ordering.
+Initial attempts were blocked by the sandbox's default temporary-directory
+permissions; rerunning with a workspace temporary directory passed. These are
+local functional checks, not device acceptance or historical provenance.
+
+There is no retained initial JSON document or field-level writer trace for
+21:16 to about 23:05 UTC on 2026-10-18. Later checkpoint equality cannot recover
+either. No new target phase, recording, paid campaign or target configuration
+write was performed for this investigation. A future separately authorized target phase
+could compare field categories in memory around existing authorized maintenance
+and retain only sanitized category/provenance results. It could establish a new
+observation, not retrospectively identify the original writer. The negative
+finding and the 14-setting comparison above remain unchanged.
 
 ### Second device phase and fixed-date review context
 
