@@ -24,8 +24,9 @@ closed/destroyed on completion, rejection, timeout and cancellation.
 
 ### Non-admin evidence disposition (#535)
 
-Proposed disposition for [#535](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/535):
-**insufficient evidence; retain admin-only**, subject to review of this decision.
+Final disposition for [#535](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/535),
+reviewed and merged in [#592](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/pull/592)
+on 2026-10-26: **insufficient evidence; retain admin-only**.
 No non-admin implementation or disclosure policy is introduced.
 
 The owner-authorized read-only inventory on 2026-10-26 used two existing distinct
@@ -53,8 +54,8 @@ revocation. The sampled runtime/client/structure source hashes, configuration ha
 service PID and active state were unchanged, and the private runtime was closed
 before reservation release.
 
-Review may conclude this bounded investigation with these unavailable cases;
-keeping admin-only is an allowed outcome. Any later non-admin support still needs
+The reviewed decision concludes this bounded investigation with these unavailable
+cases and retains admin-only. Any later non-admin support still needs
 an explicit reviewed contract and separate implementation approval, preserving
 own-session authorization, pre/post checks, scopes, bounds and no fallback/cache.
 
