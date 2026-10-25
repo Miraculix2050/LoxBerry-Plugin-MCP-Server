@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
@@ -49,6 +50,7 @@ async def test_transport_encryption_and_fixed_read_command(monkeypatch, secure):
         "encrypted": not secure,
         "timeout_seconds": 10,
         "max_payload_bytes": 32768,
+        "allow_direct_json": True,
     }
     with pytest.raises(ValueError):
         await session.pv_forecast("../other")
@@ -63,6 +65,71 @@ def decode(raw=None, states=None):
         retrieved_at="2026-10-18T10:00:00+00:00",
         now=NOW,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_real_command_transport_preserves_direct_and_wrapped_forecasts(wrapped):
+    raw = json.dumps({"tomorrow": [{"t": NOW + 3600, "v": 1.2}]})
+    payload = json.dumps({"LL": {"Code": "200", "value": raw}}) if wrapped else raw
+    websocket = SimpleNamespace(
+        send=AsyncMock(),
+        recv=AsyncMock(side_effect=[struct.pack("<BBBBI", 3, 0, 0, 0, len(payload)), payload]),
+    )
+    session = object.__new__(LoxoneWebSocketSession)
+    session._websocket, session._encryptor = websocket, object()
+    session._secure_transport = True
+    session._timeout, session._max_payload = 25, 1_000_000
+    returned = await session.pv_forecast(TARGET)
+    assert returned == raw
+    assert decode(raw=returned).hours[0].energy_wh == 1200
+    websocket.send.assert_awaited_once_with(f"jdev/sps/io/{TARGET}/getForecasts")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"LL":{"Code":"403","value":"private response"}}',
+        '{"LL":"private response","today":[]}',
+    ],
+)
+async def test_direct_json_opt_in_never_hides_rejections_or_invalid_wrappers(payload):
+    websocket = SimpleNamespace(
+        send=AsyncMock(),
+        recv=AsyncMock(side_effect=[struct.pack("<BBBBI", 3, 0, 0, 0, len(payload)), payload]),
+    )
+    with pytest.raises((LoxoneCommandRejected, LoxoneResponseEnvelopeError)):
+        await client_module._websocket_command(
+            websocket,
+            object(),
+            "fixed/read",
+            encrypted=False,
+            timeout_seconds=1,
+            max_payload_bytes=32768,
+            allow_direct_json=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_direct_json_keeps_duplicate_keys_for_domain_validation():
+    payload = '{"tomorrow":[],"tomorrow":[]}'
+    websocket = SimpleNamespace(
+        send=AsyncMock(),
+        recv=AsyncMock(side_effect=[struct.pack("<BBBBI", 3, 0, 0, 0, len(payload)), payload]),
+    )
+    raw = await client_module._websocket_command(
+        websocket,
+        object(),
+        "fixed/read",
+        encrypted=False,
+        timeout_seconds=1,
+        max_payload_bytes=32768,
+        allow_direct_json=True,
+    )
+    assert raw == payload
+    with pytest.raises(PvForecastError, match="invalid_payload"):
+        decode(raw=raw)
 
 
 def test_hourly_energy_and_distinct_timestamp_epochs():

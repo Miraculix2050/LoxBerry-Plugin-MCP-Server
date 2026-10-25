@@ -8,6 +8,9 @@ weiterhin deren eigene Voraussetzungen.
 
 Der native Befehl `getForecasts` liefert stündliche kWh für heute, morgen und
 übermorgen. Das Ergebnis normalisiert diese in Wh mit Unix-Stundengrenzen.
+Der Adapter akzeptiert das direkte JSON-Prognoseobjekt sowie bisher unterstützte
+`LL`-Antworten. Andere Befehle behalten ihre Prüfung des Antwortumschlags;
+Fehlerantworten und ungültige Prognosedaten werden weiterhin abgewiesen.
 Aggregierte Zustände bleiben getrennt. Zustandszeitstempel verwenden die
 Loxone-Epoche 2009, Prognosezeitstempel Unix. Fehlende Stunden werden nicht ergänzt.
 

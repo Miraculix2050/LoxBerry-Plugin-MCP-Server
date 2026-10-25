@@ -227,6 +227,7 @@ async def _websocket_command(
     encrypted: bool,
     timeout_seconds: float,
     max_payload_bytes: int,
+    allow_direct_json: bool = False,
 ) -> Any:
     outgoing = encryptor.encrypted_command(command) if encrypted else command
     try:
@@ -249,6 +250,10 @@ async def _websocket_command(
         raise LoxoneProtocolError("Miniserver command response is not JSON") from exc
     if not isinstance(response, Mapping):
         raise LoxoneProtocolError("Miniserver command response is invalid")
+    if allow_direct_json and "LL" not in response:
+        # PVPF returns its documented day object directly. Preserve original text
+        # for the bounded domain decoder, including duplicate-key validation.
+        return payload
     return _response_value(response)
 
 
@@ -862,6 +867,7 @@ class LoxoneWebSocketSession:
             encrypted=not self._secure_transport,
             timeout_seconds=min(self._timeout, 10.0),
             max_payload_bytes=min(self._max_payload, MAX_BYTES),
+            allow_direct_json=True,
         )
 
     async def native_efm_result(self, action_uuid: str, view: str) -> Any:

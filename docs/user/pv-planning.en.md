@@ -7,6 +7,9 @@ configuration is changed. The existing EFM views retain their own requirements.
 
 The native `getForecasts` command supplies hourly kWh for today, tomorrow and the
 day after tomorrow. The result normalizes these to Wh with Unix hour boundaries.
+The adapter accepts the direct JSON forecast object and previously supported
+`LL` responses. Other commands retain their response-envelope check; error
+responses and invalid forecast data are still rejected.
 Aggregate states remain separate. State timestamps use the Loxone 2009 epoch;
 forecast timestamps use Unix. Missing hours are not interpolated.
 
