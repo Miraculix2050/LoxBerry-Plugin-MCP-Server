@@ -100,6 +100,16 @@ Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry autho
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.
 
+Structure JSON decoding, normalization and exact-response hashing run in admitted
+threads. Runtime-owner lookups and publication remain on the event loop. Each
+caller still receives its own complete filtered response before immutable reuse;
+the username, target namespace and resource limits are part of the reuse context.
+Cancellation, including repeated cancellation, retains admission until worker
+exit and never publishes the cancelled result. This improves responsiveness;
+it does not promise lower normalization CPU time. The synthetic
+`tools/benchmark_structure_responsiveness.py` probe compares cold, changed and
+warm response wall time and heartbeat lag against an explicit Git baseline.
+
 Per-family connection and control locks exist only while a holder or waiter uses
 them, including cancelled and failed calls. Disconnect waits for connection
 establishment before removing its record and never acquires a control lock;
