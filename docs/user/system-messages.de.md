@@ -64,8 +64,10 @@ aktuellen Miniserver-Rechte für Systemmeldungen. LoxBerry-Rechte sind unabhäng
 Nutze das Tool im vorhandenen Explorer oder einem autorisierten MCP-Client.
 `history` und `all` benötigen zusätzlich `loxone:history` und die History-Aktivierung durch den Administrator.
 
-Die Quelle ist experimentell und nur für Firmware 17.2.8.28 belegt. Andere Firmware
-liefert `unsupported_source`. Eine nicht verfügbare Quelle belegt keine Meldungsfreiheit.
+Die Quelle bleibt experimentell. Firmwareversionen werden nicht mehr fest
+freigegeben; Identität, gültige Versionsmetadaten, Antwortstruktur und konkrete
+Aktionen werden weiterhin geprüft. Eine abweichende Versionsnummer allein
+liefert kein `unsupported_source`. Eine nicht verfügbare Quelle belegt keine Meldungsfreiheit.
 Jede Seite enthält höchstens 50 Einträge und 64 KiB. Folge dem Cursor für weitere
 Einträge; starte bei einer Quellenänderung neu. Prüfe Begrenzung und gekürzte Felder.
 Die gespeicherte Historie enthält möglicherweise nicht jede frühere Meldung.

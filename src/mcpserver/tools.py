@@ -10,7 +10,6 @@ import json
 import logging
 import math
 import os
-import re
 import secrets
 import time
 from collections import OrderedDict
@@ -79,6 +78,7 @@ from mcpserver.loxone.event_history import (
     EventHistoryStore,
     EventHistoryUnavailable,
 )
+from mcpserver.loxone.firmware import valid_firmware
 from mcpserver.loxone.history_evidence import (
     CaptureInterval,
     HistoryEvidence,
@@ -5744,7 +5744,7 @@ def register_read_tools(
                         snapshot.structure.identity.miniserver_serial
                     ):
                         efm_verification = "identity_mismatch"
-                    elif not re.fullmatch(r"[0-9]{1,5}(?:\.[0-9]{1,5}){3}", probe.firmware):
+                    elif not valid_firmware(probe.firmware):
                         efm_verification = "invalid_version"
                     else:
                         efm_firmware = probe.firmware
@@ -6022,7 +6022,7 @@ def register_read_tools(
             "authorization. For on/off or activity claims request include_semantics=true and use "
             "only evidence supporting that exact claim. Unknown or omitted semantics never mean "
             "off. Current/complete values do not prove physical operation. Native EFM "
-            "views require verified firmware 17.2.8.28 and a fresh Loxone administrator; periods "
+            "views require validated source metadata and a fresh Loxone administrator; periods "
             "require activated history. Native values are not a verified balance. See states or "
             "energy guidance."
         ),
@@ -6056,8 +6056,9 @@ def register_read_tools(
             Field(
                 description=(
                     "pv_forecast reads native PVPF hourly kWh (loxone:read). All native views "
-                    "require one plain target, no state_names or semantics. EFM requires exact "
-                    "firmware 17.2.8.28 and fresh Loxone administrator. Period views require "
+                    "require one plain target, no state_names or semantics. EFM requires "
+                    "validated source metadata and a fresh Loxone administrator. "
+                    "Period views require "
                     "history activation and scope. Gpwr/Ppwr/Spwr/Cpwr have metadata-bound W/kW "
                     "units; other units, signs and period boundaries remain unknown."
                 )

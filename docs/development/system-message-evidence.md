@@ -22,8 +22,13 @@ MAC presentation. The implementation compares canonical validated MACs.
 Private records and vendor bundles remain outside the repository; tests use
 synthetic records. No acknowledgement/read/delete action was sent.
 
+Current admission policy: firmware numbers are not allowlisted. The observations
+below retain their original firmware provenance and do not prove universal device
+compatibility. Malformed metadata, source identity mismatch, invalid payloads and
+unapproved actions still fail closed.
+
 Require a fresh caller-filtered structure, the explicit permission bit and exactly
-one valid Message Center. Reject unsupported firmware and source shape, oversized
+one valid Message Center. Reject malformed firmware metadata and unsupported source shape, oversized
 sources (2 MiB/2000 entries), malformed/duplicate identifiers and malformed times.
 Page at most 50 records and 64 KiB, with field truncation and identity/target/query/
 source-revision authenticated cursors. No service-owned collector or persistent

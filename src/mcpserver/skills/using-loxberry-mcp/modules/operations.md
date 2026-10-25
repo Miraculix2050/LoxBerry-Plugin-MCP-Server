@@ -96,7 +96,7 @@ The server rechecks current authorization, configuration, source permissions and
 unchanged entry/action before dispatch.
 Changing entries, locked/historic/confirmed entries and unverified actions fail closed.
 
-On firmware 17.2.8.28, native action 1005 acknowledges. For the verified manual
+Native action 1005 acknowledges under the retained source/action contract. For the verified manual
 event 1121 warning only, action 1003 ("Okay") historizes the entry, preserves it in
 retained history and does not set `confirmed_at`. Do not infer actions from severity:
 other manual levels remain unsupported until their effects are independently verified.

@@ -25,8 +25,9 @@ Miniserver System Messages permission. LoxBerry permissions are independent.
 Use the tool in the existing Explorer or an authorized MCP client.
 `history` and `all` additionally require `loxone:history` and administrator History activation.
 
-The source is experimental and verified only for firmware 17.2.8.28. Other firmware
-returns `unsupported_source`. An unavailable source does not establish absence.
+The source remains experimental. Firmware numbers are not allowlisted; source
+identity, bounded version metadata, payload shape and exact actions remain checked.
+A changed version number alone does not return `unsupported_source`. An unavailable source does not establish absence.
 Each page contains at most 50 entries and 64 KiB. Follow the cursor for more;
 restart when the source changes. Inspect truncation and field truncation.
 Retained history is not guaranteed to include every past message.

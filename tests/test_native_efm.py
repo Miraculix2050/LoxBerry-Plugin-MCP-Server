@@ -434,7 +434,7 @@ async def test_period_requires_scope_and_activation_before_login(history_scope, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "firmware,serial",
-    [("17.2.8.29", SERIAL), ("17.2.8.28", "112233aabbcc"), ("17.2.8.28", "invalid")],
+    [("invalid", SERIAL), ("17.2.8.28", "112233aabbcc"), ("17.2.8.28", "invalid")],
 )
 async def test_probe_gate_never_reads_unsupported_source(firmware, serial):
     runtime, _, session, _ = fixture_runtime()
@@ -735,3 +735,12 @@ async def test_cancellation_during_authentication_aborts_and_releases():
     socket.transport.abort.assert_called_once()
     token.destroy.assert_called_once()
     assert runtime._parallel._value == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("firmware", ["17.2.8.29", "17.2.10.21", "99.0.0.1"])
+async def test_native_read_accepts_changed_firmware_and_reports_actual_version(firmware):
+    runtime, _structure, _session, _token = fixture_runtime()
+    runtime.client.probe.return_value = SimpleNamespace(firmware=firmware, serial=SERIAL)
+    _control, _structure, result = await runtime.read_native_efm(access(), TARGET, "actual")
+    assert result.firmware == firmware

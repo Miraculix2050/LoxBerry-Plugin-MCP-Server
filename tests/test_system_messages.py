@@ -289,3 +289,13 @@ async def test_mcp_response_bound_and_truncation(monkeypatch) -> None:
     result = await server._tool_manager.get_tool("loxone_get_system_messages").fn()
     assert result.ok and len(result.model_dump_json().encode()) <= 65_536
     assert result.data.truncated and not result.data.page_complete and result.data.cursor
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("firmware", ["17.2.10.21", "99.0.0.1"])
+async def test_message_read_does_not_pin_firmware(firmware):
+    instance, session, _token = runtime()
+    instance.client.probe.return_value.firmware = firmware
+    result = await instance.get_system_messages(access())
+    assert result.firmware == firmware
+    session.system_messages.assert_awaited_once()

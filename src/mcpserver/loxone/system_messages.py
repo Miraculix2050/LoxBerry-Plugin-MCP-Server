@@ -1,4 +1,4 @@
-"""Version-bound Message Center decoding; source text is untrusted evidence."""
+"""Bounded Message Center decoding; source text is untrusted evidence."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, PrivateAttr
 
-SUPPORTED_FIRMWARE = frozenset({"17.2.8.28"})
 SYSTEM_MESSAGES_PERMISSION = 131072
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_ENTRIES = 2000

@@ -136,3 +136,30 @@ async def test_invalid_current_state_or_source_identity_is_unsupported(monkeypat
     register_message_tools(server, runtime)
     result = await server._tool_manager.get_tool("loxone_get_notifications").fn()
     assert not result.ok and result.data.error == "unsupported_source"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("firmware", ["17.2.10.21", "99.0.0.1"])
+async def test_notification_source_accepts_changed_firmware(firmware):
+    from dataclasses import replace
+    from unittest.mock import Mock
+
+    from test_system_messages import access, runtime
+
+    from mcpserver.loxone.models import GlobalMetadata
+    from mcpserver.loxone.runtime import RuntimeSnapshot
+
+    instance, session, _token = runtime()
+    state = "11111111-1111-1111-1111111111111111"
+    structure = replace(
+        session.load_structure.return_value,
+        global_metadata=(
+            GlobalMetadata("global_state", "notifications", "Notifications", state_uuid=state),
+        ),
+    )
+    snapshot = RuntimeSnapshot("family", structure, True)
+    instance.snapshot = AsyncMock(return_value=snapshot)
+    instance.state = Mock(return_value=StateRecord(state, "", Freshness.CURRENT, 100.0))
+    instance.client.probe.return_value.firmware = firmware
+    result = await instance.get_notification_state(access())
+    assert result[3] == firmware

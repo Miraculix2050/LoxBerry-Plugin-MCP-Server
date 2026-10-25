@@ -47,15 +47,13 @@ from mcpserver.loxone.control import (
     visible_mood_ids,
 )
 from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
+from mcpserver.loxone.firmware import valid_firmware
 from mcpserver.loxone.models import (
     Control,
     Freshness,
     LoxoneStructure,
     StateRecord,
     StatisticSeries,
-)
-from mcpserver.loxone.native_efm import (
-    FIRMWARE as NATIVE_EFM_FIRMWARE,
 )
 from mcpserver.loxone.native_efm import (
     VIEWS as NATIVE_EFM_VIEWS,
@@ -74,7 +72,6 @@ from mcpserver.loxone.statistics import (
     parse_statistic_points,
 )
 from mcpserver.loxone.system_messages import (
-    SUPPORTED_FIRMWARE,
     SYSTEM_MESSAGES_PERMISSION,
     MessageSource,
     MessageSourceError,
@@ -1036,11 +1033,11 @@ class LoxoneRuntime:
                         probe = await asyncio.wait_for(self.client.probe(), timeout)
                         serial = canonical_serial(structure.identity.miniserver_serial)
                         if (
-                            probe.firmware != NATIVE_EFM_FIRMWARE
+                            not valid_firmware(probe.firmware)
                             or canonical_serial(probe.serial) != serial
                         ):
                             raise ControlOperationError(
-                                "unsupported_source", "Native EFM firmware or identity unsupported"
+                                "unsupported_source", "Native EFM metadata or identity invalid"
                             )
                         await self._require_access(access)
                         native_control = control
@@ -1048,7 +1045,10 @@ class LoxoneRuntime:
                             session.native_efm_result(action_uuid, view), timeout
                         )
                         result = decode_native_efm(
-                            value, view, retrieved_at=datetime.now(UTC).isoformat()
+                            value,
+                            view,
+                            retrieved_at=datetime.now(UTC).isoformat(),
+                            firmware=probe.firmware,
                         )
                         await self._require_access(access)
                         refreshed = await asyncio.wait_for(session.load_structure(), timeout)
@@ -1330,9 +1330,9 @@ class LoxoneRuntime:
                     "unsupported_source", "Notification state is not advertised"
                 )
             probe = await self.client.probe()
-            if probe.firmware not in SUPPORTED_FIRMWARE:
+            if not valid_firmware(probe.firmware):
                 raise ControlOperationError(
-                    "unsupported_source", "Notification firmware contract is not verified"
+                    "unsupported_source", "Notification firmware metadata is invalid"
                 )
             if canonical_serial(probe.serial) != canonical_serial(
                 snapshot.structure.identity.miniserver_serial
@@ -1391,9 +1391,9 @@ class LoxoneRuntime:
                     "unsupported_source", "Exactly one valid Message Center is required"
                 )
             probe = await self.client.probe()
-            if probe.firmware not in SUPPORTED_FIRMWARE:
+            if not valid_firmware(probe.firmware):
                 raise ControlOperationError(
-                    "unsupported_source", "Message Center firmware contract is not verified"
+                    "unsupported_source", "Message Center firmware metadata is invalid"
                 )
             if canonical_serial(probe.serial) != canonical_serial(
                 structure.identity.miniserver_serial

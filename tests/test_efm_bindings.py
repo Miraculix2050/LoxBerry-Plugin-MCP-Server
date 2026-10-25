@@ -20,7 +20,8 @@ from test_tools import READ_SCOPE, _loxberry_access
 from mcpserver import tools as tools_module
 from mcpserver.loxone.client import LoxoneConnectionError, ProbeResult
 from mcpserver.loxone.efm import normalize
-from mcpserver.loxone.efm_bindings import FIRMWARE, MAX_BINDING_BYTES, bind
+from mcpserver.loxone.efm_bindings import MAX_BINDING_BYTES, bind
+from mcpserver.loxone.efm_bindings import REFERENCE_FIRMWARE as FIRMWARE
 from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import RuntimeSnapshot
 from mcpserver.tools import register_read_tools
@@ -97,7 +98,7 @@ def test_synthetic_absent_nested_binding_differs_from_reference_missing() -> Non
     assert control.efm.participants[1].node_uuid == uuid(2)
 
 
-@pytest.mark.parametrize("firmware", [None, "17.2.8.27", "17.3.0.0"])
+@pytest.mark.parametrize("firmware", [None, "invalid", "17.3.0"])
 def test_synthetic_other_or_unknown_firmware_has_no_binding_decoder(firmware) -> None:
     control = monitor([node(actualEfmState=uuid(7))], [("actual0", uuid(7))])
     result = bind(control.efm, control, firmware)
@@ -236,3 +237,11 @@ def test_synthetic_xml_field_aliases_never_become_runtime_bindings() -> None:
     result = bind(control.efm, control, FIRMWARE)
     assert result["participants"][0]["status"] == "absent"
     assert not result["participants"][0]["states"]
+
+
+@pytest.mark.parametrize("firmware", ["17.2.8.27", "17.2.10.21", "99.0.0.1"])
+def test_firmware_changes_do_not_block_exact_uuid_binding(firmware):
+    control = monitor([node(actualEfmState=uuid(7))], [("actual0", uuid(7))])
+    result = bind(control.efm, control, firmware)
+    assert result["participants"][0]["status"] == "resolved"
+    assert result["firmware_version"] == firmware

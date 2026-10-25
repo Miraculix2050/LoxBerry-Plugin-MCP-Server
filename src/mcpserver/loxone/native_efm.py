@@ -1,4 +1,4 @@
-"""Version-bound native EFM projections; no inferred units or balance calculations."""
+"""Shape-validated native EFM projections; no inferred units or balance calculations."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from mcpserver.loxone.state_semantics import SemanticsSource
 
 type NativeResultView = Literal["actual", "day", "week", "month", "year", "lifetime"]
 VIEWS = frozenset({"actual", "day", "week", "month", "year", "lifetime"})
-FIRMWARE = "17.2.8.28"
+REFERENCE_FIRMWARE = "17.2.8.28"  # Historical decoder provenance, not an admission rule.
 MAX_OUTER_BYTES = 32 * 1024
 MAX_VALUE_BYTES = 16 * 1024
 _ACTUAL = ("Gpwr", "Ppwr", "Spwr", "Cpwr", "Rest")
@@ -59,7 +59,9 @@ class NativeEfmResult(BaseModel):
     ) = None
     historical_date_selection_supported: Literal[False] = False
     report_limitations: list[str] = Field(default_factory=list, max_length=16)
-    firmware: Literal["17.2.8.28"] = "17.2.8.28"
+    firmware: str = Field(
+        default=REFERENCE_FIRMWARE, max_length=23, pattern=r"^[0-9]{1,5}(?:\.[0-9]{1,5}){3}$"
+    )
     view: NativeResultView
     retrieved_at: str
     fields: list[NativeEfmField] = Field(max_length=7)
@@ -88,7 +90,7 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def decode_native_efm(
-    value: object, view: NativeResultView, *, retrieved_at: str
+    value: object, view: NativeResultView, *, retrieved_at: str, firmware: str = REFERENCE_FIRMWARE
 ) -> NativeEfmResult:
     """Accept only the evidenced LL.value JSON text with a bounded flat object."""
     if view not in VIEWS:
@@ -132,6 +134,7 @@ def decode_native_efm(
             )
         )
     return NativeEfmResult(
+        firmware=firmware,
         view=view,
         retrieved_at=retrieved_at,
         period_kind=view,
