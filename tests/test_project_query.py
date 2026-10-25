@@ -69,6 +69,35 @@ def test_find_status_and_describe_are_deterministic_and_bounded():
     )
 
 
+@pytest.mark.parametrize("text", [None, "", " ", "LiViNg", "no-match", "AQ", "Target"])
+def test_find_projects_only_matched_nodes(monkeypatch, text):
+    project = query()
+    projected = []
+    original = ProjectQuery._summary
+
+    def summary(self, node, **kwargs):
+        projected.append(node.key)
+        return original(self, node, **kwargs)
+
+    monkeypatch.setattr(ProjectQuery, "_summary", summary)
+    found = project.find(
+        query=text, kind=None, block_type=None, source_id=None, runtime_control_uuid=None
+    )
+    assert projected == [item["project_node_id"] for item in found]
+    if text == "no-match":
+        assert not found
+    if text == "LiViNg":
+        assert len(found) == 1 and found[0]["runtime_control"]["name"] == "Living room"
+
+
+def test_find_does_not_search_names_from_multiple_exact_mappings():
+    project = query(shared_mapping=True)
+    project.control_names.update({"first": "private-name", "second": "private-name"})
+    assert not project.find(
+        query="private-name", kind=None, block_type=None, source_id=None, runtime_control_uuid=None
+    )
+
+
 def test_find_projects_logical_knx_objects_with_source_provenance():
     parsed = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
     graph = build_graph((("one", parsed), ("two", parsed)))

@@ -255,10 +255,13 @@ class ProjectQuery:
                     pending.append(neighbor)
         return observations, truncated
 
-    def _summary(self, node: GraphNode, *, include_names: bool = False) -> dict[str, object]:
+    def _exact_runtime_control(self, node: GraphNode) -> ControlMapping | None:
         mapping = self._mapped_nodes.get(self.view.snapshot.canonical_node_key(node.key), [])
         exact = [item for item in mapping if item.status == "exact"]
-        runtime_control = exact[0] if len(exact) == 1 else None
+        return exact[0] if len(exact) == 1 else None
+
+    def _summary(self, node: GraphNode, *, include_names: bool = False) -> dict[str, object]:
+        runtime_control = self._exact_runtime_control(node)
         connector_key = next((value for key, value in node.attributes if key == "K"), None)
         knx = node.knx
         return {
@@ -737,8 +740,6 @@ class ProjectQuery:
                 not in {knx.group_address.original, knx.group_address.canonical}
             ):
                 continue
-            item = self._summary(node, include_names=True)
-            item["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, 1)
             if needle is not None:
                 connector_key = next((value for key, value in node.attributes if key == "K"), None)
                 knx_values = (
@@ -757,13 +758,15 @@ class ProjectQuery:
                     for value in (key, self._nodes[key].source_id)
                 )
                 searchable = (*source_references, node.block_type, connector_key, *knx_values)
-                runtime = item["runtime_control"]
-                runtime_name = runtime.get("name") if isinstance(runtime, dict) else None
+                runtime = self._exact_runtime_control(node)
+                runtime_name = self.control_names.get(runtime.control_uuid) if runtime else None
                 metadata_number = self.graph_index.knx_addresses.get(node.key)
                 if not any(
                     needle in value.casefold() for value in (*searchable, runtime_name) if value
                 ) and (metadata_number is None or metadata_number not in metadata_matches):
                     continue
+            item = self._summary(node, include_names=True)
+            item["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, 1)
             result.append(item)
         provenance = (
             self.derived_target(runtime_control_uuid, "runtime_control_uuid")
