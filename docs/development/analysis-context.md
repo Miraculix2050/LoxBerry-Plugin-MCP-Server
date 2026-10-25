@@ -38,6 +38,17 @@ bindings are not consulted to assign physical associations to profileless calls.
 Follow-ups: #557 history, #558 weather/solar, #559 profile reuse;
 existing #357, #441 and #444 own their respective EFM, lighting and prompt domains.
 
+## Technical acceptance boundary
+
+On 25 October 2026 the owner approved #510 closeout on software/technical
+acceptance, including a real native PVPF read with 72 available hours on
+Loxberry-Test. Comparison with three production intervals measured after forecast
+capture and real single/competing-consumer planning were not performed and are
+no longer closeout gates. This decision does not qualify hypothetical loads as
+real consumers or establish empirical forecast accuracy, measured savings or
+operating permission. Runtime evidence requirements remain unchanged. #440 has
+its own retrospective technical closeout.
+
 ## Deutscher Überblick
 
 Der Anfragekontext trennt native EFM-Zuordnungen, bestätigte Anlagenzuordnungen
@@ -47,8 +58,16 @@ Reale Lasten ohne eigenen Zähler sind mit bestätigtem vollständigem deklarier
 Zyklus möglich; hypothetische Lasten bleiben getrennte Szenarien. Profile werden
 nur gelesen. Fehlende Verdrahtung eines nur visualisierten PVPF ist für sich kein
 Konfigurationsfehler. Der Kontext ist eine optionale alternative Auswahl in der
-bestehenden Lastplanung; Altaufrufe und Profilformate bleiben erhalten. #440/#510 bleiben bis zur
-positiven realen Prognose- und Verbraucherabnahme offen.
+bestehenden Lastplanung; Altaufrufe und Profilformate bleiben erhalten. Am
+25. Oktober 2026 hat der Eigentümer die technische Abnahme als Abschlussgrundlage
+für #510 bestätigt, einschließlich eines nativen Abrufs mit 72 verfügbaren
+Prognosestunden auf Loxberry-Test. Der Vergleich mit drei nach Prognoseabruf
+gemessenen Produktionsintervallen und die Planung mit realen Einzel- bzw.
+konkurrierenden Verbrauchern wurden nicht durchgeführt und sind keine
+Abschlussbedingungen mehr. Daraus folgen keine empirisch belegte Prognosegüte,
+reale Verbraucherabnahme, gemessene Einsparung oder Betriebsfreigabe.
+Laufzeitanforderungen bleiben unverändert. #440 behält seinen unabhängigen
+retrospektiven technischen Abschluss.
 
 Der gemeinsame Resolver liest Profile nur bei ausdrücklichen Referenzen und
 verwendet ausschließlich aktuell bestätigte Zuordnungen. Anfrageannahmen können

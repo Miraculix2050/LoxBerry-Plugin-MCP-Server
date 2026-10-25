@@ -46,5 +46,12 @@ may substitute for caller authorization.
 Acceptance uses deterministic arithmetic/contracts, source-call counters,
 negative/changed inputs and cancellation tests, then a reserved Loxberry-Test
 Hotswap with Browser/MCP/SSH checks. Fixtures are distinct from a real available
-PVPF forecast and a comparison with measured production. Missing positive source
-acceptance leaves #440/#510 open. Independent #501 measurement remains excluded.
+PVPF forecast and a comparison with measured production. The native PVPF read
+returned 72 available hours on Loxberry-Test after the #586 adapter fix. On
+25 October 2026 the owner approved closing #510 on software/technical acceptance:
+the three measured production intervals after forecast capture and real
+single/competing-consumer planning were not performed and are no longer closeout
+gates. This does not establish empirical forecast accuracy, real consumer
+validation, measured savings or operating permission. Runtime qualification and
+conditional planning semantics are unchanged. #440 retains its separate
+retrospective technical closeout. Independent #501 measurement remains excluded.
