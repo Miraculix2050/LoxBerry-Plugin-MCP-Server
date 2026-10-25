@@ -8,6 +8,10 @@ The Plugin Manager discovers regular updates through the stable release source. 
 
 ## Sessions and approvals
 
+An already connected, healthy client can read while another client is opening
+its connection. Authorization, current visibility checks and session limits still
+apply; requests for the same client's connection or refresh can still wait.
+
 Under **Clients and sessions**, administrators can inspect and revoke sessions and local diagnostic or operate approvals. On narrow screens, all fields and actions appear together under each session or approval. While a revocation is running, the affected row is dimmed. Revoking an approval ends matching sessions. Disconnecting the Tool Explorer revokes only its OAuth session; its local approval can reactivate for the same Loxone identity and Miniserver until the displayed deadline. The inactive retention is configurable from 1 to 720 hours and defaults to 72 hours.
 
 Session revocation blocks MCP access immediately. Loxone token cleanup then runs in the background. The section shows aggregate warnings when cleanup is pending, the Miniserver blocks sign-ins, or remote revocation remains unconfirmed after bounded attempts. For an unconfirmed result, an administrator can inspect Loxone user management; the warning does not identify a user.
