@@ -424,8 +424,8 @@ local functional checks, not device acceptance or historical provenance.
 
 There is no retained initial JSON document or field-level writer trace for
 21:16 to about 23:05 UTC on 2026-10-18. Later checkpoint equality cannot recover
-either. No new target phase, recording, paid campaign or configuration write was
-performed for this investigation. A future separately authorized target phase
+either. No new target phase, recording, paid campaign or target configuration
+write was performed for this investigation. A future separately authorized target phase
 could compare field categories in memory around existing authorized maintenance
 and retain only sanitized category/provenance results. It could establish a new
 observation, not retrospectively identify the original writer. The negative
