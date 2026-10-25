@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import struct
+import sys
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -57,27 +58,45 @@ class StatisticsCache:
         maximum_bytes: int = 128 * 1024 * 1024,
         ttl_seconds: float = 60.0,
         maximum_memory_points: int = _MAX_MEMORY_POINTS,
+        maximum_entries: int = 1024,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not 16 * 1024 * 1024 <= maximum_bytes <= 512 * 1024 * 1024:
             raise ValueError("statistics cache size is outside the supported range")
         if maximum_memory_points < 1:
             raise ValueError("statistics memory cache point limit must be positive")
+        if maximum_entries < 1:
+            raise ValueError("statistics memory cache entry limit must be positive")
         self.maximum_bytes = maximum_bytes
         self.ttl_seconds = ttl_seconds
         self.maximum_memory_points = maximum_memory_points
+        self.maximum_entries = maximum_entries
         self._clock = clock
-        self._memory: OrderedDict[str, tuple[float, tuple[StatisticPoint, ...]]] = OrderedDict()
+        self._memory: OrderedDict[str, tuple[float, tuple[StatisticPoint, ...], int]] = (
+            OrderedDict()
+        )
+        # Insertion/refresh expiry order is independent of access-based LRU.
+        # The supplied clock, like the default, must be monotonic.
+        self._expiry: OrderedDict[str, float] = OrderedDict()
+        self._point_count = 0
+        self._accounted_bytes = 0
         self._lock = RLock()
+
+    def _discard(self, key: str) -> None:
+        item = self._memory.pop(key, None)
+        self._expiry.pop(key, None)
+        if item is not None:
+            self._point_count -= len(item[1])
+            self._accounted_bytes -= item[2]
 
     def get(self, key: str) -> tuple[StatisticPoint, ...] | None:
         with self._lock:
             item = self._memory.get(key)
             if item is None:
                 return None
-            expires_at, value = item
+            expires_at, value, _size = item
             if expires_at <= self._clock():
-                self._memory.pop(key, None)
+                self._discard(key)
                 return None
             self._memory.move_to_end(key)
             return value
@@ -85,20 +104,30 @@ class StatisticsCache:
     def put(self, key: str, value: tuple[StatisticPoint, ...]) -> None:
         with self._lock:
             now = self._clock()
-            for expired_key, (expires_at, _points) in tuple(self._memory.items()):
-                if expires_at <= now:
-                    self._memory.pop(expired_key, None)
+            while self._expiry:
+                expired_key = next(iter(self._expiry))
+                if self._expiry[expired_key] > now:
+                    break
+                self._discard(expired_key)
             if len(value) > self.maximum_memory_points:
                 return
-            self._memory[key] = (now + self.ttl_seconds, value)
-            self._memory.move_to_end(key)
+            # Charge tuple/key storage plus conservative per-entry container and
+            # per-point Python-object overhead, not just 12-byte wire records.
+            size = sys.getsizeof(key) + sys.getsizeof(value) + 512 + len(value) * 128
+            if size > self.maximum_bytes:
+                return
+            self._discard(key)
+            expires_at = now + self.ttl_seconds
+            self._memory[key] = (expires_at, value, size)
+            self._expiry[key] = expires_at
+            self._point_count += len(value)
+            self._accounted_bytes += size
             while (
-                sum(len(points) for _expires_at, points in self._memory.values())
-                > self.maximum_memory_points
-                or sum(len(points) * _POINT.size for _expires_at, points in self._memory.values())
-                > self.maximum_bytes
+                self._point_count > self.maximum_memory_points
+                or self._accounted_bytes > self.maximum_bytes
+                or len(self._memory) > self.maximum_entries
             ):
-                self._memory.popitem(last=False)
+                self._discard(next(iter(self._memory)))
 
     @staticmethod
     def source_key(*parts: str) -> str:
@@ -109,4 +138,7 @@ class StatisticsCache:
         with self._lock:
             memory = len(self._memory)
             self._memory.clear()
+            self._expiry.clear()
+            self._point_count = 0
+            self._accounted_bytes = 0
         return memory
