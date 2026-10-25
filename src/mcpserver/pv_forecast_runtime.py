@@ -179,11 +179,13 @@ async def read_pv_forecasts(
         raise _read_failure(
             trace_id, phase, "timeout", "temporarily_unavailable", "PV forecast read timed out"
         ) from None
-    except LoxoneProtocolError:
+    except LoxoneProtocolError as exc:
         raise _read_failure(
             trace_id,
             phase,
-            "protocol_error",
+            "response_envelope_invalid"
+            if isinstance(exc, LoxoneResponseEnvelopeError)
+            else "protocol_error",
             "temporarily_unavailable",
             "PV forecast read failed due to a protocol error",
         ) from None
@@ -197,9 +199,7 @@ async def read_pv_forecasts(
         ) from None
     except LoxoneConnectionError as exc:
         reason = "connection_error"
-        if isinstance(exc, LoxoneResponseEnvelopeError):
-            reason = "response_envelope_invalid"
-        elif isinstance(exc, LoxoneWebSocketClosed):
+        if isinstance(exc, LoxoneWebSocketClosed):
             reason = "websocket_closed"
         elif isinstance(exc, LoxoneWebSocketConnectionFailed):
             reason = "websocket_connection_failed"

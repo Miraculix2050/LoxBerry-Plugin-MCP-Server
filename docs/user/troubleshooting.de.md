@@ -1,5 +1,17 @@
 # Fehlerbehebung
 
+## Miniserver-Transport- und Befehlsfehler
+
+Zeitüberschreitungen, ungültige Antwortprotokolle und geschlossene Verbindungen bleiben
+unterscheidbar. Nur eine bestätigte Ablehnung bei der Token-Authentifizierung erhöht den
+Token-Ablehnungszähler; Serverfehler erhöhen ihn nicht. Abgelehnte Leseanforderungen
+gelten nur bei Berechtigungs-Antwortcodes als Berechtigungsfehler. Bei einem
+Serverfehler während eines Steuerbefehls bleibt das Ergebnis unbekannt: vor einer
+Wiederholung den Zustand lesen. Es wird keine automatische Befehlswiederholung ergänzt.
+Statistik-Logs unterscheiden ungültige Antworten von ausdrücklichen Ablehnungen.
+Diagnosen enthalten keine Abschluss-Texte der Gegenstelle, Antwortinhalte, Tokens oder
+Anfrage-URLs. Jeder Befehl behält seinen bisherigen Antwortformat-Vertrag.
+
 ## MCP-Tools fehlen nach einem Upgrade
 
 Der installierte Skill oder die statische Schemareferenz kann Fähigkeiten

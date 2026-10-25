@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, StoredAccessToken
-from mcpserver.loxone.client import LoxoneToken, MiniserverEndpoint
+from mcpserver.loxone.client import LoxoneCommandRejected, LoxoneToken, MiniserverEndpoint
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
@@ -174,8 +174,19 @@ async def test_control_requires_scope_and_supported_type(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,expected",
+    [
+        (TimeoutError(), "outcome_unknown"),
+        (LoxoneCommandRejected("fixed", response_code="500"), "outcome_unknown"),
+        (LoxoneCommandRejected("fixed", response_code="401"), "permission_denied"),
+        (LoxoneCommandRejected("fixed", response_code="403"), "permission_denied"),
+    ],
+)
 async def test_transport_failure_after_dispatch_has_unknown_outcome(
     monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected: str,
 ) -> None:
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
@@ -193,7 +204,7 @@ async def test_transport_failure_after_dispatch_has_unknown_outcome(
             return _structure()
 
         async def operate_control(self, _action_uuid: str, _command: str) -> None:
-            raise TimeoutError
+            raise failure
 
         async def close(self) -> None:
             return None
@@ -207,7 +218,7 @@ async def test_transport_failure_after_dispatch_has_unknown_outcome(
 
     with pytest.raises(ControlOperationError) as captured:
         await runtime.operate_control(_access(READ_SCOPE, CONTROL_SCOPE), "control-1", "off")
-    assert captured.value.code == "outcome_unknown"
+    assert captured.value.code == expected
 
 
 @pytest.mark.asyncio
