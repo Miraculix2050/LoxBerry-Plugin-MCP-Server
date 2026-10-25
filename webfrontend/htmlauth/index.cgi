@@ -692,6 +692,9 @@ if ($action ne '') {
         $result = admin_call('emergency_stop_cached_options', {});
     } elsif ($action eq 'emergency_stop_retry') {
         $result = admin_call('emergency_stop_retry', {});
+    } elsif ($action eq 'list_authentication_events') {
+        my $payload = length($q->{session_id} // '') ? {session_id => $q->{session_id}} : {};
+        $result = admin_call('list_authentication_events', $payload);
     } elsif ($action eq 'miniserver_auth_probe') {
         $result = admin_call('miniserver_auth_probe', {});
     } elsif ($action eq 'test_connection') {

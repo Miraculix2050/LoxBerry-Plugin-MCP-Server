@@ -132,3 +132,20 @@ Names never prove scene roles, presence connections or physical luminaires.
 The full default and all existing operation safeguards remain unchanged. The
 complete compact envelope is limited to 64 KiB (`response_too_large` for
 oversized retained control metadata).
+
+## Authentication diagnostics in Clients and sessions
+
+Local administrators can explicitly open and refresh the bounded authentication
+history and its summary for an app/identity/Miniserver binding. Sessions with the
+same binding show the same history; it is not a per-session attribution. Details
+do not poll in the background. The view separates observed rejection, confirmed
+source-IP blocking, suppressed attempts, confirmed recovery and unavailable
+history. A block observation does not identify its cause. Unavailable or empty
+history does not prove a healthy system. No extra recovery action is introduced;
+the existing Admin probe keeps its existing protection and rate limits.
+
+The overview shows at most 50 distinct retained, non-revoked app/identity/Miniserver
+bindings, including those with expired sessions.
+When more exist, it warns that the list is truncated and shows the number of
+omitted distinct bindings; repeated sessions of the same binding count once.
+A rejected Miniserver command is reported separately from rejected authentication.

@@ -3002,3 +3002,149 @@ def test_legacy_save_with_partial_policies_preserves_each_knx_explorer_approval(
         }
     )
     assert store.load().explorer_bindings == (approval,)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {"path": "elsewhere"},
+        {"session_id": ""},
+        {"session_id": None},
+        {"session_id": 4},
+        {"session_id": "x" * 129},
+    ],
+)
+def test_authentication_history_rejects_invalid_admin_requests(payload):
+    with pytest.raises(AdminError):
+        dispatch({"action": "list_authentication_events", "payload": payload})
+
+
+def test_authentication_history_groups_verified_binding_and_reads_on_demand(tmp_path, monkeypatch):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator, authentication_binding
+
+    auth = AtomicJsonAuthStore((tmp_path / "auth" / "sessions.json").resolve())
+    config = PluginConfig(loxone_endpoint="http://192.168.10.20")
+    families = {
+        "first": {"client_id": "app", "identity_id": "identity", "miniserver_id": "server"},
+        "renewed": {"client_id": "app", "identity_id": "identity", "miniserver_id": "server"},
+        "other": {"client_id": "other-app", "identity_id": "identity", "miniserver_id": "server"},
+    }
+    auth.mutate(lambda document: document["families"].update(families))
+    monkeypatch.setattr(admin, "_auth_store", lambda: auth)
+    monkeypatch.setattr(admin, "_config_store", lambda: SimpleNamespace(load=lambda: config))
+    calls = []
+
+    def read(self, binding_id=None):
+        calls.append(binding_id)
+        return {"events": [], "history_status": "bounded", "shared_status": {}}
+
+    monkeypatch.setattr(MiniserverAuthCoordinator, "diagnostic_snapshot", read)
+    monkeypatch.setattr(
+        admin,
+        "_sessions",
+        lambda snapshot: [
+            {
+                "id": family,
+                "client": record["client_id"],
+                "client_name": "Same display name",
+                "identity": record["identity_id"],
+            }
+            for family, record in families.items()
+        ],
+    )
+    global_history = dispatch({"action": "list_authentication_events"})
+    assert len(global_history["bindings"]) == 2
+    assert calls[0] is None
+    own = authentication_binding(auth, "app", "identity", "server")
+    calls.clear()
+    for family in ("first", "renewed"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": family}})
+    assert calls == [own, own]
+    assert "binding_id" not in json.dumps(global_history)
+    assert "subject_key" not in json.dumps(global_history)
+    with pytest.raises(AdminError, match="unavailable"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": "unknown"}})
+
+
+def test_removed_signed_authentication_recovery_action_is_rejected():
+    with pytest.raises(AdminError):
+        dispatch(
+            {"action": "request_miniserver_auth_recovery", "payload": {"session_id": "family"}}
+        )
+
+
+@pytest.mark.parametrize("distinct", [50, 51, 256])
+def test_authentication_binding_summary_reports_distinct_omissions_without_store_rereads(
+    tmp_path, monkeypatch, distinct
+):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+
+    auth = AtomicJsonAuthStore((tmp_path / "auth" / "sessions.json").resolve())
+    config = PluginConfig(loxone_endpoint="http://192.168.10.20")
+    families = {
+        f"family-{index}-{renewal}": {
+            "client_id": f"client-{index}",
+            "identity_id": "identity",
+            "miniserver_id": "server",
+            "scope": "loxone:read",
+            "expires_at": 2_000_000_000,
+        }
+        for index in range(distinct)
+        for renewal in range(3)
+    }
+    auth.mutate(lambda document: document["families"].update(families))
+    snapshot_reads = 0
+    original_snapshot = auth.snapshot
+
+    def counted_snapshot():
+        nonlocal snapshot_reads
+        snapshot_reads += 1
+        return original_snapshot()
+
+    monkeypatch.setattr(auth, "snapshot", counted_snapshot)
+    monkeypatch.setattr(admin, "_auth_store", lambda: auth)
+    monkeypatch.setattr(admin, "_config_store", lambda: SimpleNamespace(load=lambda: config))
+    projection_reads = []
+
+    def read(self, binding_id=None):
+        projection_reads.append(binding_id)
+        return {"events": [], "history_status": "bounded", "shared_status": {}}
+
+    monkeypatch.setattr(MiniserverAuthCoordinator, "diagnostic_snapshot", read)
+    result = dispatch({"action": "list_authentication_events"})
+    assert len(result["bindings"]) == 50
+    assert result["bindings_truncated"] is (distinct > 50)
+    assert result["bindings_omitted"] == distinct - 50
+    assert len(projection_reads) == 51
+    # One captured Admin snapshot plus one profile pseudonym, independent of family count.
+    assert snapshot_reads == 2
+
+
+def test_authentication_binding_history_without_snapshot_key_fails_closed(tmp_path, monkeypatch):
+    import mcpserver.loxone.auth_diagnostics as diagnostics
+
+    auth = AtomicJsonAuthStore((tmp_path / "auth" / "sessions.json").resolve())
+    snapshot = SimpleNamespace(
+        configuration=PluginConfig(loxone_endpoint="http://192.168.10.20"),
+        auth_document={
+            "families": {
+                "family": {
+                    "client_id": "client",
+                    "identity_id": "identity",
+                    "miniserver_id": "server",
+                }
+            }
+        },
+        subject_key=None,
+    )
+    monkeypatch.setattr(admin, "_admin_read_snapshot", lambda **kwargs: snapshot)
+    monkeypatch.setattr(admin, "_auth_store", lambda: auth)
+
+    def no_binding_fallback(*args, **kwargs):
+        pytest.fail("A missing captured subject key must not fall back to another auth snapshot")
+
+    monkeypatch.setattr(diagnostics, "authentication_binding", no_binding_fallback)
+    with pytest.raises(AdminError, match="unavailable"):
+        dispatch({"action": "list_authentication_events", "payload": {"session_id": "family"}})

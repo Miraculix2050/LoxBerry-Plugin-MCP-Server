@@ -1,5 +1,23 @@
 # Tool schema reference
 
+## Attributable authentication diagnostics (#584)
+
+`loxone_list_authentication_events(cursor=None, limit=20)` adds one read-only tool
+under current `loxone:read`, without LoxBerry approval. `limit` is 1–50; the
+existing envelope remains bounded to 64 KiB. It returns newest-first attributed
+events, `next_cursor`, bounded/incomplete history indicators and a separately
+labelled shared protection status with the earliest permitted attempt time.
+Event fields are time, owner, phase, result, optional transition and proven trace
+ID; internal binding identifiers and foreign authorization data are excluded.
+
+The binding is a purpose-separated HMAC of verified registered app, Loxone
+identity and Miniserver. Signed cursors also bind the tool, profile, current
+OAuth family and filtered history revision. History change, restart or invalid
+cursor yields `invalid_input` and requires restarting pagination. Each page
+requires current authorization. Reads do not connect, authenticate, trigger
+recovery or mutate protection/event state. Global history remains available only
+through native authenticated Admin actions. Guide revision 119.
+
 ## Native EFM display-unit provenance (#534 follow-up)
 
 `native_result.fields[].unit_origin` adds nullable

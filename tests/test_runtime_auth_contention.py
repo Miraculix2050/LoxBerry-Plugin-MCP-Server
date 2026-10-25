@@ -80,6 +80,7 @@ def contender(tmp_path, monkeypatch):
 async def test_fresh_refresh_under_cross_process_lock(contender, outcome):
     coordinator, waiting, release = contender
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     token = object()
     session = SimpleNamespace(
         load_structure=AsyncMock(return_value=_structure("new")), close=AsyncMock()
@@ -154,6 +155,7 @@ async def test_fresh_refresh_under_cross_process_lock(contender, outcome):
 async def test_wait_and_network_share_connection_budget(contender, monkeypatch):
     coordinator, waiting, release = contender
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     entered = asyncio.Event()
     scopes = []
     original_timeout = asyncio.timeout
@@ -194,6 +196,7 @@ async def test_wait_and_network_share_connection_budget(contender, monkeypatch):
 @pytest.mark.asyncio
 async def test_in_process_queue_is_bounded_by_connection_budget(tmp_path):
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     runtime.auth_coordinator = auth.MiniserverAuthCoordinator(tmp_path / "auth.json")
     runtime.client = SimpleNamespace(open_session=AsyncMock(), timeout_seconds=0.1)
     async with runtime.auth_coordinator._lock:
@@ -209,6 +212,7 @@ async def test_in_process_queue_is_bounded_by_connection_budget(tmp_path):
 @pytest.mark.parametrize("cooldown_active", [False, True])
 async def test_preflight_abort_is_not_a_failed_cooldown_probe(tmp_path, outcome, cooldown_active):
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     coordinator = auth.MiniserverAuthCoordinator(tmp_path / "auth.json")
     coordinator._state["breaker_state"] = "open_source_ip_blocked"
     coordinator._state["opened_at"] = int(auth.time.time()) if cooldown_active else 0
@@ -285,6 +289,7 @@ async def test_queued_session_callers_preserve_error_contract(
 @pytest.mark.asyncio
 async def test_authorized_preflight_preserves_active_breaker(tmp_path):
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     coordinator = auth.MiniserverAuthCoordinator(tmp_path / "auth.json")
     coordinator._state["breaker_state"] = "open_source_ip_blocked"
     coordinator._state["opened_at"] = int(auth.time.time())
@@ -311,6 +316,7 @@ async def test_authorized_preflight_preserves_active_breaker(tmp_path):
 async def test_parallel_fresh_reads_keep_client_tokens(contender, same_family):
     coordinator, waiting, release = contender
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     session = SimpleNamespace(
         load_structure=AsyncMock(return_value=_structure("new")), close=AsyncMock()
     )
@@ -369,6 +375,7 @@ async def test_parallel_fresh_reads_keep_client_tokens(contender, same_family):
 )
 async def test_network_and_breaker_are_distinct_from_local_contention(tmp_path, failure, reason):
     runtime = object.__new__(LoxoneRuntime)
+    runtime.auth_binding = None
     runtime.client = SimpleNamespace(
         open_session=AsyncMock(side_effect=failure("private-value")), timeout_seconds=1
     )

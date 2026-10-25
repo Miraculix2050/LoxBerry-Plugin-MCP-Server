@@ -36,4 +36,21 @@ afresh before returning data, including a statistics cache hit. An unchanged pro
 marker alone does not prove current visibility. Local Event History also checks
 visibility with a fresh structure download.
 
+## Own authentication events
+
+`loxone_list_authentication_events(cursor=None, limit=20)` needs a currently valid
+`loxone:read` authorization. It reads only attributable events for the exact
+registered app (`client_id`), Loxone identity and Miniserver, including retained
+events from earlier logins of that combination. Application names never grant
+access. A revoked or expired authorization cannot read another page. No separate
+LoxBerry approval is needed; global events remain local Admin information.
+
+`limit` is 1–50 and the response is limited to 64 KiB. Events are newest first;
+follow `next_cursor` unchanged. A changed history, restart, different OAuth family
+or invalid cursor requires starting again. The separately labelled shared
+protection status does not identify another client or establish who caused a
+block. Reads open no Miniserver connection and start no recovery attempt.
+Retention is bounded: missing or unavailable events never establish that no
+failure occurred. Old events without proven provenance remain unattributed.
+
 Next: [Capabilities](capabilities.en.md).

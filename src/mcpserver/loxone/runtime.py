@@ -24,6 +24,7 @@ from mcpserver.auth.store import lifecycle_event
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.bounded_worker import run_admitted_worker
 from mcpserver.loxone.auth_diagnostics import (
+    AttemptProvenance,
     MiniserverAuthCoordinator,
     MiniserverAuthenticationBusy,
     MiniserverAuthenticationCooldown,
@@ -374,6 +375,7 @@ class LoxoneRuntime:
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
         auth_coordinator: MiniserverAuthCoordinator | None = None,
+        auth_binding: Callable[[StoredAccessToken], str] | None = None,
         validate_access: Callable[[StoredAccessToken], Awaitable[bool]] | None = None,
     ) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
@@ -394,8 +396,12 @@ class LoxoneRuntime:
             structure_lookup=self,
         )
         self.auth_coordinator = auth_coordinator
+        self.auth_binding = auth_binding
         self.message_approval_store: MessageApprovalStore | None = None
         self._validate_access = validate_access
+        self.validate_authentication_diagnostics_access: (
+            Callable[[StoredAccessToken], Awaitable[bool]] | None
+        ) = None
         self.validate_message_confirmation: (
             Callable[[StoredAccessToken], Awaitable[bool]] | None
         ) = None
@@ -430,6 +436,20 @@ class LoxoneRuntime:
         validator = getattr(self, "_validate_access", None)
         if validator is not None and not await validator(access):
             raise RuntimeAuthorizationError("Loxone authorization is unavailable")
+
+    async def authentication_diagnostics(self, access: StoredAccessToken) -> dict[str, Any]:
+        """Read only local retained events under fresh, mutation-free authorization."""
+        validator = self.validate_authentication_diagnostics_access
+        if validator is None or not await validator(access):
+            raise PermissionError("Authentication diagnostics require current loxone:read")
+        if self._closed or self.auth_coordinator is None or self.auth_binding is None:
+            raise RuntimeUnavailable("Authentication diagnostics unavailable")
+        result = self.auth_coordinator.diagnostic_snapshot(
+            self.auth_binding(access), include_revision=True
+        )
+        if not await validator(access):
+            raise PermissionError("Authentication diagnostics require current loxone:read")
+        return result
 
     def _prune_rate_state(self, now: float) -> None:
         """Keep live rate windows across disconnects; discard expired family keys."""
@@ -1904,12 +1924,18 @@ class LoxoneRuntime:
         # Coordination and login consume one existing connection budget. Outer
         # caller cancellation remains effective, including while queued locally.
         budget = self.client.timeout_seconds
+        provenance = None
+        if owner == "tool_request" and access is not None and self.auth_binding is not None:
+            provenance = AttemptProvenance(
+                binding_id=self.auth_binding(access), trace_id=_HISTORY_TRACE_ID.get()
+            )
         try:
             async with asyncio.timeout(budget):
                 return await coordinator.attempt(
                     lambda: self.client.open_session(token),
                     owner=owner,
                     phase=phase,
+                    provenance=provenance,
                     busy_wait_seconds=min(30.0, budget),
                     before_attempt=authorize,
                 )

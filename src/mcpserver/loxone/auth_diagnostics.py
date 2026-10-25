@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import os
+import re
 import sys
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, TypeVar
 
@@ -26,6 +30,51 @@ _T = TypeVar("_T")
 _MAX_EVENTS: Final = 200
 _RETENTION_SECONDS: Final = 30 * 24 * 60 * 60
 _SCHEMA_VERSION: Final = 1
+_DIAGNOSTIC_BYTES: Final = 1024 * 1024
+_EVENT_PHASES: Final = frozenset(
+    {
+        "token_acquisition",
+        "token_authentication",
+        "session_establishment",
+        "token_refresh",
+        "token_cleanup",
+        "remote_token_revocation",
+        "project_marker",
+        "native_efm",
+    }
+)
+_EVENT_OUTCOMES: Final = frozenset(
+    {
+        "attempt_started",
+        "attempt_suppressed",
+        "source_ip_blocked",
+        "authenticated",
+        "authentication_rejected",
+        "command_rejected",
+        "token_rejected",
+        "recovery_confirmed",
+        "attempt_cancelled",
+        "transport_failed",
+    }
+)
+
+
+def authentication_binding(
+    auth_store: Any,
+    client_id: str,
+    identity_id: str,
+    miniserver_id: str,
+    *,
+    subject_key: bytes | None = None,
+) -> str:
+    """Bind retained history to verified identifiers, never a presentation name."""
+    parts = (
+        "miniserver-auth-binding-v2",
+        json.dumps([client_id, identity_id, miniserver_id], separators=(",", ":")),
+    )
+    if subject_key is not None:
+        return hmac.new(subject_key, "\0".join(parts).encode("utf-8"), hashlib.sha256).hexdigest()
+    return str(auth_store.pseudonym(*parts))
 
 
 class _InterprocessLockUnavailable(RuntimeError):
@@ -138,7 +187,11 @@ class MiniserverAuthCoordinator:
         }
         fallback["public_failure_guard"] = dict(fallback["failure_guard"], failures=[])
         try:
-            value = json.loads(self._path.read_text(encoding="utf-8"))
+            with self._path.open("rb") as handle:
+                raw = handle.read(_DIAGNOSTIC_BYTES + 1)
+            if len(raw) > _DIAGNOSTIC_BYTES:
+                raise ValueError("authentication protection state exceeds its limit")
+            value = json.loads(raw)
         except FileNotFoundError:
             return fallback
         except (OSError, ValueError, UnicodeError):
@@ -326,6 +379,148 @@ class MiniserverAuthCoordinator:
             and event.get("connection_owner") == "tool_request"
         ]
 
+    def diagnostic_snapshot(
+        self, binding_id: str | None = None, *, include_revision: bool = False
+    ) -> dict[str, Any]:
+        """Project an atomic local snapshot without locks, saves or network access.
+
+        A binding-less view is for the native authenticated Admin bridge only.
+        Unknown fields never reach either projection. Invalid foreign events do
+        not alter a caller's history status or pagination fingerprint.
+        """
+        unavailable: dict[str, Any] = {
+            "events": [],
+            "history_status": "unavailable",
+            "shared_status": {
+                "breaker_state": "unavailable",
+                "failure_guard_state": "unavailable",
+                "recovery_guard_state": "unavailable",
+                "next_auth_attempt_at": None,
+            },
+        }
+        try:
+            with self._path.open("rb") as handle:
+                raw = handle.read(_DIAGNOSTIC_BYTES + 1)
+            if len(raw) > _DIAGNOSTIC_BYTES:
+                return unavailable
+            document = json.loads(raw)
+            if (
+                not isinstance(document, dict)
+                or document.get("schema_version") != _SCHEMA_VERSION
+                or document.get("profile_id") != self._profile_id
+                or not isinstance(document.get("events"), list)
+            ):
+                return unavailable
+            shared = self._diagnostic_status(document)
+        except (OSError, ValueError, TypeError, OverflowError):
+            return unavailable
+        now = int(time.time())
+        events: list[dict[str, Any]] = []
+        revisions: list[tuple[int | None, dict[str, Any]]] = []
+        incomplete = False
+        source = document["events"]
+        # Input is byte-bounded. Enforce the existing retention count on reads.
+        for event in source[-_MAX_EVENTS:]:
+            if binding_id is not None and (
+                not isinstance(event, dict)
+                or event.get("binding_id") != binding_id
+                or event.get("connection_owner") != "tool_request"
+            ):
+                continue
+            if not isinstance(event, dict):
+                incomplete = True
+                continue
+            stamp = event.get("timestamp")
+            if type(stamp) is not int or not 0 <= stamp <= now + 60:
+                incomplete = True
+                continue
+            if stamp < now - _RETENTION_SECONDS:
+                continue
+            if (
+                not all(
+                    isinstance(event.get(key), str)
+                    for key in ("connection_owner", "phase", "outcome")
+                )
+                or event.get("connection_owner")
+                not in {"tool_request", "runtime_event_stream", "local_admin"}
+                or event.get("phase") not in _EVENT_PHASES
+                or event.get("outcome") not in _EVENT_OUTCOMES
+            ):
+                incomplete = True
+                continue
+            projected = {
+                "timestamp": datetime.fromtimestamp(stamp, UTC).isoformat().replace("+00:00", "Z"),
+                "connection_owner": event["connection_owner"],
+                "phase": event["phase"],
+                "outcome": event["outcome"],
+            }
+            transition = event.get("breaker_transition")
+            if isinstance(transition, str) and transition in {"opened", "reopened", "closed"}:
+                projected["breaker_transition"] = transition
+            trace = event.get("trace_id")
+            if isinstance(trace, str) and re.fullmatch(
+                r"(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})", trace
+            ):
+                projected["trace_id"] = trace
+            events.append(projected)
+            sequence = event.get("sequence")
+            revisions.append(
+                (sequence if type(sequence) is int and sequence >= 0 else None, projected)
+            )
+        if self._retain_open_state or self._state_uncertain:
+            incomplete = True
+            shared = self._diagnostic_status(self._state)
+            shared["failure_guard_state"] = "persistence_uncertain"
+        result = {
+            "events": list(reversed(events)),
+            "history_status": "incomplete" if incomplete else "bounded",
+            "shared_status": shared,
+        }
+        if include_revision:
+            # A public projection can be identical after same-second rotation.
+            # Hash only this caller's retained identities, never global sequence.
+            result["_history_revision"] = hashlib.sha256(
+                json.dumps(
+                    [self._profile_id, binding_id, revisions],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        return result
+
+    def _diagnostic_status(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Expose shared protection without foreign counters or identities."""
+
+        def integer(value: Any) -> int:
+            if type(value) is not int or not 0 <= value <= 2**53:
+                raise ValueError("invalid protection state")
+            return value
+
+        breaker = document.get("breaker_state")
+        if breaker not in {"closed", "open_source_ip_blocked"}:
+            raise ValueError("invalid protection state")
+        pending = integer(document.get("source_ip_pending_until", 0))
+        guard = document.get("failure_guard", {})
+        if not isinstance(guard, dict):
+            raise ValueError("invalid protection state")
+        until = integer(guard.get("until", 0))
+        guard_pending = integer(guard.get("pending_until", 0))
+        retry = 0
+        if breaker != "closed":
+            level = integer(document.get("backoff_level"))
+            if level > 31:
+                raise ValueError("invalid protection state")
+            retry = integer(document.get("opened_at")) + min(
+                self._initial * 2**level, self._maximum
+            )
+        now = int(time.time())
+        return {
+            "breaker_state": breaker,
+            "failure_guard_state": "cooldown" if max(until, guard_pending) > now else "closed",
+            "recovery_guard_state": "pending" if pending > now else "closed",
+            "next_auth_attempt_at": max(retry, pending, until, guard_pending) or None,
+        }
+
     def _record(
         self,
         *,
@@ -480,8 +675,7 @@ class MiniserverAuthCoordinator:
         before_attempt: Callable[[], Awaitable[None]] | None,
     ) -> _T:
         """Execute one attempt while both coordinator locks are held."""
-        # Access may have ended while coordination was queued. Check it before
-        # any suppression/attempt accounting, including an active cooldown.
+        # Authorization is checked after waiting, before accounting or network I/O.
         if before_attempt is not None:
             await before_attempt()
         now = int(time.time())

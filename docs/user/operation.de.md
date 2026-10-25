@@ -143,3 +143,22 @@ Szenenrollen noch Präsenzverbindungen oder physische Leuchten. Der Full-Default
 und alle bestehenden Schutzregeln für Operationen bleiben erhalten. Die gesamte
 kompakte Antwort ist auf 64 KiB begrenzt (`response_too_large` bei zu großen
 beibehaltenen Control-Metadaten).
+
+## Authentifizierungsdiagnose unter Clients und Sitzungen
+
+Lokale Administratoren können die begrenzte Authentifizierungshistorie und die
+Zusammenfassung je App/Identität/Miniserver-Bindung ausdrücklich öffnen und
+aktualisieren. Sitzungen derselben Bindung zeigen dieselbe Historie; dies ist
+keine Zuordnung zu einer einzelnen Sitzung. Details werden nicht periodisch im
+Hintergrund abgefragt. Die Ansicht trennt beobachtete Ablehnung, bestätigte
+Quell-IP-Sperre, unterdrückte Versuche, bestätigte Wiederherstellung und nicht
+verfügbare Historie. Eine Sperrbeobachtung belegt keinen Verursacher. Fehlende
+oder leere Historie beweist keinen fehlerfreien Betrieb. Es gibt keine zusätzliche
+Recovery-Aktion; die bestehende Admin-Probe behält ihre Schutz- und Frequenzgrenzen.
+
+Die Übersicht zeigt höchstens 50 unterschiedliche gespeicherte, nicht widerrufene
+App/Identität/Miniserver-Zuordnungen, auch bei abgelaufenen Sitzungen. Bei weiteren
+Zuordnungen warnt sie vor der gekürzten Liste und nennt
+die Anzahl der ausgelassenen unterschiedlichen Zuordnungen; mehrere Sitzungen
+derselben Zuordnung zählen einmal. Ein abgelehnter Miniserver-Befehl wird getrennt
+von einer abgelehnten Authentifizierung angezeigt.

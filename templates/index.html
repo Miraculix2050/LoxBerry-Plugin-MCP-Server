@@ -272,6 +272,31 @@
       data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"><TMPL_VAR REMOTE_CLEANUP_WARNING ESCAPE=HTML></p>
     <button id="miniserver-auth-probe" type="button" class="lb-button" hidden
       data-confirm="<TMPL_VAR SESSIONS.AUTH_PROBE_CONFIRM ESCAPE=HTML>"><TMPL_VAR SESSIONS.AUTH_PROBE></button>
+    <details id="authentication-history" class="mcp-nested-card"
+      data-event-attempt-started="<TMPL_VAR SESSIONS.AUTH_EVENT_ATTEMPT_STARTED ESCAPE=HTML>"
+      data-event-attempt-suppressed="<TMPL_VAR SESSIONS.AUTH_EVENT_ATTEMPT_SUPPRESSED ESCAPE=HTML>"
+      data-event-source-ip-blocked="<TMPL_VAR SESSIONS.AUTH_EVENT_SOURCE_IP_BLOCKED ESCAPE=HTML>"
+      data-event-authenticated="<TMPL_VAR SESSIONS.AUTH_EVENT_AUTHENTICATED ESCAPE=HTML>"
+      data-event-authentication-rejected="<TMPL_VAR SESSIONS.AUTH_EVENT_AUTHENTICATION_REJECTED ESCAPE=HTML>"
+      data-event-command-rejected="<TMPL_VAR SESSIONS.AUTH_EVENT_COMMAND_REJECTED ESCAPE=HTML>"
+      data-bindings-truncated-label="<TMPL_VAR SESSIONS.AUTH_BINDINGS_TRUNCATED ESCAPE=HTML>"
+      data-event-token-rejected="<TMPL_VAR SESSIONS.AUTH_EVENT_TOKEN_REJECTED ESCAPE=HTML>"
+      data-event-recovery-confirmed="<TMPL_VAR SESSIONS.AUTH_EVENT_RECOVERY_CONFIRMED ESCAPE=HTML>"
+      data-event-attempt-cancelled="<TMPL_VAR SESSIONS.AUTH_EVENT_ATTEMPT_CANCELLED ESCAPE=HTML>"
+      data-event-transport-failed="<TMPL_VAR SESSIONS.AUTH_EVENT_TRANSPORT_FAILED ESCAPE=HTML>"
+      data-shared-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_SHARED ESCAPE=HTML>"
+      data-next-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_NEXT ESCAPE=HTML>"
+      data-bounded-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_BOUNDED ESCAPE=HTML>"
+      data-unavailable-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_UNAVAILABLE ESCAPE=HTML>"
+      data-incomplete-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_INCOMPLETE ESCAPE=HTML>"
+      data-empty-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_EMPTY ESCAPE=HTML>"
+      data-details-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_DETAILS ESCAPE=HTML>"
+      data-unknown-label="<TMPL_VAR SESSIONS.AUTH_HISTORY_UNKNOWN ESCAPE=HTML>">
+      <summary><TMPL_VAR SESSIONS.AUTH_HISTORY></summary>
+      <p class="mcp-help"><TMPL_VAR SESSIONS.AUTH_HISTORY_HINT></p>
+      <button id="authentication-history-refresh" type="button" class="lb-button"><TMPL_VAR SESSIONS.AUTH_HISTORY_REFRESH></button>
+      <div id="authentication-history-content" aria-live="polite"></div>
+    </details>
     <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
@@ -485,7 +510,7 @@
 ></div>
 <script defer src="admin/core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
 <script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
-<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v13"></script>
+<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14"></script>
 <script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
 <script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v18"></script>
 <script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14"></script>

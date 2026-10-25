@@ -52,7 +52,7 @@ from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator, authentication_binding
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.event_history import EventHistoryMonitor, EventHistoryStore
 from mcpserver.loxone.project.service import ProjectService
@@ -379,7 +379,7 @@ class _Phase0TokenVerifier(TokenVerifier):
         self._provider = provider
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        return await self._provider.load_access_token(token)
+        return await self._provider.load_access_token_readonly(token)
 
 
 @asynccontextmanager
@@ -644,6 +644,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
         runtime_ref: dict[str, LoxoneRuntime] = {}
 
+        def miniserver_auth_binding(access: StoredAccessToken) -> str:
+            return authentication_binding(
+                auth_store, access.client_id, access.identity_id, access.miniserver_id
+            )
+
         def on_family_ended(family_id: str, reason: str) -> None:
             if loxone_store is not None:
                 loxone_store.schedule_remote_revoke(family_id)
@@ -763,6 +768,35 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     and READ_SCOPE in current.scopes
                 )
 
+            async def validate_authentication_diagnostics_access(access: StoredAccessToken) -> bool:
+                """Recheck the exact current binding without OAuth cleanup or network I/O."""
+                current = await provider.load_access_token_readonly(access.token)
+                if (
+                    current is None
+                    or any(
+                        getattr(current, key) != getattr(access, key)
+                        for key in (
+                            "client_id",
+                            "family_id",
+                            "identity_id",
+                            "miniserver_id",
+                            "resource",
+                        )
+                    )
+                    or READ_SCOPE not in current.scopes
+                ):
+                    return False
+                if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                    return bool(config is not None and config.loxone_read_enabled)
+                try:
+                    return (
+                        AtomicConfigStore(settings.phase0_auth.config_path)
+                        .load()
+                        .loxone_read_enabled
+                    )
+                except Exception:
+                    return False
+
             async def validate_message_confirmation(access: StoredAccessToken) -> bool:
                 if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
                     return False
@@ -818,10 +852,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 ),
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
                 auth_coordinator=auth_coordinator,
+                auth_binding=miniserver_auth_binding,
                 validate_access=validate_project_access,
             )
             event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
             runtime.validate_message_confirmation = validate_message_confirmation
+            runtime.validate_authentication_diagnostics_access = (
+                validate_authentication_diagnostics_access
+            )
             if settings.phase0_auth.config_path is not None:
                 from mcpserver.message_approval import MessageApprovalStore
 

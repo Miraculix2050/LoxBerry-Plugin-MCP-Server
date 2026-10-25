@@ -1680,6 +1680,18 @@ does not expose raw logs, arbitrary files, journal output, credentials, or
 foreign services. If the service is stopped, use the local LoxBerry log viewer
 or an explicitly authorized host diagnosis instead.
 
+`loxone_list_authentication_events` requires current `loxone:read`, with no
+LoxBerry approval. It returns only events proven to belong to this registered
+app, Loxone identity and Miniserver, including earlier logins of that same
+combination. A display name never proves identity. Use `limit` 1–50 (default 20)
+and follow `next_cursor` unchanged; restart on `invalid_input` after history
+changes, a restart or an OAuth-family change. Every page rechecks authorization.
+The separately labelled shared protection status never identifies another client
+or proves who caused a block. Retention is bounded; empty, incomplete or
+unavailable history is not evidence of absence. Reads never connect to the
+Miniserver or start recovery. Global events are local Admin information; the
+existing Admin probe retains its existing limits.
+
 Optional scopes may already be present while their administrator policy gate is
 disabled. In that case the relevant tool returns `permission_denied`; explain
 which global or local approval is missing and retry only after the administrator

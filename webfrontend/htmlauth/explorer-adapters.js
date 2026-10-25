@@ -9,6 +9,7 @@
   const GROUPS = [
     {id: 'loxoneRead', scopes: ['loxone:read'], names: [
       'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
+      'loxone_list_authentication_events',
       'loxone_list_categories', 'loxone_find_controls', 'loxone_describe_control',
       'loxone_get_control_notes', 'loxone_read_controls',
       'loxone_get_state_semantics', 'loxone_get_active_alerts', 'loxone_get_states',

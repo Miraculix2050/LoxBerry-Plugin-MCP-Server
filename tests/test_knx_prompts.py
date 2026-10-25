@@ -251,10 +251,19 @@ def test_wire_prompts_need_fresh_oauth_but_expand_without_local_data_grant(
     expiry = int(time.time()) + 300
 
     def seed(document):
+        document["clients"]["synthetic"] = {
+            "client_id": "synthetic",
+            "redirect_uris": ["https://client.example/callback"],
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "scope": "loxone:read",
+        }
         document["families"]["synthetic-prompt-family"] = {
             "client_id": "synthetic",
             "identity_id": "synthetic",
             "miniserver_id": "synthetic",
+            "resource": phase.resource_url,
             "scope": "loxone:read",
             "created_at": int(time.time()),
             "expires_at": expiry,
