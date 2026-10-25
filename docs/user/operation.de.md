@@ -162,3 +162,12 @@ Zuordnungen warnt sie vor der gekÃ¼rzten Liste und nennt
 die Anzahl der ausgelassenen unterschiedlichen Zuordnungen; mehrere Sitzungen
 derselben Zuordnung zÃ¤hlen einmal. Ein abgelehnter Miniserver-Befehl wird getrennt
 von einer abgelehnten Authentifizierung angezeigt.
+
+
+## MCP-Eingaben, Diagnosen und Antwortgrenzen
+
+Numerische Steuerparameter erfordern JSON-Zahlen; Kelvin und die Dauer einer Übersteuerung erfordern ganze Zahlen. Boolesche Werte, Zahlen als Text, nicht endliche Zahlen und Werte außerhalb der Grenzen werden vor dem Versand abgewiesen. Bekannte Verfügbarkeitsfehler behalten bereinigte Diagnosecodes, Phase, Wiederholungshinweise und Trace-ID. Bei ungewissem Schreibergebnis bleibt vor einem weiteren Versuch eine Prüfung erforderlich.
+
+`loxone_get_states`, `loxone_get_room_snapshot` und `loxone_get_state_semantics` weisen vollständige UTF-8-Antworthüllen über 64 KiB mit `response_too_large` ab; Werte werden niemals still gekürzt. Wählen Sie nach Möglichkeit weniger Zustände oder eine kleinere Seite. Entdeckungslisten und alle Bausteinbeschreibungen kennzeichnen getrennte Verbindungen mit `stale=true`.
+
+Fortsetzungen von `loxberry_list_service_events` verwenden den anfänglichen bereinigten Datenstand bis zu 120 Sekunden, gebunden an dieselbe App, Identität, denselben Miniserver, dieselbe OAuth-Familie und dieselben Filter. Jede Seite prüft die aktuelle Berechtigung und das Anfragelimit. Neue Ereignisse erfordern eine neue Abfrage ohne Cursor. Ablauf, Verdrängung aus dem begrenzten Cache oder ein Neustart ergibt `invalid_input`; beginnen Sie die Abfrage erneut.

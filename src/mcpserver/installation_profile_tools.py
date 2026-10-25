@@ -25,7 +25,7 @@ from mcpserver.installation_profile_write import ProfileWriteRuntime
 from mcpserver.load_flexibility import LoadFlexibility
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeAuthorizationError, RuntimeUnavailable
 from mcpserver.persistence import PersistenceUncertain
-from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result
+from mcpserver.tools import ErrorData, ToolEnvelope, _availability_error, _error, _result
 
 
 class ProfileBindingSummaryData(BaseModel):
@@ -167,7 +167,10 @@ def register_profile_write_tools(server: FastMCP, runtime: ProfileWriteRuntime |
         except asyncio.CancelledError:
             outcome = "write_outcome_uncertain"
             raise
-        except (RuntimeUnavailable, OSError, ValueError):
+        except RuntimeUnavailable as exc:
+            outcome = "temporarily_unavailable"
+            return _availability_error(ProfileMutationEnvelope, exc)
+        except (OSError, ValueError):
             outcome = "temporarily_unavailable"
             return _error(ProfileMutationEnvelope, outcome, "Profile management is unavailable")
         finally:
@@ -275,5 +278,7 @@ def register_profile_read_tool(
             return _error(ProfileEnvelope, "permission_denied", "Profile access is not authorized")
         except PermissionError:
             return _error(ProfileEnvelope, "unauthenticated", "Authentication is required")
-        except (ProfileError, RuntimeUnavailable, OSError):
+        except RuntimeUnavailable as exc:
+            return _availability_error(ProfileEnvelope, exc)
+        except (ProfileError, OSError):
             return _error(ProfileEnvelope, "temporarily_unavailable", "Profile data is unavailable")

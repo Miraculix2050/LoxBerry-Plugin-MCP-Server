@@ -83,6 +83,7 @@ from mcpserver.tools import (
     EventHistoryRuntime,
     ToolEnvelope,
     _access,
+    _availability_error,
     _CursorCodec,
     _error,
     _operation_error,
@@ -916,7 +917,9 @@ def register_history_analysis_tool(
                 "Analysis exceeded its 30 second deadline",
                 trace_id=trace_id,
             )
-        except (RuntimeUnavailable, EventHistoryUnavailable, ProfileError, OSError):
+        except RuntimeUnavailable as exc:
+            return _availability_error(AnalysisEnvelope, exc, trace_id=trace_id)
+        except (EventHistoryUnavailable, ProfileError, OSError):
             return _error(
                 AnalysisEnvelope,
                 "temporarily_unavailable",

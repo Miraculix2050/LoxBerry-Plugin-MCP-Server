@@ -2806,6 +2806,18 @@ def _error[EnvelopeT: ToolEnvelope](
     )
 
 
+def _bounded_state_envelope[EnvelopeT: ToolEnvelope](envelope: EnvelopeT) -> EnvelopeT:
+    """Reject an oversized complete state result without altering source values."""
+    if len(envelope.model_dump_json().encode("utf-8")) > 65_536:
+        return _error(
+            type(envelope),
+            "response_too_large",
+            "Select fewer states or a smaller page; response exceeds 64 KiB",
+            trace_id=envelope.trace_id,
+        )
+    return envelope
+
+
 def _availability_error[EnvelopeT: ToolEnvelope](
     envelope_type: type[EnvelopeT],
     exc: RuntimeUnavailable,
@@ -2855,7 +2867,7 @@ def _operation_error[EnvelopeT: ToolEnvelope](
     *,
     trace_id: str | None = None,
 ) -> EnvelopeT:
-    """Retain availability diagnostics through read-only adapter wrappers."""
+    """Retain typed pre-dispatch availability, preserving uncertain-write errors."""
     trace_id = trace_id or exc.trace_id
     if exc.code in {"temporarily_unavailable", "rate_limited"} and isinstance(
         exc.__cause__, RuntimeUnavailable
@@ -2874,10 +2886,13 @@ def _control_envelope(
     action: str,
     *,
     result: dict[str, Any] | None = None,
-    error: tuple[str, str] | None = None,
+    error: tuple[str, str] | ControlOperationError | None = None,
     warnings: list[str] | None = None,
 ) -> ControlOperationEnvelope:
-    trace_id = str(uuid4())
+    operation_error = error if isinstance(error, ControlOperationError) else None
+    trace_id = (operation_error.trace_id if operation_error is not None else None) or str(uuid4())
+    if isinstance(error, ControlOperationError):
+        error = (error.code, str(error))
     outcome = (
         ("accepted_confirmed" if result and result.get("confirmed") else "accepted_unconfirmed")
         if error is None
@@ -2914,6 +2929,11 @@ def _control_envelope(
         if error is None
         else ErrorData(error=error[0], message=error[1])
     )
+    if operation_error is not None:
+        data = cast(
+            ErrorData,
+            _operation_error(ControlOperationEnvelope, operation_error, trace_id=trace_id).data,
+        )
     return ControlOperationEnvelope(
         ok=error is None,
         data=data,
@@ -4627,7 +4647,7 @@ def register_opening_contact_tool(server: FastMCP, runtime: LoxoneRuntime | None
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(OpeningAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
-            return _error(OpeningAnalysisEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(OpeningAnalysisEnvelope, exc)
 
 
 def register_read_tools(
@@ -4767,6 +4787,7 @@ def register_read_tools(
                     cursor,
                     limit,
                 ),
+                stale=not snapshot.connected,
             )
         except ValueError as exc:
             return _error(RoomPageEnvelope, "invalid_input", str(exc))
@@ -4811,7 +4832,7 @@ def register_read_tools(
             ]
             page = _page(cursors, f"room-snapshot:{room_uuid}", state_entries, cursor, limit)
             items: list[dict[str, object]] = []
-            stale = False
+            stale = not snapshot.connected
             semantic_invalid = False
             for control, state_name, state_uuid in page["items"]:
                 state, invalid = _state_payload(runtime, snapshot, control, state_name, state_uuid)
@@ -4819,7 +4840,7 @@ def register_read_tools(
                 stale = stale or state["freshness"] != Freshness.CURRENT.value
                 semantic_invalid = semantic_invalid or invalid
                 items.append({"control": _control_summary(control, snapshot), "state": state})
-            return _result(
+            envelope = _result(
                 RoomSnapshotEnvelope,
                 {
                     "room": {"uuid": room.uuid, "name": room.name},
@@ -4833,6 +4854,7 @@ def register_read_tools(
                     else None
                 ),
             )
+            return _bounded_state_envelope(envelope)
         except ValueError as exc:
             return _error(RoomSnapshotEnvelope, "invalid_input", str(exc))
         except PermissionError:
@@ -4872,6 +4894,7 @@ def register_read_tools(
             return _result(
                 NamedGroupPageEnvelope,
                 _page(cursors, f"categories:{normalized or ''}", values, cursor, limit),
+                stale=not snapshot.connected,
             )
         except ValueError as exc:
             return _error(NamedGroupPageEnvelope, "invalid_input", str(exc))
@@ -4934,6 +4957,7 @@ def register_read_tools(
                     cursor,
                     limit,
                 ),
+                stale=not snapshot.connected,
             )
         except ValueError as exc:
             return _error(GlobalMetadataPageEnvelope, "invalid_input", str(exc))
@@ -5145,9 +5169,9 @@ def register_read_tools(
                 trace_id=trace_id,
             )
         except RuntimeUnavailable as exc:
-            return _availability_error(WeatherEnvelope, exc)
+            return _availability_error(WeatherEnvelope, exc, trace_id=trace_id)
         except ControlOperationError as exc:
-            return _error(WeatherEnvelope, exc.code, str(exc), trace_id=trace_id)
+            return _operation_error(WeatherEnvelope, exc, trace_id=trace_id)
         except TimeoutError:
             return _error(
                 WeatherEnvelope,
@@ -5291,6 +5315,7 @@ def register_read_tools(
             return _result(
                 ControlPageEnvelope,
                 _page(cursors, f"controls:{scope}", values, cursor, limit),
+                stale=not snapshot.connected,
             )
         except ValueError as exc:
             return _error(ControlPageEnvelope, "invalid_input", str(exc))
@@ -5693,7 +5718,9 @@ def register_read_tools(
                         ),
                     },
                 }
-                return _result(ControlDescriptionEnvelope, operation_value)
+                return _result(
+                    ControlDescriptionEnvelope, operation_value, stale=not snapshot.connected
+                )
             value = _control_summary(control, snapshot)
             statistics = [
                 {
@@ -5719,7 +5746,7 @@ def register_read_tools(
                     "relationships",
                     "non_history_capabilities",
                 ]
-                return _result(ControlDescriptionEnvelope, value)
+                return _result(ControlDescriptionEnvelope, value, stale=not snapshot.connected)
             visible_rooms = {item.uuid: item.name for item in snapshot.structure.rooms}
             visible_controls = {
                 item.uuid: item for item in _flatten_controls(snapshot.structure.controls)
@@ -5952,7 +5979,7 @@ def register_read_tools(
                     if control.uuid in item.linked_control_uuids
                 ],
             }
-            return _result(ControlDescriptionEnvelope, value)
+            return _result(ControlDescriptionEnvelope, value, stale=not snapshot.connected)
         except PermissionError:
             return _error(
                 ControlDescriptionEnvelope,
@@ -6345,14 +6372,7 @@ def register_read_tools(
                 },
                 stale=not snapshot.connected or stale,
             )
-            if (
-                control.control_type in {"EnergyManager", "EnergyManager2"}
-                and len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024
-            ):
-                return _error(
-                    StateSemanticsEnvelope, "response_too_large", "Response exceeds 64 KiB"
-                )
-            return envelope
+            return _bounded_state_envelope(envelope)
         except PermissionError:
             return _error(
                 StateSemanticsEnvelope,
@@ -6546,7 +6566,7 @@ def register_read_tools(
                 for state_name, state_uuid in control.state_uuids
             }
             values: list[dict[str, Any]] = []
-            stale = False
+            stale = not snapshot.connected
             semantic_invalid = False
             for state_uuid in state_uuids:
                 owner = owners.get(state_uuid)
@@ -6560,7 +6580,7 @@ def register_read_tools(
                 values.append(value)
                 stale = stale or value["freshness"] != Freshness.CURRENT.value
                 semantic_invalid = semantic_invalid or invalid
-            return _result(
+            envelope = _result(
                 StatesEnvelope,
                 {"states": values},
                 stale=stale,
@@ -6570,6 +6590,7 @@ def register_read_tools(
                     else None
                 ),
             )
+            return _bounded_state_envelope(envelope)
         except PermissionError:
             return _error(
                 StatesEnvelope,
@@ -7063,7 +7084,7 @@ class _ProjectAnalysisRunner:
                 "KNX address taxonomy configuration is unavailable",
             )
         except ControlOperationError as exc:
-            return _error(_PreparedProjectAnalysisEnvelope, exc.code, str(exc))
+            return _operation_error(_PreparedProjectAnalysisEnvelope, exc)
         except ProfileError:
             return _error(
                 _PreparedProjectAnalysisEnvelope,
@@ -8055,10 +8076,54 @@ def register_observability_tools(
             return _operation_error(ObservabilityEnvelope, exc)
 
 
+class _ServiceEventPages:
+    """Short-lived, caller-bound immutable pages of already sanitized events.
+
+    Random continuation capabilities are local to this registration and restart.
+    At most 16 continuations sharing a 4 MiB budget survive for 120 seconds. Every
+    continuation still requires the runtime's current authorization/rate check.
+    """
+
+    def __init__(self) -> None:
+        self._pages: OrderedDict[str, tuple[str, float, list[dict[str, str]], int, int]] = (
+            OrderedDict()
+        )
+
+    def page(
+        self, scope: str, events: list[dict[str, str]], cursor: str | None, limit: int
+    ) -> dict[str, Any]:
+        now = time.monotonic()
+        for key, cached in list(self._pages.items()):
+            if cached[1] <= now:
+                del self._pages[key]
+        if cursor is not None:
+            entry = self._pages.get(cursor)
+            if entry is None or entry[0] != scope:
+                raise ValueError("cursor is invalid or expired; restart the event read")
+            _, expires, values, offset, size = entry
+        else:
+            size = len(json.dumps(events).encode("utf-8"))
+            if len(events) > 16_384 or size > 4 * 1024 * 1024:
+                raise DiagnosticsUnavailable("diagnostic event snapshot is too large")
+            values = [dict(item) for item in reversed(events)]
+            offset, expires = 0, now + 120
+        items = values[offset : offset + limit]
+        next_cursor = None
+        if offset + len(items) < len(values):
+            next_cursor = secrets.token_urlsafe(32)
+            self._pages[next_cursor] = (scope, expires, values, offset + len(items), size)
+            while (
+                len(self._pages) > 16
+                or sum(row[4] for row in self._pages.values()) > 4 * 1024 * 1024
+            ):
+                self._pages.popitem(last=False)
+        return {"events": list(reversed(items)), "next_cursor": next_cursor}
+
+
 def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:
     """Publish the optional, fixed Phase 3 LoxBerry diagnostics surface."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
-    cursors = _CursorCodec()
+    event_pages = _ServiceEventPages()
 
     @server.tool(
         name="loxberry_get_system_status",
@@ -8245,8 +8310,9 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
             end_time = _rfc3339(end) if end is not None else None
             if start_time is not None and end_time is not None and start_time > end_time:
                 raise ValueError("event interval is invalid")
+            access = _access()
             events = await runtime.service_events(
-                _access(),
+                access,
                 trace_id=trace_id,
                 component=component,
                 severity=severity,
@@ -8257,16 +8323,27 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
                 "service-events:"
                 + hashlib.sha256(
                     json.dumps(
-                        [trace_id, component, severity, start, end], separators=(",", ":")
+                        [
+                            access.client_id,
+                            access.identity_id,
+                            access.miniserver_id,
+                            access.family_id,
+                            trace_id,
+                            component,
+                            severity,
+                            start,
+                            end,
+                        ],
+                        separators=(",", ":"),
                     ).encode()
                 ).hexdigest()
             )
             # Page from newest to oldest, while keeping each returned page chronological
             # like the pre-pagination "last limit" response.
-            page = _page(cursors, scope, list(reversed(events)), cursor, limit)
+            page = event_pages.page(scope, events, cursor, limit)
             return _result(
                 LoxBerryServiceEventsEnvelope,
-                {"events": list(reversed(page["items"])), "next_cursor": page["next_cursor"]},
+                page,
                 trace_id=call_trace_id,
             )
         except ValueError as exc:
@@ -9084,7 +9161,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             return _error(EventHistorySourceChangeEnvelope, "invalid_input", str(exc))
         except ControlOperationError as exc:
             audit_source(access, tool, exc.code, control_uuid, state_uuid)
-            return _error(EventHistorySourceChangeEnvelope, exc.code, str(exc))
+            return _operation_error(EventHistorySourceChangeEnvelope, exc)
         except TimeoutError:
             audit_source(access, tool, "timed_out_unknown", control_uuid, state_uuid)
             return _error(
@@ -9180,7 +9257,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             return _error(EventHistoryPurgeEnvelope, "invalid_input", str(exc))
         except ControlOperationError as exc:
             audit_source(access, tool, exc.code, control_uuid, state_uuid)
-            return _error(EventHistoryPurgeEnvelope, exc.code, str(exc))
+            return _operation_error(EventHistoryPurgeEnvelope, exc)
         except TimeoutError:
             audit_source(access, tool, "timed_out_unknown", control_uuid, state_uuid)
             return _error(
@@ -9267,6 +9344,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             float | None,
             Field(
                 description="Dimmer level from 0 to 100; required only for set_level.",
+                strict=True,
+                allow_inf_nan=False,
+                ge=0,
+                le=100,
                 json_schema_extra={"minimum": 0, "maximum": 100},
             ),
         ] = None,
@@ -9288,6 +9369,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                     "Jalousie target from 0 (fully open) to 100 (fully closed); required "
                     "for set_position and set_position_and_slats."
                 ),
+                strict=True,
+                allow_inf_nan=False,
+                ge=0,
+                le=100,
                 json_schema_extra={"minimum": 0, "maximum": 100},
             ),
         ] = None,
@@ -9298,6 +9383,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                     "Jalousie slat target from 0 (horizontal) to 100 (vertical); required "
                     "for set_slat_position and set_position_and_slats."
                 ),
+                strict=True,
+                allow_inf_nan=False,
+                ge=0,
+                le=100,
                 json_schema_extra={"minimum": 0, "maximum": 100},
             ),
         ] = None,
@@ -9321,6 +9410,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             float | None,
             Field(
                 description="HSV hue from 0 to 360.",
+                strict=True,
+                allow_inf_nan=False,
+                ge=0,
+                le=360,
                 json_schema_extra={"minimum": 0, "maximum": 360},
             ),
         ] = None,
@@ -9328,6 +9421,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             float | None,
             Field(
                 description="HSV saturation from 0 to 100.",
+                strict=True,
+                allow_inf_nan=False,
+                ge=0,
+                le=100,
                 json_schema_extra={"minimum": 0, "maximum": 100},
             ),
         ] = None,
@@ -9335,6 +9432,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             float | None,
             Field(
                 description="Color brightness from 0 to 100.",
+                strict=True,
+                allow_inf_nan=False,
+                ge=0,
+                le=100,
                 json_schema_extra={"minimum": 0, "maximum": 100},
             ),
         ] = None,
@@ -9342,6 +9443,9 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             int | None,
             Field(
                 description="Color temperature within the range advertised by the control.",
+                strict=True,
+                ge=1000,
+                le=20000,
                 json_schema_extra={"minimum": 1000, "maximum": 20000},
             ),
         ] = None,
@@ -9352,6 +9456,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                     "Visible analog value, timer mode, ventilation mode, or HVAC mode, depending "
                     "on the advertised action."
                 ),
+                strict=True,
+                allow_inf_nan=False,
             ),
         ] = None,
         duration_seconds: Annotated[
@@ -9361,6 +9467,9 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                     "Temporary documented override duration from 1 to 86400 seconds; required "
                     "for start_override, start_fan_override, and start_mode_override."
                 ),
+                strict=True,
+                ge=1,
+                le=86400,
                 json_schema_extra={"minimum": 1, "maximum": 86400},
             ),
         ] = None,
@@ -9417,7 +9526,7 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 error=("unauthenticated", "Authentication is required"),
             )
         except ControlOperationError as exc:
-            return _control_envelope(access, control_uuid, action, error=(exc.code, str(exc)))
+            return _control_envelope(access, control_uuid, action, error=exc)
 
 
 def register_tool_surface(

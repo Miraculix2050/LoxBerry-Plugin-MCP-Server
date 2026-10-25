@@ -3,6 +3,10 @@ Load core rules first.
 ### Check connectivity and freshness
 
 Call `loxone_get_system_status` when connectivity or data freshness matters.
+Discovery lists and every description view mark disconnected snapshots `stale=true`.
+`loxone_get_states`, `loxone_get_room_snapshot` and `loxone_get_state_semantics`
+reject complete UTF-8 envelopes over 64 KiB with `response_too_large`; source values
+are never silently shortened. Select fewer states or a smaller page where possible.
 
 ### Orient within an installation
 

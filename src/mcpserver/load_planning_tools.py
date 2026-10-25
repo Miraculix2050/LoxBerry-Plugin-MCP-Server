@@ -27,6 +27,7 @@ from mcpserver.tools import (
     EventHistoryRuntime,
     ToolEnvelope,
     _access,
+    _availability_error,
     _error,
     _operation_error,
     _result,
@@ -88,7 +89,9 @@ def register_load_planning_tool(
             return _error(
                 LoadPlanningEnvelope, "permission_denied", "Planning access is not available"
             )
-        except (RuntimeUnavailable, EventHistoryUnavailable, OSError):
+        except RuntimeUnavailable as exc:
+            return _availability_error(LoadPlanningEnvelope, exc)
+        except (EventHistoryUnavailable, OSError):
             return _error(
                 LoadPlanningEnvelope, "temporarily_unavailable", "Planning source unavailable"
             )

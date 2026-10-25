@@ -1028,3 +1028,18 @@ runtime permission, approval, confirmation or uncertainty contract.
 Existing history operations retain past-only validation. Source discovery uses
 existing controls/profile tools; options accept no commands, URLs or source paths.
 See [method and limits](load-planning-method.md) and [user input guide](../user/pv-planning.en.md).
+
+
+### Command audit corrections (#597)
+
+Numeric `loxone_operate_control` parameters use strict finite JSON numbers and
+real Pydantic range constraints; kelvin and duration are strict integers.
+Service-event continuation capabilities are bound to caller identity/family and
+filters, retain an immutable sanitized snapshot for 120 seconds, and expire on
+restart or eviction (at most 16 continuations sharing 4 MiB). Current runtime
+authorization and rate limits are checked even for continuations.
+Raw-state, room-snapshot and semantic-state envelopes share a 65,536-byte UTF-8
+limit and reject oversized results without modifying values. Metadata readers
+and all description views propagate disconnected freshness. Typed availability
+errors retain sanitized cause/phase/retry fields and operation trace identity;
+uncertain-write codes remain unchanged and must not become retry instructions.

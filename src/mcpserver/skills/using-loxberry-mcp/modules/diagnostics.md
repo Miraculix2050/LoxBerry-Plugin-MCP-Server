@@ -18,7 +18,11 @@ stopped MCP service cannot diagnose itself through MCP.
 tool response's `trace_id` with server-authored diagnostic events. Use its exact
 `trace_id`, component, severity, and optional RFC-3339 `start`/`end` filters;
 without them it returns the most recent `limit` events. Keep all filters unchanged
-when following `next_cursor`. It
+when following `next_cursor`. Continuations use the original sanitized snapshot
+for up to 120 seconds, bound to this app, identity, Miniserver and OAuth family.
+Every page rechecks current authorization and rate limits. After expiry, eviction
+or service restart, restart the read on `invalid_input`. Later events require a
+new read without a cursor. It
 does not expose raw logs, arbitrary files, journal output, credentials, or
 foreign services. If the service is stopped, use the local LoxBerry log viewer
 or an explicitly authorized host diagnosis instead.
