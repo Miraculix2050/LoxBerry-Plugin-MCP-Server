@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from mcpserver.auth.loxone_store import LoxoneTokenStoreError
 from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import (
+    LoxoneCommandRejected,
     LoxoneConnectionError,
     LoxoneTokenAuthenticationRejected,
 )
@@ -130,9 +131,25 @@ async def read_pv_forecasts(
         if runtime.token_health is not None:
             runtime.token_health.record_rejected_authentication(access.family_id)
         raise ControlOperationError("permission_denied", "Loxone authentication rejected") from None
-    except (TimeoutError, LoxoneConnectionError, LoxoneProtocolError, LoxoneTokenStoreError):
+    except TimeoutError:
         raise ControlOperationError(
             "temporarily_unavailable", "PV forecast read timed out"
+        ) from None
+    except LoxoneProtocolError:
+        raise ControlOperationError(
+            "temporarily_unavailable", "PV forecast read failed due to a protocol error"
+        ) from None
+    except LoxoneCommandRejected:
+        raise ControlOperationError(
+            "temporarily_unavailable", "Miniserver rejected the PV forecast request"
+        ) from None
+    except LoxoneConnectionError:
+        raise ControlOperationError(
+            "temporarily_unavailable", "PV forecast read failed due to a connection error"
+        ) from None
+    except LoxoneTokenStoreError:
+        raise ControlOperationError(
+            "temporarily_unavailable", "PV forecast authorization storage is unavailable"
         ) from None
     finally:
         if session is not None:

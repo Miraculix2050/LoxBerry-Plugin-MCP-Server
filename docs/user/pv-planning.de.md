@@ -27,6 +27,14 @@ W/m²-Wetterorientierung getrennt.
 
 ## Bedingte zukünftige Lastplanung
 
+Fehlgeschlagene Prognoseabrufe unterscheiden Zeitüberschreitungen, Protokollfehler,
+abgewiesene Anfragen, Verbindungsfehler und nicht verfügbaren Autorisierungsspeicher
+durch feste bereinigte Meldungen. Die Fehlerkategorie bleibt
+`temporarily_unavailable`; Meldungen enthalten weder rohe Serverantworten noch
+Zugangsdaten. Das gilt für native Prognoseabrufe und den Planer. Ein Verbindungs-
+oder Protokollfehler belegt keine fehlende Prognosekonfiguration. Fehlgeschlagene
+Lesezugriffe werden nicht automatisch wiederholt.
+
 `loxone_plan_loads(options=...)` benötigt `forecast_control_uuid`, zukünftige
 `start`/`end` mit UTC-Offset, `timezone` und bis zu 16 `consumer_binding_ids` aus
 dem bestätigten Installationsprofil. `baseload` und `storage_reserve` jeweils

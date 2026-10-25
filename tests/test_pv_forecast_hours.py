@@ -10,7 +10,14 @@ import pytest
 from test_native_efm import ACTION, TARGET, access, fixture_runtime
 
 import mcpserver.loxone.client as client_module
-from mcpserver.loxone.client import LoxoneWebSocketSession
+from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+from mcpserver.loxone.client import (
+    LoxoneCommandRejected,
+    LoxoneConnectionError,
+    LoxoneTokenAuthenticationRejected,
+    LoxoneWebSocketSession,
+)
+from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
 from mcpserver.loxone.models import Freshness
 from mcpserver.loxone.pv_forecast_hours import PvForecastError, decode_forecast
 from mcpserver.loxone.runtime import ControlOperationError, RuntimeSnapshot
@@ -234,3 +241,98 @@ async def test_duplicate_forecast_actions_are_rejected_before_transport():
         await read_pv_forecasts(runtime, access(), [first.uuid, second.uuid])
     runtime._open_session.assert_not_awaited()
     session.load_structure.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["session", "forecast", "structure"])
+@pytest.mark.parametrize(
+    "error_type,code,message",
+    [
+        (TimeoutError, "temporarily_unavailable", "PV forecast read timed out"),
+        (
+            LoxoneProtocolError,
+            "temporarily_unavailable",
+            "PV forecast read failed due to a protocol error",
+        ),
+        (
+            LoxoneConnectionError,
+            "temporarily_unavailable",
+            "PV forecast read failed due to a connection error",
+        ),
+        (
+            LoxoneCommandRejected,
+            "temporarily_unavailable",
+            "Miniserver rejected the PV forecast request",
+        ),
+        (
+            LoxonePayloadTooLarge,
+            "response_too_large",
+            "PV forecast response exceeds bounds",
+        ),
+        (PvForecastError, "unsupported_source", "PV forecast response is invalid"),
+        (
+            LoxoneTokenAuthenticationRejected,
+            "permission_denied",
+            "Loxone authentication rejected",
+        ),
+    ],
+)
+async def test_read_failures_are_distinct_sanitized_and_not_retried(
+    phase, error_type, code, message
+):
+    runtime, structure, session, token = fixture_runtime()
+    control = replace(structure.controls[0], control_type="PvProductionForecast")
+    structure = replace(structure, controls=(control,))
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", structure, True)
+
+    runtime.snapshot_context = snapshots
+    runtime.cache = SimpleNamespace(get=Mock())
+    runtime.token_health = SimpleNamespace(
+        record_successful_authentication=Mock(), record_rejected_authentication=Mock()
+    )
+    session.pv_forecast = AsyncMock(return_value="{}")
+    session.load_structure = AsyncMock(return_value=structure)
+    failing_call = {
+        "session": runtime._open_session,
+        "forecast": session.pv_forecast,
+        "structure": session.load_structure,
+    }[phase]
+    failing_call.side_effect = error_type("sensitive source content")
+
+    with pytest.raises(ControlOperationError) as failure:
+        await read_pv_forecast(runtime, access(), TARGET)
+
+    assert failure.value.code == code
+    assert str(failure.value) == message
+    assert failure.value.__suppress_context__
+    failing_call.assert_awaited_once()
+    assert session.pv_forecast.await_count == int(phase != "session")
+    assert session.load_structure.await_count == int(phase == "structure")
+    assert session.close.await_count == int(phase != "session")
+    token.destroy.assert_called_once()
+    assert runtime.token_health.record_rejected_authentication.call_count == int(
+        error_type is LoxoneTokenAuthenticationRejected
+    )
+
+
+@pytest.mark.asyncio
+async def test_token_storage_failure_is_not_a_timeout():
+    runtime, structure, session, _ = fixture_runtime()
+    control = replace(structure.controls[0], control_type="PvProductionForecast")
+
+    @asynccontextmanager
+    async def snapshots(_access):
+        yield RuntimeSnapshot("family", replace(structure, controls=(control,)), True)
+
+    runtime.snapshot_context = snapshots
+    runtime.token_store.get.side_effect = LoxoneTokenStoreError("sensitive source content")
+    with pytest.raises(ControlOperationError) as failure:
+        await read_pv_forecast(runtime, access(), TARGET)
+    assert failure.value.code == "temporarily_unavailable"
+    assert str(failure.value) == "PV forecast authorization storage is unavailable"
+    runtime.token_store.get.assert_called_once()
+    runtime._open_session.assert_not_awaited()
+    session.close.assert_not_awaited()

@@ -24,6 +24,13 @@ Native forecast support is distinct from the existing W/m² weather guidance.
 
 ## Conditional future load planning
 
+Forecast read failures distinguish timeouts, protocol errors, rejected requests,
+connection errors and unavailable authorization storage through fixed sanitized
+messages. The error category remains `temporarily_unavailable`; the message does
+not include raw server responses or credentials. This applies to both native
+forecast reads and the planner. A connection or protocol failure is not evidence
+of missing forecast configuration. Failed reads are not automatically retried.
+
 Use `loxone_plan_loads(options=...)` with `forecast_control_uuid`, offset-aware
 future `start`/`end`, `timezone`, and up to 16 `consumer_binding_ids` from the
 confirmed installation profile. Supply `baseload` and `storage_reserve`, each
