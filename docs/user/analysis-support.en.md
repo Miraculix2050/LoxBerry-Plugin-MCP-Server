@@ -86,9 +86,13 @@ The optional analysis context supports one explicitly selected common supply
 budget with up to four confirmed disjoint PVPFs, profile references, real declared
 cycles and explicitly hypothetical loads. Native EFM membership remains separate
 from user associations. Multi-plant fixtures prove isolation and calculation,
-not real multi-plant compatibility. Legacy calls remain supported. Positive real
-PVPF/consumer acceptance remains open under #440/#510; fixtures cannot replace
-missing real sources.
+not real multi-plant compatibility. Legacy calls remain supported. On 25 October
+2026 the owner approved technical acceptance as the basis for closing #510.
+The native PVPF read returned 72 available forecast hours on Loxberry-Test.
+Comparison with three production intervals measured after forecast capture and
+planning with real single or competing consumers were not performed and are no
+longer closeout gates. Fixtures do not establish that real validation; runtime
+qualification and the conditional meaning of results remain unchanged.
 
 Direct self-consumption can use the exactly qualified native EFM
 `totalSelfConsumption` series. It remains labelled as an EFM calculation; plant

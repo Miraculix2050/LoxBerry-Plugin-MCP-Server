@@ -93,8 +93,13 @@ Versorgungsbudget mit bis zu vier bestätigten überschneidungsfreien PVPFs,
 Profilreferenzen, realen deklarierten Zyklen und ausdrücklich hypothetischen Lasten.
 Native EFM-Mitgliedschaft und Nutzerzuordnungen bleiben getrennt. Mehranlagen-
 Fixtures belegen Isolation und Berechnung, keine reale Mehranlagenkompatibilität.
-Alte Aufrufe bleiben unterstützt. Positive reale PVPF-/Verbraucherabnahme bleibt
-unter #440/#510 offen; fehlende Quellen werden nicht durch Fixtures ersetzt.
+Alte Aufrufe bleiben unterstützt. Für #510 hat der Eigentümer am 25. Oktober 2026
+die technische Abnahme als Abschlussgrundlage bestätigt. Der native PVPF-Abruf
+lieferte auf Loxberry-Test 72 verfügbare Prognosestunden. Der Vergleich mit drei
+nach Prognoseabruf gemessenen Produktionsintervallen und die Planung mit realen
+Einzel- bzw. konkurrierenden Verbrauchern wurden nicht durchgeführt und sind
+keine Abschlussbedingungen mehr. Fixtures belegen diese reale Validierung nicht;
+Laufzeitprüfungen und die bedingte Bedeutung der Ergebnisse bleiben unverändert.
 
 Für direkten Eigenverbrauch kann die exakt qualifizierte native EFM-Reihe
 `totalSelfConsumption` genutzt werden. Sie bleibt als EFM-Berechnung kenntlich;

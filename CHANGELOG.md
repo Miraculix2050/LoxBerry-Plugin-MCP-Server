@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Record the owner-approved #510 software/technical closeout and successful
+  native hourly forecast read. Production comparison and real-consumer planning
+  were not performed; runtime qualification and conditional semantics are unchanged.
+
 - Distinguish PV forecast timeouts, protocol errors, rejected requests, connection
   errors and authorization-storage failures using sanitized messages; retain
   existing error categories for native reads and conditional planning (#510).
