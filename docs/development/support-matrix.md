@@ -105,7 +105,13 @@ See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user cap
   real/hypothetical cycles. Native membership is server-derived and physical
   boundaries remain explicit. Multiple independent plant fixtures establish
   isolation/arithmetic only, not real multi-plant or new firmware compatibility.
-  Positive native-source/real-consumer gates remain open in #440/#510.
+  On 25 October 2026 the owner approved #510 software/technical closeout, including
+  a real native PVPF read with 72 available hours on Loxberry-Test. The comparison
+  with three production intervals measured after forecast capture and real
+  single/competing-consumer planning were not performed and are no longer closeout
+  gates. Runtime qualification and conditional semantics remain unchanged;
+  empirical forecast accuracy, measured savings and operating permission are not
+  established. #440 retains its separate retrospective technical closeout.
 
 
 ### EFM self-consumption statistics
