@@ -797,7 +797,10 @@ class LoxoneRuntime:
                 raise
             except LoxoneCommandRejected as exc:
                 raise ControlOperationError(
-                    "permission_denied", "Miniserver rejected the control action"
+                    "permission_denied"
+                    if exc.response_code in {"401", "403"}
+                    else "outcome_unknown",
+                    "Miniserver rejected the control action",
                 ) from exc
             except Exception as exc:
                 raise ControlOperationError(
@@ -901,6 +904,12 @@ class LoxoneRuntime:
                 raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
             except ControlOperationError:
                 raise
+            except LoxoneTokenAuthenticationRejected as exc:
+                if self.token_health is not None:
+                    self.token_health.record_rejected_authentication(access.family_id)
+                raise ControlOperationError(
+                    "permission_denied", "Loxone authentication rejected"
+                ) from exc
             except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError) as exc:
                 raise ControlOperationError(
                     "loxone_unreachable", "Miniserver connection failed"
@@ -1403,11 +1412,18 @@ class LoxoneRuntime:
             )
             await self._require_access(access)
             yield session, result, rights
-        except LoxoneCommandRejected as exc:
-            if session is None and self.token_health is not None:
+        except LoxoneTokenAuthenticationRejected as exc:
+            if self.token_health is not None:
                 self.token_health.record_rejected_authentication(access.family_id)
             raise ControlOperationError(
                 "permission_denied", "Miniserver rejected message access"
+            ) from exc
+        except LoxoneCommandRejected as exc:
+            raise ControlOperationError(
+                "permission_denied"
+                if exc.response_code in {"401", "403"}
+                else "temporarily_unavailable",
+                "Miniserver rejected message access",
             ) from exc
         except RuntimeAuthorizationError as exc:
             raise ControlOperationError(
@@ -1594,7 +1610,7 @@ class LoxoneRuntime:
             raise RuntimeUnavailable(
                 "Miniserver temporarily blocked this source IP after failed login attempts"
             ) from exc
-        except LoxoneCommandRejected as exc:
+        except LoxoneTokenAuthenticationRejected as exc:
             if exc.response_code == "4003":
                 raise RuntimeUnavailable(
                     "Miniserver temporarily blocked this source IP after failed login attempts"
@@ -1611,6 +1627,12 @@ class LoxoneRuntime:
                     "before another login"
                 ) from exc
             raise RuntimeUnavailable(_token_auth_rejection_message(exc.response_code)) from exc
+        except LoxoneCommandRejected as exc:
+            if exc.response_code == "4003":
+                raise RuntimeUnavailable(
+                    "Miniserver temporarily blocked this source IP after failed login attempts"
+                ) from exc
+            raise RuntimeUnavailable("Miniserver rejected session establishment") from exc
         except LoxoneConnectionError as exc:
             raise RuntimeUnavailable("Miniserver connection failed") from exc
         try:
@@ -1768,10 +1790,10 @@ class LoxoneRuntime:
                 or (isinstance(exc, LoxoneCommandRejected) and exc.response_code == "4003")
                 else AvailabilityReason.REFRESH_TIMEOUT
                 if isinstance(exc, TimeoutError)
-                else AvailabilityReason.REFRESH_CONNECTION
-                if isinstance(exc, LoxoneConnectionError)
                 else AvailabilityReason.REFRESH_PROTOCOL
                 if isinstance(exc, LoxoneProtocolError)
+                else AvailabilityReason.REFRESH_CONNECTION
+                if isinstance(exc, LoxoneConnectionError)
                 else AvailabilityReason.REFRESH_TOKEN
                 if isinstance(exc, LoxoneTokenStoreError)
                 else AvailabilityReason.REFRESH_TIMEOUT

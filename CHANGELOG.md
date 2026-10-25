@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve Miniserver timeout/protocol and sanitized WebSocket-close diagnostics;
+  count only confirmed token-authentication rejections against token health.
+  Distinguish command permission failures from server faults, accept a normal
+  terminal close only after a dispatched token invalidation, and separate malformed
+  statistic responses from command rejection in logs (#588).
+
 - Record the owner-approved #510 software/technical closeout and successful
   native hourly forecast read. Production comparison and real-consumer planning
   were not performed; runtime qualification and conditional semantics are unchanged.

@@ -12,7 +12,7 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
+from websockets.exceptions import ConnectionClosedError
 from websockets.frames import Close
 
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
@@ -1472,7 +1472,9 @@ async def test_authenticated_session_accepts_normal_close_after_killing_token(
         if command == "jdev/sys/getkey":
             return "aabbccdd"
         assert encrypted is True
-        raise ConnectionClosedOK(Close(1000, ""), Close(1000, ""), True)
+        error = LoxoneWebSocketClosed("Miniserver WebSocket connection closed", normal_close=True)
+        error.command_sent = True
+        raise error
 
     monkeypatch.setattr(session, "_command", fake_command)
 

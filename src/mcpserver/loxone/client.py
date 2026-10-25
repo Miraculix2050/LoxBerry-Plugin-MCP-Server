@@ -86,12 +86,25 @@ class LoxoneConnectionError(RuntimeError):
     """Sanitized error raised when the Miniserver cannot be used securely."""
 
 
-class LoxoneResponseEnvelopeError(LoxoneConnectionError):
+class LoxoneResponseProtocolError(LoxoneConnectionError, LoxoneProtocolError):
+    """A sanitized invalid response, compatible with existing transport catches."""
+
+
+class LoxoneTransportTimeout(LoxoneConnectionError, TimeoutError):
+    """A bounded Miniserver transport operation timed out."""
+
+
+class LoxoneResponseEnvelopeError(LoxoneResponseProtocolError):
     """A decoded command response lacks the expected LL mapping."""
 
 
 class LoxoneWebSocketClosed(LoxoneConnectionError):
-    """The peer closed the command transport."""
+    """The peer closed the command transport without exposing its close reason."""
+
+    def __init__(self, message: str, *, normal_close: bool = False) -> None:
+        super().__init__(message)
+        self.normal_close = normal_close
+        self.command_sent = False
 
 
 class LoxoneWebSocketConnectionFailed(LoxoneConnectionError):
@@ -160,9 +173,33 @@ def _response_value(document: Mapping[str, Any]) -> Any:
     if not isinstance(wrapper, Mapping):
         raise LoxoneResponseEnvelopeError("Miniserver returned an invalid response")
     code = wrapper.get("Code", wrapper.get("code"))
+    if type(code) not in {str, int} or re.fullmatch(r"[0-9]{3,4}", str(code)) is None:
+        raise LoxoneResponseEnvelopeError("Miniserver returned an invalid response")
     if str(code) != "200":
         raise LoxoneCommandRejected("Miniserver rejected the request", response_code=str(code))
     return wrapper.get("value")
+
+
+def _closed_error(exc: ConnectionClosed) -> LoxoneConnectionError:
+    if exc.rcvd is not None and exc.rcvd.code == 4003:
+        return LoxoneSourceIpBlocked("Miniserver temporarily blocked this source IP")
+    return LoxoneWebSocketClosed(
+        "Miniserver WebSocket connection closed", normal_close=isinstance(exc, ConnectionClosedOK)
+    )
+
+
+async def _send_websocket(websocket: ClientConnection, outgoing: str) -> None:
+    try:
+        await websocket.send(outgoing)
+    except ConnectionClosed as exc:
+        raise _closed_error(exc) from None
+
+
+async def _receive_frame(websocket: ClientConnection, timeout_seconds: float) -> Any:
+    try:
+        return await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
+    except ConnectionClosed as exc:
+        raise _closed_error(exc) from None
 
 
 async def _receive_websocket(
@@ -173,16 +210,9 @@ async def _receive_websocket(
 ) -> tuple[MessageHeader, str | bytes | None]:
     while True:
         try:
-            raw_header = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
+            raw_header = await _receive_frame(websocket, timeout_seconds)
         except TimeoutError:
             raise _WebSocketIdleTimeout from None
-        except ConnectionClosed as exc:
-            received = exc.rcvd
-            if received is not None and received.code == 4003:
-                raise LoxoneSourceIpBlocked(
-                    "Miniserver temporarily blocked this source IP"
-                ) from None
-            raise LoxoneWebSocketClosed("Miniserver WebSocket connection closed") from None
         if not isinstance(raw_header, bytes):
             raise LoxoneProtocolError("Expected a binary WebSocket header")
         header = parse_header(raw_header, max_payload_bytes=max_payload_bytes)
@@ -190,7 +220,7 @@ async def _receive_websocket(
             continue
         if header.message_type in {MessageType.OUT_OF_SERVICE, MessageType.KEEPALIVE}:
             return header, None
-        payload = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
+        payload = await _receive_frame(websocket, timeout_seconds)
         if isinstance(payload, str):
             actual_sizes = {len(payload), len(payload.encode("utf-8"))}
             if max(actual_sizes) > max_payload_bytes:
@@ -230,18 +260,16 @@ async def _websocket_command(
     allow_direct_json: bool = False,
 ) -> Any:
     outgoing = encryptor.encrypted_command(command) if encrypted else command
+    await _send_websocket(websocket, outgoing)
     try:
-        await websocket.send(outgoing)
-    except ConnectionClosed as exc:
-        received = exc.rcvd
-        if received is not None and received.code == 4003:
-            raise LoxoneSourceIpBlocked("Miniserver temporarily blocked this source IP") from None
-        raise LoxoneWebSocketClosed("Miniserver WebSocket connection closed") from None
-    header, payload = await _receive_websocket(
-        websocket,
-        timeout_seconds=timeout_seconds,
-        max_payload_bytes=max_payload_bytes,
-    )
+        header, payload = await _receive_websocket(
+            websocket,
+            timeout_seconds=timeout_seconds,
+            max_payload_bytes=max_payload_bytes,
+        )
+    except LoxoneWebSocketClosed as exc:
+        exc.command_sent = True
+        raise
     if header.message_type is not MessageType.TEXT or not isinstance(payload, str):
         raise LoxoneProtocolError("Miniserver command response is not text")
     try:
@@ -311,9 +339,9 @@ class LoxoneClient:
         try:
             value = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            raise LoxoneConnectionError("Miniserver request failed") from None
+            raise LoxoneResponseProtocolError("Miniserver returned an invalid response") from None
         if not isinstance(value, Mapping):
-            raise LoxoneConnectionError("Miniserver returned an invalid response")
+            raise LoxoneResponseProtocolError("Miniserver returned an invalid response")
         return value
 
     async def _get_text(self, path: str) -> str:
@@ -321,7 +349,7 @@ class LoxoneClient:
         try:
             return body.decode(encoding)
         except (LookupError, UnicodeDecodeError):
-            raise LoxoneConnectionError("Miniserver request failed") from None
+            raise LoxoneResponseProtocolError("Miniserver returned an invalid response") from None
 
     @cached_property
     def _http_verify(self) -> ssl.SSLContext:
@@ -349,6 +377,10 @@ class LoxoneClient:
                         )
                     body.extend(chunk)
                 return bytes(body), response.encoding or "utf-8"
+        except httpx.TimeoutException:
+            raise LoxoneTransportTimeout("Miniserver HTTP request timed out") from None
+        except httpx.HTTPStatusError:
+            raise LoxoneConnectionError("Miniserver HTTP request was rejected") from None
         except httpx.HTTPError:
             # httpx exceptions may contain the complete encrypted request URL.
             # Suppress the cause so callers and logs only see this fixed text.
@@ -396,7 +428,7 @@ class LoxoneClient:
                     return bytes(body)
         except ProjectError:
             raise
-        except TimeoutError:
+        except (TimeoutError, httpx.TimeoutException):
             raise ProjectError("project_timeout") from None
         except Exception:
             raise ProjectError("project_transport_error") from None
@@ -488,8 +520,12 @@ class LoxoneClient:
                 ),
                 timeout=self.timeout_seconds,
             )
-        except (OSError, TimeoutError) as exc:
-            raise LoxoneWebSocketConnectionFailed("Miniserver WebSocket connection failed") from exc
+        except TimeoutError:
+            raise LoxoneTransportTimeout("Miniserver WebSocket connection timed out") from None
+        except OSError:
+            raise LoxoneWebSocketConnectionFailed(
+                "Miniserver WebSocket connection failed"
+            ) from None
 
     async def acquire_token(self, username: str, password: str) -> LoxoneToken:
         escaped_user = quote(username, safe="")
@@ -737,7 +773,7 @@ class LoxoneWebSocketSession:
         *,
         receive: Callable[[], Awaitable[tuple[MessageHeader, str | bytes | None]]] | None = None,
     ) -> LoxoneStructure:
-        await self._websocket.send("data/LoxAPP3.json")
+        await _send_websocket(self._websocket, "data/LoxAPP3.json")
         header, payload = await (receive() if receive is not None else self._receive())
         if header.message_type not in {MessageType.TEXT, MessageType.BINARY_FILE} or not isinstance(
             payload, str
@@ -833,11 +869,11 @@ class LoxoneWebSocketSession:
             await self._command(
                 f"jdev/sys/killtoken/{credential}/{user}", encrypted=not self._secure_transport
             )
-        except ConnectionClosedOK:
-            # A Miniserver may close the authenticated connection immediately
-            # after invalidating the connection token. A normal close is the
-            # successful terminal response in that case.
-            return
+        except LoxoneWebSocketClosed as exc:
+            # Only a normal terminal response after this exact command was sent
+            # acknowledges token invalidation. Send failures remain uncertain.
+            if not (exc.normal_close and exc.command_sent):
+                raise
 
     async def operate_control(self, action_uuid: str, command: str) -> None:
         """Execute one command prepared by the bounded control contract."""
@@ -895,7 +931,7 @@ class LoxoneWebSocketSession:
         outgoing = (
             self._encryptor.encrypted_command(command) if not self._secure_transport else command
         )
-        await self._websocket.send(outgoing)
+        await _send_websocket(self._websocket, outgoing)
         header, payload = await self._receive()
         if header.message_type is not MessageType.TEXT or not isinstance(payload, str):
             raise LoxoneProtocolError("Miniserver control history response is invalid")
@@ -920,7 +956,7 @@ class LoxoneWebSocketSession:
         outgoing = (
             self._encryptor.encrypted_command(command) if not self._secure_transport else command
         )
-        await self._websocket.send(outgoing)
+        await _send_websocket(self._websocket, outgoing)
         header, payload = await self._receive()
         if header.message_type is not MessageType.TEXT or not isinstance(payload, str):
             raise LoxoneProtocolError("Miniserver control notes response is invalid")
@@ -989,7 +1025,7 @@ class LoxoneWebSocketSession:
         # Binary file responses cannot be transported through the Gen. 1
         # command-encryption envelope. The session is already token-authenticated,
         # matching the plaintext structure-file request on the same local socket.
-        await self._websocket.send(command)
+        await _send_websocket(self._websocket, command)
         header, payload = await self._receive()
         if header.message_type is MessageType.BINARY_FILE and isinstance(payload, bytes):
             return payload
@@ -1005,7 +1041,13 @@ class LoxoneWebSocketSession:
             if isinstance(response, Mapping):
                 try:
                     _response_value(response)
-                except (LoxoneConnectionError, LoxoneCommandRejected):
+                except LoxoneResponseEnvelopeError:
+                    _LOGGER.warning(
+                        "component=statistics outcome=invalid_response frame=text payload_bytes=%d",
+                        len(payload.encode("utf-8")),
+                    )
+                    raise
+                except LoxoneCommandRejected:
                     _LOGGER.warning(
                         "component=statistics outcome=command_rejected frame=text payload_bytes=%d",
                         len(payload.encode("utf-8")),
@@ -1031,7 +1073,7 @@ class LoxoneWebSocketSession:
         ):
             raise ValueError("invalid legacy statistic request")
         command = f"binstatisticdata/{quote(control_uuid, safe='')}/{date}"
-        await self._websocket.send(command)
+        await _send_websocket(self._websocket, command)
         header, payload = await self._receive()
         if header.message_type is MessageType.BINARY_FILE and isinstance(payload, bytes):
             return payload
@@ -1056,7 +1098,7 @@ class LoxoneWebSocketSession:
             except _WebSocketIdleTimeout:
                 if keepalive_pending:
                     raise LoxoneConnectionError("Miniserver did not respond to keepalive") from None
-                await self._websocket.send("keepalive")
+                await _send_websocket(self._websocket, "keepalive")
                 keepalive_pending = True
                 continue
             keepalive_pending = False
@@ -1073,7 +1115,7 @@ class LoxoneWebSocketSession:
                 yield parse_state_events(header.message_type, payload)
 
     async def keepalive(self) -> None:
-        await self._websocket.send("keepalive")
+        await _send_websocket(self._websocket, "keepalive")
         header, _ = await self._receive()
         if header.message_type is not MessageType.KEEPALIVE:
             raise LoxoneProtocolError("Miniserver did not acknowledge keepalive")

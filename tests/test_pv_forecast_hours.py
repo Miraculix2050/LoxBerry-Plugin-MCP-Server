@@ -337,10 +337,14 @@ async def test_duplicate_forecast_actions_are_rejected_before_transport():
             "temporarily_unavailable",
             "Miniserver rejected the PV forecast request",
         ),
+        (
+            LoxoneResponseEnvelopeError,
+            "temporarily_unavailable",
+            "PV forecast read failed due to a protocol error",
+        ),
         *[
             (error, "temporarily_unavailable", "PV forecast read failed due to a connection error")
             for error in (
-                LoxoneResponseEnvelopeError,
                 LoxoneWebSocketClosed,
                 LoxoneWebSocketConnectionFailed,
                 LoxoneSourceIpBlocked,

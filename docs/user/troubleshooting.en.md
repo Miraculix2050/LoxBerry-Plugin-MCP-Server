@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## Miniserver transport and command failures
+
+Timeouts, invalid response protocols and closed connections remain distinct. Only
+confirmed token-authentication rejection increments the token-health counter; server
+faults do not. Read rejections indicate missing permission only for permission response
+codes. A server fault during a control command leaves its outcome unknown: read the
+state before retrying. No automatic command retry is added. Statistics logs distinguish
+malformed responses from explicit rejection. Diagnostics omit peer close reasons,
+response bodies, tokens and request URLs. Each command retains its existing response
+format contract.
+
 ## MCP tools missing after an upgrade
 
 An installed skill or the static schema reference can describe capabilities that

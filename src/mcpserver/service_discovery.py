@@ -35,8 +35,10 @@ from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
     LoxoneSourceIpBlocked,
+    LoxoneWebSocketClosed,
     LoxoneWebSocketSession,
     MiniserverEndpoint,
+    _send_websocket,
     _WebSocketIdleTimeout,
 )
 from mcpserver.loxone.events import MessageHeader, MessageType, parse_state_events
@@ -80,7 +82,7 @@ def _failure_category(exc: BaseException) -> str:
         return "authentication_busy"
     if isinstance(exc, TimeoutError | _WebSocketIdleTimeout | DiscoveryTimeout):
         return "timeout"
-    if isinstance(exc, ConnectionClosed | DiscoveryDisconnected):
+    if isinstance(exc, ConnectionClosed | LoxoneWebSocketClosed | DiscoveryDisconnected):
         return "disconnect"
     if isinstance(exc, LoxoneProtocolError | DiscoveryProtocolFailure):
         return "protocol"
@@ -216,7 +218,7 @@ class DiscoveryReceiver:
                 except (_WebSocketIdleTimeout, TimeoutError):
                     if self.pending is not None or keepalive_pending:
                         raise DiscoveryTimeout("discovery response timed out") from None
-                    await self.session._websocket.send("keepalive")
+                    await _send_websocket(self.session._websocket, "keepalive")
                     keepalive_pending = True
                     continue
                 if header.message_type == MessageType.KEEPALIVE:
@@ -301,7 +303,7 @@ class DiscoveryReceiver:
             # Gen. 1 echoes the encrypted command with URI escapes decoded.
             # Match this exact request, never an arbitrary encryption prefix.
             self.marker_controls = {_MARKER_COMMAND, outgoing, unquote(outgoing)}
-            await self.session._websocket.send(outgoing)
+            await _send_websocket(self.session._websocket, outgoing)
             return await pending
         finally:
             if not pending.done():
