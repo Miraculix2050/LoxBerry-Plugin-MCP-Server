@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
@@ -14,7 +15,11 @@ from mcpserver.auth.loxone_store import LoxoneTokenStoreError
 from mcpserver.loxone.client import (
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneResponseEnvelopeError,
+    LoxoneSourceIpBlocked,
     LoxoneTokenAuthenticationRejected,
+    LoxoneWebSocketClosed,
+    LoxoneWebSocketConnectionFailed,
     LoxoneWebSocketSession,
 )
 from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
@@ -244,6 +249,7 @@ async def test_duplicate_forecast_actions_are_rejected_before_transport():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("log_level", [logging.DEBUG, logging.INFO])
 @pytest.mark.parametrize("phase", ["session", "forecast", "structure"])
 @pytest.mark.parametrize(
     "error_type,code,message",
@@ -264,6 +270,15 @@ async def test_duplicate_forecast_actions_are_rejected_before_transport():
             "temporarily_unavailable",
             "Miniserver rejected the PV forecast request",
         ),
+        *[
+            (error, "temporarily_unavailable", "PV forecast read failed due to a connection error")
+            for error in (
+                LoxoneResponseEnvelopeError,
+                LoxoneWebSocketClosed,
+                LoxoneWebSocketConnectionFailed,
+                LoxoneSourceIpBlocked,
+            )
+        ],
         (
             LoxonePayloadTooLarge,
             "response_too_large",
@@ -278,7 +293,7 @@ async def test_duplicate_forecast_actions_are_rejected_before_transport():
     ],
 )
 async def test_read_failures_are_distinct_sanitized_and_not_retried(
-    phase, error_type, code, message
+    phase, error_type, code, message, log_level, caplog
 ):
     runtime, structure, session, token = fixture_runtime()
     control = replace(structure.controls[0], control_type="PvProductionForecast")
@@ -302,12 +317,43 @@ async def test_read_failures_are_distinct_sanitized_and_not_retried(
     }[phase]
     failing_call.side_effect = error_type("sensitive source content")
 
-    with pytest.raises(ControlOperationError) as failure:
+    with (
+        caplog.at_level(log_level, logger="mcpserver.loxone.runtime"),
+        pytest.raises(ControlOperationError) as failure,
+    ):
         await read_pv_forecast(runtime, access(), TARGET)
 
     assert failure.value.code == code
     assert str(failure.value) == message
     assert failure.value.__suppress_context__
+    phases = {
+        "session": "session_establishment",
+        "forecast": "forecast_command",
+        "structure": "structure_recheck",
+    }
+    reasons = {
+        TimeoutError: "timeout",
+        LoxoneProtocolError: "protocol_error",
+        LoxoneConnectionError: "connection_error",
+        LoxoneResponseEnvelopeError: "response_envelope_invalid",
+        LoxoneWebSocketClosed: "websocket_closed",
+        LoxoneWebSocketConnectionFailed: "websocket_connection_failed",
+        LoxoneSourceIpBlocked: "source_ip_blocked",
+        LoxoneCommandRejected: "request_rejected",
+        LoxonePayloadTooLarge: "payload_too_large",
+        PvForecastError: "forecast_invalid",
+        LoxoneTokenAuthenticationRejected: "authentication_rejected",
+    }
+    records = [r for r in caplog.records if "code=pv_forecast_" in r.getMessage()]
+    assert len(records) == int(log_level == logging.DEBUG)
+    if records:
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].getMessage() == (
+            f"trace_id={failure.value.trace_id} outcome=error "
+            f"code=pv_forecast_{phases[phase]} error_type={reasons[error_type]}"
+        )
+        assert records[0].exc_info is None
+    assert "sensitive source content" not in caplog.text
     failing_call.assert_awaited_once()
     assert session.pv_forecast.await_count == int(phase != "session")
     assert session.load_structure.await_count == int(phase == "structure")
@@ -316,6 +362,11 @@ async def test_read_failures_are_distinct_sanitized_and_not_retried(
     assert runtime.token_health.record_rejected_authentication.call_count == int(
         error_type is LoxoneTokenAuthenticationRejected
     )
+    from mcpserver.tools import ControlsReadEnvelope, _operation_error
+
+    envelope = _operation_error(ControlsReadEnvelope, failure.value)
+    assert envelope.trace_id == failure.value.trace_id
+    assert "sensitive source content" not in envelope.model_dump_json()
 
 
 @pytest.mark.asyncio

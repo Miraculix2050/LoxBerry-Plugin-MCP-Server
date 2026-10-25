@@ -256,9 +256,10 @@ class RuntimeUnavailable(RuntimeError):
 class ControlOperationError(RuntimeError):
     """A stable control failure that can be returned through the MCP contract."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, trace_id: str | None = None) -> None:
         super().__init__(message)
         self.code = code
+        self.trace_id = trace_id
 
 
 @dataclass(frozen=True, slots=True)

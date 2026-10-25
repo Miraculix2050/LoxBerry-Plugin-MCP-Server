@@ -2856,6 +2856,7 @@ def _operation_error[EnvelopeT: ToolEnvelope](
     trace_id: str | None = None,
 ) -> EnvelopeT:
     """Retain availability diagnostics through read-only adapter wrappers."""
+    trace_id = trace_id or exc.trace_id
     if exc.code in {"temporarily_unavailable", "rate_limited"} and isinstance(
         exc.__cause__, RuntimeUnavailable
     ):

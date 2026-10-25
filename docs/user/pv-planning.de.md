@@ -35,6 +35,15 @@ Zugangsdaten. Das gilt für native Prognoseabrufe und den Planer. Ein Verbindung
 oder Protokollfehler belegt keine fehlende Prognosekonfiguration. Fehlgeschlagene
 Lesezugriffe werden nicht automatisch wiederholt.
 
+Bei aktiviertem Debug-Logging benennt ein begrenztes Laufzeitereignis den
+fehlgeschlagenen Schritt (Snapshot, Tokenzugriff, Sitzungsaufbau, Prognosebefehl,
+Strukturprüfung oder Prognosedekodierung) und eine feste Ursachenkennung.
+Verbindungsursachen unterscheiden geschlossene WebSockets, fehlgeschlagenen
+Verbindungsaufbau, Quell-IP-Sperren und einen ungültigen Antwortumschlag;
+nicht zugeordnete Ursachen bleiben unbekannt. Die `trace_id` entspricht dem
+MCP-Fehler. Nutzdaten, Exception-Texte, Steuerungsidentitäten und Zugangsdaten
+werden nicht protokolliert. Auf Info-Level entfallen diese Details.
+
 `loxone_plan_loads(options=...)` benötigt `forecast_control_uuid`, zukünftige
 `start`/`end` mit UTC-Offset, `timezone` und bis zu 16 `consumer_binding_ids` aus
 dem bestätigten Installationsprofil. `baseload` und `storage_reserve` jeweils

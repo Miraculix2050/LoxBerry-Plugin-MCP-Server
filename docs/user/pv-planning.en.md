@@ -31,6 +31,14 @@ not include raw server responses or credentials. This applies to both native
 forecast reads and the planner. A connection or protocol failure is not evidence
 of missing forecast configuration. Failed reads are not automatically retried.
 
+With Debug logging enabled, one bounded runtime event identifies the failed step
+(snapshot, token lookup, session establishment, forecast command, structure
+recheck or forecast decoding) and a fixed cause label. Connection causes distinguish
+WebSocket closure, connection establishment failure, source-IP blocking and an
+invalid response envelope; unclassified causes remain unknown. The event's
+`trace_id` matches the MCP error. No payloads, exception text, control identities
+or credentials are logged. These details are omitted at Info level.
+
 Use `loxone_plan_loads(options=...)` with `forecast_control_uuid`, offset-aware
 future `start`/`end`, `timezone`, and up to 16 `consumer_binding_ids` from the
 confirmed installation profile. Supply `baseload` and `storage_reserve`, each

@@ -8,6 +8,8 @@ extracted from the matching version heading.
 - Distinguish PV forecast timeouts, protocol errors, rejected requests, connection
   errors and authorization-storage failures using sanitized messages; retain
   existing error categories for native reads and conditional planning (#510).
+  Add Debug-only fixed phase/cause diagnostics correlated with the MCP error;
+  never log response payloads or exception text.
 
 - Add bounded authentication-event reads for the currently authorized app,
   Loxone identity and Miniserver, including retained events from earlier logins.

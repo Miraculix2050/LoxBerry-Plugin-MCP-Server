@@ -22,9 +22,12 @@ from mcpserver.loxone.client import (
     LoxoneConnectionError,
     LoxoneCredentialAuthenticationRejected,
     LoxoneProtocolError,
+    LoxoneResponseEnvelopeError,
     LoxoneSourceIpBlocked,
     LoxoneToken,
     LoxoneTokenAuthenticationRejected,
+    LoxoneWebSocketClosed,
+    LoxoneWebSocketConnectionFailed,
     LoxoneWebSocketSession,
     MiniserverEndpoint,
     _close_websocket,
@@ -882,6 +885,45 @@ def test_command_rejection_retains_only_the_sanitized_status_code() -> None:
 
     assert rejected.value.response_code == "4003"
     assert "private detail" not in str(rejected.value)
+
+
+@pytest.mark.parametrize("document", [{}, {"LL": "private detail"}, {"today": []}])
+def test_invalid_command_envelope_has_a_distinct_connection_subtype(document) -> None:
+    with pytest.raises(LoxoneResponseEnvelopeError) as failure:
+        _response_value(document)
+    assert isinstance(failure.value, LoxoneConnectionError)
+    assert str(failure.value) == "Miniserver returned an invalid response"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["send", "receive"])
+async def test_closed_command_transport_has_a_distinct_connection_subtype(phase) -> None:
+    websocket = SimpleNamespace(send=AsyncMock(), recv=AsyncMock())
+    method = websocket.send if phase == "send" else websocket.recv
+    method.side_effect = ConnectionClosedError(Close(1006, "private detail"), None)
+    with pytest.raises(LoxoneWebSocketClosed) as failure:
+        await _websocket_command(
+            websocket,
+            cast(Any, object()),
+            "fixed/read",
+            encrypted=False,
+            timeout_seconds=0.1,
+            max_payload_bytes=100,
+        )
+    assert str(failure.value) == "Miniserver WebSocket connection closed"
+
+
+@pytest.mark.asyncio
+async def test_connection_establishment_failure_has_a_distinct_subtype(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.connect", AsyncMock(side_effect=OSError("private detail"))
+    )
+    client = LoxoneClient(
+        MiniserverEndpoint.parse("https://miniserver.example"), client_uuid=UUID(int=1)
+    )
+    with pytest.raises(LoxoneWebSocketConnectionFailed) as failure:
+        await client._connect_websocket()
+    assert str(failure.value) == "Miniserver WebSocket connection failed"
 
 
 @pytest.mark.asyncio
