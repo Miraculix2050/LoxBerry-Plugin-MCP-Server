@@ -10,7 +10,12 @@ from mcpserver.auth.loxone_health import (
 )
 from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.loxone.client import LoxoneCommandRejected, LoxoneToken, MiniserverEndpoint
+from mcpserver.loxone.client import (
+    LoxoneCommandRejected,
+    LoxoneToken,
+    LoxoneTokenAuthenticationRejected,
+    MiniserverEndpoint,
+)
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeUnavailable
 
 
@@ -79,7 +84,7 @@ async def test_runtime_stops_token_login_attempts_until_admin_confirms(tmp_path:
 
         async def open_session(self, _token: LoxoneToken) -> object:
             self.attempts += 1
-            raise LoxoneCommandRejected("rejected")
+            raise LoxoneTokenAuthenticationRejected("rejected", response_code="401")
 
     access = StoredAccessToken(
         token="opaque",
@@ -155,17 +160,18 @@ async def test_runtime_does_not_count_a_miniserver_source_ip_block(tmp_path: Pat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("response_code", "message"),
+    ("response_code", "authenticated_boundary", "message"),
     [
-        ("401", "unauthorized"),
-        ("403", "insufficient rights"),
-        ("423", "user is disabled"),
-        ("429", "rate-limited"),
-        ("500", "token authentication was rejected"),
+        ("401", True, "unauthorized"),
+        ("401", False, "rejected session establishment"),
+        ("403", False, "rejected session establishment"),
+        ("423", False, "rejected session establishment"),
+        ("429", False, "rejected session establishment"),
+        ("500", False, "rejected session establishment"),
     ],
 )
 async def test_runtime_reports_sanitized_token_rejection_reason(
-    tmp_path: Path, response_code: str, message: str
+    tmp_path: Path, response_code: str, authenticated_boundary: bool, message: str
 ) -> None:
     class TokenStore:
         def get(self, *_args: object) -> LoxoneToken:
@@ -173,7 +179,12 @@ async def test_runtime_reports_sanitized_token_rejection_reason(
 
     class RejectingClient:
         async def open_session(self, _token: LoxoneToken) -> object:
-            raise LoxoneCommandRejected("rejected", response_code=response_code)
+            error = (
+                LoxoneTokenAuthenticationRejected
+                if authenticated_boundary
+                else LoxoneCommandRejected
+            )
+            raise error("rejected", response_code=response_code)
 
     access = StoredAccessToken(
         token="opaque",
@@ -187,11 +198,15 @@ async def test_runtime_reports_sanitized_token_rejection_reason(
         identity_id="identity",
         miniserver_id="miniserver",
     )
+    health = LoxoneTokenHealthStore(_store(tmp_path))
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         TokenStore(),  # type: ignore[arg-type]
+        token_health=health,
     )
     runtime.client = RejectingClient()  # type: ignore[assignment]
 
     with pytest.raises(RuntimeUnavailable, match=message):
         await runtime.snapshot(access)
+
+    assert health.get("family").rejected_authentications == int(authenticated_boundary)
