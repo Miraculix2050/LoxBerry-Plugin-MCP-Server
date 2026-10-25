@@ -22,6 +22,42 @@ history activation. Authentication uses existing coordination and token-health
 confirmation, without automatic retries. Sessions and ephemeral tokens are
 closed/destroyed on completion, rejection, timeout and cancellation.
 
+### Non-admin evidence disposition (#535)
+
+Proposed disposition for [#535](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/535):
+**insufficient evidence; retain admin-only**, subject to review of this decision.
+No non-admin implementation or disclosure policy is introduced.
+
+The owner-authorized read-only inventory on 2026-10-26 used two existing distinct
+Restricted/Explorer identities on the reserved test target. Each loaded two fresh
+filtered structures in its own authenticated session. Caller UUID equality,
+Miniserver serial agreement and post-read OAuth admission were verified without
+retaining private identities or participant data in this summary. The restricted
+caller was strictly non-admin, with no visible EFM in either structure and no
+history scope. The other caller was strictly admin, with one visible EFM and
+history scope. History was enabled. No native aggregate request was made.
+
+| Required case, for both actual and day | Evidence and remaining gap |
+| --- | --- |
+| Non-admin EFM visible; all relevant participants accessible | Unavailable among the two inspected eligible identities. No participant-access proof or own-session actual/day specimen. |
+| Same non-admin EFM visible; a specific participant explicitly denied | Unavailable. No independently established participant relationship, explicit effective denial or intended aggregate-disclosure/filtering policy. |
+| EFM denied or absent from caller visibility | Fresh restricted-caller non-visibility observed twice. This establishes neither explicit denial nor physical absence. Native denial and actual/day behavior remain untested; day additionally lacks history scope. |
+| Revocation during an admitted read, including post-read release | Unavailable. Stable pre/post admission does not prove revocation handling on a real device. Existing synthetic regression tests do not replace this evidence. |
+
+Observed firmware was **17.2.10.21**. The inventory does not satisfy the issue's
+fixed **17.2.8.28** actual/day matrix or establish compatibility for either firmware.
+No concrete non-admin product use case was supplied beyond investigating support.
+Existing-session authorization permits this inventory; it does not establish a
+vendor disclosure policy or authorize creating users, changing rights or inducing
+revocation. The sampled runtime/client/structure source hashes, configuration hash,
+service PID and active state were unchanged, and the private runtime was closed
+before reservation release.
+
+Review may conclude this bounded investigation with these unavailable cases;
+keeping admin-only is an allowed outcome. Any later non-admin support still needs
+an explicit reviewed contract and separate implementation approval, preserving
+own-session authorization, pre/post checks, scopes, bounds and no fallback/cache.
+
 ## Delivery and limits
 
 Only `actual/day/week/month/year/lifetime` are accepted. Native values never enter
