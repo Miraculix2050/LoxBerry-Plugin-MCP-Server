@@ -1666,7 +1666,12 @@ class LoxoneRuntime:
             if self.token_health is not None:
                 self.token_health.record_successful_authentication(access.family_id)
             allowed = _structure_state_uuids(structure)
-            self.cache.begin_connection(access.family_id)
+            self.cache.begin_connection(
+                access.family_id,
+                identity_key=(access.miniserver_id, access.identity_id)
+                if access.miniserver_id and access.identity_id
+                else None,
+            )
             placeholder = asyncio.create_task(asyncio.sleep(0))
             now = time.monotonic()
             record = _ConnectionRecord(
