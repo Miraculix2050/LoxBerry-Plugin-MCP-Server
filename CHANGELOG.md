@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
+  stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
+  availability diagnostics and trace IDs, cap raw/room/semantic state envelopes
+  at 64 KiB, and mark disconnected metadata consistently stale.
+
 - Remove exact firmware-version admission pins from System Messages, notifications,
   native EFM views and exact EFM state bindings. Retain source identity, bounded
   metadata/payloads, rights, action allowlists and single-message Admin approval.

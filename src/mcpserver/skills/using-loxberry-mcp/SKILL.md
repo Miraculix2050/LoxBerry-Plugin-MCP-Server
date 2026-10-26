@@ -137,6 +137,10 @@ Load core rules first.
 ### Check connectivity and freshness
 
 Call `loxone_get_system_status` when connectivity or data freshness matters.
+Discovery lists and every description view mark disconnected snapshots `stale=true`.
+`loxone_get_states`, `loxone_get_room_snapshot` and `loxone_get_state_semantics`
+reject complete UTF-8 envelopes over 64 KiB with `response_too_large`; source values
+are never silently shortened. Select fewer states or a smaller page where possible.
 
 ### Orient within an installation
 
@@ -1499,6 +1503,11 @@ After a revision conflict, read again and reconfirm any changed proposal. For
 
 ## Operate a supported control
 
+Numeric control arguments must be JSON numbers, with integer-only kelvin and
+override duration. Booleans, numeric strings, non-finite numbers and values outside
+the advertised bounds are rejected before dispatch. Typed availability diagnostics
+retain their phase and trace; an uncertain write still forbids automatic retry.
+
 Only operate a control when the user has explicitly requested one unambiguous
 action on one identified target.
 
@@ -1675,7 +1684,11 @@ stopped MCP service cannot diagnose itself through MCP.
 tool response's `trace_id` with server-authored diagnostic events. Use its exact
 `trace_id`, component, severity, and optional RFC-3339 `start`/`end` filters;
 without them it returns the most recent `limit` events. Keep all filters unchanged
-when following `next_cursor`. It
+when following `next_cursor`. Continuations use the original sanitized snapshot
+for up to 120 seconds, bound to this app, identity, Miniserver and OAuth family.
+Every page rechecks current authorization and rate limits. After expiry, eviction
+or service restart, restart the read on `invalid_input`. Later events require a
+new read without a cursor. It
 does not expose raw logs, arbitrary files, journal output, credentials, or
 foreign services. If the service is stopped, use the local LoxBerry log viewer
 or an explicitly authorized host diagnosis instead.

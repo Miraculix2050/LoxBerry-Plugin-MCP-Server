@@ -150,7 +150,7 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except ControlOperationError as exc:
-            return tools._error(MessagePreviewEnvelope, exc.code, str(exc))
+            return tools._operation_error(MessagePreviewEnvelope, exc)
         except RuntimeUnavailable as exc:
             return tools._availability_error(MessagePreviewEnvelope, exc)
         except LoxoneConnectionError:
@@ -213,10 +213,9 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 trace_id=getattr(exc, "message_confirmation_trace_id", None),
             )
         except ControlOperationError as exc:
-            return tools._error(
+            return tools._operation_error(
                 MessageConfirmationEnvelope,
-                exc.code,
-                str(exc),
+                exc,
                 trace_id=getattr(exc, "message_confirmation_trace_id", None),
             )
         except RuntimeUnavailable as exc:
@@ -278,7 +277,7 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except ControlOperationError as exc:
-            return tools._error(NotificationsEnvelope, exc.code, str(exc))
+            return tools._operation_error(NotificationsEnvelope, exc)
         except MessageSourceError as exc:
             return tools._error(NotificationsEnvelope, "unsupported_source", str(exc))
         except LoxoneConnectionError:
@@ -387,6 +386,6 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except ControlOperationError as exc:
-            return tools._error(SystemMessagesEnvelope, exc.code, str(exc))
+            return tools._operation_error(SystemMessagesEnvelope, exc)
         except RuntimeUnavailable as exc:
             return tools._availability_error(SystemMessagesEnvelope, exc)

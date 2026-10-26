@@ -550,11 +550,13 @@ async def test_paging_aliases_and_selection_use_one_fresh_snapshot(monkeypatch):
     c = control(states=(*((f"state-{i}", f"uuid-{i}") for i in range(101)), ("alias", "uuid-0")))
     runtime = Runtime(c)
     t = tool(monkeypatch, runtime)
-    first = await t.fn("control")
-    assert first.ok and first.data.returned == 100 and first.data.total == 102
-    assert first.data.next_offset == 100 and first.data.truncated
+    first = await t.fn("control", limit=50)
+    assert first.ok and first.data.returned == 50 and first.data.total == 102
+    assert first.data.next_offset == 50 and first.data.truncated
     assert runtime.snapshots == [True] and runtime.slots == 1
     runtime.reads.clear()
+    middle = await t.fn("control", offset=50, limit=50)
+    assert middle.ok and middle.data.returned == 50 and middle.data.next_offset == 100
     second = await t.fn("control", offset=100)
     assert second.data.returned == 2 and second.data.next_offset is None
     assert not second.data.complete

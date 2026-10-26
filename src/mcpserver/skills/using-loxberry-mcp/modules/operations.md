@@ -20,6 +20,11 @@ After a revision conflict, read again and reconfirm any changed proposal. For
 
 ## Operate a supported control
 
+Numeric control arguments must be JSON numbers, with integer-only kelvin and
+override duration. Booleans, numeric strings, non-finite numbers and values outside
+the advertised bounds are rejected before dispatch. Typed availability diagnostics
+retain their phase and trace; an uncertain write still forbids automatic retry.
+
 Only operate a control when the user has explicitly requested one unambiguous
 action on one identified target.
 
