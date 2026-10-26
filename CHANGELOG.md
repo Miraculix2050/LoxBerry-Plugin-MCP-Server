@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Keep LoxAPP3 decoding, normalization and exact-response hashing off the event
+  loop while retaining worker admission through cancellation and preserving
+  independently received, caller-bound structure reuse (#593).
+
 - Preserve warm-read progress during fair connection-lock handoff and drain
   holder/waiter accounting on cancellation (#610).
 

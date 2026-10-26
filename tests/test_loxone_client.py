@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import threading
 from contextlib import suppress
 from types import SimpleNamespace
 from typing import Any, cast
@@ -203,9 +204,19 @@ async def test_structure_lookup_cannot_replace_invalid_response(
 async def test_cancelled_cold_structure_does_not_publish_pending_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import mcpserver.loxone.client as client_module
+
     loop = asyncio.get_running_loop()
-    pending = loop.create_future()
-    monkeypatch.setattr(loop, "run_in_executor", lambda *_args: pending)
+    started = asyncio.Event()
+    release = threading.Event()
+    decode = client_module._decode_structure_response
+
+    def blocked_decode(*args, **kwargs):
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(3), "worker was not released"
+        return decode(*args, **kwargs)
+
+    monkeypatch.setattr(client_module, "_decode_structure_response", blocked_decode)
     owner: dict[str, LoxoneStructure] = {}
     session = LoxoneWebSocketSession(
         cast(Any, SimpleNamespace(send=AsyncMock())),
@@ -225,12 +236,63 @@ async def test_cancelled_cold_structure_does_not_publish_pending_identity(
         AsyncMock(return_value=(MessageHeader(MessageType.TEXT, False, len(payload)), payload)),
     )
     task = asyncio.create_task(session.load_structure())
-    await asyncio.sleep(0)
-    assert not task.done()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert pending.cancelled() and not owner
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        task.cancel()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not task.done(), "admission must remain held until worker exit"
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done(), "repeated cancellation must also retain admission"
+    finally:
+        release.set()
+        if not task.done() and not task.cancelling():
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert not owner
+
+
+@pytest.mark.asyncio
+async def test_structure_cpu_work_is_offloaded_but_owner_lookup_stays_on_loop(monkeypatch):
+    import mcpserver.loxone.client as client_module
+
+    loop_thread = threading.get_ident()
+    for name in ("_structure_parse_identity", "normalize_structure"):
+        original = getattr(client_module, name)
+
+        def checked(*args, _original=original, **kwargs):
+            assert threading.get_ident() != loop_thread
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(client_module, name, checked)
+    owner = {}
+
+    def lookup(identity):
+        assert threading.get_ident() == loop_thread
+        return owner.get(identity)
+
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=lookup,
+            _has_received_structure=lambda _username: bool(owner),
+        ),
+    )
+    payload = '{"msInfo":{"serialNr":"synthetic"},"controls":{}}'
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.TEXT, False, len(payload)), payload)),
+    )
+    first = await session.load_structure()
+    owner[first.parse_identity] = first
+    assert await session.load_structure() is first
 
 
 @pytest.mark.asyncio

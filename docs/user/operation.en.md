@@ -8,6 +8,12 @@ The Plugin Manager discovers regular updates through the stable release source. 
 
 ## Sessions and approvals
 
+Large or changed Loxone structures are decoded in background workers so other
+requests can continue. Every read keeps its existing authorization checks and
+structure limits. This improves responsiveness rather than guaranteeing a shorter
+individual read. Cancellation waits for active decoding to finish before releasing
+its concurrency slot, and the cancelled result is discarded.
+
 If connection setup fails or is cancelled, the plugin closes the session it
 opened and releases cache entries without a retained owner. Values belonging to
 an existing disconnected session keep their stale status until normal cleanup.

@@ -8,6 +8,13 @@ Der Plugin Manager erkennt reguläre Updates über die stabile Releasequelle. Vo
 
 ## Sitzungen und Freigaben
 
+Große oder geänderte Loxone-Strukturen werden in Hintergrund-Workern dekodiert,
+damit andere Anfragen weiterlaufen können. Jeder Lesezugriff behält seine
+Autorisierungsprüfungen und Strukturgrenzen. Das verbessert die Reaktionsfähigkeit,
+garantiert aber keinen kürzeren einzelnen Lesezugriff. Bei einem Abbruch wird der
+Parallelitätsplatz erst nach Ende der laufenden Dekodierung freigegeben; das
+abgebrochene Ergebnis wird verworfen.
+
 Scheitert ein Verbindungsaufbau oder wird er abgebrochen, schließt das Plugin die
 dafür geöffnete Sitzung und gibt Cache-Einträge ohne verbliebenen Besitzer frei.
 Werte einer bestehenden getrennten Sitzung behalten bis zur regulären Bereinigung
