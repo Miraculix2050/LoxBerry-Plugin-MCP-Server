@@ -492,3 +492,8 @@ policy or command dependency. The MCP adapter obtains fresh caller visibility
 before accessing the cached state and adds observation/source metadata. Read-only
 input/name/output bounds do not alter the released operation-ID contract. No new
 service, dispatcher or physical/scene interpretation is introduced.
+
+Admission tracking counts both holders and queued connection waiters. Healthy warm
+reads bypass the connection queue even during the fair-lock release handoff; cold
+capacity remains serialized. Cancellation removes the counter in a non-awaiting
+finally block. Ordinary uncontended reads retain normal pruning.

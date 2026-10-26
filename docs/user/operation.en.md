@@ -166,3 +166,5 @@ Numeric control arguments require JSON numbers; kelvin and override duration req
 `loxone_get_states`, `loxone_get_room_snapshot` and `loxone_get_state_semantics` reject complete UTF-8 envelopes over 64 KiB with `response_too_large`; values are never silently shortened. Select fewer states or a smaller page where possible. Discovery lists and all control-description views mark disconnected snapshots `stale=true`.
 
 `loxberry_list_service_events` continuations use the initial sanitized snapshot for up to 120 seconds, bound to the same app, identity, Miniserver, OAuth family and filters. Every page checks current authorization and rate limits. New events require a new read without a cursor. Expiry, bounded-cache eviction or a restart returns `invalid_input`; restart the read.
+
+The same warm-read behavior also applies during the brief handoff between queued connection requests. New connections remain serialized and capacity limits remain enforced.

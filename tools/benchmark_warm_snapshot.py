@@ -48,7 +48,9 @@ def access(family: str) -> StoredAccessToken:
     )
 
 
-async def sample(module: types.ModuleType, delay: float, contended: bool) -> dict[str, float]:
+async def sample(
+    module: types.ModuleType, delay: float, contended: bool, handoff: bool = False
+) -> dict[str, float]:
     owner = module.LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         SimpleNamespace(),
@@ -74,9 +76,15 @@ async def sample(module: types.ModuleType, delay: float, contended: bool) -> dic
 
     owner._records["warm"] = record()
     owner._connect = connect
+    if handoff:
+        await owner._admission_lock.acquire()
     cold = asyncio.create_task(owner.snapshot(access("cold"))) if contended else None
     try:
-        if cold is not None:
+        if handoff:
+            await asyncio.sleep(0)
+            owner._admission_lock.release()
+            assert not owner._admission_lock.locked()
+        elif cold is not None:
             await entered.wait()
         started = time.perf_counter()
         result = await owner.snapshot(access("warm"))
@@ -95,24 +103,32 @@ async def sample(module: types.ModuleType, delay: float, contended: bool) -> dic
 async def measure(args: argparse.Namespace) -> dict[str, object]:
     before = baseline(args.baseline_ref)
     rows = []
-    for contended in (False, True):
+    for contended, handoff in ((False, False), (True, False), (True, True)):
         for index in range(args.samples):
             pair = (("before", before), ("after", runtime))
             for label, module in pair if index % 2 == 0 else reversed(pair):
                 rows.append(
                     {
                         "contended": contended,
+                        "handoff": handoff,
                         "revision": label,
-                        **await sample(module, args.delay_ms / 1000, contended),
+                        **await sample(module, args.delay_ms / 1000, contended, handoff),
                     }
                 )
     summaries = []
-    for contended in (False, True):
+    for contended, handoff in ((False, False), (True, False), (True, True)):
         for label in ("before", "after"):
-            selected = [r for r in rows if r["contended"] == contended and r["revision"] == label]
+            selected = [
+                r
+                for r in rows
+                if r["contended"] == contended
+                and r["handoff"] == handoff
+                and r["revision"] == label
+            ]
             summaries.append(
                 {
                     "contended": contended,
+                    "handoff": handoff,
                     "revision": label,
                     "median_warm_wall_ms": statistics.median(r["warm_wall_ms"] for r in selected),
                     "warm_returns_before_cold_finishes": sum(

@@ -665,3 +665,64 @@ async def test_pump_task_allocation_failure_keeps_session_owned_by_setup(monkeyp
         assert not owner.cache._values and not owner.cache._available
     finally:
         await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_warm_snapshot_does_not_join_fair_lock_handoff_queue():
+    owner = runtime(max_active_sessions=2, structure_refresh_seconds=10**12)
+    await install(owner)
+    await owner.snapshot(access())
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def connect(candidate):
+        entered.set()
+        await release.wait()
+        return await install(owner, candidate.family_id)
+
+    owner._connect = AsyncMock(side_effect=connect)
+    await owner._admission_lock.acquire()
+    cold = asyncio.create_task(owner.snapshot(access("cold")))
+    try:
+        await asyncio.sleep(0)
+        assert owner._admission_users == 1
+        owner._admission_lock.release()
+        assert not owner._admission_lock.locked()
+        # Await directly in this task: wait_for would schedule a new task and
+        # mask the lock handoff interleaving that caused the original defect.
+        async with asyncio.timeout(1):
+            result = await owner.snapshot(access())
+        assert result.connected and not cold.done() and not entered.is_set()
+    finally:
+        cold.cancel()
+        release.set()
+        await asyncio.gather(cold, return_exceptions=True)
+        assert owner._admission_users == 0
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queued", [False, True])
+async def test_connection_admission_counter_drains_on_cancellation(queued):
+    owner = runtime()
+    entered = asyncio.Event()
+    if queued:
+        await owner._admission_lock.acquire()
+
+    async def hold():
+        async with owner._connection_admission():
+            entered.set()
+            await asyncio.Event().wait()
+
+    task = asyncio.create_task(hold())
+    try:
+        await asyncio.sleep(0)
+        assert owner._admission_users == 1
+        assert entered.is_set() is (not queued)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert owner._admission_users == 0
+    finally:
+        if owner._admission_lock.locked():
+            owner._admission_lock.release()
+        await owner.close()

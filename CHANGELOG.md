@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve warm-read progress during fair connection-lock handoff and drain
+  holder/waiter accounting on cancellation (#610).
+
 - Close sessions on every unpublished connection-setup failure, hand teardown
   ownership to the running maintainer, and remove unowned failed-family cache
   state while preserving owned disconnected-state freshness (#613).

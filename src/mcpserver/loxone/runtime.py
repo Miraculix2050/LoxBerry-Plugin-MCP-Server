@@ -408,6 +408,7 @@ class LoxoneRuntime:
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
         self._admission_lock = asyncio.Lock()
+        self._admission_users = 0
         self._closed = False
         self._locks = _FamilyLocks()
         self._rate: defaultdict[str, deque[float]] = defaultdict(deque)
@@ -1535,6 +1536,17 @@ class LoxoneRuntime:
             yield snapshot
             await self._require_access(access)
 
+    @asynccontextmanager
+    async def _connection_admission(self) -> AsyncIterator[None]:
+        # Count holders AND queued waiters. Lock.locked() is briefly false after
+        # release while asyncio's fair lock still has a selected waiter.
+        self._admission_users = getattr(self, "_admission_users", 0) + 1
+        try:
+            async with self._admission_lock:
+                yield
+        finally:
+            self._admission_users -= 1
+
     async def _snapshot_admitted(
         self, access: StoredAccessToken, *, fresh_visibility: bool
     ) -> RuntimeSnapshot:
@@ -1543,7 +1555,7 @@ class LoxoneRuntime:
         record = self._records.get(subject)
         connected_now = False
         if (
-            self._admission_lock.locked()
+            (self._admission_lock.locked() or getattr(self, "_admission_users", 0) > 0)
             and record is not None
             and record.connected
             and not record.task.done()
@@ -1557,7 +1569,7 @@ class LoxoneRuntime:
         else:
             # New capacity remains serialized before taking family locks.
             # Disconnect never takes admission, preserving pruning lock order.
-            async with self._admission_lock:
+            async with self._connection_admission():
                 await self._require_access(access)
                 if self._closed:
                     raise RuntimeUnavailable("Loxone runtime is closed")
