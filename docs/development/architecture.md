@@ -28,7 +28,9 @@ MCP client -- HTTPS/OAuth --> LoxBerry Apache -- loopback --> mcpserver service
 | Installation profile | Bounded, versioned user declarations linked to exact currently visible sources |
 
 The transport uses a server-local output-validator cache for the pinned MCP SDK.
-Each unchanged tool output schema is checked once against its meta-schema; every
+Each tool output schema with unchanged JSON serialization is checked once against
+its meta-schema; order-only object changes may trigger another safe check. Keys
+retain JSON boolean/number distinctions without per-call object sorting. Every
 structured response still undergoes complete instance validation. Independent
 schema snapshots detect replacement and in-place edits, and tool removal clears
 the corresponding entry. In-flight calls retain the validator for their original

@@ -21,6 +21,9 @@ extracted from the matching version heading.
   instead of echoing invalid source values or property names; retain full
   response validation and unrelated SDK behavior (#608).
 
+- Avoid repeated object sorting in output-schema cache keys while preserving
+  JSON type distinctions, schema mutation detection and full validation (#611).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes
