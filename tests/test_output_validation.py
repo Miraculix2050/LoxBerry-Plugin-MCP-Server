@@ -204,7 +204,74 @@ async def test_wire_results_and_tool_definitions_match_pinned_sdk() -> None:
     for items in ([1, 2], [1, 1], [0], "invalid-input"):
         expected = await _call(original, items)
         actual = await _call(optimized, items)
-        assert actual.model_dump() == expected.model_dump()
+        if items in ([1, 1], [0]):
+            assert expected.isError and actual.isError
+            assert actual.content[0].text == (
+                "Output validation error: response does not match the declared output schema"
+            )
+        else:
+            assert actual.model_dump() == expected.model_dump()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dict", "tuple", "prebuilt"])
+@pytest.mark.parametrize("constraint", ["type", "const", "enum", "additionalProperties"])
+async def test_invalid_output_diagnostics_are_fixed_bounded_and_source_free(kind, constraint):
+    marker = "synthetic-private-\u00e4\U0001f512" * 6000
+    schema = {
+        "type": "object",
+        "properties": {"items": {"type": "array", "items": {"type": "integer"}}},
+        "required": ["items"],
+    }
+    structured = {"items": [marker]}
+    if constraint == "const":
+        schema["properties"]["items"] = {"const": [1]}
+    elif constraint == "enum":
+        schema["properties"]["items"] = {"enum": [[1]]}
+    elif constraint == "additionalProperties":
+        schema["additionalProperties"] = False
+        structured = {"items": [1], marker: "synthetic-private-value"}
+
+    class CustomServer(OutputValidatedFastMCP):
+        async def call_tool(self, name, arguments):
+            content = [TextContent(type="text", text=marker)]
+            if kind == "dict":
+                return structured
+            if kind == "tuple":
+                return content, structured
+            return CallToolResult(content=content, structuredContent=structured)
+
+    server = CustomServer("test")
+    _register(server, schema)
+    result = await _call(server, [1])
+    assert result.isError
+    assert result.structuredContent is None
+    assert len(result.content) == 1
+    assert result.content[0].text == (
+        "Output validation error: response does not match the declared output schema"
+    )
+    wire = result.model_dump_json()
+    assert "synthetic-private" not in wire
+    assert len(wire.encode("utf-8")) < 512
+
+
+@pytest.mark.asyncio
+async def test_registered_invalid_response_cannot_echo_its_source_value():
+    marker = "synthetic-private-sentinel-" * 6000
+    server = OutputValidatedFastMCP("test")
+
+    def answer() -> dict[str, Any]:
+        return {"items": [marker]}
+
+    server.add_tool(answer)
+    server._tool_manager.get_tool("answer").output_schema = deepcopy(SCHEMA)
+    handler = server._mcp_server.request_handlers[CallToolRequest]
+    result = (
+        await handler(CallToolRequest(params=CallToolRequestParams(name="answer", arguments={})))
+    ).root
+    assert result.isError and result.structuredContent is None
+    assert "synthetic-private" not in result.model_dump_json()
+    assert len(result.model_dump_json().encode("utf-8")) < 512
 
 
 @pytest.mark.asyncio

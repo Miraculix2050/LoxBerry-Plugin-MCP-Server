@@ -77,5 +77,8 @@ class OutputValidatedFastMCP(FastMCP):
             # rather than skipping response validation after a cache hit.
             error = best_match(validator.iter_errors(response.structuredContent))
             if error is not None:
-                raise ValueError(f"Output validation error: {error.message}")
+                # jsonschema messages can contain entire invalid source values.
+                raise ValueError(
+                    "Output validation error: response does not match the declared output schema"
+                ) from None
         return response
