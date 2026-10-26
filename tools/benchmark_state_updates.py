@@ -56,12 +56,25 @@ def main() -> None:
                     elapsed = (time.perf_counter() - start) * 1000
                     assert caches[label].get("synthetic", "0").value == 2.0
                     assert caches[label].get("synthetic", "denied").value is None
-                    rows.append({"states": count, "mode": mode, "revision": label, "ms": elapsed})
+                    rows.append(
+                        {
+                            "states": count,
+                            "retained_states": len(caches[label]._values["synthetic"]),
+                            "mode": mode,
+                            "revision": label,
+                            "ms": elapsed,
+                        }
+                    )
     summary = [
         {
             "states": count,
             "mode": mode,
             "revision": label,
+            "retained_states": next(
+                r["retained_states"]
+                for r in rows
+                if r["states"] == count and r["mode"] == mode and r["revision"] == label
+            ),
             "median_ms": statistics.median(
                 r["ms"]
                 for r in rows

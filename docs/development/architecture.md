@@ -516,3 +516,15 @@ without promoting reads. Removed states become unknown while connected and
 unavailable while disconnected; other retained values keep their freshness.
 Permission pruning, count eviction, replacement and lifecycle cleanup share one
 accounting path; cached membership never authorizes a new event.
+
+
+State-cache byte capacity is shared by stable `(Miniserver ID, Loxone identity ID)`
+from the freshly authorized connection setup, never by display names. Values and
+permissions remain family-isolated. All families of one identity share the same
+16 MiB upper bound, and each registered identity receives an equal share of the
+64 MiB global budget (whichever is smaller). A new actual identity can reduce
+per-identity capacity, but additional OAuth families of the same identity cannot
+reduce another identity's share. Eviction stays within each identity's ingestion
+order; no global oldest-victim eviction remains. Clearing its last family releases
+an identity's share. Missing identity evidence remains family-isolated rather than
+being inferred. The fixed entry estimate includes the extra accounting indexes.

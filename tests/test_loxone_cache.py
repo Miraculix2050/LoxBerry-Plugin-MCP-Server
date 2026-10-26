@@ -129,6 +129,11 @@ def test_membership_snapshot_is_reset_on_connection_lifecycle_and_isolated_by_su
 def assert_accounted(cache):
     assert cache._total_bytes == sum(cache._sizes.values())
     assert cache._total_bytes == sum(cache._subject_bytes.values())
+    assert cache._total_bytes == sum(cache._identity_bytes.values())
+    assert all(size <= cache._identity_quota() for size in cache._identity_bytes.values())
+    assert set(cache._sizes) == {
+        key for values in cache._identity_entries.values() for key in values
+    }
     assert set(cache._sizes) == {
         (subject, uuid) for subject, values in cache._values.items() for uuid in values
     }
@@ -137,7 +142,7 @@ def assert_accounted(cache):
 
 
 def test_cache_byte_budget_evicts_oldest_ingested_without_read_promotion():
-    cache = UserStateCache(max_bytes_per_user=1800)
+    cache = UserStateCache(max_bytes_per_user=2400)
     allowed = frozenset({"one", "two", "three"})
     for uuid in ("one", "two"):
         cache.apply("a", [StateEvent(uuid, "x" * 200)], allowed_uuids=allowed)
@@ -150,17 +155,54 @@ def test_cache_byte_budget_evicts_oldest_ingested_without_read_promotion():
     assert_accounted(cache)
 
 
-def test_cache_global_budget_includes_other_families_and_stale_values():
-    cache = UserStateCache(max_bytes_per_user=4000, max_total_bytes=1800)
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_cache_global_budget_protects_distinct_identities_from_family_multiplication(disconnected):
+    cache = UserStateCache(max_bytes_per_user=2400, max_total_bytes=6000)
     allowed = frozenset({"state"})
-    cache.apply("a", [StateEvent("state", "x" * 200)], allowed_uuids=allowed)
-    cache.disconnect("a")
-    cache.apply("b", [StateEvent("state", "y" * 200)], allowed_uuids=allowed)
-    cache.apply("c", [StateEvent("state", "z" * 200)], allowed_uuids=allowed)
-    assert cache.get("a", "state").freshness is Freshness.UNAVAILABLE
-    assert cache.get("b", "state").value == "y" * 200
-    assert cache.get("c", "state").value == "z" * 200
-    assert cache._byte_evictions == 1
+    cache.begin_connection("victim", identity_key=("server", "reader"))
+    cache.apply("victim", [StateEvent("state", "v" * 200)], allowed_uuids=allowed)
+    if disconnected:
+        cache.disconnect("victim")
+    for family in ("a", "b", "c", "d", "e"):
+        cache.begin_connection(family, identity_key=("server", "other-reader"))
+        cache.apply(family, [StateEvent("state", "x" * 200)], allowed_uuids=allowed)
+    assert len(cache._identity_subjects) == 2
+    assert cache.get("victim", "state").freshness is (
+        Freshness.STALE if disconnected else Freshness.CURRENT
+    )
+    assert cache.get("victim", "state").value == "v" * 200
+    assert sum(len(cache._values[family]) for family in ("a", "b", "c", "d", "e")) == 2
+    assert_accounted(cache)
+
+
+def test_actual_new_identities_receive_equal_capacity_and_cleanup_releases_it():
+    cache = UserStateCache(max_bytes_per_user=4800, max_total_bytes=4800)
+    allowed = frozenset({"one", "two", "three"})
+    for family in ("a", "b", "c"):
+        cache.begin_connection(family, identity_key=("server", family))
+        cache.apply(family, [StateEvent(uuid, 1.0) for uuid in allowed], allowed_uuids=allowed)
+    assert cache._identity_quota() == 1600
+    assert all(len(values) == 1 for values in cache._values.values())
+    assert all(value <= 1600 for value in cache._identity_bytes.values())
+    assert_accounted(cache)
+    cache.clear("b")
+    cache.clear("c")
+    assert cache._identity_quota() == 4800
+    cache.apply("a", [StateEvent(uuid, 2.0) for uuid in allowed], allowed_uuids=allowed)
+    assert len(cache._values["a"]) == 3
+    assert_accounted(cache)
+
+
+def test_identity_binding_uses_both_ids_and_never_shares_values_between_families():
+    cache = UserStateCache()
+    allowed = frozenset({"state"})
+    for family, key in [("a", ("s1", "reader")), ("b", ("s1", "reader")), ("c", ("s2", "reader"))]:
+        cache.begin_connection(family, identity_key=key)
+    cache.apply("a", [StateEvent("state", 1.0)], allowed_uuids=allowed)
+    assert len(cache._identity_subjects) == 2
+    assert cache.get("b", "state").freshness is Freshness.UNKNOWN
+    cache.begin_connection("a", identity_key=("s1", "different-reader"))
+    assert cache.get("a", "state").freshness is Freshness.UNKNOWN
     assert_accounted(cache)
 
 
@@ -197,6 +239,8 @@ def test_budget_accounting_survives_replacement_permission_pruning_and_lifecycle
     cache.clear_all()
     assert cache._total_bytes == 0 and not cache._sizes and not cache._subject_bytes
     assert not cache._values and not cache._available and not cache._allowed_snapshots
+    assert not cache._subject_identity and not cache._identity_subjects
+    assert not cache._identity_entries and not cache._identity_bytes
 
 
 def test_structured_state_accounting_preserves_supported_decoder_trees():

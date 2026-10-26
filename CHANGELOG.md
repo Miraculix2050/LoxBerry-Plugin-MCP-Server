@@ -11,6 +11,8 @@ extracted from the matching version heading.
 - Bound retained state-cache byte estimates per family and globally; evict oldest
   observations and discard oversized replacements without stale-value fallback,
   retaining authorization, freshness and shared cleanup accounting (#612).
+  Partition shared capacity by verified Miniserver/Loxone identity so additional
+  OAuth families cannot evict another identity's protected observations.
 
 - Avoid re-scanning the state cache for unchanged immutable allowed-state
   snapshots while retaining incoming-event checks and immediate pruning on

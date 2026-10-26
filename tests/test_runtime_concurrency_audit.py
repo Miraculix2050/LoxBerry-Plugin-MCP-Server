@@ -75,7 +75,7 @@ class Stream:
 async def install(owner: LoxoneRuntime, family: str = "one") -> _ConnectionRecord:
     stream = Stream()
     record = _ConnectionRecord(structure(), frozenset({"state"}), stream, None)
-    owner.cache.begin_connection(family)
+    owner.cache.begin_connection(family, identity_key=("miniserver", "identity"))
     record.task = asyncio.create_task(
         owner._maintain(access(family), owner.token_store.get(), record)
     )
@@ -726,3 +726,30 @@ async def test_connection_admission_counter_drains_on_cancellation(queued):
         if owner._admission_lock.locked():
             owner._admission_lock.release()
         await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_connection_binds_cache_capacity_to_stable_ids_without_sharing_values():
+    owner = runtime(max_active_sessions=2, structure_refresh_seconds=10**12)
+    streams = []
+
+    async def open_session(*_args, **_kwargs):
+        stream = Stream()
+        stream.load_structure = AsyncMock(return_value=structure())
+        streams.append(stream)
+        return stream
+
+    owner._open_session = AsyncMock(side_effect=open_session)
+    try:
+        await owner.snapshot(access("a"))
+        await owner.snapshot(access("b"))
+        assert owner.cache._subject_identity == {
+            "a": ("identity", "miniserver", "identity"),
+            "b": ("identity", "miniserver", "identity"),
+        }
+        assert len(owner.cache._identity_subjects) == 1
+        owner.cache.apply("a", [StateEvent("state", 1.0)], allowed_uuids={"state"})
+        assert owner.cache.get("b", "state").freshness is Freshness.UNKNOWN
+    finally:
+        await owner.close()
+    assert not owner.cache._identity_subjects and owner.cache._total_bytes == 0
