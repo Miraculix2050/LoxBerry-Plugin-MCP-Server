@@ -42,6 +42,10 @@ extracted from the matching version heading.
   projections, preserving exact runtime-name, metadata and pagination semantics
   and independent project authorization (#599).
 
+- Bound statistics-cache metadata to 1,024 entries, including empty results, and
+  use incremental point/byte accounting with expiry order separate from LRU;
+  preserve caller/source keys, empty hits and authorization checks (#602).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes

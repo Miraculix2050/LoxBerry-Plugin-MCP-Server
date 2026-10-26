@@ -417,3 +417,59 @@ def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:
     assert cache.get("first") is None
     assert cache.get("second") == (point,)
     assert cache.get("third") == (point,)
+
+
+def test_statistics_cache_bounds_empty_entries_and_preserves_lru_empty_hits():
+    cache = StatisticsCache(maximum_entries=2)
+    cache.put("one", ())
+    cache.put("two", ())
+    assert cache.get("one") == ()
+    cache.put("three", ())
+    assert cache.get("two") is None
+    assert cache.get("one") == cache.get("three") == ()
+    assert len(cache._expiry) == len(cache._memory) == 2
+    assert cache._point_count == 0 and cache._accounted_bytes > 0
+
+
+def test_statistics_cache_expiry_is_independent_of_lru_and_replacement():
+    now = [0.0]
+    cache = StatisticsCache(ttl_seconds=5, clock=lambda: now[0])
+    point = (StatisticPoint(100, 1.0),)
+    cache.put("first", point)
+    now[0] = 1.0
+    cache.put("second", point)
+    assert cache.get("first") == point  # Moves only LRU order.
+    cache.put("second", ())  # Replaces counts and expiry once.
+    assert cache._point_count == 1
+    now[0] = 5.0
+    cache.put("next", ())
+    assert cache.get("first") is None and cache.get("second") == ()
+    assert cache._point_count == 0
+    assert len(cache._expiry) == len(cache._memory) == 2
+    assert cache.clear() == 2
+    assert not cache._expiry and cache._point_count == cache._accounted_bytes == 0
+
+
+def test_statistics_cache_repeated_replacement_keeps_expiry_metadata_bounded():
+    cache = StatisticsCache(maximum_entries=2)
+    for _ in range(1000):
+        cache.put("same", ())
+    assert len(cache._expiry) == len(cache._memory) == 1
+    assert cache.clear() == 1
+    assert cache._accounted_bytes == 0
+
+
+def test_statistics_cache_charges_metadata_and_numeric_object_overhead():
+    cache = StatisticsCache(maximum_bytes=16 * 1024 * 1024)
+    cache.put("empty", ())
+    empty_bytes = cache._accounted_bytes
+    cache.put("point", (StatisticPoint(100, 1.0),))
+    assert cache._accounted_bytes > empty_bytes + 12
+    cache.put("oversized" * (3 * 1024 * 1024), ())
+    assert len(cache._memory) == 2  # Oversized keys cannot defeat byte accounting.
+    assert cache.get("point") == (StatisticPoint(100, 1.0),)
+
+
+def test_statistics_cache_rejects_nonpositive_entry_bound():
+    with pytest.raises(ValueError, match="entry limit"):
+        StatisticsCache(maximum_entries=0)
