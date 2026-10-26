@@ -20,6 +20,7 @@ from mcpserver.loxone.project.mapping import ProjectView, RuntimeMapping
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-ref", required=True)
+    parser.add_argument("--topology", choices=("chain", "fan_in", "fan_out"), default="chain")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     source = subprocess.run(
@@ -37,7 +38,14 @@ def main() -> None:
         nodes = tuple(
             GraphNode(str(i), "p", i, "block", str(i), "Switch", ()) for i in range(count)
         )
-        edges = tuple(GraphEdge(str(i), str(i + 1), "signal") for i in range(count - 1))
+        edges = tuple(
+            GraphEdge(
+                "0" if args.topology == "fan_out" else str(i),
+                "0" if args.topology == "fan_in" else str(i + 1),
+                "signal",
+            )
+            for i in range(count - 1)
+        )
         graph = ProjectGraph(nodes, edges, ())
         view = ProjectView(
             ProjectSnapshot("synthetic", 15, (), graph), RuntimeMapping("synthetic", "v1", ())
@@ -64,7 +72,7 @@ def main() -> None:
                     "index_accounted_bytes": queries[label].graph_index.container_bytes,
                 }
             )
-        node = nodes[count // 2]
+        node = nodes[count // 2] if args.topology == "chain" else nodes[0]
         for operation in ("describe", "trace_downstream", "trace_upstream"):
 
             def run(label, queries=queries, operation=operation, node=node):
@@ -101,10 +109,11 @@ def main() -> None:
         for label in ("before", "after")
     ]
     report = {
-        "evidence": "synthetic_chain_exact_equivalence; index_accounting_not_RSS",
+        "evidence": f"synthetic_{args.topology}_exact_equivalence; index_accounting_not_RSS",
         "python": platform.python_version(),
         "platform": platform.platform(),
         "baseline_ref": args.baseline_ref,
+        "topology": args.topology,
         "summary": summary,
         "samples": rows,
         "index_memory": memory,

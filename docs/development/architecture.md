@@ -118,6 +118,13 @@ budget. Cold index construction costs more time and RAM; oversized indices remai
 uncached rather than bypassing the budget. No new persistent or unbounded cache,
 download shortcut or authorization change is introduced.
 
+Index construction retains singleton adjacency tuples directly and allocates
+temporary lists only at junctions. Tuple storage is charged conservatively from
+known group/link counts; the largest possible position bounds every retained
+integer. Shared singleton tuples may be charged twice, preserving the existing
+budget without walking each stored position for accounting. Indices remain eager,
+immutable and independent of caller authorization; no lazy cache state is added.
+
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.

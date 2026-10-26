@@ -138,6 +138,73 @@ def test_indexed_description_preserves_duplicate_edges_and_limit_flag():
     assert "relationships" in limited["truncated_fields"]
 
 
+def test_adjacency_accounting_does_not_size_each_position(monkeypatch):
+    import mcpserver.loxone.project.query as module
+    from mcpserver.loxone.project.graph import ProjectGraph
+
+    original = module.getsizeof
+    integer_sizes = []
+
+    def counted(value):
+        if isinstance(value, int):
+            integer_sizes.append(value)
+        return original(value)
+
+    graph = ProjectGraph(
+        (), tuple(GraphEdge(str(i), str(i + 1), "signal") for i in range(2000)), ()
+    )
+    monkeypatch.setattr(module, "getsizeof", counted)
+    index = module.ProjectQueryIndex(graph)
+    assert len(integer_sizes) == 1
+    assert index.incoming["2000"] == (1999,)
+    assert index.container_bytes > 2000 * original(0)
+
+
+@pytest.mark.parametrize("shape", ["chain", "fan_in", "fan_out", "mixed"])
+def test_compact_adjacency_preserves_positions_and_conservative_accounting(shape):
+    from sys import getsizeof
+
+    from mcpserver.loxone.project.graph import ProjectGraph, SemanticEdge
+    from mcpserver.loxone.project.query import ProjectQueryIndex
+
+    edges = tuple(
+        GraphEdge(
+            "0" if shape == "fan_out" else str(i),
+            "0" if shape == "fan_in" else str(i + 1),
+            "contains" if shape == "mixed" and i % 3 == 0 else "signal",
+        )
+        for i in range(30)
+    )
+    # Equal edges remain distinct positions; self-loops occur in both directions.
+    edges += (edges[-1], GraphEdge("0", "0", "api_connection"))
+    semantics = (SemanticEdge("0", "1", "synthetic", "metadata", None),) * 2
+    graph = ProjectGraph((), edges, (), semantics)
+    index = ProjectQueryIndex(graph)
+    indexed = [(i, e) for i, e in enumerate(edges) if e.kind != "contains"]
+    indexed += list(enumerate(semantics, len(edges)))
+    for key in {e.source for _, e in indexed} | {e.target for _, e in indexed}:
+        assert index.incoming.get(key, ()) == tuple(i for i, e in indexed if e.target == key)
+        assert index.outgoing.get(key, ()) == tuple(i for i, e in indexed if e.source == key)
+    groups = (
+        index.nodes,
+        index.parents,
+        index.containment_parents,
+        index.children,
+        index.knx_addresses,
+        index.knx_by_address,
+        index.incoming,
+        index.outgoing,
+    )
+    # Independently enumerate retained owned containers, deduplicating shared
+    # singleton tuples. The budget estimate may overcharge but must never shrink
+    # below their real sizes. Graph strings/edges remain borrowed.
+    tuples = {id(v): getsizeof(v) for g in groups for v in g.values() if isinstance(v, tuple)}
+    positions = {i for offsets in index.outgoing.values() for i in offsets}
+    owned = getsizeof(index) + sum(getsizeof(g) + getsizeof(g.copy()) for g in groups)
+    owned += sum(tuples.values()) + sum(getsizeof(i) for i in positions)
+    assert index.container_bytes >= owned
+
+
 def test_find_projects_logical_knx_objects_with_source_provenance():
     parsed = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
     graph = build_graph((("one", parsed), ("two", parsed)))

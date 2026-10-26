@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reduce cold project-index construction work with singleton adjacency groups and
+  conservative count-based memory accounting, retaining ordering, authorization
+  and the existing shared cache budget (#620).
+
 - Keep LoxAPP3 decoding, normalization and exact-response hashing off the event
   loop while retaining worker admission through cancellation and preserving
   independently received, caller-bound structure reuse (#593).

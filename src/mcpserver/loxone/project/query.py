@@ -57,6 +57,31 @@ def _freeze_index_groups[T](
     return MappingProxyType(frozen)
 
 
+def _index_relationship(
+    incoming: dict[str, list[int] | tuple[int, ...]],
+    outgoing: dict[str, list[int] | tuple[int, ...]],
+    source: str,
+    target: str,
+    position: int,
+) -> None:
+    """Keep singleton adjacency immutable; allocate lists only at junctions."""
+    offset = (position,)
+    prior = incoming.get(target)
+    if prior is None:
+        incoming[target] = offset
+    elif isinstance(prior, tuple):
+        incoming[target] = [prior[0], position]
+    else:
+        prior.append(position)
+    prior = outgoing.get(source)
+    if prior is None:
+        outgoing[source] = offset
+    elif isinstance(prior, tuple):
+        outgoing[source] = [prior[0], position]
+    else:
+        prior.append(position)
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectQueryIndex:
     """Read-only topology only; owned by bounded queries, never authorization."""
@@ -76,13 +101,12 @@ class ProjectQueryIndex:
         parents: dict[str, str] = {}
         containment: dict[str, list[str] | tuple[str, ...]] = {}
         children: dict[str, list[str]] = defaultdict(list)
-        incoming: dict[str, list[int]] = defaultdict(list)
-        outgoing: dict[str, list[int]] = defaultdict(list)
+        incoming: dict[str, list[int] | tuple[int, ...]] = {}
+        outgoing: dict[str, list[int] | tuple[int, ...]] = {}
         containment_links = 0
         for position, edge in enumerate(self.graph.edges):
             if edge.kind != "contains":
-                incoming[edge.target].append(position)
-                outgoing[edge.source].append(position)
+                _index_relationship(incoming, outgoing, edge.source, edge.target, position)
             if edge.kind == "contains":
                 containment_links += 1
                 parents[edge.target] = edge.source
@@ -96,8 +120,9 @@ class ProjectQueryIndex:
                     prior.append(edge.source)
                 children[edge.source].append(edge.target)
         for position, semantic_edge in enumerate(self.graph.semantic_edges, len(self.graph.edges)):
-            incoming[semantic_edge.target].append(position)
-            outgoing[semantic_edge.source].append(position)
+            _index_relationship(
+                incoming, outgoing, semantic_edge.source, semantic_edge.target, position
+            )
         nodes = {node.key: node for node in self.graph.nodes}
         knx_addresses = {}
         knx_groups: dict[int, list[str]] = defaultdict(list)
@@ -121,6 +146,15 @@ class ProjectQueryIndex:
         object.__setattr__(self, "knx_addresses", MappingProxyType(knx_addresses))
         knx_by_address = {number: tuple(keys) for number, keys in knx_groups.items()}
         object.__setattr__(self, "knx_by_address", MappingProxyType(knx_by_address))
+        indexed_links = len(self.graph.edges) - containment_links + len(self.graph.semantic_edges)
+        tuple_base = getsizeof(())
+        tuple_slot = getsizeof((None,)) - tuple_base
+        # Every position belongs to one incoming and one outgoing tuple. The
+        # largest possible position conservatively bounds every owned integer,
+        # including graphs whose containment gaps cross an integer-size boundary.
+        position_size = getsizeof(
+            max(0, len(self.graph.edges) + len(self.graph.semantic_edges) - 1)
+        )
         # Keys/nodes/graph strings are borrowed; count owned containers once.
         object.__setattr__(
             self,
@@ -137,10 +171,10 @@ class ProjectQueryIndex:
                 + children_size
                 + incoming_size
                 + outgoing_size
-                + sum(getsizeof(offsets) for offsets in self.incoming.values())
-                + sum(getsizeof(offsets) for offsets in self.outgoing.values())
-                # Each retained position is referenced by both directional groups.
-                + sum(getsizeof(i) for offsets in self.outgoing.values() for i in offsets)
+                + tuple_base * (len(incoming) + len(outgoing))
+                + tuple_slot * indexed_links * 2
+                # Position objects are shared by both directional groups.
+                + position_size * indexed_links
                 + getsizeof(()) * (len(containment_index) + len(children_index))
                 + (getsizeof((None,)) - getsizeof(())) * containment_links * 2
                 + sum(
