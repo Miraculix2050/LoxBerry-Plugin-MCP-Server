@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict, deque
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from heapq import merge
+from itertools import islice
 from sys import getsizeof
 from types import MappingProxyType
 from typing import cast
@@ -42,11 +44,11 @@ class ProjectQueryError(ValueError):
     """A fixed public query category; never carries source content."""
 
 
-def _freeze_index_groups(
-    groups: dict[str, list[str]] | dict[str, list[str] | tuple[str, ...]],
-) -> Mapping[str, tuple[str, ...]]:
+def _freeze_index_groups[T](
+    groups: dict[str, list[T]] | dict[str, list[T] | tuple[T, ...]],
+) -> Mapping[str, tuple[T, ...]]:
     """Freeze temporary groups in place; no backing list escapes construction."""
-    frozen = cast(dict[str, tuple[str, ...]], groups)
+    frozen = cast(dict[str, tuple[T, ...]], groups)
     for key, values in groups.items():
         if not isinstance(values, tuple):
             frozen[key] = tuple(values)
@@ -66,14 +68,21 @@ class ProjectQueryIndex:
     children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
     knx_addresses: Mapping[str, int] = field(init=False, repr=False)
     knx_by_address: Mapping[int, tuple[str, ...]] = field(init=False, repr=False)
+    incoming: Mapping[str, tuple[int, ...]] = field(init=False, repr=False)
+    outgoing: Mapping[str, tuple[int, ...]] = field(init=False, repr=False)
     container_bytes: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         parents: dict[str, str] = {}
         containment: dict[str, list[str] | tuple[str, ...]] = {}
         children: dict[str, list[str]] = defaultdict(list)
+        incoming: dict[str, list[int]] = defaultdict(list)
+        outgoing: dict[str, list[int]] = defaultdict(list)
         containment_links = 0
-        for edge in self.graph.edges:
+        for position, edge in enumerate(self.graph.edges):
+            if edge.kind != "contains":
+                incoming[edge.target].append(position)
+                outgoing[edge.source].append(position)
             if edge.kind == "contains":
                 containment_links += 1
                 parents[edge.target] = edge.source
@@ -86,6 +95,9 @@ class ProjectQueryIndex:
                 else:
                     prior.append(edge.source)
                 children[edge.source].append(edge.target)
+        for position, semantic_edge in enumerate(self.graph.semantic_edges, len(self.graph.edges)):
+            incoming[semantic_edge.target].append(position)
+            outgoing[semantic_edge.source].append(position)
         nodes = {node.key: node for node in self.graph.nodes}
         knx_addresses = {}
         knx_groups: dict[int, list[str]] = defaultdict(list)
@@ -99,6 +111,9 @@ class ProjectQueryIndex:
         children_size = getsizeof(children)
         containment_index = _freeze_index_groups(containment)
         children_index = _freeze_index_groups(children)
+        incoming_size, outgoing_size = getsizeof(incoming), getsizeof(outgoing)
+        object.__setattr__(self, "incoming", _freeze_index_groups(incoming))
+        object.__setattr__(self, "outgoing", _freeze_index_groups(outgoing))
         object.__setattr__(self, "nodes", MappingProxyType(nodes))
         object.__setattr__(self, "parents", MappingProxyType(parents))
         object.__setattr__(self, "containment_parents", containment_index)
@@ -120,6 +135,12 @@ class ProjectQueryIndex:
                 + sum(getsizeof(number) for number in knx_addresses.values())
                 + containment_size
                 + children_size
+                + incoming_size
+                + outgoing_size
+                + sum(getsizeof(offsets) for offsets in self.incoming.values())
+                + sum(getsizeof(offsets) for offsets in self.outgoing.values())
+                # Each retained position is referenced by both directional groups.
+                + sum(getsizeof(i) for offsets in self.outgoing.values() for i in offsets)
                 + getsizeof(()) * (len(containment_index) + len(children_index))
                 + (getsizeof((None,)) - getsizeof(())) * containment_links * 2
                 + sum(
@@ -131,6 +152,8 @@ class ProjectQueryIndex:
                         self.children,
                         self.knx_addresses,
                         self.knx_by_address,
+                        self.incoming,
+                        self.outgoing,
                     )
                 )
             ),
@@ -225,19 +248,13 @@ class ProjectQuery:
         seeds, truncated = self._descendants(node.key, limit)
         visited = set(seeds)
         pending = deque(seeds)
-        adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
-        for edge in self.view.snapshot.graph.edges:
-            if edge.kind in {"signal", "reference"}:
-                adjacency[edge.target if upstream else edge.source].append(edge)
-        for semantic_edge in self.view.snapshot.graph.semantic_edges:
-            adjacency[semantic_edge.target if upstream else semantic_edge.source].append(
-                semantic_edge
-            )
         observations: list[dict[str, object]] = []
         seen_rules: set[tuple[str, str, str]] = set()
         while pending and not truncated:
             current = pending.popleft()
-            for relationship in adjacency[current]:
+            for relationship in self._directional_relationships(
+                current, upstream, include_api=False
+            ):
                 neighbor = relationship.source if upstream else relationship.target
                 if isinstance(relationship, SemanticEdge):
                     identity = (relationship.rule_id, relationship.source, relationship.target)
@@ -849,30 +866,25 @@ class ProjectQuery:
                 }
         occurrence_keys = set(self.view.snapshot.occurrence_keys_for(node.key))
         contains_in = sorted(
-            {
-                edge.source
-                for edge in graph.edges
-                if edge.kind == "contains" and edge.target in occurrence_keys
-            }
+            {parent for key in occurrence_keys for parent in self._containment_parents.get(key, ())}
         )
         contains_out = sorted(
-            {
-                edge.target
-                for edge in graph.edges
-                if edge.kind == "contains" and edge.source in occurrence_keys
-            }
+            {child for key in occurrence_keys for child in self._children.get(key, ())}
         )
         direct = [
             self._edge_data(edge)
-            for edge in graph.edges
-            if edge.kind != "contains"
-            and (edge.source in occurrence_keys or edge.target in occurrence_keys)
+            for edge in islice(self._incident_raw_edges(occurrence_keys), limit + 1)
         ]
         api_connections = [
             self._edge_data(edge)
-            for edge in graph.edges
-            if edge.kind == "api_connection"
-            and (edge.source in contains_out or edge.target in contains_out)
+            for edge in islice(
+                (
+                    edge
+                    for edge in self._incident_raw_edges(set(contains_out))
+                    if edge.kind == "api_connection"
+                ),
+                limit + 1,
+            )
         ]
         child_ids = sorted(contains_out)
         unresolved = [code for key, code in graph.unresolved if key in occurrence_keys]
@@ -894,6 +906,44 @@ class ProjectQuery:
             "unresolved_relationships": unresolved[:limit],
             "truncated_fields": truncated_fields,
         }
+
+    def _incident_raw_edges(self, keys: set[str]) -> Iterator[GraphEdge]:
+        """Merge indexed positions in original order, retaining duplicate edges."""
+        assert self.graph_index is not None
+        streams = [
+            offsets
+            for key in keys
+            for offsets in (
+                self.graph_index.incoming.get(key, ()),
+                self.graph_index.outgoing.get(key, ()),
+            )
+            if offsets
+        ]
+        previous = -1
+        edges = self.view.snapshot.graph.edges
+        for position in merge(*streams):
+            if position == previous:
+                continue
+            if position >= len(edges):
+                break
+            previous = position
+            yield edges[position]
+
+    def _directional_relationships(
+        self, key: str, upstream: bool, *, include_api: bool = True
+    ) -> Iterator[GraphEdge | SemanticEdge]:
+        assert self.graph_index is not None
+        groups = self.graph_index.incoming if upstream else self.graph_index.outgoing
+        graph = self.view.snapshot.graph
+        for position in groups.get(key, ()):
+            if position >= len(graph.edges):
+                yield graph.semantic_edges[position - len(graph.edges)]
+            else:
+                edge = graph.edges[position]
+                if edge.kind in {"signal", "reference"} or (
+                    include_api and edge.kind == "api_connection"
+                ):
+                    yield edge
 
     def _endpoint_block(self, key: str) -> GraphNode | None:
         """Resolve a connector to its containing block without treating containment as flow."""
@@ -1056,15 +1106,7 @@ class ProjectQuery:
             or type(include_internal_flow_gaps) is not bool
         ):
             raise ProjectQueryError("project_query_invalid")
-        adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
-        for edge in self.view.snapshot.graph.edges:
-            if edge.kind not in {"signal", "reference", "api_connection"}:
-                continue
-            key = edge.target if direction == "upstream" else edge.source
-            adjacency[key].append(edge)
-        for semantic_edge in self.view.snapshot.graph.semantic_edges:
-            key = semantic_edge.target if direction == "upstream" else semantic_edge.source
-            adjacency[key].append(semantic_edge)
+        upstream = direction == "upstream"
         occurrences = (
             node.key,
             *(key for key in self._trace_occurrences(node.key) if key != node.key),
@@ -1094,7 +1136,7 @@ class ProjectQuery:
         while queue:
             current, depth = queue.popleft()
             if depth >= max_depth:
-                if adjacency[current]:
+                if next(self._directional_relationships(current, upstream), None) is not None:
                     truncated, reason = True, "max_depth"
                 continue
             for alias in self._trace_occurrences(current):
@@ -1108,7 +1150,7 @@ class ProjectQuery:
                 queue.append((alias, depth))
             if truncated:
                 break
-            for relationship in adjacency[current]:
+            for relationship in self._directional_relationships(current, upstream):
                 neighbor = relationship.source if direction == "upstream" else relationship.target
                 if neighbor in visited:
                     if len(edges) + len(semantic_edges) >= max_nodes:
