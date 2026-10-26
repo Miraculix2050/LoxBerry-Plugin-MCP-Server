@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from functools import cached_property
-from typing import Any, Final, Protocol
+from typing import Any, Final, Literal, Protocol
 from urllib.parse import quote
 from uuid import UUID
 
@@ -288,6 +288,7 @@ async def _websocket_command(
 @dataclass(slots=True)
 class _PublicCertificateScope:
     endpoint: MiniserverEndpoint
+    purpose: Literal["project", "attention"] = "project"
     active: bool = True
     pem: str | None = None
 
@@ -322,9 +323,13 @@ class LoxoneClient:
         )
 
     @contextmanager
-    def public_certificate_scope(self) -> Iterator[None]:
-        """Reuse only public certificate bytes within one admitted project read."""
-        scope = _PublicCertificateScope(self.endpoint)
+    def public_certificate_scope(
+        self, *, purpose: Literal["project", "attention"] = "project"
+    ) -> Iterator[None]:
+        """Reuse only public certificate bytes within one bounded read operation."""
+        if purpose not in ("project", "attention"):
+            raise ValueError("Invalid public certificate scope purpose")
+        scope = _PublicCertificateScope(self.endpoint, purpose=purpose)
         token = self._certificate_scope.set(scope)
         try:
             yield
@@ -612,7 +617,8 @@ class LoxoneClient:
         scope = self._certificate_scope.get()
         if scope is not None and scope.active and scope.endpoint == self.endpoint:
             _LOGGER.info(
-                "component=project_load phase=%s duration_ms=%.1f",
+                "component=%s phase=%s duration_ms=%.1f",
+                "attention_load" if scope.purpose == "attention" else "project_load",
                 phase,
                 (time.monotonic() - started) * 1000,
             )
