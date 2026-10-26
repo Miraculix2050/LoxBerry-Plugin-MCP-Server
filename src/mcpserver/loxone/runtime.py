@@ -408,6 +408,7 @@ class LoxoneRuntime:
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
         self._admission_lock = asyncio.Lock()
+        self._admission_users = 0
         self._closed = False
         self._locks = _FamilyLocks()
         self._rate: defaultdict[str, deque[float]] = defaultdict(deque)
@@ -1540,33 +1541,52 @@ class LoxoneRuntime:
     ) -> RuntimeSnapshot:
         """Only enter through snapshot's access gate or snapshot_context's slot."""
         subject = access.family_id
-        # Admission precedes family locks. Disconnect never takes admission, so
-        # pruning cannot reverse the order while waiting for a family holder.
-        async with self._admission_lock:
+        record = self._records.get(subject)
+        connected_now = False
+        if (
+            (self._admission_lock.locked() or getattr(self, "_admission_users", 0) > 0)
+            and record is not None
+            and record.connected
+            and not record.task.done()
+        ):
+            # A live record needs no new capacity. Do not queue it behind another
+            # family's connection I/O or pruning. Keep current authorization and
+            # shutdown checks, and retain normal refresh/publication checks below.
             await self._require_access(access)
             if self._closed:
                 raise RuntimeUnavailable("Loxone runtime is closed")
-            await self._prune_sessions(subject)
-            record = self._records.get(subject)
-            connected_now = False
-            if record is None or record.task.done():
-                async with self._locks.hold(subject):
+        else:
+            # New capacity remains serialized before taking family locks.
+            # Disconnect never takes admission, preserving pruning lock order.
+            # Count holders and queued waiters through the fair-lock handoff.
+            self._admission_users = getattr(self, "_admission_users", 0) + 1
+            try:
+                async with self._admission_lock:
                     await self._require_access(access)
+                    if self._closed:
+                        raise RuntimeUnavailable("Loxone runtime is closed")
+                    await self._prune_sessions(subject)
                     record = self._records.get(subject)
                     if record is None or record.task.done():
-                        record = await self._connect(access)
-                        try:
+                        async with self._locks.hold(subject):
                             await self._require_access(access)
-                            if self._closed:
-                                raise RuntimeUnavailable("Loxone runtime is closed")
-                        except BaseException:
-                            record.task.cancel()
-                            with suppress(asyncio.CancelledError, Exception):
-                                await record.task
-                            self.cache.clear(subject)
-                            raise
-                        self._records[subject] = record
-                        connected_now = True
+                            record = self._records.get(subject)
+                            if record is None or record.task.done():
+                                record = await self._connect(access)
+                                try:
+                                    await self._require_access(access)
+                                    if self._closed:
+                                        raise RuntimeUnavailable("Loxone runtime is closed")
+                                except BaseException:
+                                    record.task.cancel()
+                                    with suppress(asyncio.CancelledError, Exception):
+                                        await record.task
+                                    self.cache.clear(subject)
+                                    raise
+                                self._records[subject] = record
+                                connected_now = True
+            finally:
+                self._admission_users -= 1
         record.last_used = time.monotonic()
         if (fresh_visibility and not connected_now) or (
             record.last_structure_check + self.structure_refresh_seconds <= record.last_used

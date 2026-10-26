@@ -247,7 +247,9 @@ async def test_queued_cached_snapshot_rechecks_access_before_pruning(ending: str
         return valid
 
     owner = runtime(validate_access=validate, structure_refresh_seconds=10**12)
-    await install(owner)
+    record = await install(owner)
+    # A disconnected record is not eligible for the live-record fast path.
+    record.connected = False
     owner._prune_sessions = AsyncMock()
     await owner._admission_lock.acquire()
     call = asyncio.create_task(owner.snapshot(access()))
@@ -266,6 +268,101 @@ async def test_queued_cached_snapshot_rechecks_access_before_pruning(ending: str
         if owner._admission_lock.locked():
             owner._admission_lock.release()
         await asyncio.gather(call, return_exceptions=True)
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fresh_visibility", [False, True])
+async def test_live_snapshot_completes_while_another_family_is_connecting(fresh_visibility):
+    owner = runtime(max_active_sessions=2, structure_refresh_seconds=10**12)
+    record = await install(owner)
+    await owner.snapshot(access())  # Mark the installed fixture as recently used.
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def connect(candidate):
+        entered.set()
+        await release.wait()
+        return await install(owner, candidate.family_id)
+
+    async def refresh(_access, current, **_options):
+        assert current is record
+        current.structure = structure("fresh")
+
+    owner._connect = AsyncMock(side_effect=connect)
+    owner._refresh_structure = AsyncMock(side_effect=refresh)
+    cold = asyncio.create_task(owner.snapshot(access("cold")))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        result = await asyncio.wait_for(
+            owner.snapshot(access(), fresh_visibility=fresh_visibility), 1
+        )
+        assert result.connected
+        assert result.structure.last_modified == ("fresh" if fresh_visibility else "old")
+        assert owner._refresh_structure.await_count == int(fresh_visibility)
+        assert not cold.done() and owner._admission_lock.locked()
+        assert len(owner._records) == 1
+    finally:
+        release.set()
+        await asyncio.gather(cold, return_exceptions=True)
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reject_at", [2, 3])
+async def test_live_snapshot_fast_path_rechecks_current_access(reject_at):
+    validate = AsyncMock(side_effect=[True] * (reject_at - 1) + [False])
+    owner = runtime(validate_access=validate, structure_refresh_seconds=10**12)
+    await install(owner)
+    owner._prune_sessions = AsyncMock()
+    try:
+        async with owner._admission_lock:
+            with pytest.raises(RuntimeAuthorizationError):
+                await owner.snapshot(access())
+            owner._prune_sessions.assert_not_awaited()
+            assert validate.await_count == reject_at
+    finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_live_snapshot_fast_path_rejects_shutdown():
+    owner = runtime(structure_refresh_seconds=10**12)
+    await install(owner)
+    try:
+        async with owner._admission_lock:
+            owner._closed = True
+            with pytest.raises(RuntimeUnavailable, match="closed"):
+                await owner.snapshot(access())
+    finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_same_family_connection_waiters_still_share_one_record():
+    owner = runtime(structure_refresh_seconds=10**12)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def connect(candidate):
+        entered.set()
+        await release.wait()
+        return await install(owner, candidate.family_id)
+
+    owner._connect = AsyncMock(side_effect=connect)
+    first = asyncio.create_task(owner.snapshot(access()))
+    calls = [first]
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        second = asyncio.create_task(owner.snapshot(access()))
+        calls.append(second)
+        await asyncio.sleep(0)
+        assert not second.done()
+        release.set()
+        results = await asyncio.wait_for(asyncio.gather(*calls), 2)
+        assert owner._connect.await_count == 1
+        assert results[0].structure is results[1].structure
+    finally:
+        release.set()
+        await asyncio.gather(*calls, return_exceptions=True)
         await owner.close()
 
 
@@ -567,4 +664,65 @@ async def test_pump_task_allocation_failure_keeps_session_owned_by_setup(monkeyp
         assert not owner._records and not owner._locks
         assert not owner.cache._values and not owner.cache._available
     finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_warm_snapshot_does_not_join_fair_lock_handoff_queue():
+    owner = runtime(max_active_sessions=2, structure_refresh_seconds=10**12)
+    await install(owner)
+    await owner.snapshot(access())
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def connect(candidate):
+        entered.set()
+        await release.wait()
+        return await install(owner, candidate.family_id)
+
+    owner._connect = AsyncMock(side_effect=connect)
+    await owner._admission_lock.acquire()
+    cold = asyncio.create_task(owner.snapshot(access("cold")))
+    try:
+        await asyncio.sleep(0)
+        assert owner._admission_users == 1
+        owner._admission_lock.release()
+        assert not owner._admission_lock.locked()
+        # Await directly in this task: wait_for would schedule a new task and
+        # mask the lock handoff interleaving that caused the original defect.
+        async with asyncio.timeout(1):
+            result = await owner.snapshot(access())
+        assert result.connected and not cold.done() and not entered.is_set()
+    finally:
+        cold.cancel()
+        release.set()
+        await asyncio.gather(cold, return_exceptions=True)
+        assert owner._admission_users == 0
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queued", [False, True])
+async def test_connection_admission_counter_drains_on_cancellation(queued):
+    owner = runtime()
+    entered = asyncio.Event()
+    if queued:
+        await owner._admission_lock.acquire()
+
+    async def connect(_access):
+        entered.set()
+        await asyncio.Event().wait()
+
+    owner._connect = AsyncMock(side_effect=connect)
+    task = asyncio.create_task(owner.snapshot(access("cold")))
+    try:
+        await asyncio.sleep(0)
+        assert owner._admission_users == 1
+        assert entered.is_set() is (not queued)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert owner._admission_users == 0
+    finally:
+        if owner._admission_lock.locked():
+            owner._admission_lock.release()
         await owner.close()

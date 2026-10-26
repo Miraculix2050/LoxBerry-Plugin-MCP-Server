@@ -114,6 +114,16 @@ continued family churn does not retain all historical family keys. The active
 session limit bounds connection records, not the number of families admitted
 within one rate window.
 
+Healthy existing records bypass a currently occupied connection-admission lock;
+they reserve no new capacity and still recheck current access, shutdown and
+publication authorization, and perform the requested visibility refresh. Other
+requests retain serialized admission and the existing family-lock/pruning order.
+Pruning skipped by this contended live-record path remains with the admission
+owner and subsequent ordinary reads. New connections remain serialized, so no
+additional in-flight capacity pool or authentication parallelism is introduced.
+`tools/benchmark_warm_snapshot.py` compares warm-read latency against an explicit
+Git baseline with a separate synthetic delayed connection and with no contention.
+
 Runtime session establishment shares the configured connection timeout between
 local authentication coordination and network login. The in-process coordinator
 lock and nonblocking interprocess file lock serialize authentication only, not
@@ -482,3 +492,8 @@ policy or command dependency. The MCP adapter obtains fresh caller visibility
 before accessing the cached state and adds observation/source metadata. Read-only
 input/name/output bounds do not alter the released operation-ID contract. No new
 service, dispatcher or physical/scene interpretation is introduced.
+
+Admission tracking counts both holders and queued connection waiters. Healthy warm
+reads bypass the connection queue even during the fair-lock release handoff; cold
+capacity remains serialized. Cancellation removes the counter in a non-awaiting
+finally block. Ordinary uncontended reads retain normal pruning.
