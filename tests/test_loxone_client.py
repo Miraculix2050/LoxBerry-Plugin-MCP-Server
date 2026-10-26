@@ -1766,9 +1766,10 @@ async def test_public_certificate_inflight_child_cannot_repopulate_expired_scope
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("purpose", ["project", "attention"])
 @pytest.mark.parametrize("origin", ["http://192.168.1.1", "https://miniserver.example"])
 async def test_certificate_memo_preserves_new_socket_and_authentication(
-    monkeypatch, origin, caplog
+    monkeypatch, origin, purpose, caplog
 ):
     client = LoxoneClient(MiniserverEndpoint.parse(origin), client_uuid=UUID(int=1))
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -1799,7 +1800,7 @@ async def test_certificate_memo_preserves_new_socket_and_authentication(
         await release.wait()
         return await client.open_session(token)
 
-    with client.public_certificate_scope():
+    with client.public_certificate_scope(purpose=purpose):
         first = await client.open_session(token)
         second = await client.open_session(token)
         reconnect = asyncio.create_task(inherited_reconnect())
@@ -1816,7 +1817,7 @@ async def test_certificate_memo_preserves_new_socket_and_authentication(
     phases = [
         record.getMessage()
         for record in caplog.records
-        if "component=project_load" in record.getMessage()
+        if f"component={purpose}_load" in record.getMessage()
     ]
     assert len(phases) == 6
     release.set()
@@ -1827,5 +1828,21 @@ async def test_certificate_memo_preserves_new_socket_and_authentication(
     assert [
         record.getMessage()
         for record in caplog.records
-        if "component=project_load" in record.getMessage()
+        if f"component={purpose}_load" in record.getMessage()
     ] == phases
+
+
+def test_certificate_scope_validates_purpose_and_restores_nested(certificate_client):
+    client, _ = certificate_client
+    with client.public_certificate_scope():
+        outer = client._certificate_scope.get()
+        with (
+            pytest.raises(ValueError, match="Invalid public certificate scope purpose"),
+            client.public_certificate_scope(purpose="unknown"),
+        ):
+            pytest.fail("invalid scope was entered")
+        assert client._certificate_scope.get() is outer
+        with client.public_certificate_scope(purpose="attention"):
+            assert client._certificate_scope.get().purpose == "attention"
+        assert client._certificate_scope.get() is outer
+    assert client._certificate_scope.get() is None

@@ -168,3 +168,5 @@ Numeric control arguments require JSON numbers; kelvin and override duration req
 `loxberry_list_service_events` continuations use the initial sanitized snapshot for up to 120 seconds, bound to the same app, identity, Miniserver, OAuth family and filters. Every page checks current authorization and rate limits. New events require a new read without a cursor. Expiry, bounded-cache eviction or a restart returns `invalid_input`; restart the read.
 
 The same warm-read behavior also applies during the brief handoff between queued connection requests. New connections remain serialized and capacity limits remain enforced.
+
+The attention overview can reuse a public Miniserver certificate within its three sequential source reads. Each source still performs its own access checks and data read; the overview is not a simultaneous snapshot.

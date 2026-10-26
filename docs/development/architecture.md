@@ -497,3 +497,5 @@ Admission tracking counts both holders and queued connection waiters. Healthy wa
 reads bypass the connection queue even during the fair-lock release handoff; cold
 capacity remains serialized. Cancellation removes the counter in a non-awaiting
 finally block. Ordinary uncontended reads retain normal pruning.
+
+The sequential attention overview reuses only endpoint-bound public certificate bytes within one call, with fixed `attention_load` timing labels. Each source retains its own session, authentication, authorization, rate admission and download; the final access check remains mandatory. The scope is cleared on failure and cancellation.

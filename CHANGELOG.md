@@ -11,6 +11,7 @@ extracted from the matching version heading.
 - Close sessions on every unpublished connection-setup failure, hand teardown
   ownership to the running maintainer, and remove unowned failed-family cache
   state while preserving owned disconnected-state freshness (#613).
+- Reuse only public certificate bytes within sequential attention overview reads while retaining independent source authentication and authorization.
 
 - Let healthy connected families read snapshots while another family is opening
   a connection, retaining authorization, fresh visibility, serialized new-session

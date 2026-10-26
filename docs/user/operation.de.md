@@ -183,3 +183,5 @@ Numerische Steuerparameter erfordern JSON-Zahlen; Kelvin und die Dauer einer Üb
 Fortsetzungen von `loxberry_list_service_events` verwenden den anfänglichen bereinigten Datenstand bis zu 120 Sekunden, gebunden an dieselbe App, Identität, denselben Miniserver, dieselbe OAuth-Familie und dieselben Filter. Jede Seite prüft die aktuelle Berechtigung und das Anfragelimit. Neue Ereignisse erfordern eine neue Abfrage ohne Cursor. Ablauf, Verdrängung aus dem begrenzten Cache oder ein Neustart ergibt `invalid_input`; beginnen Sie die Abfrage erneut.
 
 Dasselbe Verhalten für bereits verbundene Clients gilt auch während der kurzen Übergabe zwischen wartenden Verbindungsanfragen. Neue Verbindungen bleiben serialisiert; Kapazitätsgrenzen gelten weiterhin.
+
+Der Aufmerksamkeitsüberblick kann ein öffentliches Miniserver-Zertifikat innerhalb seiner drei sequenziellen Quellenabfragen wiederverwenden. Jede Quelle führt weiterhin ihre eigenen Zugriffsprüfungen und Datenabfragen durch; der Überblick ist keine gleichzeitige Momentaufnahme.

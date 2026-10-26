@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -93,19 +94,24 @@ def register_attention_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> 
                 and messages_tool is not None
                 and notifications_tool is not None
             )
-            alerts = _bounded(
-                ActiveAlertsEnvelope.model_validate(await alerts_tool.fn(limit=limit))
+            scope_factory = getattr(
+                getattr(runtime, "client", None), "public_certificate_scope", None
             )
-            mode: Literal["current", "all"] = "all" if include_history else "current"
-            messages = _bounded(
-                SystemMessagesEnvelope.model_validate(
-                    await messages_tool.fn(mode=mode, limit=limit)
+            scope = scope_factory(purpose="attention") if callable(scope_factory) else nullcontext()
+            with scope:
+                alerts = _bounded(
+                    ActiveAlertsEnvelope.model_validate(await alerts_tool.fn(limit=limit))
                 )
-            )
-            notifications = _bounded(
-                NotificationsEnvelope.model_validate(await notifications_tool.fn())
-            )
-            await runtime._require_access(access)
+                mode: Literal["current", "all"] = "all" if include_history else "current"
+                messages = _bounded(
+                    SystemMessagesEnvelope.model_validate(
+                        await messages_tool.fn(mode=mode, limit=limit)
+                    )
+                )
+                notifications = _bounded(
+                    NotificationsEnvelope.model_validate(await notifications_tool.fn())
+                )
+                await runtime._require_access(access)
             coverage = OverviewCoverage(
                 active_alerts=(
                     "available"
