@@ -98,6 +98,46 @@ def test_find_does_not_search_names_from_multiple_exact_mappings():
     )
 
 
+def test_indexed_describe_and_trace_do_not_iterate_full_edge_table():
+    project = query()
+
+    class IndexedEdges(tuple):
+        forbid_iteration = False
+
+        def __iter__(self):
+            assert not self.forbid_iteration, "query scanned the entire edge table"
+            return super().__iter__()
+
+    edges = IndexedEdges(project.view.snapshot.graph.edges)
+    graph = replace(project.view.snapshot.graph, edges=edges)
+    snapshot = replace(project.view.snapshot, graph=graph)
+    indexed = ProjectQuery(replace(project.view, snapshot=snapshot), project.control_names)
+    source = indexed.resolve("p:1", "project_node_id")
+    expected_description = indexed.describe(source, limit=1)
+    expected_trace = indexed.trace(source, direction="downstream", max_depth=2, max_nodes=20)
+    edges.forbid_iteration = True
+    assert indexed.describe(source, limit=1) == expected_description
+    assert (
+        indexed.trace(source, direction="downstream", max_depth=2, max_nodes=20) == expected_trace
+    )
+    with pytest.raises(TypeError):
+        indexed.graph_index.outgoing[source.key] = ()
+
+
+def test_indexed_description_preserves_duplicate_edges_and_limit_flag():
+    project = query()
+    graph = project.view.snapshot.graph
+    signal = next(edge for edge in graph.edges if edge.kind == "signal")
+    snapshot = replace(project.view.snapshot, graph=replace(graph, edges=(*graph.edges, signal)))
+    indexed = ProjectQuery(replace(project.view, snapshot=snapshot), project.control_names)
+    node = indexed.resolve(signal.source, "project_node_id")
+    full = indexed.describe(node, limit=100)
+    assert full["relationships"][0] == full["relationships"][-1]
+    limited = indexed.describe(node, limit=1)
+    assert limited["relationships"] == full["relationships"][:1]
+    assert "relationships" in limited["truncated_fields"]
+
+
 def test_find_projects_logical_knx_objects_with_source_provenance():
     parsed = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
     graph = build_graph((("one", parsed), ("two", parsed)))

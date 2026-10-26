@@ -46,6 +46,10 @@ extracted from the matching version heading.
   use incremental point/byte accounting with expiry order separate from LRU;
   preserve caller/source keys, empty hits and authorization checks (#602).
 
+- Reuse immutable graph-edge position indices for bounded project descriptions
+  and traces instead of scanning all edges per request; charge the index to the
+  existing shared cache budget and preserve ordering and trace semantics (#604).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes

@@ -108,6 +108,16 @@ expiry order avoid full-cache recounts without changing access-based LRU, TTL or
 caller/source keys. Every hit still follows fresh History authorization. These
 internal accounting limits are not a total service-RSS guarantee.
 
+ProjectQueryIndex retains immutable incoming/outgoing positions for non-containment
+raw edges followed by semantic edges. Descriptions merge raw positions in original
+order, retaining duplicate edge occurrences and limiting response projection;
+traces/semantic observations visit only indexed adjacency with their existing
+API and direction rules. Containment remains separately indexed. Position integers,
+tuples, maps and proxies count toward the existing 64 MiB shared view/index cache
+budget. Cold index construction costs more time and RAM; oversized indices remain
+uncached rather than bypassing the budget. No new persistent or unbounded cache,
+download shortcut or authorization change is introduced.
+
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.
