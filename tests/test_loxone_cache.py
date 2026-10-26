@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+import pytest
+
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Freshness
@@ -122,3 +124,121 @@ def test_membership_snapshot_is_reset_on_connection_lifecycle_and_isolated_by_su
     cache.apply("first", [], allowed_uuids=allowed)
     cache.begin_connection("first")
     assert "first" not in cache._allowed_snapshots
+
+
+def assert_accounted(cache):
+    assert cache._total_bytes == sum(cache._sizes.values())
+    assert cache._total_bytes == sum(cache._subject_bytes.values())
+    assert set(cache._sizes) == {
+        (subject, uuid) for subject, values in cache._values.items() for uuid in values
+    }
+    assert cache._total_bytes <= cache._max_total_bytes
+    assert all(size <= cache._max_bytes_per_user for size in cache._subject_bytes.values())
+
+
+def test_cache_byte_budget_evicts_oldest_ingested_without_read_promotion():
+    cache = UserStateCache(max_bytes_per_user=1800)
+    allowed = frozenset({"one", "two", "three"})
+    for uuid in ("one", "two"):
+        cache.apply("a", [StateEvent(uuid, "x" * 200)], allowed_uuids=allowed)
+    assert cache.get("a", "one").freshness is Freshness.CURRENT
+    cache.apply("a", [StateEvent("three", "x" * 200)], allowed_uuids=allowed)
+    assert cache.get("a", "one").freshness is Freshness.UNKNOWN
+    assert cache.get("a", "two").freshness is Freshness.CURRENT
+    assert cache.get("a", "three").freshness is Freshness.CURRENT
+    assert cache._byte_evictions == 1
+    assert_accounted(cache)
+
+
+def test_cache_global_budget_includes_other_families_and_stale_values():
+    cache = UserStateCache(max_bytes_per_user=4000, max_total_bytes=1800)
+    allowed = frozenset({"state"})
+    cache.apply("a", [StateEvent("state", "x" * 200)], allowed_uuids=allowed)
+    cache.disconnect("a")
+    cache.apply("b", [StateEvent("state", "y" * 200)], allowed_uuids=allowed)
+    cache.apply("c", [StateEvent("state", "z" * 200)], allowed_uuids=allowed)
+    assert cache.get("a", "state").freshness is Freshness.UNAVAILABLE
+    assert cache.get("b", "state").value == "y" * 200
+    assert cache.get("c", "state").value == "z" * 200
+    assert cache._byte_evictions == 1
+    assert_accounted(cache)
+
+
+def test_oversized_replacement_discards_old_value_and_recovers_on_later_event():
+    cache = UserStateCache(max_bytes_per_user=1200)
+    allowed = frozenset({"state"})
+    cache.apply("a", [StateEvent("state", 1.0)], allowed_uuids=allowed)
+    cache.apply("a", [StateEvent("state", "x" * 2000)], allowed_uuids=allowed)
+    assert cache.get("a", "state").freshness is Freshness.UNKNOWN
+    assert cache._oversized_events == 1 and cache._total_bytes == 0
+    cache.apply("a", [StateEvent("state", 2.0)], allowed_uuids=allowed)
+    assert cache.get("a", "state").value == 2.0
+    assert_accounted(cache)
+
+
+def test_budget_accounting_survives_replacement_permission_pruning_and_lifecycle():
+    cache = UserStateCache(max_states_per_user=2)
+    allowed = {"one", "two", "three"}
+    for uuid in allowed:
+        cache.apply("a", [StateEvent(uuid, 1.0)], allowed_uuids=allowed)
+        assert_accounted(cache)
+    for uuid in allowed:
+        cache.apply("a", [StateEvent(uuid, "larger")], allowed_uuids=allowed)
+        assert_accounted(cache)
+    allowed.clear()
+    cache.apply("a", [], allowed_uuids=allowed)
+    assert cache._total_bytes == 0 and not cache._sizes
+    cache.apply("b", [StateEvent("one", 2.0)], allowed_uuids=frozenset({"one"}))
+    size = cache._total_bytes
+    cache.begin_connection("b")
+    cache.disconnect("b")
+    assert cache._total_bytes == size
+    assert_accounted(cache)
+    cache.clear_all()
+    assert cache._total_bytes == 0 and not cache._sizes and not cache._subject_bytes
+    assert not cache._values and not cache._available and not cache._allowed_snapshots
+
+
+def test_structured_state_accounting_preserves_supported_decoder_trees():
+    cache = UserStateCache()
+    value = {"default_value": 1.0, "entries": [{"mode": 1, "value": 2.0}]}
+    cache.apply("a", [StateEvent("state", value)], allowed_uuids={"state"})
+    assert cache.get("a", "state").value == value
+    assert cache._total_bytes > 512
+    assert_accounted(cache)
+
+
+@pytest.mark.parametrize("kind", ["cycle", "wide", "deep", "unsupported"])
+def test_unaccountable_structures_fail_bounded_and_invalidate_old_state(kind):
+    cache = UserStateCache()
+    value = {}
+    if kind == "cycle":
+        value["self"] = value
+    elif kind == "wide":
+        value["entries"] = [None] * 70_000
+    elif kind == "deep":
+        current = value
+        for _ in range(40):
+            current["child"] = {}
+            current = current["child"]
+    else:
+        value["value"] = object()
+    cache.apply("a", [StateEvent("state", 1.0)], allowed_uuids={"state"})
+    cache.apply("a", [StateEvent("state", value)], allowed_uuids={"state"})
+    assert cache.get("a", "state").freshness is Freshness.UNKNOWN
+    assert cache._oversized_events == 1
+    assert_accounted(cache)
+
+
+def test_unicode_values_use_retained_character_storage_not_utf8_wire_length():
+    cache = UserStateCache(max_bytes_per_user=2000)
+    cache.apply("a", [StateEvent("state", "\U0001f642" * 500)], allowed_uuids={"state"})
+    assert cache.get("a", "state").freshness is Freshness.UNKNOWN
+    assert cache._oversized_events == 1
+
+
+@pytest.mark.parametrize("argument", ["max_bytes_per_user", "max_total_bytes"])
+@pytest.mark.parametrize("value", [0, -1, True, 1.5])
+def test_invalid_byte_budget_rejected(argument, value):
+    with pytest.raises(ValueError, match="positive integers"):
+        UserStateCache(**{argument: value})

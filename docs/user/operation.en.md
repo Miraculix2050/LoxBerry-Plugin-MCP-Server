@@ -170,3 +170,5 @@ Numeric control arguments require JSON numbers; kelvin and override duration req
 The same warm-read behavior also applies during the brief handoff between queued connection requests. New connections remain serialized and capacity limits remain enforced.
 
 The attention overview can reuse a public Miniserver certificate within its three sequential source reads. Each source still performs its own access checks and data read; the overview is not a simultaneous snapshot.
+
+The state cache also has estimated memory budgets: 16 MiB per OAuth family and 64 MiB across families. When a budget is reached, older cached observations are removed. A value that is too large or cannot be safely bounded is not retained, including any older value it replaces. Missing observations are reported as unknown while connected or unavailable while disconnected; a later permitted event can restore them. These are retained-value estimates, not a limit on total process memory.

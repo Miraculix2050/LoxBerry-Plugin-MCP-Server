@@ -2,24 +2,84 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Container, Iterable
+from collections.abc import Callable, Container, Iterable, Iterator
 from dataclasses import replace
+from itertools import chain
 
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Freshness, StateRecord
+
+_MAX_VALUE_NODES = 65_536
+_MAX_VALUE_DEPTH = 32
+_ENTRY_OVERHEAD_BYTES = 512
+
+
+def _state_size(uuid: str, value: object, limit: int) -> int | None:
+    """Conservative ingress estimate; not a process RSS measurement.
+
+    Exact decoder-built containers only. Bound traversal and iterator storage;
+    strings have O(1) sizing, and no payload-sized serialization is allocated.
+    """
+    size = _ENTRY_OVERHEAD_BYTES + sys.getsizeof(uuid)
+    frames: list[Iterator[object]] = [iter((value,))]
+    containers: set[int] = set()
+    nodes = 0
+    while frames:
+        try:
+            item = next(frames[-1])
+        except StopIteration:
+            frames.pop()
+            continue
+        nodes += 1
+        if nodes > _MAX_VALUE_NODES:
+            return None
+        kind = type(item)
+        if kind not in (str, float, int, bool, type(None), dict, list, tuple):
+            return None
+        size += sys.getsizeof(item)
+        if size > limit:
+            return None
+        if kind in (dict, list, tuple):
+            # The wire decoders produce trees. Reject cycles/aliases rather than
+            # retaining an unaccounted or non-serializable mutable graph.
+            if id(item) in containers or len(frames) >= _MAX_VALUE_DEPTH:
+                return None
+            containers.add(id(item))
+            if isinstance(item, dict):
+                frames.append(chain(item.keys(), item.values()))
+            elif isinstance(item, list | tuple):
+                frames.append(iter(item))
+    return size
 
 
 class UserStateCache:
     """Keep state values isolated by immutable Miniserver/user subject."""
 
     def __init__(
-        self, *, max_states_per_user: int = 10_000, clock: Callable[[], float] = time.time
+        self,
+        *,
+        max_states_per_user: int = 10_000,
+        max_bytes_per_user: int = 16 * 1024 * 1024,
+        max_total_bytes: int = 64 * 1024 * 1024,
+        clock: Callable[[], float] = time.time,
     ):
         if max_states_per_user < 1:
             raise ValueError("max_states_per_user must be positive")
+        if any(
+            type(value) is not int or value < 1 for value in (max_bytes_per_user, max_total_bytes)
+        ):
+            raise ValueError("State cache byte budgets must be positive integers")
         self._max_states = max_states_per_user
+        self._max_bytes_per_user = max_bytes_per_user
+        self._max_total_bytes = max_total_bytes
+        self._sizes: OrderedDict[tuple[str, str], int] = OrderedDict()
+        self._subject_bytes: dict[str, int] = {}
+        self._total_bytes = 0
+        self._byte_evictions = 0
+        self._oversized_events = 0
         self._clock = clock
         self._values: dict[str, OrderedDict[str, StateRecord]] = {}
         self._available: dict[str, bool] = {}
@@ -42,7 +102,7 @@ class UserStateCache:
         if not immutable or self._allowed_snapshots.get(subject) is not allowed_uuids:
             for uuid in tuple(values):
                 if uuid not in allowed_uuids:
-                    del values[uuid]
+                    self._discard(subject, uuid)
             if type(allowed_uuids) is frozenset:
                 self._allowed_snapshots[subject] = allowed_uuids
             else:
@@ -51,6 +111,14 @@ class UserStateCache:
         for event in events:
             if event.uuid not in allowed_uuids:
                 continue
+            size = _state_size(
+                event.uuid, event.value, min(self._max_bytes_per_user, self._max_total_bytes)
+            )
+            # An oversized replacement invalidates the old observation too.
+            self._discard(subject, event.uuid)
+            if size is None:
+                self._oversized_events += 1
+                continue
             values[event.uuid] = StateRecord(
                 uuid=event.uuid,
                 value=event.value,
@@ -58,9 +126,31 @@ class UserStateCache:
                 observed_at=observed_at,
             )
             values.move_to_end(event.uuid)
+            self._sizes[(subject, event.uuid)] = size
+            self._subject_bytes[subject] = self._subject_bytes.get(subject, 0) + size
+            self._total_bytes += size
             while len(values) > self._max_states:
-                values.popitem(last=False)
+                self._discard(subject, next(iter(values)))
+            while self._subject_bytes.get(subject, 0) > self._max_bytes_per_user:
+                self._discard(subject, next(iter(values)))
+                self._byte_evictions += 1
+            while self._total_bytes > self._max_total_bytes:
+                family, uuid = next(iter(self._sizes))
+                self._discard(family, uuid)
+                self._byte_evictions += 1
         self._available[subject] = True
+
+    def _discard(self, subject: str, uuid: str) -> None:
+        values = self._values.get(subject)
+        if values is not None:
+            values.pop(uuid, None)
+        size = self._sizes.pop((subject, uuid), 0)
+        remaining = self._subject_bytes.get(subject, 0) - size
+        if remaining:
+            self._subject_bytes[subject] = remaining
+        else:
+            self._subject_bytes.pop(subject, None)
+        self._total_bytes -= size
 
     def disconnect(self, subject: str) -> None:
         self._allowed_snapshots.pop(subject, None)
@@ -80,6 +170,8 @@ class UserStateCache:
         return StateRecord(uuid=uuid, value=None, freshness=freshness, observed_at=None)
 
     def clear(self, subject: str) -> None:
+        for uuid in tuple(self._values.get(subject, ())):
+            self._discard(subject, uuid)
         self._allowed_snapshots.pop(subject, None)
         self._values.pop(subject, None)
         self._available.pop(subject, None)

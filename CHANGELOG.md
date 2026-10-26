@@ -8,6 +8,14 @@ extracted from the matching version heading.
 - Preserve warm-read progress during fair connection-lock handoff and drain
   holder/waiter accounting on cancellation (#610).
 
+- Bound retained state-cache byte estimates per family and globally; evict oldest
+  observations and discard oversized replacements without stale-value fallback,
+  retaining authorization, freshness and shared cleanup accounting (#612).
+
+- Avoid re-scanning the state cache for unchanged immutable allowed-state
+  snapshots while retaining incoming-event checks and immediate pruning on
+  membership or connection changes (#600).
+
 - Close sessions on every unpublished connection-setup failure, hand teardown
   ownership to the running maintainer, and remove unowned failed-family cache
   state while preserving owned disconnected-state freshness (#613).
@@ -16,10 +24,6 @@ extracted from the matching version heading.
 - Let healthy connected families read snapshots while another family is opening
   a connection, retaining authorization, fresh visibility, serialized new-session
   capacity, pruning and shutdown checks (#594).
-
-- Avoid re-scanning the state cache for unchanged immutable allowed-state
-  snapshots while retaining incoming-event checks and immediate pruning on
-  membership or connection changes (#600).
 
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed

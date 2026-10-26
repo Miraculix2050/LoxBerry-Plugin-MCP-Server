@@ -88,12 +88,6 @@ Failed families without retained records release their cache state; owned
 disconnected records keep stale values until normal eviction/disconnect. Shutdown
 also drains orphan cache subjects through per-subject cleanup.
 
-State-cache permission pruning can reuse only the same exact built-in frozenset
-supplied by the current structure generation. Every incoming event still passes
-membership checking. Changed snapshots and mutable/general containers re-prune
-retained states, and connection/disconnect/clear resets the optimization. This
-avoids repeated full-cache walks without using a marker as authorization.
-
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.
@@ -505,3 +499,20 @@ capacity remains serialized. Cancellation removes the counter in a non-awaiting
 finally block. Ordinary uncontended reads retain normal pruning.
 
 The sequential attention overview reuses only endpoint-bound public certificate bytes within one call, with fixed `attention_load` timing labels. Each source retains its own session, authentication, authorization, rate admission and download; the final access check remains mandatory. The scope is cleared on failure and cancellation.
+
+State-cache permission pruning can reuse only the same exact built-in frozenset
+supplied by the current structure generation. Every incoming event still passes
+membership checking. Changed snapshots and mutable/general containers re-prune
+retained states, and connection/disconnect/clear resets the optimization. This
+avoids repeated full-cache walks without using a marker as authorization.
+
+State-cache ingestion enforces conservative 16 MiB per-family and 64 MiB global
+retained-byte estimates in addition to state-count limits. Estimates include
+Python value storage and entry overhead, not process RSS or temporary wire/decoder
+allocations. Text sizing is constant-time; decoder trees are bounded to 65,536
+visited objects and depth 32. Oversized/unaccountable replacements discard the old
+observation. Byte eviction removes oldest ingested entries, including stale values,
+without promoting reads. Removed states become unknown while connected and
+unavailable while disconnected; other retained values keep their freshness.
+Permission pruning, count eviction, replacement and lifecycle cleanup share one
+accounting path; cached membership never authorizes a new event.
