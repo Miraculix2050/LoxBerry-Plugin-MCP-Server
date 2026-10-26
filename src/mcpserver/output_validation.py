@@ -32,8 +32,10 @@ class OutputValidatedFastMCP(FastMCP):
 
     def _output_validator(self, name: str, schema: dict[str, Any]) -> Validator:
         # Python equality conflates JSON booleans and numbers (True == 1).
-        # A canonical JSON key preserves their distinct const/enum semantics.
-        key = json.dumps(schema, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        # A JSON key preserves their distinct const/enum semantics without
+        # sorting every nested object on each response. Order-only changes may
+        # safely trigger another full schema check.
+        key = json.dumps(schema, separators=(",", ":"), allow_nan=False)
         cached = self._output_validators.get(name)
         if cached is None or cached[0] != key:
             # An independent snapshot detects replacement AND in-place edits.

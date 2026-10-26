@@ -290,3 +290,18 @@ async def test_schema_key_distinguishes_json_boolean_from_number(constraint) -> 
     assert server._output_validators["answer"][1] is not original
     tool.fn = lambda items: {"items": [True]}
     assert not (await _call(server, [1])).isError
+
+
+@pytest.mark.asyncio
+async def test_reordered_schema_keeps_wire_and_rechecks_later_semantic_edit() -> None:
+    server = OutputValidatedFastMCP("test")
+    tool = _register(server)
+    original = await _call(server, [1])
+    tool.output_schema = dict(reversed(list(tool.output_schema.items())))
+    tool.output_schema["properties"]["items"] = dict(
+        reversed(list(tool.output_schema["properties"]["items"].items()))
+    )
+    assert (await _call(server, [1])).model_dump() == original.model_dump()
+    tool.output_schema["properties"]["items"]["items"]["minimum"] = 2
+    assert (await _call(server, [1])).isError
+    assert not (await _call(server, [2])).isError
