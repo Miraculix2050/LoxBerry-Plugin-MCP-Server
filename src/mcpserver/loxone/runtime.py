@@ -344,6 +344,7 @@ class _ConnectionRecord:
     state_stream_diagnostics_logged: bool = False
     initial_state_batch: asyncio.Event = field(default_factory=asyncio.Event)
     refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    maintain_started: bool = False
 
 
 class LoxoneRuntime:
@@ -1635,31 +1636,32 @@ class LoxoneRuntime:
             raise RuntimeUnavailable("Miniserver rejected session establishment") from exc
         except LoxoneConnectionError as exc:
             raise RuntimeUnavailable("Miniserver connection failed") from exc
+        record: _ConnectionRecord | None = None
+        initial_state_wait: asyncio.Task[bool] | None = None
         try:
-            structure = await session.load_structure()
-        except LoxoneConnectionError as exc:
-            await session.close()
-            raise RuntimeUnavailable("Miniserver structure access failed") from exc
-        if self.token_health is not None:
-            self.token_health.record_successful_authentication(access.family_id)
-        allowed = _structure_state_uuids(structure)
-        self.cache.begin_connection(access.family_id)
-        placeholder = asyncio.create_task(asyncio.sleep(0))
-        now = time.monotonic()
-        record = _ConnectionRecord(
-            structure,
-            allowed,
-            session,
-            placeholder,
-            last_structure_check=now,
-            last_used=now,
-        )
-        lifecycle_event(
-            "connection_opened", family_id=access.family_id, source="runtime", outcome="opened"
-        )
-        record.task = asyncio.create_task(self._maintain(access, token, record))
-        initial_state_wait = asyncio.create_task(record.initial_state_batch.wait())
-        try:
+            try:
+                structure = await session.load_structure()
+            except LoxoneConnectionError as exc:
+                raise RuntimeUnavailable("Miniserver structure access failed") from exc
+            if self.token_health is not None:
+                self.token_health.record_successful_authentication(access.family_id)
+            allowed = _structure_state_uuids(structure)
+            self.cache.begin_connection(access.family_id)
+            placeholder = asyncio.create_task(asyncio.sleep(0))
+            now = time.monotonic()
+            record = _ConnectionRecord(
+                structure,
+                allowed,
+                session,
+                placeholder,
+                last_structure_check=now,
+                last_used=now,
+            )
+            lifecycle_event(
+                "connection_opened", family_id=access.family_id, source="runtime", outcome="opened"
+            )
+            record.task = asyncio.create_task(self._maintain(access, token, record))
+            initial_state_wait = asyncio.create_task(record.initial_state_batch.wait())
             done, _pending = await asyncio.wait(
                 {initial_state_wait, record.task},
                 timeout=self._initial_state_timeout_seconds,
@@ -1672,20 +1674,30 @@ class LoxoneRuntime:
                 record.close_reason = "initial_state_timeout"
                 raise RuntimeUnavailable("Miniserver initial state timed out")
         except BaseException as exc:
-            if not record.task.done():
-                if (
-                    not isinstance(exc, asyncio.CancelledError)
-                    and record.close_reason == "local_disconnect"
-                ):
-                    record.close_reason = "transport_failed"
-                record.task.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await record.task
-            await record.session.close()
-            self.cache.disconnect(access.family_id)
+            try:
+                if record is not None:
+                    if not record.task.done():
+                        if (
+                            not isinstance(exc, asyncio.CancelledError)
+                            and record.close_reason == "local_disconnect"
+                        ):
+                            record.close_reason = "transport_failed"
+                        record.task.cancel()
+                    with suppress(asyncio.CancelledError, Exception):
+                        await record.task
+                # Until maintain actually starts, this coroutine owns the session.
+                # After that handoff maintain's finally performs exactly one close.
+                if record is None or not record.maintain_started:
+                    with suppress(Exception):
+                        await session.close()
+            finally:
+                if record is not None:
+                    self.cache.disconnect(access.family_id)
+                if access.family_id not in getattr(self, "_records", {}):
+                    self.cache.clear(access.family_id)
             raise
         finally:
-            if not initial_state_wait.done():
+            if initial_state_wait is not None and not initial_state_wait.done():
                 initial_state_wait.cancel()
                 with suppress(asyncio.CancelledError):
                     await initial_state_wait
@@ -1840,7 +1852,13 @@ class LoxoneRuntime:
         token: LoxoneToken,
         record: _ConnectionRecord,
     ) -> None:
-        events = asyncio.create_task(self._pump_events(access.family_id, record))
+        pump = self._pump_events(access.family_id, record)
+        try:
+            events = asyncio.create_task(pump)
+        except BaseException:
+            pump.close()
+            raise
+        record.maintain_started = True
         close_reason = "stream_ended"
         try:
             while not events.done():
@@ -2049,4 +2067,5 @@ class LoxoneRuntime:
         async with self._admission_lock:
             for family_id in tuple(self._records):
                 await self.disconnect(family_id, reason="shutdown")
+            self.cache.clear_all()
         lifecycle_event("runtime_closed", source="runtime", reason="shutdown", outcome="closed")
