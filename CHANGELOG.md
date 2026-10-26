@@ -16,6 +16,10 @@ extracted from the matching version heading.
   a connection, retaining authorization, fresh visibility, serialized new-session
   capacity, pruning and shutdown checks (#594).
 
+- Return a fixed, bounded diagnostic for output-schema instance mismatches
+  instead of echoing invalid source values or property names; retain full
+  response validation and unrelated SDK behavior (#608).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes

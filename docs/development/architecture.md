@@ -88,6 +88,12 @@ Failed families without retained records release their cache state; owned
 disconnected records keep stale values until normal eviction/disconnect. Shutdown
 also drains orphan cache subjects through per-subject cleanup.
 
+Transport jsonschema instance mismatches return a fixed diagnostic without jsonschema
+source values, property names or schema fragments. Full instance traversal and
+validation remain enabled; invalid output is discarded. This intentionally
+sanitizes the SDK's detailed invalid-output text while preserving valid wire
+responses and unrelated input-validation behavior.
+
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.
