@@ -38,6 +38,10 @@ extracted from the matching version heading.
 - Avoid repeated object sorting in output-schema cache keys while preserving
   JSON type distinctions, schema mutation detection and full validation (#611).
 
+- Filter project text searches before constructing response summaries and Modbus
+  projections, preserving exact runtime-name, metadata and pagination semantics
+  and independent project authorization (#599).
+
 - Fix five MCP audit findings (#597): reject coerced/non-finite control inputs,
   stabilize caller-bound diagnostic pagination for 120 seconds, preserve typed
   availability diagnostics and trace IDs, cap raw/room/semantic state envelopes

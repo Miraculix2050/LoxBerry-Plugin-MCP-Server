@@ -96,6 +96,11 @@ validation remain enabled; invalid output is discarded. This intentionally
 sanitizes the SDK's detailed invalid-output text while preserving valid wire
 responses and unrelated input-validation behavior.
 
+Project text search tests raw/source, uniquely mapped runtime and KNX/imported
+metadata predicates before building response summaries or Modbus projections.
+The result cache and exact total/order/pagination contracts remain unchanged;
+independent project receipt and current authorization still precede result reuse.
+
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.
