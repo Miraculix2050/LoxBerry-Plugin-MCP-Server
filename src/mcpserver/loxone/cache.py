@@ -71,3 +71,8 @@ class UserStateCache:
     def clear(self, subject: str) -> None:
         self._values.pop(subject, None)
         self._available.pop(subject, None)
+
+    def clear_all(self) -> None:
+        """Release every subject through the normal per-subject cleanup path."""
+        for subject in self._values.keys() | self._available.keys():
+            self.clear(subject)

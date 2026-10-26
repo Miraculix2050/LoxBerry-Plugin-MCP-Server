@@ -734,6 +734,7 @@ async def test_runtime_close_disconnects_all_records_without_revoking_tokens() -
         closed.append(family_id)
 
     runtime._records = {"one": object(), "two": object()}
+    runtime.cache = UserStateCache()
     runtime._admission_lock = asyncio.Lock()
     runtime.disconnect = disconnect  # type: ignore[method-assign]
 

@@ -81,6 +81,13 @@ and conditional evidence boundaries. No browser profile store or resolver is add
 
 ## Authorization and data flow
 
+An opened runtime session remains owned by connection setup until its maintainer
+actually starts. Cancellation, protocol/normalization failure and initial-stream
+failure close unpublished sessions without replacing the original diagnostic.
+Failed families without retained records release their cache state; owned
+disconnected records keep stale values until normal eviction/disconnect. Shutdown
+also drains orphan cache subjects through per-subject cleanup.
+
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.

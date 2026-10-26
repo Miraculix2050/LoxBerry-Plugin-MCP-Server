@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
-from mcpserver.loxone.client import MiniserverEndpoint
-from mcpserver.loxone.events import StateEvent
+from mcpserver.loxone.client import LoxoneConnectionError, MiniserverEndpoint
+from mcpserver.loxone.events import LoxoneProtocolError, StateEvent
 from mcpserver.loxone.models import Freshness, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
     LoxoneRuntime,
@@ -380,4 +380,191 @@ async def test_shutdown_during_unpublished_initial_stream_drains_connection() ->
     finally:
         initial.set()
         await asyncio.gather(call, *([stop] if stop is not None else []), return_exceptions=True)
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["cancel", "protocol", "connection", "unexpected"])
+@pytest.mark.parametrize("close_fails", [False, True])
+async def test_unpublished_structure_failure_closes_session_and_preserves_failure(
+    failure, close_fails
+):
+    owner = runtime()
+    started = asyncio.Event()
+    errors = {
+        "protocol": LoxoneProtocolError("synthetic protocol"),
+        "connection": LoxoneConnectionError("synthetic connection"),
+        "unexpected": ValueError("synthetic normalization"),
+    }
+
+    async def load():
+        started.set()
+        if failure == "cancel":
+            await asyncio.Event().wait()
+        raise errors[failure]
+
+    session = SimpleNamespace(
+        load_structure=load,
+        close=AsyncMock(side_effect=RuntimeError("synthetic close") if close_fails else None),
+    )
+    owner._open_session = AsyncMock(return_value=session)
+    task = asyncio.create_task(owner.snapshot(access()))
+    try:
+        await started.wait()
+        if failure == "cancel":
+            task.cancel()
+        expected = (
+            asyncio.CancelledError
+            if failure == "cancel"
+            else RuntimeUnavailable
+            if failure == "connection"
+            else type(errors[failure])
+        )
+        with pytest.raises(expected):
+            await task
+        session.close.assert_awaited_once()
+        assert not owner._records and not owner._locks
+        assert not owner.cache._values and not owner.cache._available
+    finally:
+        await asyncio.gather(task, return_exceptions=True)
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_initial_subscriptions_do_not_accumulate_orphan_subjects():
+    owner = runtime()
+    sessions = []
+
+    class EmptyStream(Stream):
+        async def load_structure(self):
+            return structure()
+
+        async def state_events(self):
+            return
+            yield ()
+
+    async def open_session(*_args, **_kwargs):
+        session = EmptyStream()
+        sessions.append(session)
+        return session
+
+    owner._open_session = open_session
+    for index in range(20):
+        with pytest.raises(RuntimeUnavailable, match="subscription"):
+            await owner.snapshot(access(f"failed-{index}"))
+        assert not owner._records and not owner._locks
+        assert not owner.cache._values and not owner.cache._available
+    assert all(session.close_calls == 1 for session in sessions)
+    owner.cache.begin_connection("orphan")
+    await owner.close()
+    assert not owner.cache._values and not owner.cache._available
+
+
+@pytest.mark.asyncio
+async def test_failed_reconnect_preserves_owned_disconnected_state():
+    owner = runtime(structure_refresh_seconds=10**12)
+    record = await install(owner)
+    record.session.batches.put_nowait(None)
+    await record.task
+    assert owner.cache.get("one", "state").freshness is Freshness.STALE
+
+    class EmptyStream(Stream):
+        async def load_structure(self):
+            return structure()
+
+        async def state_events(self):
+            return
+            yield ()
+
+    session = EmptyStream()
+    owner._open_session = AsyncMock(return_value=session)
+    try:
+        with pytest.raises(RuntimeUnavailable, match="subscription"):
+            await owner.snapshot(access())
+        assert owner._records["one"] is record
+        assert owner.cache.get("one", "state").freshness is Freshness.STALE
+        assert owner.cache.get("one", "state").value == 1.0
+        assert session.close_calls == 1
+    finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_maintainer_before_start_leaves_session_with_setup(monkeypatch):
+    owner = runtime()
+    session = Stream()
+    session.load_structure = AsyncMock(return_value=structure())
+    owner._open_session = AsyncMock(return_value=session)
+    create_task = asyncio.create_task
+
+    def cancel_maintainer(coro, *args, **kwargs):
+        task = create_task(coro, *args, **kwargs)
+        if coro.cr_code.co_name == "_maintain":
+            task.cancel()
+        return task
+
+    monkeypatch.setattr(asyncio, "create_task", cancel_maintainer)
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await owner.snapshot(access())
+        assert session.close_calls == 1
+        assert not owner._records and not owner._locks
+        assert not owner.cache._values and not owner.cache._available
+    finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_during_unpublished_close_clears_orphan_state():
+    owner = runtime()
+    loading, closing = asyncio.Event(), asyncio.Event()
+
+    async def load():
+        loading.set()
+        await asyncio.Event().wait()
+
+    async def close():
+        closing.set()
+        await asyncio.Event().wait()
+
+    session = SimpleNamespace(load_structure=load, close=AsyncMock(side_effect=close))
+    owner._open_session = AsyncMock(return_value=session)
+    owner.cache.begin_connection("one")
+    task = asyncio.create_task(owner.snapshot(access()))
+    try:
+        await loading.wait()
+        task.cancel()
+        await closing.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not owner.cache._values and not owner.cache._available
+        assert not owner._records and not owner._locks
+        session.close.assert_awaited_once()
+    finally:
+        await asyncio.gather(task, return_exceptions=True)
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_pump_task_allocation_failure_keeps_session_owned_by_setup(monkeypatch):
+    owner = runtime()
+    session = Stream()
+    session.load_structure = AsyncMock(return_value=structure())
+    owner._open_session = AsyncMock(return_value=session)
+    create_task = asyncio.create_task
+
+    def fail_pump(coro, *args, **kwargs):
+        if coro.cr_code.co_name == "_pump_events":
+            raise MemoryError("synthetic allocation")
+        return create_task(coro, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", fail_pump)
+    try:
+        with pytest.raises(MemoryError, match="synthetic allocation"):
+            await owner.snapshot(access())
+        assert session.close_calls == 1
+        assert not owner._records and not owner._locks
+        assert not owner.cache._values and not owner.cache._available
+    finally:
         await owner.close()
