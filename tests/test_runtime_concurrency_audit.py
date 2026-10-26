@@ -708,12 +708,12 @@ async def test_connection_admission_counter_drains_on_cancellation(queued):
     if queued:
         await owner._admission_lock.acquire()
 
-    async def hold():
-        async with owner._connection_admission():
-            entered.set()
-            await asyncio.Event().wait()
+    async def connect(_access):
+        entered.set()
+        await asyncio.Event().wait()
 
-    task = asyncio.create_task(hold())
+    owner._connect = AsyncMock(side_effect=connect)
+    task = asyncio.create_task(owner.snapshot(access("cold")))
     try:
         await asyncio.sleep(0)
         assert owner._admission_users == 1
